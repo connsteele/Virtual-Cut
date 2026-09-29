@@ -64,4 +64,33 @@ const preview = `<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="60
   )}</svg><text x="594" y="370" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#A8BAB0">WINDOWS APP ICON</text><g font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#C1CFC6"><rect x="848" y="144" width="26" height="26" rx="4" fill="#EDE6D8"/><text x="889" y="163">#EDE6D8</text><rect x="848" y="200" width="26" height="26" rx="4" fill="#71D7CD"/><text x="889" y="219">#71D7CD</text><rect x="848" y="256" width="26" height="26" rx="4" fill="#489F96"/><text x="889" y="275">#489F96</text></g><text x="56" y="541" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#DDE6DF">Ivory film. Three holes above, two below. Teal scissor blades with a continuous overlap.</text></svg>`;
 await writeFile(path.join(output, 'brand-preview.svg'), preview);
 await sharp(Buffer.from(preview)).png().toFile(path.join(output, 'brand-preview.png'));
+
+// Repository artwork uses the same approved mark, with an opaque background for both themes.
+for (const social of [false, true]) {
+  const height = social ? 640 : 320;
+  const name = social ? 'github-social-preview' : 'github-banner';
+  const markX = social ? 82 : 70,
+    markY = social ? 166 : 60;
+  const markWidth = social ? 264 : 192,
+    markHeight = social ? 248 : 180;
+  const textX = social ? 405 : 310,
+    titleY = social ? 278 : 149;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="${height}" viewBox="0 0 1280 ${height}" role="img" aria-labelledby="heading description">
+<title id="heading">Virtual Cut</title><desc id="description">A footage workspace for Windows. Cut, mark, review and organize.</desc>
+<rect width="1280" height="${height}" fill="#121918"/>
+<rect x="1" y="1" width="1278" height="${height - 2}" rx="16" fill="none" stroke="#303D3B" stroke-width="2"/>
+<svg x="${markX}" y="${markY}" width="${markWidth}" height="${markHeight}" viewBox="44 24 292 274">${artwork.replaceAll('film-gap', `${name}-gap`)}</svg>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="${textX}" y="${titleY}" font-size="${social ? 84 : 70}" font-weight="600" letter-spacing="-2" fill="#EDE6D8">Virtual Cut</text>
+<text x="${textX + 3}" y="${titleY + 52}" font-size="${social ? 27 : 24}" fill="#A1B3AF">A footage workspace for Windows</text>
+<text x="${textX + 3}" y="${titleY + 97}" font-size="${social ? 22 : 19}" fill="#71D7CD">Cut · Mark · Review · Organize</text>
+${social ? '<text x="85" y="81" font-size="16" letter-spacing="3" fill="#A1B3AF">DESKTOP PREVIEW</text>' : ''}
+</g>
+<path d="M70 ${height - 28}H1210" stroke="#04635F" stroke-width="4"/>
+</svg>\n`;
+  await writeFile(path.join(output, `${name}.svg`), svg);
+  await sharp(Buffer.from(svg))
+    .png()
+    .toFile(path.join(output, `${name}.png`));
+}
 console.log('Brand assets rebuilt from src/assets/virtual-cut-logo.svg.');

@@ -91,6 +91,14 @@ Observed limitations:
 
 This prototype is outside Virtual Cut. Normal job exit can be checked for these temporary workers; app cancellation, crash cleanup, and Windows Job Object acceptance requirements remain unimplemented. The local review artifacts are under Connor's approved G: scratch storage rather than tracked with the application.
 
+### DJI microphone sample — September 29, 2026
+
+A later 60.62-second recording tested a lav connected to the DJI microphone, then its built-in microphone, with game audio playing through TV speakers. The raw microphone track was recognized locally using the same cached large-v3 CPU-int8 configuration as the earlier headset sample, without vocabulary prompting or an agent correction pass. Full-file recognition completed in about 30.7 seconds including loading and returned coherent commentary for both configurations, with no transcript text in the surrounding background-only periods.
+
+Bounded rechecks of the two speech sections largely agreed. The built-in section retained the same wording; the lav section had small disagreements in the opening sentence and one substitution of the word lav. This is a promising result for conversational notes, not a controlled accuracy score or a validation of spoken cue commands. The earlier headset sample contained isolated cues and game names that this test did not repeat.
+
+Measured mic background averaged about −57.8 dBFS in a selected lav pause and −56.9 dBFS in a selected built-in pause, with different game content/levels between those windows. Neither setup clearly wins the background-rejection comparison. These are recorded levels, not intrinsic microphone self-noise measurements. The two temporary recognition workers were verified exited. Artifacts and the full report are under `G:\GPT\Work\virtual-cut\dji-mic-20260929`; no app transcription runtime was added.
+
 ### Further evaluation
 
 - Clearly spoken dialogue containing distinctive character, location, and item names.

@@ -1,4 +1,5 @@
 import styles from './App.module.css';
+import { Workbench } from './workflow/Workbench';
 import { classNames } from './classNames';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -26,6 +27,28 @@ const notesKey = 'virtual-cut.scratchpad.v1';
 type Drawer = 'notes' | 'agent' | null;
 
 export function App() {
+  const [foundation, setFoundation] = useState(() => {
+    try {
+      return localStorage.getItem('virtual-cut.surface.v1') === 'foundation';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('virtual-cut.surface.v1', foundation ? 'foundation' : 'workflow');
+    } catch {
+      /* The workspace remains available for this session. */
+    }
+  }, [foundation]);
+  return foundation ? (
+    <FoundationApp onWorkflow={() => setFoundation(false)} />
+  ) : (
+    <Workbench onFoundation={() => setFoundation(true)} />
+  );
+}
+
+function FoundationApp({ onWorkflow }: { onWorkflow: () => void }) {
   const [preferences, setPreferences] = useState(readPreferences);
   const [project, setProject] = useState<ProjectSelection | null>(null);
   const [choosing, setChoosing] = useState(false);
@@ -248,6 +271,9 @@ export function App() {
           <ChevronDown size={13} />
         </button>
         <div className={styles['header-actions']}>
+          <button className={styles['header-button']} onClick={onWorkflow}>
+            Workflow preview
+          </button>
           <button className={styles['header-button']} onClick={openVideo} disabled={openingVideo}>
             <Film size={16} />
             <span>{openingVideo ? 'Opening…' : 'Open video'}</span>

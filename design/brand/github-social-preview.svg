@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="heading description">
+<title id="heading">Virtual Cut</title><desc id="description">A footage workspace for Windows. Cut, mark, review and organize.</desc>
+<rect width="1280" height="640" fill="#121918"/>
+<rect x="1" y="1" width="1278" height="638" rx="16" fill="none" stroke="#303D3B" stroke-width="2"/>
+<svg x="82" y="166" width="264" height="248" viewBox="44 24 292 274">
+
+  <defs>
+    <mask id="github-social-preview-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="360" height="320">
+      <rect width="360" height="320" fill="white"/>
+      <path d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z" fill="black" stroke="black" stroke-width="24" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path id="rear-blade" d="M266 36H300L236 286H202Z" fill="#489F96" mask="url(#github-social-preview-gap)"/>
+  <path id="front-blade" d="M56 36H122L236 286H180Z" fill="#71D7CD"/>
+  <path id="film" d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z M190 128H203V140H190Z M218 128H231V140H218Z M246 128H259V140H246Z M228 210H241V222H228Z M256 210H269V222H256Z" fill-rule="evenodd" fill="#EDE6D8"/>
+</svg>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="405" y="278" font-size="84" font-weight="600" letter-spacing="-2" fill="#EDE6D8">Virtual Cut</text>
+<text x="408" y="330" font-size="27" fill="#A1B3AF">A footage workspace for Windows</text>
+<text x="408" y="375" font-size="22" fill="#71D7CD">Cut · Mark · Review · Organize</text>
+<text x="85" y="81" font-size="16" letter-spacing="3" fill="#A1B3AF">DESKTOP PREVIEW</text>
+</g>
+<path d="M70 612H1210" stroke="#04635F" stroke-width="4"/>
+</svg>

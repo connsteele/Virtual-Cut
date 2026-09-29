@@ -25,4 +25,5 @@ export interface VirtualCutApi {
   selectProjectFolder(): Promise<ProjectFolder | null>;
   /** Opens one video for read-only playback, without importing or copying it. */
   openVideo(): Promise<OpenedVideo | null>;
+  toggleFullscreen(): Promise<boolean>;
 }

@@ -13,7 +13,7 @@ const types: Record<string, string> = {
 };
 export const videoExtensions = Object.keys(types).map((extension) => extension.slice(1));
 
-/** Only a path returned by the trusted native dialog may be registered here. */
+/** Only trusted native code grants a selected video or a confined bundled asset. */
 export class VideoAccess {
   private selected: { video: OpenedVideo; path: string; modified: number; type: string } | null =
     null;
@@ -66,6 +66,13 @@ export class VideoAccess {
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
       });
+      // A selected recording can provide frames to the trusted renderer's
+      // screenshot canvas. Other origins receive no cross-origin permission.
+      const origin = request.headers.get('origin');
+      if (origin === 'app://virtual-cut' || origin === 'http://127.0.0.1:5173') {
+        headers.set('Access-Control-Allow-Origin', origin);
+        headers.set('Vary', 'Origin');
+      }
       let start = 0;
       let end = size - 1;
       const range = request.method === 'HEAD' ? null : request.headers.get('range');

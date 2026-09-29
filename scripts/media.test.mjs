@@ -6,6 +6,40 @@ import path from 'node:path';
 import { require, root } from './shared.mjs';
 
 const { VideoAccess } = require(path.join(root, 'dist-electron/media.cjs'));
+const { DemoMedia } = require(path.join(root, 'dist-electron/demo-media.cjs'));
+
+test('demo allowlist grants independent bounded streams and rejects unknown or escaping paths', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'virtual-cut-demo-test-'));
+  await writeFile(path.join(directory, 'first.mp4'), '0123456789abcdef');
+  await writeFile(path.join(directory, 'second.mp4'), 'second video');
+  const manifest = path.join(directory, 'manifest.json');
+  const media = new DemoMedia();
+  const read = (id, options) => media.respond(new Request(`media://video/demo/${id}`, options));
+  await media.load(path.join(directory, 'missing.json'));
+  assert.equal((await read('r1')).status, 404);
+  await writeFile(
+    manifest,
+    JSON.stringify({ root: directory, files: { r1: 'first.mp4', r2: 'second.mp4' } }),
+  );
+  await media.load(manifest);
+  const part = await read('r1', { headers: { Range: 'bytes=2-5' } });
+  assert.equal(part.status, 206);
+  assert.equal(await part.text(), '2345');
+  assert.equal(await (await read('r2')).text(), 'second video');
+  assert.equal((await read('r1', { method: 'HEAD' })).headers.get('Content-Length'), '16');
+  assert.equal((await read('r1', { method: 'POST' })).status, 405);
+  for (const id of ['unknown', 'r1?path=secret', '../first.mp4', 'r1/extra'])
+    assert.equal((await read(id)).status, 404);
+  for (const config of [
+    { root: '.', files: { r1: 'first.mp4' } },
+    { root: directory, files: { r1: '../first.mp4' } },
+    { root: directory, files: { r1: 'first.mp4', r2: 'missing.mp4' } },
+  ]) {
+    await writeFile(manifest, JSON.stringify(config));
+    await assert.rejects(media.load(manifest));
+    assert.equal((await read('r1')).status, 404, 'An invalid manifest grants no partial access');
+  }
+});
 
 test('selected video access is read-only, bounded, and revoked on replacement', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'virtual-cut-media-test-'));
@@ -52,6 +86,15 @@ test('selected video access is read-only, bounded, and revoked on replacement', 
   await access.select(file);
   assert.equal((await read()).status, 404);
   const current = await access.select(file);
+  for (const origin of ['app://virtual-cut', 'http://127.0.0.1:5173', 'https://example.com']) {
+    const response = await access.respond(
+      new Request(current.url, { method: 'HEAD', headers: { Origin: origin } }),
+    );
+    assert.equal(
+      response.headers.get('Access-Control-Allow-Origin'),
+      origin === 'https://example.com' ? null : origin,
+    );
+  }
   access.clear();
   assert.equal((await access.respond(new Request(current.url))).status, 404);
   const after = await stat(file);

@@ -34,6 +34,9 @@ await brandWindowsExecutable(
 
 const appDirectory = path.join(destination, 'resources', 'app');
 await mkdir(appDirectory, { recursive: true });
+const demoManifest = path.join(root, 'demo-media.local.json');
+if (existsSync(demoManifest))
+  await cp(demoManifest, path.join(appDirectory, 'demo-media.local.json'));
 await cp(path.join(root, 'dist'), path.join(appDirectory, 'dist'), { recursive: true });
 await cp(path.join(root, 'dist-electron'), path.join(appDirectory, 'dist-electron'), {
   recursive: true,
@@ -54,6 +57,6 @@ await writeFile(
 );
 await writeFile(
   path.join(destination, 'READ-ME.txt'),
-  'Virtual Cut playback preview\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nUse Open video to preview one completed recording.\r\nThis is a local, unsigned preview build; installer, signing, and updates come later.\r\nProject import, cutting, audio-track selection, and AI features come later.\r\n',
+  'Virtual Cut workflow preview\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nF11 toggles fullscreen. Explore Media, Cut, Review, Library, and Selects.\r\nUse Open video for one completed recording and session-only drafts.\r\nFull-resolution demo videos use the G: folder configured in resources/app/demo-media.local.json. Keep that folder available.\r\nSample edits are saved locally; Preview options can reset them.\r\nExport, filing, Resolve handoff, Notion sync, and agent actions are previews.\r\nNo original footage is changed.\r\nThis is a local, unsigned preview build; installer, signing, and updates come later.\r\n',
 );
 console.log(`Desktop folder ready: ${destination}`);

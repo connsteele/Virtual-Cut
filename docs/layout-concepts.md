@@ -1,5 +1,7 @@
 # Workspace layout concepts
 
+The latest desktop feedback and implemented iteration are recorded in [UI iteration 03](ui-feedback-iteration-03.md). Its confirmed preferences supersede conflicting earlier layout proposals below. State of the Realm inspiration and further Selects development are deferred.
+
 Open **Layouts** in the top bar to compare three arrangements. They share project selection, page navigation, and the Notes/Agent panel. Layout and last page are remembered on the device.
 
 ## Studio — recommended starting point
@@ -107,15 +109,33 @@ The Organizer README confirms that current check-off behavior already separates 
 
 ### How the three references combine
 
-| Page | Working design direction |
-| --- | --- |
-| Media | Project/batch intake and recording inventory; reuse compact batch navigation and shared project context. |
-| Cut | Studio viewer and timeline focus; Resolve transport/marker placement plus LosslessCut range clarity, keyframe controls, screenshots, and rapid batch navigation. |
-| Review | Footage Organizer's destination-folder groups, clip cards, review progress, and expanded preview with adjacent markers; improve folder assignment and integrate details. |
-| Library | Browse/search the filed collection; reuse folder navigation, clip previews, and contextual marker tools without forcing a pending-review queue onto browsing. |
-| Selects | Later work; reuse playback and range tools, with layout driven by arranging selected footage. |
+| Page    | Working design direction                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Media   | Project/batch intake and recording inventory; reuse compact batch navigation and shared project context.                                                                 |
+| Cut     | Studio viewer and timeline focus; Resolve transport/marker placement plus LosslessCut range clarity, keyframe controls, screenshots, and rapid batch navigation.         |
+| Review  | Footage Organizer's destination-folder groups, clip cards, review progress, and expanded preview with adjacent markers; improve folder assignment and integrate details. |
+| Library | Browse/search the filed collection; reuse folder navigation, clip previews, and contextual marker tools without forcing a pending-review queue onto browsing.            |
+| Selects | Later work; reuse playback and range tools, with layout driven by arranging selected footage.                                                                            |
 
 These are recorded preferences and proposed interactions. No Review page, persistent batch model, or folder picker has been implemented by this documentation update.
+
+## Iteration 02 decisions — September 29, 2026
+
+The newer feedback below supersedes the earlier suggestion to separate the thin marker strip from the editing timeline. It is being explored in a standalone interactive design demo; the Electron application is unchanged.
+
+- **Cut:** One combined thumbnail/clip/marker timeline above the transport controls. Explicit previous/next keyframe buttons alongside frame stepping and J/K/L. Each recording owns its clips, markers, thumbnails, and playhead position. Call planned ranges **Clips**. Show source thumbnails by default, with a hide toggle and a manually pinned frame option.
+- **Marker meaning:** Use consistent, labelled category colors throughout the app. Character, Combat, Mechanic, Story, and Context are proposed starting categories, not a settled taxonomy. Marker deletion requires confirmation beside the affected marker in both Cut and Review.
+- **Review:** Use **User Review**, **Details** with a disclosure arrow for expansion, and **Accept** for the review decision. Favor inline cards. Hold excludes a clip from filing. Offer folder groups/list and a tree, with an explicit searchable destination picker and new-folder flow.
+- **Expansion:** Animate the details area's height briefly, then reveal it with the smallest necessary scroll. Keep the card heading available for orientation; align the card start if the expanded card is taller than the available viewport. Avoid scrolling when already visible. Respect reduced-motion preferences, including scrolling. Verify against the actual scroll container when implementing the Electron page.
+- **Media:** Continue the Resolve media-pool influence: clear bins, recordings, list/thumbnail choices, and selected-media setup.
+- **Library:** Explore three views over the same relationships: a focused graph, relationship columns, and a topic board. Entries lead to exact markers, clips, notes, and related terms. Keep a searchable clip view as well.
+- **Glossary:** Canonical names, aliases/transcript spellings, definitions, and optional pronunciation hints belong to the same entities used by the graph. Editing glossary wording should retain entity IDs and connections. Original transcript text remains intact; corrections are a separate optional step. A glossary provides context, not guaranteed recognition accuracy.
+- **Glossary examples requested by Connor:** Cai, his friends (Peter and Tialla in this demo), Castor, Bertrand, Leda, Dagsion as a location, and Blaze Arts as a shared mechanic connecting Cai and Leda's footage. Use labelled relationships. Theodora's Blaze Art footage from Leda's route must not be mislabeled as Leda personally performing it. Actual filename spelling variants such as “Dagison” can be searchable aliases without renaming source files.
+- **Selects:** Build selected moments or batch string-outs, trim and reorder them, preview the sequence, and review an append/create handoff. Existing Resolve targets should be matched by stable identity and confirmed by name. Repeated append should detect exact source-range duplicates while preserving existing timeline edits.
+
+The current demo exercises these interactions with three short silent excerpts, real folder names, and several still references from the footage library. Sample annotations and relationship wording remain design examples. Exports, filing, agent requests, Notion publishing, and Resolve handoffs are local simulations. This does not implement full-media ingestion, production reverse playback, cutting, transcription, or integrations in the app.
+
+See [Library and Resolve handoff research](research/library-and-resolve-handoff.md) for integration limits and the proposed implementation boundaries.
 
 ## Feedback for the next iteration
 

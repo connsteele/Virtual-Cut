@@ -1,6 +1,6 @@
 # Desktop foundation
 
-This is the first build stage of Virtual Cut: a launchable Windows Electron app, a workspace shell, and a small read-only single-video playback demo.
+The original foundation is preserved behind **Preview options → Open previous foundation layouts**. The default app now uses the [desktop workflow preview](workflow-preview.md), with page-specific layouts and shared sample interactions. The foundation details below describe the earlier layouts and native playback boundary.
 
 ## What works
 
@@ -33,7 +33,7 @@ The renderer follows the preferences established in **Develop Footage Organizer*
 | `src/`                  | React workspace, page/layout state, scratchpad, CSS Modules                 |
 | `src/global.css`        | Shared colors, typography defaults, reset, focus treatment                  |
 | `electron/contracts.ts` | Small typed desktop API shared with the renderer                            |
-| `electron/preload.cts`  | Exposes app information and native folder/video pickers                     |
+| `electron/preload.cts`  | Exposes app information, native folder/video pickers, and fullscreen        |
 | `electron/main.cts`     | Native window, dialogs, permissions, and app asset loading                  |
 | `electron/media.cts`    | Read-only, ranged streaming of the one explicitly selected video            |
 | `scripts/`              | Development, build, smoke verification, Windows folder packaging            |
@@ -106,4 +106,4 @@ For Connor's local runs, put test outputs and downloads on G:. Set process-scope
 
 ## Next build boundary
 
-Review the [layout concepts](layout-concepts.md) with a real video, then add a persistent project record and project media intake. Connor prefers layouts suited to each page and viewer proportions based on predominantly 16:9 footage; the current layout selector still compares one arrangement across pages. Validate broader original-media playback and audio-track selection before building cutting/export. Preserve the established Footage Organizer review behavior when that page is implemented. The full roadmap and open media-engine checks remain in the planning documents; a small playback demo does not establish the complete media pipeline's feasibility.
+Review the [desktop workflow preview](workflow-preview.md) with real footage, then add persistent project records, media intake, and source probing. The new workspace gives each page its own arrangement; the old layout selector remains available for comparison. Validate broader original-media playback and audio-track selection before cutting/export. The review workflow is currently a sample simulation; production file operations are a separate implementation stage.

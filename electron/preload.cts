@@ -7,6 +7,7 @@ const api: VirtualCutApi = {
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   selectProjectFolder: () => ipcRenderer.invoke('project:select-folder'),
   openVideo: () => ipcRenderer.invoke('media:open-video'),
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen'),
 };
 
 contextBridge.exposeInMainWorld('virtualCut', Object.freeze(api));

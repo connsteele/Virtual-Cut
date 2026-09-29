@@ -1,0 +1,212 @@
+.timeline {
+  flex-shrink: 0;
+  margin-top: 7px;
+  min-width: 0;
+}
+.legendRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+.legendRow > button {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 3px 7px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+.track {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #182321;
+  touch-action: none;
+  user-select: none;
+  cursor: ew-resize;
+}
+.ruler {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 6px;
+  font-size: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.markerLane {
+  position: relative;
+  height: 21px;
+  background: #111a18;
+  border-bottom: 1px solid #3a4a46;
+}
+.marker {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 22px;
+  border: 0;
+  background: none;
+  padding: 3px 4px;
+  z-index: 5;
+}
+.marker span {
+  display: block;
+  height: 15px;
+  width: 10px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 100% 68%, 50% 100%, 0 68%);
+  filter: drop-shadow(0 1px 1px #000);
+}
+.frames {
+  display: flex;
+  overflow: hidden;
+  pointer-events: none;
+  background: #080e0c;
+}
+.frames > div {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 16/9;
+  border-right: 1px solid #101a16;
+}
+.frames img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  -webkit-user-drag: none;
+}
+.ticks {
+  position: relative;
+  height: 5px;
+  pointer-events: none;
+}
+.ticks i {
+  position: absolute;
+  height: 5px;
+  width: 1px;
+  background: #85a39b;
+}
+.clips {
+  --clip-row: 32px;
+  height: calc(var(--clip-lanes) * var(--clip-row));
+  position: relative;
+  margin-bottom: 3px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--clip-row) - 1px),
+    #30403b calc(var(--clip-row) - 1px),
+    #30403b var(--clip-row)
+  );
+  isolation: isolate;
+}
+.overlap {
+  position: absolute;
+  inset-block: 0;
+  background: repeating-linear-gradient(135deg, #ede6d811 0 3px, transparent 3px 8px);
+  border-inline: 1px dashed #ede6d85c;
+  z-index: 0;
+}
+.clip {
+  position: absolute;
+  top: calc(var(--clip-lane) * var(--clip-row) + 2px);
+  height: calc(var(--clip-row) - 4px);
+  min-width: 0;
+  background: color-mix(in srgb, var(--clip-color) 24%, transparent);
+  color: #dfebe7;
+  border: 1px solid color-mix(in srgb, var(--clip-color) 70%, transparent);
+  border-radius: 3px;
+  text-align: left;
+  padding: 3px min(7px, 0.4%);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px !important;
+  z-index: 1;
+  cursor: pointer;
+}
+.clip::before,
+.clip::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  background: var(--clip-color);
+  pointer-events: none;
+}
+.clip::before {
+  left: 0;
+}
+.clip::after {
+  right: 0;
+}
+.clip b {
+  color: var(--clip-color);
+  font-weight: 600;
+}
+.clip span {
+  margin-left: 6px;
+}
+.clip:hover {
+  background: color-mix(in srgb, var(--clip-color) 36%, transparent);
+}
+.clip[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--clip-color) 46%, #13211eb3);
+  border-color: #f4f1e5;
+  box-shadow: inset 0 0 0 1px #f4f1e5;
+  color: #fff;
+  z-index: 3;
+}
+.clip[aria-pressed='true']::before,
+.clip[aria-pressed='true']::after {
+  width: 3px;
+  background: #f4f1e5;
+}
+.clip:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 0;
+  z-index: 4;
+}
+.playhead {
+  position: absolute;
+  top: 21px;
+  bottom: 0;
+  width: 1px;
+  background: #e4fff8;
+  pointer-events: none;
+  z-index: 6;
+}
+.playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  border-top: 6px solid #e4fff8;
+  border-inline: 4px solid transparent;
+}
+@media (max-height: 800px) {
+  .legend {
+    gap: 8px;
+  }
+  .clips {
+    --clip-row: 28px;
+  }
+}

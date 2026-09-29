@@ -50,7 +50,12 @@ try {
   }));
   assert.equal(boundary.requireType, 'undefined');
   assert.equal(boundary.processType, 'undefined');
-  assert.deepEqual(boundary.apiKeys, ['getAppInfo', 'openVideo', 'selectProjectFolder']);
+  assert.deepEqual(boundary.apiKeys, [
+    'getAppInfo',
+    'openVideo',
+    'selectProjectFolder',
+    'toggleFullscreen',
+  ]);
   assert.equal(boundary.info.name, 'Virtual Cut');
   assert.equal(boundary.info.platform, process.platform);
 
@@ -69,6 +74,8 @@ try {
     !backgroundTest,
   );
   const header = page.getByRole('banner');
+  await page.getByRole('button', { name: 'Preview options', exact: true }).click();
+  await page.getByRole('button', { name: 'Open previous foundation layouts', exact: true }).click();
   async function selectLayout(name) {
     await header.getByRole('button', { name: /Layouts/ }).click();
     await page.getByRole('button', { name: `${name} layout`, exact: true }).click();

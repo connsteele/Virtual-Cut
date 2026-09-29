@@ -18,14 +18,16 @@ import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
   'resolution-mode': 'import',
 };
 import { VideoAccess, videoExtensions } from './media.cjs';
+import { DemoMedia } from './demo-media.cjs';
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self' media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
 let mainWindow: BrowserWindow | null = null;
 let folderDialog: Promise<ProjectFolder | null> | null = null;
 let videoDialog: Promise<OpenedVideo | null> | null = null;
 const videoAccess = new VideoAccess();
+const demoMedia = new DemoMedia();
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -45,8 +47,14 @@ if (requestedProfile) {
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
-  { scheme: 'media', privileges: { standard: true, secure: true, stream: true } },
+  {
+    scheme: 'app',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+  {
+    scheme: 'media',
+    privileges: { standard: true, secure: true, stream: true, corsEnabled: true },
+  },
 ]);
 
 function getRendererUrl(): string {
@@ -119,9 +127,22 @@ async function registerAppProtocol(): Promise<void> {
       if (!isInside(rendererDirectory, resolvedPath) || !(await stat(resolvedPath)).isFile()) {
         return new Response('Not found', { status: 404 });
       }
-      const response = await net.fetch(pathToFileURL(resolvedPath).href, {
-        method: request.method,
-      });
+      let response: Response;
+      if (videoExtensions.includes(path.extname(resolvedPath).slice(1).toLowerCase())) {
+        // Bundled preview media needs the same byte-range responses as local
+        // footage. Its path is confined to dist above, with a separate grant.
+        const bundled = new VideoAccess();
+        const grant = await bundled.select(resolvedPath);
+        response = await bundled.respond(
+          new Request(grant.url, {
+            method: request.method,
+            headers: request.headers,
+            signal: request.signal,
+          }),
+        );
+      } else {
+        response = await net.fetch(pathToFileURL(resolvedPath).href, { method: request.method });
+      }
       const headers = new Headers(response.headers);
       headers.set('Content-Security-Policy', APP_CSP);
       headers.set('X-Content-Type-Options', 'nosniff');
@@ -133,6 +154,13 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
+  ipcMain.handle('window:toggle-fullscreen', (event): boolean => {
+    assertTrustedSender(event);
+    const enabled = !mainWindow!.isFullScreen();
+    mainWindow!.setFullScreen(enabled);
+    if (backgroundTest) mainWindow!.hide();
+    return enabled;
+  });
   ipcMain.handle('media:open-video', async (event): Promise<OpenedVideo | null> => {
     assertTrustedSender(event);
     videoDialog ??= (async () => {
@@ -215,7 +243,10 @@ async function createWindow(): Promise<void> {
   });
   mainWindow = window;
   window.once('ready-to-show', () => {
-    if (!backgroundTest) window.show();
+    if (!backgroundTest) {
+      window.maximize();
+      window.show();
+    }
   });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
@@ -241,7 +272,16 @@ app
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
     if (!process.env.VIRTUAL_CUT_DEV_URL || app.isPackaged) await registerAppProtocol();
-    protocol.handle('media', (request) => videoAccess.respond(request));
+    await demoMedia
+      .load(path.join(app.getAppPath(), 'demo-media.local.json'))
+      .catch((error: unknown) => {
+        console.error('Demo media is unavailable:', error);
+      });
+    protocol.handle('media', (request) =>
+      request.url.startsWith('media://video/demo/')
+        ? demoMedia.respond(request)
+        : videoAccess.respond(request),
+    );
     registerDesktopApi();
     await createWindow();
     app.on('activate', () => {
