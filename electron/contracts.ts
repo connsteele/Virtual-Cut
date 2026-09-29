@@ -20,6 +20,7 @@ export interface OpenedVideo {
 }
 
 export interface VirtualCutApi {
+  project: import('./project-contracts.js').ProjectApi;
   getAppInfo(): Promise<AppInfo>;
   /** Opens a native picker. Selection does not import, read, or change footage. */
   selectProjectFolder(): Promise<ProjectFolder | null>;

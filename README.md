@@ -14,7 +14,7 @@
 | **Library** | Search footage, edit a shared glossary, and explore connections between characters, locations, mechanics, clips, and markers.                                                               |
 | **Selects** | A prototype for assembling selects and string-outs; further development is deferred.                                                                                                        |
 
-**Current state: interactive desktop preview.** Playback and local draft editing work. Exporting clips, filing footage, Resolve handoff, Notion sync, and agent actions remain previews or simulations. Real project persistence and batch import come later.
+**Current state: Milestone 1 project workspace, ready for user testing.** Create and reopen saved projects, import named batches, inspect source streams and chapter markers, choose Game/Mic audio roles, and save Cut edits with undo/redo. Exporting clips, physical filing, Resolve handoff, transcription, Notion sync, and agents remain later milestones. The sample workspace keeps its earlier prototype actions separately.
 
 The local test setup uses six complete 4K AV1 recordings with original audio. Private footage and preview images are excluded from this repository. On a fresh checkout, use **Open video**, or configure the local sample media described in the [workflow preview guide](docs/workflow-preview.md).
 
@@ -27,13 +27,18 @@ npm ci
 npm run dev
 ```
 
-For a standalone desktop folder, run `npm run package:win`, then open `Virtual Cut.exe` inside the generated `release/Virtual-Cut-...` directory. Keep the folder's files together.
+Development needs FFmpeg and FFprobe on PATH (or `VIRTUAL_CUT_FFMPEG` / `VIRTUAL_CUT_FFPROBE` pointing to the executables). For a standalone desktop folder, run `npm run package:win`, then open `Virtual Cut.exe` inside the generated `release/Virtual-Cut-...` directory. The local Windows package includes the media tools. Keep the folder's files together; set `VIRTUAL_CUT_PACKAGE_DIR` to choose a different output location.
 
 The app launches maximized. Press **F11** or the fullscreen button to hide/show the window frame. The bottom page strip stays visible. **Preview options** in the upper right can reset sample edits or open the earlier Studio/Library/Focus foundation layouts.
 
-Use **Open video** to choose one completed recording. It opens paused in the new viewer; try J/K/L, draft clips, markers, and capture intent. Local-video drafts last for this session. Sample edits and scratch notes are saved locally. Codec support depends on Electron's player; audio uses the default track and track selection comes later. Sources remain unchanged.
+Choose **Projects** beside the page name to create a `.vcut` project. Choose its file, finished-clip destination, and a separate preview-cache folder. Use **Import files** or **Import folder** to register completed recordings in the current batch. Sources stay in place and unchanged. Projects save automatically; **Jobs** shows inspection/audio progress, errors, cancellation, and retry.
+
+In Cut, **Q/W** set the selected clip's in/out points, **S** splits it, and **M** adds a marker. Use **Ctrl+Z / Ctrl+Shift+Z** for undo/redo and **Ctrl+Shift+Up/Down** to change recordings. **Source & audio** assigns Game/Mic tracks and offers Game, Mic, or Both monitoring. The first track defaults to Game; confirm roles for your recording setup. Prepared audio is a disposable local cache. Original video decoding depends on Electron's codec support; reverse playback is a silent seek-based scan.
+
+The separate sample workspace still offers **Open video** for a session-only draft. Sample edits use localStorage; real projects use SQLite and do not share the sample scratchpad.
 
 - [Foundation guide: architecture, commands, verification, and current limits](docs/foundation.md)
+- [Milestone 1: storage, timing, verification, and test recipe](docs/milestone-1.md)
 - [Desktop workflow preview: interactions and limitations](docs/workflow-preview.md)
 - [Layout concepts and review questions](docs/layout-concepts.md)
 

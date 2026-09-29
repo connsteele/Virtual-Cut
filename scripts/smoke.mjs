@@ -53,6 +53,7 @@ try {
   assert.deepEqual(boundary.apiKeys, [
     'getAppInfo',
     'openVideo',
+    'project',
     'selectProjectFolder',
     'toggleFullscreen',
   ]);

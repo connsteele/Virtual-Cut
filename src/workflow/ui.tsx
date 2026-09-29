@@ -34,7 +34,7 @@ export function Modal({
   children: ReactNode;
 }) {
   return (
-    <Dialog title={title} eyebrow="WORKFLOW PREVIEW" onClose={onClose} className={s.modal}>
+    <Dialog title={title} eyebrow="VIRTUAL CUT" onClose={onClose} className={s.modal}>
       {children}
     </Dialog>
   );

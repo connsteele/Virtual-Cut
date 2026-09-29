@@ -19,15 +19,19 @@ import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
 };
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { DemoMedia } from './demo-media.cjs';
+import { ProjectService } from './project-service.cjs';
+import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self' media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: media://video; font-src 'self' data:; connect-src 'self'; media-src 'self' media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
 let mainWindow: BrowserWindow | null = null;
 let folderDialog: Promise<ProjectFolder | null> | null = null;
 let videoDialog: Promise<OpenedVideo | null> | null = null;
 const videoAccess = new VideoAccess();
 const demoMedia = new DemoMedia();
+let projects: ProjectService;
+let closing = false;
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -154,6 +158,107 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
+  type Calls = Omit<ProjectApi, 'onCloseRequested' | 'finishClose' | 'selectBatch'> & {
+    'finish-close': ProjectApi['finishClose'];
+    'select-batch': ProjectApi['selectBatch'];
+  };
+  let request: Promise<unknown> = Promise.resolve();
+  const workspace = <K extends keyof Calls>(
+    name: K,
+    fn: (...args: Parameters<Calls[K]>) => unknown,
+  ) => {
+    ipcMain.handle('workspace:' + name, (event, ...args: unknown[]) => {
+      assertTrustedSender(event);
+      const next = request.then(() => fn(...(args as Parameters<Calls[K]>)));
+      request = next.catch(() => {});
+      return next;
+    });
+  };
+  workspace('recent', () => projects.recent());
+  workspace('current', () => (projects.store ? projects.snapshot() : null));
+  workspace('save', (id, before, after) => projects.save(id, before, after));
+  workspace('history', (id, direction) => projects.history(id, direction));
+  workspace('batch', (id, name) => projects.batch(id, name));
+  workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
+  workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
+  workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
+  workspace('close', () => projects.close());
+  workspace('finish-close', async () => {
+    await projects.close();
+    closing = true;
+    mainWindow?.close();
+  });
+  workspace('create', async (name) => {
+    if (typeof name !== 'string' || !name.trim() || name.length > 200)
+      throw new Error('Give the project a name.');
+    const chosen = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save the new Virtual Cut project',
+      defaultPath: name.replace(/[<>:"/\\|?*]/g, '_') + '.vcut',
+      filters: [{ name: 'Virtual Cut project', extensions: ['vcut'] }],
+    });
+    if (chosen.canceled || !chosen.filePath) return null;
+    const root = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Choose the destination footage folder',
+      properties: ['openDirectory'],
+    });
+    if (root.canceled || !root.filePaths[0]) return null;
+    const cache = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Choose a folder for disposable previews',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (cache.canceled || !cache.filePaths[0]) return null;
+    return projects.open(chosen.filePath, {
+      name: name.trim(),
+      destination: root.filePaths[0],
+      cache: path.join(
+        cache.filePaths[0],
+        'Virtual Cut previews',
+        path.parse(chosen.filePath).name,
+      ),
+    });
+  });
+  workspace('open', async (id) => {
+    let file: string | undefined;
+    if (id) {
+      file = (await projects.recent()).find((x) => x.id === id)?.file;
+      if (!file) throw new Error('Choose the project file again.');
+    } else {
+      const r = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Open a Virtual Cut project',
+        properties: ['openFile'],
+        filters: [{ name: 'Virtual Cut project', extensions: ['vcut'] }],
+      });
+      if (r.canceled) return null;
+      file = r.filePaths[0];
+    }
+    return file ? projects.open(file) : null;
+  });
+  workspace('import', async (id, batchId, kind) => {
+    projects.require(id);
+    if (!['files', 'folder'].includes(kind)) throw new Error('Choose files or a folder.');
+    const r = await dialog.showOpenDialog(mainWindow!, {
+      title: kind === 'folder' ? 'Import a recording folder' : 'Import completed recordings',
+      properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+      filters:
+        kind === 'files' ? [{ name: 'Video files', extensions: videoExtensions }] : undefined,
+    });
+    if (r.canceled) return null;
+    projects.require(id);
+    return projects.importFiles(
+      id,
+      batchId,
+      kind === 'folder' ? await projects.gather(r.filePaths[0]) : r.filePaths,
+    );
+  });
+  workspace('relink', async (id, sourceId) => {
+    projects.require(id);
+    const r = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Locate the original recording',
+      properties: ['openFile'],
+      filters: [{ name: 'Video files', extensions: videoExtensions }],
+    });
+    return r.canceled ? null : projects.relink(id, sourceId, r.filePaths[0]);
+  });
   ipcMain.handle('window:toggle-fullscreen', (event): boolean => {
     assertTrustedSender(event);
     const enabled = !mainWindow!.isFullScreen();
@@ -242,6 +347,12 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+  window.on('close', (event) => {
+    if (!closing && projects.store) {
+      event.preventDefault();
+      window.webContents.send('workspace:closing');
+    }
+  });
   window.once('ready-to-show', () => {
     if (!backgroundTest) {
       window.maximize();
@@ -272,6 +383,10 @@ app
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
     if (!process.env.VIRTUAL_CUT_DEV_URL || app.isPackaged) await registerAppProtocol();
+    projects = new ProjectService(
+      app.getPath('userData'),
+      path.join(process.resourcesPath, 'tools'),
+    );
     await demoMedia
       .load(path.join(app.getAppPath(), 'demo-media.local.json'))
       .catch((error: unknown) => {
@@ -280,7 +395,7 @@ app
     protocol.handle('media', (request) =>
       request.url.startsWith('media://video/demo/')
         ? demoMedia.respond(request)
-        : videoAccess.respond(request),
+        : projects.respond(request) || videoAccess.respond(request),
     );
     registerDesktopApi();
     await createWindow();

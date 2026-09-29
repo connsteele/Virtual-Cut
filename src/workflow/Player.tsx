@@ -33,6 +33,7 @@ export function Player({
   onLegend = () => {},
   onPosition,
   onDuration,
+  onPlayable,
   onSelect,
   onFrame,
   onEnded,
@@ -49,6 +50,7 @@ export function Player({
   onLegend?: () => void;
   onPosition?: (time: number) => void;
   onDuration?: (duration: number) => void;
+  onPlayable?: (ready: boolean) => void;
   onSelect?: (id: string) => void;
   onFrame?: (url: string) => void;
   onEnded?: () => void;
@@ -56,6 +58,7 @@ export function Player({
   ref?: Ref<Transport>;
 }) {
   const video = useRef<HTMLVideoElement>(null),
+    audio = useRef(new Map<number, HTMLAudioElement>()),
     stage = useRef<HTMLDivElement>(null),
     reverse = useRef<ReturnType<typeof setInterval> | null>(null),
     speed = useRef(1);
@@ -65,11 +68,66 @@ export function Player({
     [error, setError] = useState(''),
     [ready, setReady] = useState(false),
     [snapshot, setSnapshot] = useState(''),
+    [snapshotThumbnail, setSnapshotThumbnail] = useState(''),
     [fit, setFit] = useState<number>(),
     [volume, setVolume] = useState(0.7);
   const a = bounds?.start || 0,
     z = bounds?.end || duration;
+  const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
   const callbacks = useRef({ onPosition, onDuration, onEnded });
+  useEffect(() => {
+    onPlayable?.(ready);
+    return () => onPlayable?.(false);
+  }, [ready, onPlayable]);
+  const monitored = (r.audioTracks || []).filter(
+    (t) =>
+      (r.monitor !== 'mic' && t.index === r.gameTrack) ||
+      (r.monitor !== 'game' && r.monitor != null && t.index === r.micTrack),
+  );
+  const audioKey = monitored.map((t) => `${t.index}:${t.previewUrl || ''}:${t.offset}`).join('|');
+  useEffect(() => {
+    if (!r.sourcePath) return;
+    const v = video.current!,
+      elements = audio.current;
+    const sync = () => {
+      for (const track of monitored) {
+        const a = audio.current.get(track.index);
+        if (!a) continue;
+        const time = v.currentTime - clockOffset - track.offset;
+        a.volume = volume;
+        a.playbackRate = v.playbackRate;
+        if (time < 0 || time >= a.duration || v.paused || v.seeking || reverse.current) {
+          a.pause();
+          continue;
+        }
+        if (a.readyState >= 1 && Math.abs(a.currentTime - time) > 0.12)
+          a.currentTime = Math.max(0, time);
+        if (a.paused) void a.play().catch(() => {});
+      }
+    };
+    const seekAudio = () => {
+      for (const track of monitored) {
+        const a = audio.current.get(track.index);
+        if (a && a.readyState >= 1)
+          a.currentTime = Math.max(
+            0,
+            Math.min(a.duration, v.currentTime - clockOffset - track.offset),
+          );
+      }
+      sync();
+    };
+    const events = ['play', 'pause', 'ratechange', 'seeking', 'seeked', 'ended'] as const;
+    events.forEach((e) => v.addEventListener(e, e === 'seeked' ? seekAudio : sync));
+    const timer = setInterval(sync, 50);
+    sync();
+    return () => {
+      clearInterval(timer);
+      events.forEach((e) => v.removeEventListener(e, e === 'seeked' ? seekAudio : sync));
+      elements.forEach((a) => a.pause());
+    };
+    // The key includes all selected stream URLs and timing offsets.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioKey, volume, r.sourcePath, clockOffset]);
   useEffect(() => {
     callbacks.current = { onPosition, onDuration, onEnded };
   }, [onPosition, onDuration, onEnded]);
@@ -82,16 +140,17 @@ export function Player({
   const seek = (t: number) => {
     const v = video.current;
     if (!v || !Number.isFinite(z) || z <= 0) return;
-    v.currentTime = Math.max(a, Math.min(z - 0.001, t));
-    setCurrent(v.currentTime);
-    callbacks.current.onPosition?.(v.currentTime);
+    const position = Math.max(a, Math.min(z - 0.001, t));
+    v.currentTime = position + clockOffset;
+    setCurrent(position);
+    callbacks.current.onPosition?.(position);
   };
   const forward = (rate: number) => {
     const v = video.current;
     if (!v || !ready) return;
     if (reverse.current) clearInterval(reverse.current);
     reverse.current = null;
-    if (v.currentTime >= z - 0.04) seek(a);
+    if (v.currentTime - clockOffset >= z - 0.04) seek(a);
     speed.current = rate;
     v.playbackRate = rate;
     void v
@@ -124,33 +183,46 @@ export function Player({
       speed.current = rate;
       setStatus(`${rate}× reverse scan`);
       reverse.current = setInterval(() => {
-        if (v.currentTime <= a + 0.01) {
+        if (v.currentTime - clockOffset <= a + 0.01) {
           stop();
           return;
         }
-        seek(v.currentTime - rate / 12);
+        seek(v.currentTime - clockOffset - rate / 12);
       }, 83);
       return;
     }
     stop();
+    const position = v.currentTime - clockOffset;
     const boundaries = [...new Set([a, z, ...clips.flatMap((c) => [c.start, c.end])])]
       .filter((t) => t >= a && t <= z)
       .sort((x, y) => x - y);
     const epsilon = r.fps ? 0.5 / r.fps : 0.01;
-    if (key === 'start')
-      seek([...boundaries].reverse().find((t) => t < v.currentTime - epsilon) ?? a);
-    if (key === 'end') seek(boundaries.find((t) => t > v.currentTime + epsilon) ?? z);
-    if (key === 'frame-prev' && r.fps) seek(v.currentTime - 1 / r.fps);
-    if (key === 'frame-next' && r.fps) seek(v.currentTime + 1 / r.fps);
+    if (key === 'start') seek([...boundaries].reverse().find((t) => t < position - epsilon) ?? a);
+    if (key === 'end') seek(boundaries.find((t) => t > position + epsilon) ?? z);
+    if (key === 'frame-prev' || key === 'frame-next') {
+      const frames = r.frameTimes;
+      if (frames?.length) {
+        let low = 0,
+          high = frames.length;
+        const target = position + (key === 'frame-next' ? 0.0001 : -0.0001);
+        while (low < high) {
+          const mid = (low + high) >>> 1;
+          if (frames[mid] < target) low = mid + 1;
+          else high = mid;
+        }
+        const frame =
+          frames[key === 'frame-next' ? Math.min(low, frames.length - 1) : Math.max(0, low - 1)];
+        seek(frame);
+      } else if (r.fps) seek(position + (key === 'frame-next' ? 1 : -1) / r.fps);
+    }
     if (key === 'key-prev')
-      seek([...(r.keys || [])].reverse().find((k) => k < v.currentTime - 0.04 && k >= a) ?? a);
-    if (key === 'key-next')
-      seek(r.keys?.find((k) => k > v.currentTime + 0.04 && k <= z) ?? z - 0.001);
+      seek([...(r.keys || [])].reverse().find((k) => k < position - 0.04 && k >= a) ?? a);
+    if (key === 'key-next') seek(r.keys?.find((k) => k > position + 0.04 && k <= z) ?? z - 0.001);
   }
   useImperativeHandle(ref, () => ({
     seek,
     command,
-    current: () => video.current?.currentTime || 0,
+    current: () => Math.max(0, (video.current?.currentTime || 0) - clockOffset),
   }));
   useEffect(() => {
     const v = video.current!;
@@ -185,6 +257,11 @@ export function Player({
       c.height = v.videoHeight;
       c.getContext('2d')!.drawImage(v, 0, 0);
       setSnapshot(c.toDataURL('image/png'));
+      const preview = document.createElement('canvas');
+      preview.width = Math.min(960, c.width);
+      preview.height = Math.round((c.height * preview.width) / c.width);
+      preview.getContext('2d')!.drawImage(c, 0, 0, preview.width, preview.height);
+      setSnapshotThumbnail(preview.toDataURL('image/jpeg', 0.86));
       stop();
     } catch {
       setError('Frame capture is unavailable for this media source.');
@@ -231,16 +308,28 @@ export function Player({
           poster={r.pinned || r.poster || undefined}
           playsInline
           preload="metadata"
-          muted={r.sample && !r.fullResolution}
+          muted={!!r.sourcePath || (r.sample && !r.fullResolution)}
           style={{ maxWidth: fit }}
           aria-label={`Video: ${r.title}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
-            const d = Number.isFinite(v.duration) ? v.duration : 0;
+            const d = r.sourcePath ? r.duration : Number.isFinite(v.duration) ? v.duration : 0;
+            if (
+              r.sourcePath &&
+              ((r.sourceStart || 0) < -0.001 ||
+                (Number.isFinite(v.duration) && v.duration + 0.15 < clockOffset + d))
+            ) {
+              setError(
+                'This file’s timestamp offset is not supported by the built-in player. Playback editing is disabled to protect source timing.',
+              );
+              setReady(false);
+              return;
+            }
             setDuration(d);
             setReady(d > 0);
             v.volume = volume;
-            v.currentTime = Math.max(a, Math.min((bounds?.end || d) - 0.001, r.position));
+            v.currentTime =
+              Math.max(a, Math.min((bounds?.end || d) - 0.001, r.position)) + clockOffset;
             callbacks.current.onDuration?.(d);
             if (autoPlay)
               void v
@@ -257,9 +346,10 @@ export function Player({
           }
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
-            setCurrent(v.currentTime);
-            callbacks.current.onPosition?.(v.currentTime);
-            if (v.currentTime >= z - 0.045 && !v.paused) {
+            const position = Math.max(0, v.currentTime - clockOffset);
+            setCurrent(position);
+            callbacks.current.onPosition?.(position);
+            if (position >= z - 0.045 && !v.paused) {
               v.pause();
               setStatus('Paused');
               callbacks.current.onEnded?.();
@@ -271,6 +361,27 @@ export function Player({
           }}
         />
       </div>
+      {r.sourcePath &&
+        monitored
+          .filter((t) => t.previewUrl)
+          .map((t) => (
+            <audio
+              key={`${r.id}-${t.index}`}
+              data-audio-track={t.index}
+              ref={(el) => {
+                if (el) audio.current.set(t.index, el);
+                else audio.current.delete(t.index);
+              }}
+              src={t.previewUrl}
+              preload="auto"
+              crossOrigin="anonymous"
+            />
+          ))}
+      {r.sourcePath && monitored.some((t) => !t.previewUrl) && (
+        <p className={s.muted}>
+          Audio preview is not ready. Use Source & audio → Prepare selected audio, then check Jobs.
+        </p>
+      )}
       {error && (
         <p className={s.error} role="alert">
           {error}
@@ -393,7 +504,7 @@ export function Player({
             <Button
               primary
               onClick={() => {
-                onFrame(snapshot);
+                onFrame(snapshotThumbnail);
                 setSnapshot('');
               }}
             >

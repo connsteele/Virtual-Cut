@@ -21,14 +21,12 @@ import {
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { pages, type PageId } from '../workspace';
-import type { ProjectFolder } from '../../electron/contracts';
+import { useProjectWorkspace } from './useProjectWorkspace';
+import { ProjectPanel, BatchTools, RecordingTools } from './ProjectPanel';
 import {
   colors,
   initialModel,
   invalidate,
-  loadModel,
-  modelKey,
-  storedModel,
   time,
   short,
   uid,
@@ -52,6 +50,7 @@ function MarkerEditor({
   onSeek,
   onAdd,
   terms,
+  canAdd = true,
 }: {
   marks: Marker[];
   onChange: (id: string, patch: Partial<Marker>) => void;
@@ -59,6 +58,7 @@ function MarkerEditor({
   onSeek: (t: number) => void;
   onAdd: () => void;
   terms: Model['terms'];
+  canAdd?: boolean;
 }) {
   const [confirm, setConfirm] = useState('');
   const confirmation = useRef<HTMLDivElement>(null);
@@ -92,6 +92,12 @@ function MarkerEditor({
             aria-label="Marker name"
             value={m.name}
             onChange={(e) => onChange(m.id, { name: e.target.value })}
+          />
+          <input
+            aria-label="Marker note"
+            placeholder="Note (optional)"
+            value={m.note || ''}
+            onChange={(e) => onChange(m.id, { note: e.target.value })}
           />
           <div className={s.pair}>
             <select
@@ -133,7 +139,11 @@ function MarkerEditor({
         </div>
       ))}
       {!marks.length && <p className={s.muted}>No markers in this clip.</p>}
-      <Button onClick={onAdd}>
+      <Button
+        onClick={onAdd}
+        disabled={!canAdd}
+        title={!canAdd ? 'Wait for playable footage to add a timed marker' : undefined}
+      >
         <Plus size={15} /> Marker
       </Button>
     </section>
@@ -351,11 +361,13 @@ function Expansion({ children }: { children: ReactNode }) {
   );
 }
 export function Workbench({ onFoundation }: { onFoundation: () => void }) {
-  const [model, setModel] = useState(loadModel),
-    [page, setPage] = useState<PageId>('cut'),
+  const workspace = useProjectWorkspace();
+  const { model, setModel, snapshot: project } = workspace;
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [page, setPage] = useState<PageId>('cut'),
     [rid, setRid] = useState('r1'),
     [cid, setCid] = useState('c1'),
-    [project, setProject] = useState<ProjectFolder | null>(null),
     [opening, setOpening] = useState(false),
     [thumbs, setThumbs] = useState(true),
     [follow, setFollow] = useState(
@@ -395,21 +407,35 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const transport = useRef<Transport>(null),
     dragging = useRef('');
   useEffect(() => {
+    const pause = () => transport.current?.command('k');
+    window.addEventListener('virtual-cut-pause-workspace', pause);
+    return () => window.removeEventListener('virtual-cut-pause-workspace', pause);
+  }, []);
+  useEffect(() => {
     if (dialog || folderIds.length) transport.current?.command('k');
   }, [dialog, folderIds]);
-  const r = model.recordings.find((r) => r.id === rid) || model.recordings[0];
+  const recordings = project
+    ? model.recordings.filter((x) => x.batchIds?.includes(project.activeBatchId))
+    : model.recordings;
+  const r =
+    recordings.find((r) => r.id === model.selectedRecordingId) ||
+    recordings.find((r) => r.id === rid) ||
+    recordings[0] ||
+    ({
+      id: '',
+      title: '',
+      url: '',
+      poster: '',
+      frames: [],
+      base: 0,
+      duration: 0,
+      position: 0,
+      sample: false,
+      context: '',
+    } as Recording);
   const clips = model.clips.filter((c) => c.rid === r.id),
     c = clips.find((c) => c.id === cid);
   const e = model.sequence.find((e) => e.id === eid) || model.sequence[0];
-  useEffect(() => {
-    try {
-      localStorage.setItem(modelKey, storedModel(model));
-    } catch {
-      setNotice(
-        'Preview changes could not be saved. Keep this window open or copy important notes.',
-      );
-    }
-  }, [model]);
   useEffect(() => {
     try {
       localStorage.setItem('virtual-cut.scratchpad.v1', notes);
@@ -421,6 +447,24 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     localStorage.setItem('virtual-cut.selection-follows', String(follow));
     localStorage.setItem('virtual-cut.marker-legend', String(legend));
   }, [follow, legend]);
+  const projectKey = project?.project.id || 'sample',
+    batchKey = project?.activeBatchId || 'sample';
+  const projectContext = useRef(projectKey + batchKey);
+  useEffect(() => {
+    if (projectContext.current === projectKey + batchKey) return;
+    projectContext.current = projectKey + batchKey;
+    setExpanded('');
+    setChecked([]);
+    setFolderFilter('');
+    setCid('');
+    setPlayingSequence(false);
+    setPool([]);
+  }, [projectKey, batchKey]);
+  async function history(direction: 'undo' | 'redo') {
+    if (!project) return;
+    transport.current?.command('k');
+    await workspace.run(() => window.virtualCut!.project.history(project.project.id, direction));
+  }
   function inspectReview(clip: Clip, field = '') {
     transport.current?.command('k');
     setExpanded(clip.id);
@@ -480,6 +524,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     }));
   }
   function addMarker(recordId = r.id) {
+    if (project && !canEdit) return;
     const position = transport.current?.current() || 0;
     setModel((m) => ({
       ...m,
@@ -502,6 +547,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   function selectRecord(id: string) {
     transport.current?.command('k');
     setRid(id);
+    setModel((m) => ({ ...m, selectedRecordingId: id }));
     const position = model.recordings.find((r) => r.id === id)?.position || 0;
     setCid(
       model.clips.find((c) => c.rid === id && c.start <= position && c.end > position)?.id ||
@@ -533,6 +579,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setCid(id);
   }
   function trim(edge: 'start' | 'end') {
+    if (!canEdit) return;
     if (!c) {
       setNotice('Select a clip to trim.');
       return;
@@ -543,6 +590,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     else setNotice('The out point must follow the in point.');
   }
   function split() {
+    if (!canEdit) return;
     const t = transport.current?.current() || 0,
       clip = c;
     if (!clip || t <= clip.start + 0.02 || t >= clip.end - 0.02) {
@@ -607,18 +655,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         ['ArrowUp', 'ArrowDown'].includes(e.key)
       ) {
         e.preventDefault();
-        const index = model.recordings.findIndex((x) => x.id === r.id);
+        if (!recordings.length) return;
+        const index = recordings.findIndex((x) => x.id === r.id);
         selectRecord(
-          model.recordings[
-            Math.max(
-              0,
-              Math.min(model.recordings.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)),
-            )
+          recordings[
+            Math.max(0, Math.min(recordings.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
           ].id,
         );
         return;
       }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.ctrlKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        void history(e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo');
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || !r.id || workspace.busy) return;
       const k = e.key.toLowerCase();
       if (
         ['j', 'k', 'l', ' '].includes(k) &&
@@ -638,6 +689,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     return () => document.removeEventListener('keydown', key);
   });
   async function openVideo() {
+    if (project) {
+      await workspace.run(() =>
+        window.virtualCut!.project.import(project.project.id, project.activeBatchId, 'files'),
+      );
+      return;
+    }
     if (!window.virtualCut) {
       setNotice('Use the Electron app to open local footage.');
       return;
@@ -677,6 +734,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           sequence: m.sequence.filter((e) => m.recordings.find((r) => r.id === e.rid)?.sample),
         }));
         setRid(id);
+        setModel((m) => ({ ...m, selectedRecordingId: id }));
         setCid('');
         go('cut');
         setNotice('Local video draft · session only. Exports and source changes are not enabled.');
@@ -687,86 +745,96 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       setOpening(false);
     }
   }
-  async function chooseProject() {
-    try {
-      const p = await window.virtualCut?.selectProjectFolder();
-      if (p) setProject(p);
-    } catch {
-      setNotice('The project folder picker could not open.');
-    }
-  }
-  const player = (record: Recording, bounds?: { start: number; end: number }, sequence = false) => (
-    <Player
-      key={record.id + (bounds ? `-${bounds.start}-${bounds.end}` : '') + (sequence ? eid : '')}
-      ref={transport}
-      recording={record}
-      bounds={bounds}
-      selectedId={cid}
-      showClips={page === 'cut' || page === 'selects'}
-      legend={legend}
-      onLegend={() => setLegend(!legend)}
-      markers={model.markers[record.id] || []}
-      clips={model.clips.filter((c) => c.rid === record.id)}
-      onPosition={(position) => {
-        if (page === 'cut' && record.id === rid && follow) {
-          const under =
-            clips.find((x) => x.id === cid && position >= x.start && position < x.end) ||
-            clips.find((x) => position >= x.start && position < x.end);
-          setCid(under?.id || '');
+  const player = (record: Recording, bounds?: { start: number; end: number }, sequence = false) =>
+    project && record.availability !== 'ready' ? (
+      <div className={s.empty}>
+        <h3>{record.title}</h3>
+        <p>
+          {record.availability === 'pending'
+            ? 'Inspecting this recording…'
+            : `Recording ${record.availability}. Open Source & audio to relink, or Jobs to retry.`}
+        </p>
+      </div>
+    ) : (
+      <Player
+        key={record.id + (bounds ? `-${bounds.start}-${bounds.end}` : '') + (sequence ? eid : '')}
+        ref={transport}
+        recording={record}
+        bounds={bounds}
+        selectedId={cid}
+        showClips={page === 'cut' || page === 'selects'}
+        legend={legend}
+        onLegend={() => setLegend(!legend)}
+        markers={model.markers[record.id] || []}
+        clips={model.clips.filter((c) => c.rid === record.id)}
+        onPosition={(position) => {
+          if (page === 'cut' && record.id === r.id && follow) {
+            const under =
+              clips.find((x) => x.id === cid && position >= x.start && position < x.end) ||
+              clips.find((x) => position >= x.start && position < x.end);
+            setCid(under?.id || '');
+          }
+          setModel((m) => {
+            const current = m.recordings.find((r) => r.id === record.id);
+            return !current || Math.abs(current.position - position) < 0.02
+              ? m
+              : {
+                  ...m,
+                  recordings: m.recordings.map((r) =>
+                    r.id === record.id ? { ...r, position } : r,
+                  ),
+                };
+          });
+        }}
+        onDuration={(duration) => {
+          if (project) return;
+          setModel((m) => {
+            const current = m.recordings.find((r) => r.id === record.id);
+            return !current || current.duration === duration
+              ? m
+              : {
+                  ...m,
+                  recordings: m.recordings.map((r) =>
+                    r.id === record.id ? { ...r, duration } : r,
+                  ),
+                };
+          });
+        }}
+        onSelect={setCid}
+        onPlayable={setCanEdit}
+        onFrame={(pinned) => updateRecording(record.id, { pinned })}
+        autoPlay={sequence && playingSequence}
+        onEnded={
+          sequence
+            ? () => {
+                if (!playingSequence) return;
+                const i = model.sequence.findIndex((x) => x.id === eid);
+                const next = model.sequence[i + 1];
+                if (next) {
+                  updateRecording(next.rid, { position: Math.max(0, next.start - handles) });
+                  setEid(next.id);
+                } else setPlayingSequence(false);
+              }
+            : undefined
         }
-        setModel((m) => {
-          const current = m.recordings.find((r) => r.id === record.id);
-          return !current || Math.abs(current.position - position) < 0.02
-            ? m
-            : {
-                ...m,
-                recordings: m.recordings.map((r) => (r.id === record.id ? { ...r, position } : r)),
-              };
-        });
-      }}
-      onDuration={(duration) =>
-        setModel((m) => {
-          const current = m.recordings.find((r) => r.id === record.id);
-          return !current || current.duration === duration
-            ? m
-            : {
-                ...m,
-                recordings: m.recordings.map((r) => (r.id === record.id ? { ...r, duration } : r)),
-              };
-        })
-      }
-      onSelect={setCid}
-      onFrame={(pinned) => updateRecording(record.id, { pinned })}
-      autoPlay={sequence && playingSequence}
-      onEnded={
-        sequence
-          ? () => {
-              if (!playingSequence) return;
-              const i = model.sequence.findIndex((x) => x.id === eid);
-              const next = model.sequence[i + 1];
-              if (next) {
-                updateRecording(next.rid, { position: Math.max(0, next.start - handles) });
-                setEid(next.id);
-              } else setPlayingSequence(false);
-            }
-          : undefined
-      }
-    />
-  );
+      />
+    );
   const markerEditor = (recordId: string, clip?: Clip) => (
     <MarkerEditor
       marks={(model.markers[recordId] || []).filter(
         (m) => !clip || (m.time >= clip.start && m.time < clip.end),
       )}
       terms={model.terms}
+      canAdd={!project || canEdit}
       onChange={(id, p) => editMarker(id, p, recordId)}
       onDelete={(id) => deleteMarker(id, recordId)}
       onSeek={(t) => transport.current?.seek(t)}
       onAdd={() => addMarker(recordId)}
     />
   );
-  const readyQueue = model.clips.filter((c) => c.accepted && !c.held && !c.filed);
-  const filtered = model.clips
+  const batchClips = model.clips.filter((c) => recordings.some((r) => r.id === c.rid));
+  const readyQueue = batchClips.filter((c) => c.accepted && !c.held && !c.filed);
+  const filtered = batchClips
     .filter(
       (c) =>
         reviewFilter === 'All' ||
@@ -783,7 +851,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     start: Math.max(0, e.start - handles),
     end: Math.min(model.recordings.find((r) => r.id === e.rid)?.duration || e.end, e.end + handles),
   });
-  const currentTarget = model.targets.find((t) => t.id === target) || model.targets[0];
+  const currentTarget = model.targets.find((t) => t.id === target) ||
+    model.targets[0] || { id: '', name: '', duration: 0, items: [] };
   const seen = new Set(
     (newTarget ? [] : currentTarget.items).map(
       (e) => `${e.rid}:${e.start.toFixed(3)}:${e.end.toFixed(3)}`,
@@ -835,15 +904,38 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           <strong>Virtual Cut</strong>
         </div>
         <h1>{pages.find((p) => p.id === page)!.label}</h1>
-        <Button onClick={chooseProject}>
+        <Button onClick={() => setProjectsOpen(true)} aria-label="Projects">
           <FolderOpen size={17} />
-          {project?.name || 'Fortune’s Weave · sample'}
+          {project?.project.name || 'Fortune’s Weave · sample'}
           <ChevronDown size={13} />
         </Button>
         <div className={s.headerActions}>
-          <span className={s.badge}>UI preview</span>
-          <Button onClick={openVideo} disabled={opening}>
-            {opening ? 'Opening…' : 'Open video'}
+          <span
+            className={project ? s.saveIndicator : s.badge}
+            role={project ? 'status' : undefined}
+          >
+            {project ? workspace.saveState : 'UI preview'}
+          </span>
+          {project && (
+            <>
+              <Button
+                disabled={workspace.busy || (!project.canUndo && workspace.saveState !== 'Saving…')}
+                onClick={() => void history('undo')}
+                title="Undo (Ctrl+Z)"
+              >
+                Undo
+              </Button>
+              <Button
+                disabled={workspace.busy || !project.canRedo}
+                onClick={() => void history('redo')}
+                title="Redo (Ctrl+Shift+Z)"
+              >
+                Redo
+              </Button>
+            </>
+          )}
+          <Button onClick={openVideo} disabled={opening || workspace.busy}>
+            {opening ? 'Opening…' : project ? 'Import' : 'Open video'}
           </Button>
           <Button onClick={fullscreen} aria-label="Fullscreen (F11)">
             <Maximize size={16} />
@@ -867,29 +959,41 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       </header>
       <div className={s.workspace}>
         <main id="workspace" className={s.page} data-page={page}>
-          {page !== 'library' && (
+          {(project || page !== 'library') && (
             <div className={s.toolbar}>
-              <span className={s.batch}>
-                <Layers size={17} /> {r.sample ? 'Full-resolution demo' : 'Local preview'}
-              </span>
-              <span className={s.muted}>
-                {page === 'review'
-                  ? 'User Review'
-                  : page === 'selects'
-                    ? 'Sequence plan'
-                    : r.sample
-                      ? 'Six original-resolution videos · local edits'
-                      : 'Session draft'}
-              </span>
+              {project ? (
+                <BatchTools workspace={workspace} />
+              ) : (
+                <>
+                  <span className={s.batch}>
+                    <Layers size={17} /> {r.sample ? 'Full-resolution demo' : 'Local preview'}
+                  </span>
+                  <span className={s.muted}>
+                    {page === 'review'
+                      ? 'User Review'
+                      : page === 'selects'
+                        ? 'Sequence plan'
+                        : r.sample
+                          ? 'Six original-resolution videos · local edits'
+                          : 'Session draft'}
+                  </span>
+                </>
+              )}
               <span className={s.spacer} />
               {page === 'cut' && (
-                <Button primary onClick={() => setDialog('export')}>
+                <Button
+                  primary
+                  disabled={!!project}
+                  title={project ? 'Clip export and filing arrive in Milestone 2' : undefined}
+                  onClick={() => setDialog('export')}
+                >
                   Export {clips.length} clips
                 </Button>
               )}
               {page === 'selects' && (
                 <Button
                   primary
+                  disabled={!!project}
                   onClick={() => {
                     setPlayingSequence(false);
                     transport.current?.command('k');
@@ -901,7 +1005,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               )}
             </div>
           )}
-          {page === 'cut' && (
+          {project && !recordings.length && (
+            <div className={s.empty}>
+              <h2>Bring recordings into this batch</h2>
+              <p>Use Import files or Import folder above. Your project saves automatically.</p>
+            </div>
+          )}
+          {page === 'cut' && !!r.id && (
             <div className={`${s.cut} ${thumbs ? s.cutThumbs : ''}`}>
               <aside className={s.rail}>
                 <div className={s.tools}>
@@ -910,7 +1020,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     {thumbs ? <ImageOff size={16} /> : <Image size={16} />}
                   </Button>
                 </div>
-                {model.recordings.map((x) => (
+                {recordings.map((x) => (
                   <button
                     data-recording={x.id}
                     className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
@@ -930,16 +1040,46 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               <div className={s.cutCenter}>
                 {player(r)}
                 <div className={s.tools}>
-                  <Button onClick={() => trim('start')} disabled={!c}>
+                  <Button
+                    onClick={() => trim('start')}
+                    disabled={!c || !canEdit}
+                    title={
+                      !canEdit
+                        ? 'Wait for playable footage'
+                        : !c
+                          ? 'Select a clip first'
+                          : 'Set selected clip in point (Q)'
+                    }
+                  >
                     Q · In
                   </Button>
-                  <Button onClick={() => trim('end')} disabled={!c}>
+                  <Button
+                    onClick={() => trim('end')}
+                    disabled={!c || !canEdit}
+                    title={
+                      !canEdit
+                        ? 'Wait for playable footage'
+                        : !c
+                          ? 'Select a clip first'
+                          : 'Set selected clip out point (W)'
+                    }
+                  >
                     W · Out
                   </Button>
-                  <Button onClick={split} disabled={!c}>
+                  <Button
+                    onClick={split}
+                    disabled={!c || !canEdit}
+                    title={
+                      !canEdit
+                        ? 'Wait for playable footage'
+                        : !c
+                          ? 'Select a clip first'
+                          : 'Split the selected clip (S)'
+                    }
+                  >
                     S · Split
                   </Button>
-                  <Button onClick={addClip} disabled={!r.duration}>
+                  <Button onClick={addClip} disabled={!r.duration || !canEdit}>
                     <Plus size={15} /> Clip
                   </Button>
                   <label className={s.followToggle}>
@@ -1038,6 +1178,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </div>
                 ))}
                 {!clips.length && <p className={s.muted}>Choose + Clip to begin a draft.</p>}
+                <RecordingTools
+                  recording={r}
+                  workspace={workspace}
+                  onChange={(patch) => updateRecording(r.id, patch)}
+                />
                 {markerEditor(r.id)}
                 <Field label="Capture intent">
                   <textarea
@@ -1048,7 +1193,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               </aside>
             </div>
           )}
-          {page === 'media' && (
+          {page === 'media' && !!r.id && (
             <div className={s.media}>
               <aside className={s.rail}>
                 <h3>Media pool</h3>
@@ -1077,7 +1222,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </Button>
                   </div>
                   <div className={mediaList ? s.mediaList : s.mediaGrid}>
-                    {model.recordings
+                    {recordings
                       .filter(
                         (x) =>
                           !folderFilter ||
@@ -1094,7 +1239,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                           <Thumbnail src={x.pinned || x.poster} alt={x.title} />
                           <strong>{x.title}</strong>
                           <span>
-                            {short(x.duration)} · {x.sample ? 'Sample' : 'Session video'}
+                            {short(x.duration)} ·{' '}
+                            {x.sample ? 'Sample' : x.availability || 'Session video'}
                           </span>
                         </button>
                       ))}
@@ -1102,6 +1248,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </div>
                 <div className={s.mediaPreview}>
                   {player(r)}
+                  <RecordingTools
+                    recording={r}
+                    workspace={workspace}
+                    onChange={(patch) => updateRecording(r.id, patch)}
+                  />
                   <details className={s.mediaContext}>
                     <summary>Recording context</summary>
                     <textarea
@@ -1112,12 +1263,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     <Button primary onClick={() => go('cut')}>
                       Open in Cut
                     </Button>
-                    <p className={s.muted}>
-                      {r.fullResolution
-                        ? 'Original-resolution demo copy. Default audio track is used.'
-                        : 'Default audio track is used.'}{' '}
-                      Track selection and transcription come later.
-                    </p>
+                    {!project && (
+                      <p className={s.muted}>
+                        {r.fullResolution
+                          ? 'Original-resolution demo copy. Default audio track is used.'
+                          : 'Default audio track is used.'}{' '}
+                        Track selection and transcription come later.
+                      </p>
+                    )}
                   </details>
                 </div>
               </div>
@@ -1140,8 +1293,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       {f === 'Queue'
                         ? readyQueue.length
                         : f === 'All'
-                          ? model.clips.length
-                          : model.clips.filter((c) =>
+                          ? batchClips.length
+                          : batchClips.filter((c) =>
                               f === 'Remaining'
                                 ? (!c.accepted || c.held) && !c.filed
                                 : f === 'Held'
@@ -1333,7 +1486,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   {readyQueue.length} accepted and ready · preview plan
                 </span>
                 <span className={s.spacer} />
-                <Button primary onClick={() => setDialog('file')}>
+                <Button
+                  primary
+                  disabled={!!project}
+                  title={project ? 'Filing arrives in Milestone 2' : undefined}
+                  onClick={() => setDialog('file')}
+                >
                   File queue · {readyQueue.length}
                 </Button>
               </div>
@@ -1341,6 +1499,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           )}
           <div className={s.library} style={{ display: page === 'library' ? 'flex' : 'none' }}>
             <Library
+              sample={!project}
               model={model}
               setModel={setModel}
               onOpen={(rid, time) => {
@@ -1583,12 +1742,20 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 <Field label="Workspace notes">
                   <textarea
                     className={s.scratchpad}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    value={project ? model.scratchpad || '' : notes}
+                    onChange={(e) =>
+                      project
+                        ? setModel((m) => ({ ...m, scratchpad: e.target.value }))
+                        : setNotes(e.target.value)
+                    }
                   />
                 </Field>
-                <p className={s.muted}>Saved on this device · shared across workspaces</p>
-                <h3>Linked sample notes</h3>
+                <p className={s.muted}>
+                  {project
+                    ? 'Saved with this project'
+                    : 'Saved on this device · shared across sample workspaces'}
+                </p>
+                <h3>Linked notes</h3>
                 {model.notes.map((n) => (
                   <div key={n.id} className={s.clipTile}>
                     <strong>{n.title}</strong>
@@ -1635,6 +1802,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           </aside>
         )}
       </div>
+      {(workspace.error || project?.warning) && (
+        <div className={s.notice} role="alert">
+          {workspace.error || project?.warning}
+          {workspace.error && (
+            <Button onClick={() => void workspace.flush().catch(() => {})}>Retry saving</Button>
+          )}
+        </div>
+      )}
+      {workspace.busy && (
+        <div className={s.busyOverlay} role="status">
+          Working…
+        </div>
+      )}
+      {projectsOpen && (
+        <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
+      )}
       {notice && (
         <div className={s.notice} role="status">
           <span>{notice}</span>
@@ -1644,7 +1827,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       )}
       <footer className={s.footer}>
-        <span className={s.muted}>Workflow preview</span>
+        <span className={s.muted}>{project ? 'Project workspace · M1' : 'Workflow preview'}</span>
         <nav aria-label="Workspace pages">
           {pages.map((p) => (
             <button
@@ -1699,8 +1882,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 Sample edits are saved locally. Local-video drafts last for this session. No
                 original footage, Resolve timeline, or Notion page is changed.
               </p>
-              <Button onClick={() => setDialog('reset')}>Reset sample changes</Button>
-              <Button onClick={onFoundation}>Open previous foundation layouts</Button>
+              {!project && (
+                <>
+                  <Button onClick={() => setDialog('reset')}>Reset sample changes</Button>
+                  <Button onClick={onFoundation}>Open previous foundation layouts</Button>
+                </>
+              )}
             </>
           )}
           {dialog === 'reset' && (

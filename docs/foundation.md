@@ -1,6 +1,6 @@
 # Desktop foundation
 
-The original foundation is preserved behind **Preview options → Open previous foundation layouts**. The default app now uses the [desktop workflow preview](workflow-preview.md), with page-specific layouts and shared sample interactions. The foundation details below describe the earlier layouts and native playback boundary.
+The original foundation is preserved behind **Preview options → Open previous foundation layouts** in sample mode. The default app now supports the [Milestone 1 project workspace](milestone-1.md) as well as the separate [desktop workflow preview](workflow-preview.md). The foundation details below describe the earlier layouts and native playback boundary, not the current project feature set.
 
 ## What works
 

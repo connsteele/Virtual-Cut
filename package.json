@@ -1,7 +1,7 @@
 {
   "name": "virtual-cut",
   "productName": "Virtual Cut",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The Virtual Cut footage workspace.",
   "type": "module",
@@ -17,6 +17,8 @@
     "test:smoke": "node scripts/smoke.mjs",
     "test:workflow": "node scripts/workflow-smoke.mjs",
     "test:media": "node --test scripts/media.test.mjs",
+    "test:project": "node scripts/project-checks.mjs",
+    "test:long": "node scripts/project-long-checks.mjs",
     "package:win": "node scripts/package-windows.mjs",
     "lint": "eslint .",
     "format": "prettier --write src electron scripts *.json *.ts *.mjs *.html *.md docs/foundation.md docs/layout-concepts.md",

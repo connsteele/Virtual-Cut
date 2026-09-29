@@ -1,5 +1,6 @@
 import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { require, root, runNode } from './shared.mjs';
 import { brandWindowsExecutable } from './brand-windows-executable.mjs';
@@ -41,6 +42,22 @@ await cp(path.join(root, 'dist'), path.join(appDirectory, 'dist'), { recursive: 
 await cp(path.join(root, 'dist-electron'), path.join(appDirectory, 'dist-electron'), {
   recursive: true,
 });
+const toolDirectory = path.join(destination, 'resources', 'tools');
+await mkdir(toolDirectory, { recursive: true });
+const versions = [];
+for (const name of ['ffmpeg', 'ffprobe']) {
+  const override = process.env[name === 'ffmpeg' ? 'VIRTUAL_CUT_FFMPEG' : 'VIRTUAL_CUT_FFPROBE'];
+  const executable =
+    override ||
+    execFileSync('where.exe', [name], { encoding: 'utf8', windowsHide: true })
+      .trim()
+      .split(/\r?\n/)[0];
+  await cp(executable, path.join(toolDirectory, name + '.exe'));
+  versions.push(execFileSync(executable, ['-version'], { encoding: 'utf8', windowsHide: true }));
+  const license = path.resolve(path.dirname(executable), '..', 'LICENSE.txt');
+  if (existsSync(license)) await cp(license, path.join(toolDirectory, 'FFmpeg-LICENSE.txt'));
+}
+await writeFile(path.join(toolDirectory, 'BUILD-INFO.txt'), versions.join('\r\n'));
 await writeFile(
   path.join(appDirectory, 'package.json'),
   JSON.stringify(
@@ -57,6 +74,6 @@ await writeFile(
 );
 await writeFile(
   path.join(destination, 'READ-ME.txt'),
-  'Virtual Cut workflow preview\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nF11 toggles fullscreen. Explore Media, Cut, Review, Library, and Selects.\r\nUse Open video for one completed recording and session-only drafts.\r\nFull-resolution demo videos use the G: folder configured in resources/app/demo-media.local.json. Keep that folder available.\r\nSample edits are saved locally; Preview options can reset them.\r\nExport, filing, Resolve handoff, Notion sync, and agent actions are previews.\r\nNo original footage is changed.\r\nThis is a local, unsigned preview build; installer, signing, and updates come later.\r\n',
+  'Virtual Cut - Milestone 1 test build\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nProjects (beside the page name) creates or opens a .vcut project. Choose a finished-clip destination and a separate preview cache.\r\nImport files or a folder into a named batch. Media jobs can be cancelled or retried from Jobs.\r\nCut edits and project notes save automatically. Undo/Redo works across reopening. Sources remain unchanged.\r\nSource & audio selects Game/Mic roles. Game preview audio is prepared on intake; use Prepare selected audio after changing roles.\r\nQ/W set in/out points; S splits the selected clip; M adds a marker. J/K/L controls playback; Ctrl+Shift+Up/Down changes recordings. F11 toggles fullscreen.\r\nExport, physical filing, Resolve handoff, transcription, and agents are later milestones.\r\nThe separate sample workspace keeps its earlier prototype actions.\r\nFFmpeg and FFprobe are included in resources/tools for this local test build.\r\nThis is an unsigned local build; installer, signing, and updates come later.\r\n',
 );
 console.log(`Desktop folder ready: ${destination}`);

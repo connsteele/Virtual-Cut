@@ -9,11 +9,13 @@ export function Library({
   setModel,
   onOpen,
   onSelect,
+  sample = true,
 }: {
   model: Model;
   setModel: Dispatch<SetStateAction<Model>>;
   onOpen: (rid: string, time: number) => void;
   onSelect: (cid: string) => void;
+  sample?: boolean;
 }) {
   const [mode, setMode] = useState('Connections'),
     [view, setView] = useState('Graph'),
@@ -57,13 +59,13 @@ export function Library({
           })),
         ),
         ...m.notes.map((n) => ({ id: n.id, name: n.title, kind: 'Note', group: 'Notes' })),
-        ...references.map((r) => ({
+        ...(sample ? references : []).map((r) => ({
           ...r,
           kind: 'Footage reference',
           group: 'Footage/' + r.path.split('/').slice(0, -1).join('/'),
         })),
       ] as Node[],
-    [m],
+    [m, sample],
   );
   const edges = useMemo(
     () =>
@@ -83,7 +85,14 @@ export function Library({
       ].filter((e) => nodes.some((n) => n.id === e.from) && nodes.some((n) => n.id === e.to)),
     [m, nodes],
   );
-  const current = nodes.find((n) => n.id === focus) || nodes[0],
+  const current = nodes.find((n) => n.id === focus) ||
+      nodes[0] || {
+        id: '',
+        name: 'No connections yet',
+        kind: 'Project',
+        group: 'Project',
+        image: '',
+      },
     entry = m.terms.find((t) => t.id === current?.id);
   const matches = (n: Node) =>
     [n.name, m.terms.find((t) => t.id === n.id)?.aliases || '']

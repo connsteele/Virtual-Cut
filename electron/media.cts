@@ -10,8 +10,10 @@ const types: Record<string, string> = {
   '.mov': 'video/quicktime',
   '.mkv': 'video/x-matroska',
   '.webm': 'video/webm',
+  '.m4a': 'audio/mp4',
+  '.jpg': 'image/jpeg',
 };
-export const videoExtensions = Object.keys(types).map((extension) => extension.slice(1));
+export const videoExtensions = ['mp4', 'm4v', 'mov', 'mkv', 'webm'];
 
 /** Only trusted native code grants a selected video or a confined bundled asset. */
 export class VideoAccess {

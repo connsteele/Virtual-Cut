@@ -1240,3 +1240,51 @@
     flex-wrap: wrap;
   }
 }
+.projectInfo dl {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+}
+.projectInfo dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.jobList {
+  display: grid;
+  gap: 10px;
+  max-height: 55vh;
+  overflow: auto;
+}
+.recordingTools {
+  margin-block: 12px;
+  padding: 10px;
+  border: 1px solid #30433e;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.recordingTools summary {
+  cursor: pointer;
+}
+.recordingTools .tools {
+  flex-wrap: wrap;
+}
+.pathText {
+  overflow-wrap: anywhere;
+  color: #abbab6;
+}
+.busyOverlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #07110ba6;
+  z-index: 10000;
+  font-size: 20px;
+  cursor: progress;
+}
+.saveIndicator {
+  color: #9eb8b2;
+  font-size: 11px;
+  white-space: nowrap;
+}
