@@ -113,7 +113,7 @@ export function Library({
     setQuery('');
   }
   const nodeButton = (n: Node) => (
-    <button key={n.id} className={s.nodeButton} onClick={() => choose(n.id)}>
+    <button key={n.id} data-navigate-item className={s.nodeButton} onClick={() => choose(n.id)}>
       <span>{n.kind}</span>
       <strong>{n.name}</strong>
     </button>

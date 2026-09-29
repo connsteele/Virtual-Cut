@@ -61,6 +61,8 @@ export interface Recording {
   gameTrack?: number | null;
   micTrack?: number | null;
   monitor?: 'game' | 'mic' | 'both';
+  importAudio?: { game: number | null; mic: number | null };
+  audioWarning?: string;
 }
 export interface AudioTrack {
   index: number;
@@ -71,6 +73,7 @@ export interface AudioTrack {
   offset: number;
   duration?: number;
   previewUrl?: string;
+  waveform?: { peaks: number[]; duration: number };
 }
 export interface Term {
   id: string;

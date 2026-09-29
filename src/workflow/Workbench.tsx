@@ -22,7 +22,7 @@ import {
 import { Brand } from '../components/Brand';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
-import { ProjectPanel, BatchTools, RecordingTools } from './ProjectPanel';
+import { ProjectPanel, BatchTools, RecordingTools, ImportPanel, SaveHistory } from './ProjectPanel';
 import {
   colors,
   initialModel,
@@ -51,6 +51,10 @@ function MarkerEditor({
   onAdd,
   terms,
   canAdd = true,
+  selectedId,
+  onSelect,
+  confirm,
+  onConfirm,
 }: {
   marks: Marker[];
   onChange: (id: string, patch: Partial<Marker>) => void;
@@ -59,8 +63,11 @@ function MarkerEditor({
   onAdd: () => void;
   terms: Model['terms'];
   canAdd?: boolean;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  confirm: string;
+  onConfirm: (id: string) => void;
 }) {
-  const [confirm, setConfirm] = useState('');
   const confirmation = useRef<HTMLDivElement>(null);
   useEffect(() => {
     confirmation.current?.scrollIntoView({
@@ -72,19 +79,36 @@ function MarkerEditor({
     <section className={s.markerEditor}>
       <h3>Markers</h3>
       {marks.map((m) => (
-        <div className={s.markerRow} key={m.id}>
+        <div
+          className={`${s.markerRow} ${s.markerCard} ${selectedId === m.id ? s.selected : ''}`}
+          key={m.id}
+          data-marker-card={m.id}
+          data-selected={selectedId === m.id}
+          tabIndex={0}
+          onClick={() => onSelect(m.id)}
+          onFocus={() => onSelect(m.id)}
+          onKeyDown={(e) => {
+            if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              onSelect(m.id);
+            }
+          }}
+        >
           <div className={s.tools}>
             <button
               className={s.markerLabel}
               style={{ color: colors[m.category] }}
-              onClick={() => onSeek(m.time)}
+              onClick={() => {
+                onSelect(m.id);
+                onSeek(m.time);
+              }}
             >
               ◆{' '}
               <span>
                 {m.category} · {time(m.time)}
               </span>
             </button>
-            <Button aria-label={`Delete marker: ${m.name}`} onClick={() => setConfirm(m.id)}>
+            <Button aria-label={`Delete marker: ${m.name}`} onClick={() => onConfirm(m.id)}>
               <Trash2 size={15} />
             </Button>
           </div>
@@ -123,17 +147,17 @@ function MarkerEditor({
             </select>
           </div>
           {confirm === m.id && (
-            <div ref={confirmation} className={s.confirm} role="alert">
+            <div ref={confirmation} className={s.confirm} role="alert" data-delete-confirm>
               <span>Delete this marker?</span>
               <Button
                 onClick={() => {
                   onDelete(m.id);
-                  setConfirm('');
+                  onConfirm('');
                 }}
               >
                 Delete
               </Button>
-              <Button onClick={() => setConfirm('')}>Cancel</Button>
+              <Button onClick={() => onConfirm('')}>Cancel</Button>
             </div>
           )}
         </div>
@@ -364,6 +388,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const workspace = useProjectWorkspace();
   const { model, setModel, snapshot: project } = workspace;
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [importing, setImporting] = useState(false),
+    [savesOpen, setSavesOpen] = useState(false),
+    [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [page, setPage] = useState<PageId>('cut'),
     [rid, setRid] = useState('r1'),
@@ -377,6 +404,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       () => localStorage.getItem('virtual-cut.marker-legend') !== 'false',
     ),
     [deleteClipId, setDeleteClipId] = useState(''),
+    [mid, setMid] = useState(''),
+    [deleteMarkerId, setDeleteMarkerId] = useState(''),
     [drawer, setDrawer] = useState(''),
     [agent, setAgent] = useState('Copilot'),
     [notice, setNotice] = useState(''),
@@ -406,6 +435,47 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     });
   const transport = useRef<Transport>(null),
     dragging = useRef('');
+  const markerRecord = useRef(''),
+    markerSeek = useRef<number | null>(null);
+  function selectClip(id: string) {
+    setCid(id);
+    setMid('');
+    markerSeek.current = null;
+  }
+  function selectMarker(id: string, recordId = r.id) {
+    setMid(id);
+    markerRecord.current = recordId;
+    markerSeek.current = model.markers[recordId]?.find((m) => m.id === id)?.time ?? null;
+  }
+  useEffect(() => {
+    const id = mid || cid;
+    if (!id || page !== 'cut') return;
+    const selector = mid ? '[data-marker-card]' : '[data-cut-clip]';
+    const card = [...document.querySelectorAll<HTMLElement>(selector)].find(
+      (el) => (mid ? el.dataset.markerCard : el.dataset.cutClip) === id,
+    );
+    const container = card?.closest<HTMLElement>('aside');
+    if (
+      !card ||
+      !container ||
+      (container.contains(document.activeElement) &&
+        document.activeElement?.matches('input,textarea,select'))
+    )
+      return;
+    const rect = card.getBoundingClientRect(),
+      area = container.getBoundingClientRect();
+    if (rect.top < area.top || rect.bottom > area.bottom)
+      card.scrollIntoView({
+        block: 'center',
+        behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'instant' : 'smooth',
+      });
+  }, [cid, mid, page]);
+  useEffect(() => {
+    if (!deleteClipId && !deleteMarkerId) return;
+    document
+      .querySelector<HTMLElement>('[data-delete-confirm] button')
+      ?.focus({ preventScroll: true });
+  }, [deleteClipId, deleteMarkerId]);
   useEffect(() => {
     const pause = () => transport.current?.command('k');
     window.addEventListener('virtual-cut-pause-workspace', pause);
@@ -434,7 +504,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       context: '',
     } as Recording);
   const clips = model.clips.filter((c) => c.rid === r.id),
-    c = clips.find((c) => c.id === cid);
+    c = mid ? undefined : clips.find((c) => c.id === cid);
   const e = model.sequence.find((e) => e.id === eid) || model.sequence[0];
   useEffect(() => {
     try {
@@ -457,13 +527,19 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setChecked([]);
     setFolderFilter('');
     setCid('');
+    setMid('');
+    setDeleteClipId('');
+    setDeleteMarkerId('');
     setPlayingSequence(false);
     setPool([]);
   }, [projectKey, batchKey]);
   async function history(direction: 'undo' | 'redo') {
     if (!project) return;
     transport.current?.command('k');
-    await workspace.run(() => window.virtualCut!.project.history(project.project.id, direction));
+    await workspace.run(
+      () => window.virtualCut!.project.history(project.project.id, direction),
+      true,
+    );
   }
   function inspectReview(clip: Clip, field = '') {
     transport.current?.command('k');
@@ -522,10 +598,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       clips: m.clips.map((c) => (c.rid === recordId ? invalidate(c) : c)),
       links: m.links.filter((l) => l.from !== id && l.to !== id),
     }));
+    if (mid === id) setMid('');
+    setDeleteMarkerId('');
   }
   function addMarker(recordId = r.id) {
     if (project && !canEdit) return;
-    const position = transport.current?.current() || 0;
+    const position = transport.current?.current() || 0,
+      id = uid();
     setModel((m) => ({
       ...m,
       markers: {
@@ -533,7 +612,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         [recordId]: [
           ...(m.markers[recordId] || []),
           {
-            id: uid(),
+            id,
             time: position,
             name: 'New marker',
             category: 'Context' as const,
@@ -543,10 +622,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       },
       clips: m.clips.map((c) => (c.rid === recordId ? invalidate(c) : c)),
     }));
+    setMid(id);
+    markerRecord.current = recordId;
+    markerSeek.current = position;
   }
   function selectRecord(id: string) {
     transport.current?.command('k');
     setRid(id);
+    setMid('');
+    setDeleteClipId('');
+    setDeleteMarkerId('');
+    markerSeek.current = null;
     setModel((m) => ({ ...m, selectedRecordingId: id }));
     const position = model.recordings.find((r) => r.id === id)?.position || 0;
     setCid(
@@ -576,7 +662,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         },
       ],
     }));
-    setCid(id);
+    selectClip(id);
   }
   function trim(edge: 'start' | 'end') {
     if (!canEdit) return;
@@ -609,7 +695,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           : [c],
       ),
     }));
-    setCid(id);
+    selectClip(id);
   }
   function addSelect(id: string) {
     const c = model.clips.find((c) => c.id === id);
@@ -641,25 +727,65 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         void fullscreen();
         return;
       }
-      if (
-        document.querySelector('dialog[open]') ||
-        (e.target as HTMLElement).closest(
-          'input:not([type=range]):not([type=checkbox]),textarea,select,[contenteditable=true]',
-        )
-      )
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void workspace.checkpoint();
         return;
+      }
+      const editing = (e.target as HTMLElement).closest(
+        'input:not([type=range]):not([type=checkbox]),textarea,select,[contenteditable=true]',
+      );
       if (
-        (page === 'cut' || page === 'media') &&
-        e.ctrlKey &&
-        e.shiftKey &&
-        ['ArrowUp', 'ArrowDown'].includes(e.key)
+        editing &&
+        e.key === 'Enter' &&
+        editing.matches('input[aria-label="Clip name"],input[aria-label="Marker name"]')
       ) {
         e.preventDefault();
+        (editing as HTMLElement).blur();
+        return;
+      }
+      if (document.querySelector('dialog[open]') || editing) return;
+      if (e.ctrlKey && !e.shiftKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        if (page === 'review') {
+          const cards = [...document.querySelectorAll<HTMLElement>('[data-card]')],
+            index = cards.findIndex((el) => el.dataset.card === expanded);
+          const card =
+            cards[
+              Math.max(0, Math.min(cards.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
+            ];
+          const clip = model.clips.find((x) => x.id === card?.dataset.card);
+          if (clip) inspectReview(clip);
+          return;
+        }
+        if (page !== 'cut' && page !== 'media') {
+          const buttons = [...document.querySelectorAll<HTMLElement>('main [data-navigate-item]')],
+            index = buttons.indexOf(document.activeElement as HTMLElement);
+          const button =
+            buttons[
+              Math.max(0, Math.min(buttons.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
+            ];
+          button?.focus();
+          button?.click();
+          button?.scrollIntoView({ block: 'nearest' });
+          return;
+        }
         if (!recordings.length) return;
-        const index = recordings.findIndex((x) => x.id === r.id);
+        const candidates =
+          page === 'media' && folderFilter
+            ? recordings.filter((x) =>
+                model.clips.some(
+                  (c) =>
+                    c.rid === x.id &&
+                    (c.folder === folderFilter || c.folder.startsWith(folderFilter + '/')),
+                ),
+              )
+            : recordings;
+        if (!candidates.length) return;
+        const index = candidates.findIndex((x) => x.id === r.id);
         selectRecord(
-          recordings[
-            Math.max(0, Math.min(recordings.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
+          candidates[
+            Math.max(0, Math.min(candidates.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
           ].id,
         );
         return;
@@ -671,6 +797,42 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
       if (e.ctrlKey || e.metaKey || e.altKey || !r.id || workspace.busy) return;
       const k = e.key.toLowerCase();
+      if (
+        (page === 'cut' || page === 'review') &&
+        (deleteClipId || deleteMarkerId) &&
+        (e.key === 'Enter' || e.key === 'Escape')
+      ) {
+        e.preventDefault();
+        if (e.key === 'Enter') {
+          if (deleteMarkerId) deleteMarker(deleteMarkerId, markerRecord.current);
+          else removeClip(deleteClipId);
+        } else {
+          setDeleteClipId('');
+          setDeleteMarkerId('');
+        }
+        return;
+      }
+      if ((page === 'cut' || page === 'review') && (k === 'r' || e.key === 'Backspace')) {
+        const card = [
+          ...document.querySelectorAll<HTMLElement>(mid ? '[data-marker-card]' : '[data-cut-clip]'),
+        ].find((el) => (mid ? el.dataset.markerCard : el.dataset.cutClip) === (mid || cid));
+        if (!card) return;
+        e.preventDefault();
+        if (k === 'r') {
+          const input = card.querySelector<HTMLInputElement>(
+            mid ? 'input[aria-label="Marker name"]' : 'input[aria-label="Clip name"]',
+          );
+          input?.focus();
+          input?.select();
+        } else if (mid) {
+          setDeleteClipId('');
+          setDeleteMarkerId(mid);
+        } else {
+          setDeleteMarkerId('');
+          setDeleteClipId(cid);
+        }
+        return;
+      }
       if (
         ['j', 'k', 'l', ' '].includes(k) &&
         !(k === ' ' && (e.target as HTMLElement).closest('button,input[type=checkbox]'))
@@ -690,9 +852,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   });
   async function openVideo() {
     if (project) {
-      await workspace.run(() =>
-        window.virtualCut!.project.import(project.project.id, project.activeBatchId, 'files'),
-      );
+      setImporting(true);
       return;
     }
     if (!window.virtualCut) {
@@ -757,11 +917,24 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       </div>
     ) : (
       <Player
-        key={record.id + (bounds ? `-${bounds.start}-${bounds.end}` : '') + (sequence ? eid : '')}
+        key={sequence ? eid : page === 'review' ? expanded : page}
         ref={transport}
         recording={record}
         bounds={bounds}
-        selectedId={cid}
+        selectedId={mid ? undefined : cid}
+        selectedMarkerId={mid}
+        onMarkerSelect={(id) => selectMarker(id, record.id)}
+        onAudioChange={(patch) => updateRecording(record.id, patch)}
+        audioStatus={
+          project?.jobs.find(
+            (j) =>
+              j.sourceId === record.id &&
+              j.kind === 'audio' &&
+              ((record.monitor !== 'mic' && j.track === record.gameTrack) ||
+                (record.monitor !== 'game' && j.track === record.micTrack)) &&
+              ['queued', 'running', 'failed', 'interrupted'].includes(j.state),
+          )?.message
+        }
         showClips={page === 'cut' || page === 'selects'}
         legend={legend}
         onLegend={() => setLegend(!legend)}
@@ -772,7 +945,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             const under =
               clips.find((x) => x.id === cid && position >= x.start && position < x.end) ||
               clips.find((x) => position >= x.start && position < x.end);
-            setCid(under?.id || '');
+            if (
+              under &&
+              (markerSeek.current == null || Math.abs(position - markerSeek.current) > 0.1)
+            ) {
+              if (under.id !== cid) setMid('');
+              setCid(under.id);
+            }
           }
           setModel((m) => {
             const current = m.recordings.find((r) => r.id === record.id);
@@ -800,7 +979,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 };
           });
         }}
-        onSelect={setCid}
+        onSelect={selectClip}
         onPlayable={setCanEdit}
         onFrame={(pinned) => updateRecording(record.id, { pinned })}
         autoPlay={sequence && playingSequence}
@@ -826,6 +1005,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       )}
       terms={model.terms}
       canAdd={!project || canEdit}
+      selectedId={mid}
+      onSelect={(id) => selectMarker(id, recordId)}
+      confirm={deleteMarkerId}
+      onConfirm={(id) => {
+        if (id) {
+          selectMarker(id, recordId);
+          setDeleteClipId('');
+        }
+        setDeleteMarkerId(id);
+      }}
       onChange={(id, p) => editMarker(id, p, recordId)}
       onDelete={(id) => deleteMarker(id, recordId)}
       onSeek={(t) => transport.current?.seek(t)}
@@ -918,6 +1107,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           </span>
           {project && (
             <>
+              <Button
+                disabled={workspace.busy}
+                onClick={() => void workspace.checkpoint()}
+                title="Save a manual checkpoint (Ctrl+S)"
+              >
+                Save
+              </Button>
+              <Button disabled={workspace.busy} onClick={() => setSavesOpen(true)}>
+                Save history
+              </Button>
               <Button
                 disabled={workspace.busy || (!project.canUndo && workspace.saveState !== 'Saving…')}
                 onClick={() => void history('undo')}
@@ -1035,7 +1234,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </span>
                   </button>
                 ))}
-                <p className={s.muted}>Ctrl ⇧ ↑ / ↓ · Batch</p>
+                <p className={s.muted}>Ctrl ↑ / ↓ · Batch</p>
               </aside>
               <div className={s.cutCenter}>
                 {player(r)}
@@ -1090,7 +1289,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         setFollow(e.target.checked);
                         if (e.target.checked) {
                           const t = transport.current?.current() || 0;
-                          setCid(clips.find((x) => t >= x.start && t < x.end)?.id || '');
+                          const under = clips.find((x) => t >= x.start && t < x.end);
+                          if (under) selectClip(under.id);
                         }
                       }}
                     />
@@ -1106,32 +1306,46 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 <h3>Clips</h3>
                 {clips.map((x) => (
                   <div
-                    className={`${s.clipTile} ${x.id === c?.id ? s.selected : ''}`}
+                    className={`${s.clipTile} ${x.id === c?.id && !mid ? s.selected : ''}`}
                     key={x.id}
                     data-cut-clip={x.id}
-                    data-selected={x.id === c?.id}
+                    data-selected={x.id === c?.id && !mid}
+                    tabIndex={0}
+                    aria-label={`Select clip card: ${x.name}`}
+                    onClick={(event) => {
+                      if ((event.target as HTMLElement).closest('button,input,select,textarea'))
+                        return;
+                      if (follow) transport.current?.seek(x.start);
+                      selectClip(x.id);
+                    }}
+                    onFocus={() => selectClip(x.id)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.target === event.currentTarget &&
+                        ['Enter', ' '].includes(event.key)
+                      ) {
+                        event.preventDefault();
+                        selectClip(x.id);
+                      }
+                    }}
                   >
                     <div className={s.tools}>
-                      <Button
-                        aria-pressed={x.id === c?.id}
-                        aria-label={`Select clip card: ${x.name}`}
-                        onClick={() => {
-                          if (follow) transport.current?.seek(x.start);
-                          setCid(x.id);
-                        }}
-                      >
+                      <span className={s.tools}>
                         <i
                           className={s.clipSwatch}
                           style={{ background: clipColor(x.id) }}
                           aria-hidden="true"
                         />
-                        {String(clips.indexOf(x) + 1).padStart(2, '0')} ·{' '}
-                        {x.id === c?.id ? 'Selected' : 'Select'}
-                      </Button>
+                        {String(clips.indexOf(x) + 1).padStart(2, '0')}
+                      </span>
                       <span className={s.spacer} />
                       <Button
                         aria-label={`Delete clip: ${x.name}`}
-                        onClick={() => setDeleteClipId(x.id)}
+                        onClick={() => {
+                          selectClip(x.id);
+                          setDeleteMarkerId('');
+                          setDeleteClipId(x.id);
+                        }}
                       >
                         <Trash2 size={15} />
                       </Button>
@@ -1140,11 +1354,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       className={s.clipName}
                       aria-label="Clip name"
                       value={x.name}
-                      onFocus={() => setCid(x.id)}
+                      onFocus={() => selectClip(x.id)}
                       onChange={(e) => updateClip(x.id, { name: e.target.value })}
                     />
                     {deleteClipId === x.id && (
-                      <div className={s.confirm} role="alert">
+                      <div className={s.confirm} role="alert" data-delete-confirm>
                         <span>Delete this clip? Source footage and markers stay available.</span>
                         <Button onClick={() => removeClip(x.id)}>Delete clip</Button>
                         <Button onClick={() => setDeleteClipId('')}>Cancel</Button>
@@ -1178,11 +1392,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </div>
                 ))}
                 {!clips.length && <p className={s.muted}>Choose + Clip to begin a draft.</p>}
-                <RecordingTools
-                  recording={r}
-                  workspace={workspace}
-                  onChange={(patch) => updateRecording(r.id, patch)}
-                />
                 {markerEditor(r.id)}
                 <Field label="Capture intent">
                   <textarea
@@ -1190,6 +1399,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     onChange={(e) => updateRecording(r.id, { context: e.target.value })}
                   />
                 </Field>
+                <RecordingTools
+                  recording={r}
+                  workspace={workspace}
+                  onChange={(patch) => updateRecording(r.id, patch)}
+                />
               </aside>
             </div>
           )}
@@ -1388,6 +1602,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   )}
                                 </Button>
                                 <Button
+                                  className={clip.accepted ? s.acceptedButton : undefined}
+                                  aria-pressed={Boolean(clip.accepted)}
                                   onClick={() =>
                                     updateClip(
                                       clip.id,
@@ -1810,10 +2026,49 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           )}
         </div>
       )}
-      {workspace.busy && (
+      {workspace.busy && !workspace.quiet && (
         <div className={s.busyOverlay} role="status">
           Working…
         </div>
+      )}
+      {importing && project && (
+        <ImportPanel workspace={workspace} kind="files" onClose={() => setImporting(false)} />
+      )}
+      {savesOpen && project && (
+        <SaveHistory workspace={workspace} onClose={() => setSavesOpen(false)} />
+      )}
+      {shortcutsOpen && (
+        <Modal title="Keyboard shortcuts" onClose={() => setShortcutsOpen(false)}>
+          <table className={s.shortcutTable}>
+            <tbody>
+              {[
+                ['Ctrl+S', 'Manual save checkpoint'],
+                ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / Redo'],
+                ['Ctrl+↑ / Ctrl+↓', 'Previous / next item in the current page'],
+                ['J / K / L', 'Reverse scan / pause / play (press again for faster playback)'],
+                ['Space', 'Play / pause'],
+                ['Q / W', 'Selected clip in / out at the playhead'],
+                ['S', 'Split selected clip'],
+                ['M', 'Create and select marker'],
+                ['R', 'Rename selected clip or marker (selects its name)'],
+                ['Backspace', 'Request deletion of selected clip or marker'],
+                ['Enter / Escape', 'Confirm / cancel deletion'],
+                ['← / →', 'Step a frame when the timeline is focused'],
+                ['Shift+← / Shift+→', 'Seek one second when the timeline is focused'],
+                ['F11', 'Fullscreen'],
+              ].map(([key, description]) => (
+                <tr key={key}>
+                  <th>{key}</th>
+                  <td>{description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>
+            Editing shortcuts leave typing fields alone. Enter finishes a name edit. With
+            selection-follow off, click a clip card or its timeline bar to select it.
+          </p>
+        </Modal>
       )}
       {projectsOpen && (
         <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
@@ -1840,7 +2095,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             </button>
           ))}
         </nav>
-        <span className={s.muted}>F11 · Fullscreen</span>
+        <div className={s.tools}>
+          <Button onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</Button>
+          <span className={s.muted}>F11 · Fullscreen</span>
+        </div>
       </footer>
       {folderIds.length > 0 && (
         <FolderPicker

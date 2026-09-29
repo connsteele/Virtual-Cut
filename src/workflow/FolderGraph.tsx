@@ -117,6 +117,7 @@ export function FolderGraph({
     );
   const card = (n: GraphNode) => (
     <button
+      data-navigate-item
       key={n.id}
       className={s.node}
       data-graph-node={n.id}

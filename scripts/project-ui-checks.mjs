@@ -86,6 +86,7 @@ try {
   await create('Milestone 1 UI', projectFile);
   await nativePick(fixture.source);
   await page.getByRole('button', { name: 'Import files', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose files…', exact: true }).click();
   await expect
     .poll(
       async () => {
@@ -137,13 +138,12 @@ try {
   const tracks = p.model.recordings[0].audioTracks;
   await page.getByLabel('mic audio track', { exact: true }).selectOption(String(tracks[1].index));
   await saved();
-  await page.getByRole('button', { name: 'Prepare selected audio', exact: true }).click();
   await expect
     .poll(async () => (await current()).jobs.every((j) => j.state === 'succeeded'), {
       timeout: 60000,
     })
     .toBe(true);
-  await page.getByRole('button', { name: 'Both', exact: true }).click();
+  await page.getByRole('button', { name: 'Combined', exact: true }).click();
   await saved();
   await expect(page.locator('audio')).toHaveCount(2);
   await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();

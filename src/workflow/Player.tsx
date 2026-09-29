@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import {
   Camera,
   ChevronsLeft,
@@ -35,6 +35,10 @@ export function Player({
   onDuration,
   onPlayable,
   onSelect,
+  selectedMarkerId,
+  onMarkerSelect,
+  onAudioChange,
+  audioStatus,
   onFrame,
   onEnded,
   autoPlay = false,
@@ -52,6 +56,10 @@ export function Player({
   onDuration?: (duration: number) => void;
   onPlayable?: (ready: boolean) => void;
   onSelect?: (id: string) => void;
+  selectedMarkerId?: string;
+  onMarkerSelect?: (id: string) => void;
+  onAudioChange?: (patch: Partial<Recording>) => void;
+  audioStatus?: string;
   onFrame?: (url: string) => void;
   onEnded?: () => void;
   autoPlay?: boolean;
@@ -70,7 +78,57 @@ export function Player({
     [snapshot, setSnapshot] = useState(''),
     [snapshotThumbnail, setSnapshotThumbnail] = useState(''),
     [fit, setFit] = useState<number>(),
-    [volume, setVolume] = useState(0.7);
+    [volume, setVolume] = useState(1),
+    [holdFrame, setHoldFrame] = useState(''),
+    [waveMode, setWaveMode] = useState<'off' | 'overlay' | 'replace'>(() => {
+      const saved = localStorage.getItem('virtual-cut.waveforms');
+      return saved === 'overlay' || saved === 'replace' ? saved : 'off';
+    });
+  const frameCallback = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const v = video.current!;
+    // Keep the last decoded frame visible while loading the next source. Thumbnail
+    // posters belong in the browser; they must never flash through the viewer.
+    if (v.readyState >= 2) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.min(1280, v.videoWidth);
+        canvas.height = Math.round((canvas.width * v.videoHeight) / v.videoWidth);
+        canvas.getContext('2d')!.drawImage(v, 0, 0, canvas.width, canvas.height);
+        setHoldFrame(canvas.toDataURL('image/jpeg', 0.9));
+      } catch {
+        setHoldFrame('');
+      }
+    }
+    if (frameCallback.current != null) v.cancelVideoFrameCallback(frameCallback.current);
+    if (reverse.current) clearInterval(reverse.current);
+    reverse.current = null;
+    v.pause();
+    setReady(false);
+    setError('');
+    setStatus('Paused');
+    setCurrent(r.position);
+    setDuration(r.duration);
+    v.src = r.url;
+    v.load();
+    // URL grants remain stable for edits and undo, so they never reload media.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [r.url]);
+  function revealFrame() {
+    const v = video.current!;
+    if (v.seeking || v.readyState < 2) return;
+    if (frameCallback.current != null) v.cancelVideoFrameCallback(frameCallback.current);
+    frameCallback.current = v.requestVideoFrameCallback(() => {
+      setHoldFrame('');
+      frameCallback.current = null;
+    });
+    // Paused players can already have presented the sought frame before this event.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!v.seeking && v.readyState >= 2) setHoldFrame('');
+      }),
+    );
+  }
   const a = bounds?.start || 0,
     z = bounds?.end || duration;
   const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
@@ -304,8 +362,6 @@ export function Player({
         <video
           crossOrigin="anonymous"
           ref={video}
-          src={r.url}
-          poster={r.pinned || r.poster || undefined}
           playsInline
           preload="metadata"
           muted={!!r.sourcePath || (r.sample && !r.fullResolution)}
@@ -337,6 +393,8 @@ export function Player({
                 .then(() => setStatus('Sequence playback'))
                 .catch(() => {});
           }}
+          onLoadedData={revealFrame}
+          onSeeked={revealFrame}
           onError={() =>
             setError(
               r.sample
@@ -360,6 +418,15 @@ export function Player({
             callbacks.current.onEnded?.();
           }}
         />
+        {holdFrame && (
+          <img
+            className={s.transitionFrame}
+            src={holdFrame}
+            alt=""
+            style={{ maxWidth: fit }}
+            aria-hidden="true"
+          />
+        )}
       </div>
       {r.sourcePath &&
         monitored
@@ -377,11 +444,6 @@ export function Player({
               crossOrigin="anonymous"
             />
           ))}
-      {r.sourcePath && monitored.some((t) => !t.previewUrl) && (
-        <p className={s.muted}>
-          Audio preview is not ready. Use Source & audio → Prepare selected audio, then check Jobs.
-        </p>
-      )}
       {error && (
         <p className={s.error} role="alert">
           {error}
@@ -403,6 +465,10 @@ export function Player({
           seek(t);
         }}
         onSelect={onSelect}
+        selectedMarkerId={selectedMarkerId}
+        onMarkerSelect={onMarkerSelect}
+        waveMode={waveMode}
+        audioTracks={monitored}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>
@@ -496,6 +562,52 @@ export function Player({
           )}
         </div>
       </div>
+      {r.sourcePath && (
+        <div className={s.audioControls} aria-label="Preview audio controls">
+          <span>Listen</span>
+          {(['game', 'mic', 'both'] as const).map((mode) => (
+            <Button
+              key={mode}
+              aria-pressed={(r.monitor || 'game') === mode}
+              disabled={
+                mode === 'game'
+                  ? r.gameTrack == null
+                  : mode === 'mic'
+                    ? r.micTrack == null
+                    : r.gameTrack == null || r.micTrack == null
+              }
+              onClick={() => onAudioChange?.({ monitor: mode })}
+            >
+              {mode === 'game' ? 'Game' : mode === 'mic' ? 'Mic' : 'Combined'}
+            </Button>
+          ))}
+          <span role="status" className={s.muted}>
+            {audioStatus ||
+              (monitored.some((t) => !t.previewUrl)
+                ? 'Preparing audio…'
+                : monitored.length
+                  ? 'Audio ready'
+                  : 'No track selected')}
+          </span>
+          <span className={s.spacer} />
+          <label>
+            Waveforms{' '}
+            <select
+              aria-label="Waveform display"
+              value={waveMode}
+              onChange={(e) => {
+                const mode = e.target.value as typeof waveMode;
+                setWaveMode(mode);
+                localStorage.setItem('virtual-cut.waveforms', mode);
+              }}
+            >
+              <option value="off">Off</option>
+              <option value="overlay">Overlay</option>
+              <option value="replace">Replace filmstrip</option>
+            </select>
+          </label>
+        </div>
+      )}
       {snapshot && (
         <Modal title="Current frame" onClose={() => setSnapshot('')}>
           <img className={s.capture} src={snapshot} alt="Captured video frame" />

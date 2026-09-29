@@ -11,9 +11,56 @@
   min-height: 26px;
 }
 .legendRow > button {
-  margin-left: auto;
   font-size: 10px;
   padding: 3px 7px;
+}
+.legendRow > button:first-of-type {
+  margin-left: auto;
+}
+.marker[aria-pressed='true'] {
+  outline: 1px solid currentColor;
+  border-radius: 3px;
+  background: #ffffff18;
+}
+.filmstrip {
+  position: relative;
+}
+.waveforms {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #0e1b18;
+  pointer-events: none;
+}
+.waveOverlay {
+  background: #0a1917a8;
+}
+.waveLane {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid #4b655e;
+}
+.waveLane span {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 10px;
+  color: #effaf6;
+  background: #0b1717c9;
+  padding: 1px 3px;
+  z-index: 1;
+}
+.waveLane svg {
+  width: 100%;
+  height: 100%;
+  fill: #76cdb7;
+}
+.waveLane[data-waveform-track]:nth-child(2) svg {
+  fill: #d5b7f1;
 }
 .legend {
   display: flex;

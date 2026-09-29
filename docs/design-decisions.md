@@ -19,7 +19,7 @@ This is the planning record for Virtual Cut. Confirmed preferences are distinct 
 - **Viewer proportions:** Most footage will be 16:9. Optimize the viewing area around that ratio, while containing other aspect ratios without cropping or distortion. Sources refers to imported recordings/the media pool.
 - **Workspace space:** Put the current page name in the main header to the left of the project picker; remove the extra heading row and page taglines. In Studio, use spare width beside a height-limited 16:9 viewer for the media pool and context panels.
 - **Resolve Edit page inspiration — September 29, 2026:** Connor spends 90% or more of his Resolve time on Edit. Adopt a compact colored source-marker strip immediately below the viewer and centered transport buttons beneath it. Prioritize forward play, reverse/rewind, fast-forward, and keyboard-first J/K/L operation. Support marker colors locally; preserving them in Resolve is preferred, with default-blue embedded chapters acceptable initially. Richer Resolve handoff is later work; see `docs/layout-concepts.md` for verified current limitations and proposals.
-- **LosslessCut inspiration — September 29, 2026:** Add previous/next keyframe seeking and a current-frame screenshot feature. Favor clear colored range blocks with visible boundaries, distinct point markers, a compact batch-file list with rapid hotkey navigation, and a useful overview of planned clips and markers. Preserve the existing Ctrl + Shift + Up / Down batch bindings in the configurable preset. The segments list is inspiration, not a required one-for-one copy; markers remain metadata rather than standalone video exports. Combine these with the Review preferences below. Detailed confirmed preferences and proposed frame-capture behavior are in `docs/layout-concepts.md`.
+- **LosslessCut inspiration — September 29, 2026:** Add previous/next keyframe seeking and a current-frame screenshot feature. Favor clear colored range blocks with visible boundaries, distinct point markers, a compact batch-file list with rapid hotkey navigation, and a useful overview of planned clips and markers. Use Ctrl + Up / Down to navigate the active page’s items (confirmed in the M1 feedback pass). The segments list is inspiration, not a required one-for-one copy; markers remain metadata rather than standalone video exports. Combine these with the Review preferences below. Detailed confirmed preferences and proposed frame-capture behavior are in `docs/layout-concepts.md`.
 - **Footage Organizer inspiration — September 29, 2026:** Preserve clip cards grouped under their intended destination folders, the way checked-off clips clear from the active review stack, and marker tools beside an expanded video preview. Integrate details better and improve choosing existing destinations and creating new folders within the hierarchy; dragging cards is insufficient as the primary assignment method. These interactions mainly belong on Review and can inform other pages where useful.
 - **Project/batch organization:** Retain projects with batches inside them, sharing the project's destination hierarchy and context. Make project and batch headers/navigation more compact and remove repetitive explanatory text. A searchable destination picker with inline new-folder creation and multi-clip assignment is proposed in `docs/layout-concepts.md`, not yet an approved or implemented interaction.
 - **Model preference for this development conversation:** Astra should lead reasoning and research. The September 28 model audit found that earlier discussion and helpers used Sol; the audit response used GPT-6 Astra with Extra high reasoning. Use Astra for any future authorized research helpers. This records a development preference, not an already-implemented model configuration inside Virtual Cut.
@@ -49,18 +49,20 @@ Connor supplied detailed answers and reference folders after the initial enginee
 
 Provide configurable bindings and use Connor's familiar bindings in the initial preset:
 
-| Action | Preferred keys |
-| --- | --- |
-| Shuttle playback | J / K / L |
-| Split current range | S; B is LosslessCut's existing binding and may remain an alias |
-| Set in / out | I / O and Q / W |
-| Create point marker | M |
-| Export | E |
-| Delete current file workflow | D, with configurable behavior; source deletion remains an explicit action |
-| Previous / next item in batch | Ctrl + Shift + Up / Down |
-| Convert point to range | Shift-drag or in/out commands |
+| Action                                  | Preferred keys                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| Shuttle playback                        | J / K / L                                                                 |
+| Split current range                     | S; B is LosslessCut's existing binding and may remain an alias            |
+| Set selected clip in / out              | Q / W                                                                     |
+| Create point marker                     | M                                                                         |
+| Export                                  | E                                                                         |
+| Delete current file workflow            | D, with configurable behavior; source deletion remains an explicit action |
+| Previous / next item in the active page | Ctrl + Up / Down                                                          |
+| Convert point to range                  | Shift-drag or in/out commands                                             |
 
-Connor currently uses Backspace in LosslessCut to remove a range endpoint after chapter import. Importing OBS markers directly as points removes that corrective step. Exact focus behavior and editing-field shortcut suppression still require UI design.
+The app uses R to rename the selected clip or marker; Backspace requests inline deletion, Enter confirms, and Escape cancels. Ctrl+S makes a manual checkpoint beside continuous saves. Selection follows playhead retains the last clip through gaps; direct marker clicks take priority. These shortcuts do not intercept text editing.
+
+Connor previously used Backspace in LosslessCut to remove a range endpoint after chapter import. Importing OBS markers directly as points removes that corrective step. The marker and clip card workflow now implements selection and typing-field guards.
 
 ## Transcript feature requested for exploration
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
+import type { ImportAudio } from '../../electron/project-contracts';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
 
@@ -78,10 +79,152 @@ export function ProjectPanel({
   );
 }
 
+export function ImportPanel({
+  workspace: w,
+  kind,
+  onClose,
+}: {
+  workspace: Workspace;
+  kind: 'files' | 'folder';
+  onClose: () => void;
+}) {
+  const p = w.snapshot!,
+    defaults = p.batches.find((b) => b.id === p.activeBatchId)?.audioDefaults;
+  const [notes, setNotes] = useState(defaults?.mic != null),
+    [game, setGame] = useState(defaults?.game ?? 1),
+    [mic, setMic] = useState(defaults?.mic ?? 2);
+  const audio: ImportAudio = { game, mic: notes ? mic : null };
+  return (
+    <Modal title="Batch audio setup" onClose={onClose}>
+      <p>
+        These settings apply to new recordings in this import and are remembered for this batch. You
+        can adjust individual recordings in Source & audio setup.
+      </p>
+      <label className={s.tools}>
+        <input type="checkbox" checked={notes} onChange={(e) => setNotes(e.target.checked)} />
+        This batch has microphone audio notes
+      </label>
+      <div className={s.pair}>
+        <Field label="Game audio track">
+          <input
+            aria-label="Batch game audio track"
+            type="number"
+            min={1}
+            max={64}
+            value={game}
+            onChange={(e) => setGame(Number(e.target.value))}
+          />
+        </Field>
+        {notes && (
+          <Field label="Microphone notes track">
+            <input
+              aria-label="Batch microphone notes track"
+              type="number"
+              min={1}
+              max={64}
+              value={mic}
+              onChange={(e) => setMic(Number(e.target.value))}
+            />
+          </Field>
+        )}
+      </div>
+      <p className={s.muted}>
+        Track numbers count audio tracks only, starting at 1. Recordings with a different track
+        layout will be flagged for you to check.
+      </p>
+      <Button
+        primary
+        disabled={
+          w.busy ||
+          !Number.isInteger(game) ||
+          game < 1 ||
+          game > 64 ||
+          (notes && (!Number.isInteger(mic) || mic < 1 || mic > 64 || game === mic))
+        }
+        onClick={() =>
+          void w
+            .run(() =>
+              window.virtualCut!.project.import(p.project.id, p.activeBatchId, kind, audio),
+            )
+            .then((value) => {
+              if (value) onClose();
+            })
+        }
+      >
+        Choose {kind === 'folder' ? 'folder' : 'files'}…
+      </Button>
+      {w.error && (
+        <p role="alert" className={s.error}>
+          {w.error}
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+export function SaveHistory({
+  workspace: w,
+  onClose,
+}: {
+  workspace: Workspace;
+  onClose: () => void;
+}) {
+  const [confirm, setConfirm] = useState(''),
+    p = w.snapshot!;
+  return (
+    <Modal title="Save history" onClose={onClose}>
+      <p>
+        Your working project saves continuously. Five autosave copies and five manual checkpoints
+        are kept beside the project file. Restoring first makes a manual checkpoint of your current
+        work.
+      </p>
+      <div className={s.jobList}>
+        {(p.saves || []).map((copy) => (
+          <section className={s.clipTile} key={copy.id}>
+            <strong>{copy.kind === 'auto' ? 'Autosave' : 'Manual save'}</strong>
+            <p>{new Date(copy.created).toLocaleString()}</p>
+            {confirm === copy.id ? (
+              <div className={s.tools}>
+                <span>Restore this state? Media jobs will pause.</span>
+                <Button
+                  onClick={() =>
+                    void w
+                      .run(() => window.virtualCut!.project.restore(p.project.id, copy.id))
+                      .then((value) => {
+                        if (value) onClose();
+                      })
+                  }
+                >
+                  Restore save
+                </Button>
+                <Button onClick={() => setConfirm('')}>Cancel</Button>
+              </div>
+            ) : (
+              <Button onClick={() => setConfirm(copy.id)}>Restore…</Button>
+            )}
+          </section>
+        ))}
+      </div>
+      {!p.saves?.length && (
+        <p>
+          A copy is kept after an edit, every two minutes of editing, and when closing. Use Save to
+          make a manual checkpoint now.
+        </p>
+      )}
+      {w.error && (
+        <p role="alert" className={s.error}>
+          {w.error}
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 export function BatchTools({ workspace: w }: { workspace: Workspace }) {
   const [creating, setCreating] = useState(false),
     [name, setName] = useState(''),
-    [jobs, setJobs] = useState(false);
+    [jobs, setJobs] = useState(false),
+    [importing, setImporting] = useState<'files' | 'folder' | null>(null);
   const p = w.snapshot;
   if (!p) return null;
   const api = window.virtualCut!.project;
@@ -106,21 +249,18 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       <Button disabled={w.busy} onClick={() => setCreating(true)}>
         New batch
       </Button>
-      <Button
-        disabled={w.busy}
-        onClick={() => void w.run(() => api.import(p.project.id, p.activeBatchId, 'files'))}
-      >
+      <Button disabled={w.busy} onClick={() => setImporting('files')}>
         Import files
       </Button>
-      <Button
-        disabled={w.busy}
-        onClick={() => void w.run(() => api.import(p.project.id, p.activeBatchId, 'folder'))}
-      >
+      <Button disabled={w.busy} onClick={() => setImporting('folder')}>
         Import folder
       </Button>
       <Button onClick={() => setJobs(true)}>
         Jobs {pending.length > 0 ? `· ${pending.length}` : ''}
       </Button>
+      {importing && (
+        <ImportPanel workspace={w} kind={importing} onClose={() => setImporting(null)} />
+      )}
       {creating && (
         <Modal title="New batch" onClose={() => setCreating(false)}>
           <Field label="Batch name">
@@ -207,9 +347,14 @@ export function RecordingTools({
   const tracks = r.audioTracks || [];
   return (
     <details className={s.recordingTools} open={r.availability !== 'ready'}>
-      <summary>Source & audio · {r.availability}</summary>
+      <summary>Source & audio setup · {r.availability}</summary>
       <p className={s.pathText}>{r.sourcePath}</p>
       {r.error && <p className={s.error}>{r.error}</p>}
+      {r.audioWarning && (
+        <p role="status" className={s.error}>
+          {r.audioWarning}
+        </p>
+      )}
       <Button disabled={w.busy} onClick={() => void w.run(() => api.relink(p.project.id, r.id))}>
         Relink original…
       </Button>
@@ -217,7 +362,10 @@ export function RecordingTools({
         <>
           <div className={s.pair}>
             {(['game', 'mic'] as const).map((role) => (
-              <Field key={role} label={role === 'game' ? 'Game track' : 'Microphone track'}>
+              <Field
+                key={role}
+                label={role === 'game' ? 'Game audio track' : 'Microphone notes track'}
+              >
                 <select
                   aria-label={`${role} audio track`}
                   value={r[`${role}Track`] ?? ''}
@@ -226,14 +374,15 @@ export function RecordingTools({
                       other = role === 'game' ? 'micTrack' : 'gameTrack';
                     onChange({
                       [`${role}Track`]: value,
+                      audioWarning: '',
                       ...(value != null && r[other] === value ? { [other]: null } : {}),
                     });
                   }}
                 >
                   <option value="">None</option>
-                  {tracks.map((t) => (
+                  {tracks.map((t, i) => (
                     <option key={t.index} value={t.index}>
-                      {t.index} · {t.title || t.codec} · {t.channels} ch
+                      {i + 1} · {t.title || t.codec} · {t.channels} ch
                     </option>
                   ))}
                 </select>
@@ -241,32 +390,15 @@ export function RecordingTools({
             ))}
           </div>
           <p className={s.muted}>
-            Track roles are your choice. Preview audio is prepared locally; source audio is
+            Selected tracks prepare automatically for listening and waveforms. Preparation makes
+            local preview copies so the player can hear separate tracks; your original recording is
             unchanged.
           </p>
-          <div className={s.tools} aria-label="Audio monitoring">
-            {(['game', 'mic', 'both'] as const).map((mode) => (
-              <Button
-                key={mode}
-                aria-pressed={(r.monitor || 'game') === mode}
-                disabled={
-                  mode === 'game'
-                    ? r.gameTrack == null
-                    : mode === 'mic'
-                      ? r.micTrack == null
-                      : r.gameTrack == null || r.micTrack == null
-                }
-                onClick={() => onChange({ monitor: mode })}
-              >
-                {mode === 'mic' ? 'Mic' : mode === 'game' ? 'Game' : 'Both'}
-              </Button>
-            ))}
-          </div>
           <Button
             disabled={w.busy || !tracks.length}
             onClick={() => void w.run(() => api.audio(p.project.id, r.id))}
           >
-            Prepare selected audio
+            Retry audio preparation
           </Button>
           {!tracks.length && <p className={s.muted}>No audio streams in this recording.</p>}
         </>

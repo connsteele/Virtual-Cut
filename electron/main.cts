@@ -177,6 +177,8 @@ function registerDesktopApi(): void {
   workspace('recent', () => projects.recent());
   workspace('current', () => (projects.store ? projects.snapshot() : null));
   workspace('save', (id, before, after) => projects.save(id, before, after));
+  workspace('checkpoint', (id) => projects.checkpoint(id));
+  workspace('restore', (id, saveId) => projects.restore(id, saveId));
   workspace('history', (id, direction) => projects.history(id, direction));
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
@@ -233,7 +235,7 @@ function registerDesktopApi(): void {
     }
     return file ? projects.open(file) : null;
   });
-  workspace('import', async (id, batchId, kind) => {
+  workspace('import', async (id, batchId, kind, audio) => {
     projects.require(id);
     if (!['files', 'folder'].includes(kind)) throw new Error('Choose files or a folder.');
     const r = await dialog.showOpenDialog(mainWindow!, {
@@ -248,6 +250,7 @@ function registerDesktopApi(): void {
       id,
       batchId,
       kind === 'folder' ? await projects.gather(r.filePaths[0]) : r.filePaths,
+      audio,
     );
   });
   workspace('relink', async (id, sourceId) => {

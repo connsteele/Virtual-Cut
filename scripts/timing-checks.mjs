@@ -54,6 +54,7 @@ try {
     });
   }, dir);
   await page.getByRole('button', { name: 'Import files', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose files…', exact: true }).click();
   const current = () => page.evaluate(() => window.virtualCut.project.current());
   await expect
     .poll(

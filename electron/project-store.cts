@@ -1,8 +1,16 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, backup } from 'node:sqlite';
+import { mkdir, readdir, rename, unlink } from 'node:fs/promises';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { existsSync, openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
-import type { Batch, MediaJob, ProjectInfo, ProjectSnapshot } from './project-contracts.js' with {
+import type {
+  Batch,
+  MediaJob,
+  ProjectInfo,
+  ProjectSnapshot,
+  SaveCopy,
+} from './project-contracts.js' with {
   'resolution-mode': 'import',
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
@@ -26,6 +34,9 @@ export class ProjectStore {
   readonly db!: DatabaseSync;
   private lock: string;
   data: Data;
+  private lastAuto = 0;
+  private backedRevision = -1;
+  private copies: SaveCopy[] = [];
   constructor(
     readonly file: string,
     creation?: { name: string; destination: string; cache: string },
@@ -116,6 +127,104 @@ export class ProjectStore {
     this.db
       .prepare('INSERT OR REPLACE INTO project (id,body) VALUES (1,?)')
       .run(JSON.stringify(this.data));
+  }
+  async loadCopies() {
+    const directory = this.file + '.saves';
+    this.copies = (await readdir(directory).catch(() => []))
+      .flatMap((id): SaveCopy[] => {
+        const match = /^(auto|manual)-(\d+)-[\da-f-]+\.vcut$/.exec(id);
+        return match
+          ? [
+              {
+                id,
+                kind: match[1] as SaveCopy['kind'],
+                created: new Date(Number(match[2])).toISOString(),
+              },
+            ]
+          : [];
+      })
+      .sort((a, b) => b.created.localeCompare(a.created));
+  }
+  async checkpoint(kind: SaveCopy['kind'], force = false) {
+    if (
+      kind === 'auto' &&
+      ((!force && Date.now() - this.lastAuto < 120000) ||
+        this.backedRevision === this.data.revision)
+    )
+      return;
+    const directory = this.file + '.saves';
+    await mkdir(directory, { recursive: true });
+    const id = `${kind}-${Date.now()}-${randomUUID()}.vcut`,
+      final = path.join(directory, id),
+      temporary = final + '.partial';
+    try {
+      const copiedRevision = this.data.revision;
+      await backup(this.db, temporary);
+      const check = new DatabaseSync(temporary, { readOnly: true });
+      try {
+        if (check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
+          throw new Error('Save copy verification failed.');
+      } finally {
+        check.close();
+      }
+      await rename(temporary, final);
+      this.backedRevision = copiedRevision;
+      if (kind === 'auto') this.lastAuto = Date.now();
+      await this.loadCopies();
+      // Keep independent rolling histories for recovery and deliberate checkpoints.
+      for (const category of ['auto', 'manual']) {
+        for (const copy of this.copies.filter((c) => c.kind === category).slice(5))
+          await unlink(path.join(directory, copy.id));
+      }
+      await this.loadCopies();
+    } finally {
+      await unlink(temporary).catch(() => {});
+    }
+  }
+  async restore(saveId: string) {
+    await this.loadCopies();
+    if (!this.copies.some((c) => c.id === saveId))
+      throw new Error('Choose an available save copy.');
+    const check = new DatabaseSync(path.join(this.file + '.saves', saveId), { readOnly: true });
+    let saved: Data, sources: NativeSource[], jobs: MediaJob[];
+    try {
+      if (
+        check.prepare('PRAGMA application_id').get()?.application_id !== APP_ID ||
+        check.prepare('PRAGMA user_version').get()?.user_version !== 1 ||
+        check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok'
+      )
+        throw new Error('This save copy is not a valid project.');
+      saved = JSON.parse(String(check.prepare('SELECT body FROM project WHERE id=1').get()?.body));
+      if (saved.project.id !== this.data.project.id)
+        throw new Error('This save belongs to another project.');
+      saved.model = validateEdits(saved.model);
+      sources = check
+        .prepare('SELECT body FROM sources')
+        .all()
+        .map((row) => JSON.parse(String(row.body)));
+      jobs = check
+        .prepare('SELECT body FROM jobs')
+        .all()
+        .map((row) => JSON.parse(String(row.body)));
+    } finally {
+      check.close();
+    }
+    await this.checkpoint('manual');
+    this.transaction(() => {
+      saved.project.file = this.file;
+      saved.revision = this.data.revision + 1;
+      this.data = saved;
+      this.db.exec('DELETE FROM sources; DELETE FROM jobs; DELETE FROM history;');
+      sources.forEach((source) => this.putSource(source));
+      jobs.forEach((job) =>
+        this.putJob(
+          ['queued', 'running'].includes(job.state)
+            ? { ...job, state: 'interrupted', message: 'Restored job. Retry when ready.' }
+            : job,
+        ),
+      );
+    });
+    this.backedRevision = -1;
   }
   transaction<T>(fn: () => T): T {
     const before = structuredClone(this.data);
@@ -221,6 +330,7 @@ export class ProjectStore {
       jobs: this.jobs(),
       canUndo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=1 LIMIT 1').get()),
       canRedo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=0 LIMIT 1').get()),
+      saves: structuredClone(this.copies),
     };
   }
   close() {

@@ -16,7 +16,15 @@ export function emptyModel(): Model {
   };
 }
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const fields = ['title', 'context', 'pinned', 'gameTrack', 'micTrack', 'monitor'] as const;
+const fields = [
+  'title',
+  'context',
+  'pinned',
+  'gameTrack',
+  'micTrack',
+  'monitor',
+  'audioWarning',
+] as const;
 const micro = (n: number) => Math.round(n * 1e6) / 1e6;
 
 /** Merge only changes the caller actually made. Inspection can add unrelated
@@ -36,7 +44,16 @@ function mergeItems<T>(before: T[], after: T[], current: T[], key: (x: T) => str
     if (next.has(id)) result.set(id, next.get(id)!);
     else result.delete(id);
   }
-  return [...result.values()];
+  const orderChanged = JSON.stringify(before.map(key)) !== JSON.stringify(after.map(key));
+  // Restore/reorder edited items in the user's order, while retaining unrelated
+  // items concurrently added by inspection. Undoing deletion must not renumber
+  // the restored clip by appending it to the end of the collection.
+  return orderChanged
+    ? [
+        ...after.map((item) => result.get(key(item))!).filter(Boolean),
+        ...[...result].filter(([id]) => !next.has(id)).map(([, item]) => item),
+      ]
+    : [...result.values()];
 }
 export function mergeEdits(before: Model, after: Model, current: Model): Model {
   const result = structuredClone(current);

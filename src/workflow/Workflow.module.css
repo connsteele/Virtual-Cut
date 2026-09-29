@@ -420,6 +420,7 @@
   white-space: nowrap;
 }
 .stage {
+  position: relative;
   flex: 1;
   min-height: 100px;
   background: #090e0d;
@@ -427,6 +428,51 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+.transitionFrame {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.audioControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.audioControls .button {
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.audioControls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.audioControls select {
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.button.acceptedButton[aria-pressed='true'] {
+  color: #c7ebba;
+  background: #2d5137;
+  border-color: #609366;
+}
+.markerCard {
+  padding: 10px;
+  border: 1px solid #354943;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.clipTile[data-cut-clip] {
+  cursor: pointer;
 }
 .stage video {
   width: 100%;
@@ -1261,7 +1307,15 @@
   padding: 10px;
   border: 1px solid #30433e;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 14px;
+}
+.recordingTools summary {
+  font-weight: 500;
+  padding-block: 3px;
+}
+.recordingTools input,
+.recordingTools select {
+  font-size: 14px;
 }
 .recordingTools summary {
   cursor: pointer;
@@ -1287,4 +1341,19 @@
   color: #9eb8b2;
   font-size: 11px;
   white-space: nowrap;
+}
+.shortcutTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+.shortcutTable th,
+.shortcutTable td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #354943;
+}
+.shortcutTable th {
+  white-space: nowrap;
+  color: #7cdbcd;
+  font-weight: 500;
 }

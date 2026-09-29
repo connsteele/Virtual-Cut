@@ -154,7 +154,7 @@ try {
   await page.locator('[data-recording="r2"]').click();
   await videoReady();
   await expect(page.locator('video')).toHaveAttribute('aria-label', `Video: ${catalog[1].title}`);
-  await page.keyboard.press('Control+Shift+ArrowUp');
+  await page.keyboard.press('Control+ArrowUp');
   await videoReady();
   await page.getByRole('button', { name: 'Marker', exact: true }).click();
   await page.getByRole('textbox', { name: 'Marker name', exact: true }).fill('UI test marker');

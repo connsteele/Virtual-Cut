@@ -1,7 +1,7 @@
 {
   "name": "virtual-cut",
   "productName": "Virtual Cut",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "The Virtual Cut footage workspace.",
   "type": "module",
@@ -23,7 +23,8 @@
     "lint": "eslint .",
     "format": "prettier --write src electron scripts *.json *.ts *.mjs *.html *.md docs/foundation.md docs/layout-concepts.md",
     "format:check": "prettier --check src electron scripts *.json *.ts *.mjs *.html *.md docs/foundation.md docs/layout-concepts.md",
-    "brand:build": "node scripts/build-brand-assets.mjs"
+    "brand:build": "node scripts/build-brand-assets.mjs",
+    "test:feedback": "node scripts/feedback-checks.mjs"
   },
   "dependencies": {
     "lucide-react": "1.48.0",

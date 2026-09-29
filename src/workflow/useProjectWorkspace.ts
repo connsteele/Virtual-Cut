@@ -16,7 +16,8 @@ export function useProjectWorkspace() {
     [recents, setRecents] = useState<RecentProject[]>([]);
   const [saveState, setSaveState] = useState('Sample'),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [quiet, setQuiet] = useState(false);
   const saving = useRef<Promise<void> | null>(null),
     working = useRef(false);
   const setModel = useCallback((action: SetStateAction<Model>) => {
@@ -122,16 +123,18 @@ export function useProjectWorkspace() {
     };
   }, [apply, flush]);
   const run = useCallback(
-    async (fn: () => Promise<ProjectSnapshot | null | void>) => {
+    async (fn: () => Promise<ProjectSnapshot | null | void>, quiet = false) => {
       if (working.current) return null;
       working.current = true;
       window.dispatchEvent(new Event('virtual-cut-pause-workspace'));
       setBusy(true);
+      setQuiet(quiet);
       setError('');
       try {
         await flush();
+        const ancestor = base.current;
         const value = await fn();
-        if (value) apply(value, true);
+        if (value) apply(value, !quiet, ancestor);
         setRecents(await window.virtualCut!.project.recent());
         return value;
       } catch (e) {
@@ -156,5 +159,26 @@ export function useProjectWorkspace() {
       setSaveState('Sample');
     });
   };
-  return { model, setModel, snapshot, recents, saveState, error, busy, run, flush, sample };
+  const checkpoint = async () => {
+    if (!session.current) return;
+    const value = await run(
+      () => window.virtualCut!.project.checkpoint(session.current!.project.id),
+      true,
+    );
+    if (value && !changed(modelRef.current, base.current)) setSaveState('Manual save made');
+  };
+  return {
+    model,
+    setModel,
+    snapshot,
+    recents,
+    saveState,
+    error,
+    busy,
+    run,
+    flush,
+    sample,
+    checkpoint,
+    quiet,
+  };
 }

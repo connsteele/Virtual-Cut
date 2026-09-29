@@ -1,14 +1,39 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore } from './project-store.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
-import type { MediaJob, RecentProject } from './project-contracts.js' with {
+import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
   'resolution-mode': 'import',
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
+import { editorial } from './project-edits.js';
+
+async function waveform(file: string, sampleRate: number) {
+  const handle = await open(file, 'r');
+  try {
+    const count = Math.floor((await handle.stat()).size / 4),
+      bins = Math.min(2048, count),
+      peaks = Array<number>(bins).fill(0);
+    if (!count) throw new Error('Waveform data is empty.');
+    const buffer = Buffer.alloc(65536);
+    let sample = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (!bytesRead) break;
+      for (let offset = 0; offset + 4 <= bytesRead; offset += 4, sample++) {
+        const bin = Math.min(bins - 1, Math.floor((sample * bins) / count)),
+          value = Math.abs(buffer.readFloatLE(offset));
+        if (Number.isFinite(value)) peaks[bin] = Math.max(peaks[bin], Math.min(1, value));
+      }
+    }
+    return { peaks: peaks.map((n) => Math.round(n * 10000) / 10000), duration: count / sampleRate };
+  } finally {
+    await handle.close();
+  }
+}
 
 export class ProjectService {
   store: ProjectStore | null = null;
@@ -63,9 +88,14 @@ export class ProjectService {
     }
     await this.close();
     this.store = next;
+    await next.loadCopies();
     process.env.VIRTUAL_CUT_MEDIA_TEMP = next.data.project.cache;
     await this.refreshAvailability();
     await this.remember();
+    const selected =
+      next.data.model.recordings.find((r) => r.id === next.data.model.selectedRecordingId) ||
+      next.data.model.recordings[0];
+    if (selected?.availability === 'ready') this.queueAudio(selected.id);
     return this.snapshot();
   }
   async close() {
@@ -73,6 +103,7 @@ export class ProjectService {
     try {
       this.active?.controller.abort();
       await this.active?.finished;
+      await this.store?.checkpoint('auto', true);
       this.store?.close();
       this.store = null;
       this.grants.clear();
@@ -165,12 +196,49 @@ export class ProjectService {
     return snapshot;
   }
   async save(id: string, before: Model, after: Model) {
-    this.require(id).save(before, after);
+    const store = this.require(id),
+      previous = store.data.model;
+    store.save(before, after);
+    for (const r of store.data.model.recordings) {
+      const old = previous.recordings.find((x) => x.id === r.id);
+      if (
+        r.availability === 'ready' &&
+        old &&
+        (r.gameTrack !== old.gameTrack ||
+          r.micTrack !== old.micTrack ||
+          r.monitor !== old.monitor ||
+          (r.id === store.data.model.selectedRecordingId && r.id !== previous.selectedRecordingId))
+      )
+        this.queueAudio(r.id);
+    }
+    this.pump();
+    if (editorial(previous) !== editorial(store.data.model)) await store.checkpoint('auto');
+    return this.snapshot();
+  }
+  async checkpoint(id: string) {
+    await this.require(id).checkpoint('manual');
+    return this.snapshot();
+  }
+  async restore(id: string, saveId: string) {
+    const store = this.require(id);
+    this.switching = true;
+    try {
+      this.active?.controller.abort();
+      await this.active?.finished;
+      await store.restore(saveId);
+    } finally {
+      this.switching = false;
+      this.pump();
+    }
     return this.snapshot();
   }
   async history(id: string, direction: 'undo' | 'redo') {
     if (!['undo', 'redo'].includes(direction)) throw new Error('Unknown history action.');
     this.require(id).history(direction);
+    const selected = this.require().data.model.recordings.find(
+      (r) => r.id === this.require().data.model.selectedRecordingId,
+    );
+    if (selected?.availability === 'ready') this.queueAudio(selected.id);
     return this.snapshot();
   }
   async batch(id: string, name: string) {
@@ -210,9 +278,17 @@ export class ProjectService {
     await visit(folder);
     return files;
   }
-  async importFiles(id: string, batchId: string, files: string[]) {
+  async importFiles(id: string, batchId: string, files: string[], audio?: ImportAudio) {
     const s = this.require(id);
-    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Choose a batch first.');
+    const batch = s.data.batches.find((b) => b.id === batchId);
+    if (!batch) throw new Error('Choose a batch first.');
+    const defaults = audio || batch.audioDefaults || { game: 1, mic: null };
+    for (const value of [defaults.game, defaults.mic])
+      if (value != null && (!Number.isInteger(value) || value < 1 || value > 64))
+        throw new Error('Choose an audio track number from 1 to 64.');
+    if (defaults.game != null && defaults.game === defaults.mic)
+      throw new Error('Game audio and microphone notes need different tracks.');
+    batch.audioDefaults = defaults;
     for (const file of files) {
       if (!videoExtensions.includes(path.extname(file).slice(1).toLowerCase())) continue;
       const sourceId = randomUUID();
@@ -254,6 +330,7 @@ export class ProjectService {
             sourcePath: native.file,
             batchIds: [batchId],
             availability: 'pending',
+            importAudio: defaults,
           });
           s.data.model.markers[sourceId] = [];
           s.data.revision++;
@@ -299,8 +376,8 @@ export class ProjectService {
       updated: new Date().toISOString(),
     });
   }
-  async prepareAudio(id: string, sourceId: string) {
-    const s = this.require(id),
+  private queueAudio(sourceId: string) {
+    const s = this.require(),
       r = s.data.model.recordings.find((r) => r.id === sourceId);
     if (!r || r.availability !== 'ready')
       throw new Error('Wait for inspection or relink this recording.');
@@ -308,12 +385,17 @@ export class ProjectService {
     for (const index of new Set([r.gameTrack, r.micTrack]))
       if (
         index != null &&
-        !existsSync(
-          path.join(s.data.project.cache, `${r.id}-${native.fingerprint}-audio-${index}.m4a`),
-        )
+        (!r.audioTracks?.find((t) => t.index === index)?.waveform ||
+          !existsSync(
+            path.join(s.data.project.cache, `${r.id}-${native.fingerprint}-audio-${index}.m4a`),
+          ))
       )
         this.enqueue(sourceId, 'audio', index);
     this.pump();
+  }
+  async prepareAudio(id: string, sourceId: string) {
+    this.require(id);
+    this.queueAudio(sourceId);
     return this.snapshot();
   }
   async job(id: string, jobId: string, action: 'cancel' | 'retry') {
@@ -401,7 +483,8 @@ export class ProjectService {
       });
     };
     progress(0);
-    let temp = '';
+    let temp = '',
+      pcm = '';
     try {
       if (!source) throw new Error('Source file is not registered. Import it again.');
       const actual = await identify(source.file, source.id);
@@ -452,11 +535,20 @@ export class ProjectService {
         s.transaction(() => {
           const r = s.data.model.recordings.find((r) => r.id === source.id)!;
           const { markers, ...facts } = info;
+          const defaults = r.importAudio || { game: 1, mic: null };
+          const game =
+            defaults.game == null ? null : (info.audioTracks[defaults.game - 1]?.index ?? null);
+          const mic =
+            defaults.mic == null ? null : (info.audioTracks[defaults.mic - 1]?.index ?? null);
           Object.assign(r, facts, {
             availability: 'ready',
             error: '',
-            gameTrack: r.gameTrack ?? info.audioTracks[0]?.index ?? null,
-            micTrack: r.micTrack ?? null,
+            gameTrack: game,
+            micTrack: mic,
+            audioWarning:
+              (defaults.game != null && game == null) || (defaults.mic != null && mic == null)
+                ? 'This recording does not have the batch’s selected audio track. Choose its tracks below.'
+                : '',
             monitor: r.monitor || 'game',
           });
           if (!s.data.model.markerBaseline?.[source.id]) {
@@ -476,16 +568,15 @@ export class ProjectService {
           }
           s.data.revision++;
         });
-        const game = s.data.model.recordings.find((r) => r.id === source.id)?.gameTrack;
-        if (game != null && !existsSync(`${prefix}-audio-${game}.m4a`))
-          this.enqueue(source.id, 'audio', game);
+        this.queueAudio(source.id);
       } else {
         const file = `${prefix}-audio-${job.track}.m4a`;
         temp = `${prefix}-audio-${job.track}.partial.m4a`;
+        pcm = `${prefix}-audio-${job.track}.partial.f32`;
         const record = s.data.model.recordings.find((r) => r.id === source.id)!;
         const duration = record.duration;
         const expected = record.audioTracks?.find((t) => t.index === job.track)?.duration;
-        if (free.bavail * free.bsize < 256 * 1024 * 1024 + duration * 32000)
+        if (free.bavail * free.bsize < 256 * 1024 * 1024 + duration * 64000)
           throw new Error('Free more space in the preview cache before preparing this audio.');
         await launchTool(
           this.tool('ffmpeg'),
@@ -510,6 +601,19 @@ export class ProjectService {
             'pipe:1',
             '-y',
             temp,
+            '-map',
+            `0:${job.track}`,
+            '-vn',
+            '-ac',
+            '1',
+            '-ar',
+            '8000',
+            '-c:a',
+            'pcm_f32le',
+            '-f',
+            'f32le',
+            '-y',
+            pcm,
           ],
           signal,
           (line) => {
@@ -540,6 +644,13 @@ export class ProjectService {
           throw new Error('Recording changed during audio preparation.');
         await rename(temp, file);
         temp = '';
+        const peaks = await waveform(pcm, 8000);
+        s.transaction(() => {
+          const track = s.data.model.recordings
+            .find((r) => r.id === source.id)
+            ?.audioTracks?.find((t) => t.index === job.track);
+          if (track) track.waveform = peaks;
+        });
       }
       s.putJob({
         ...job,
@@ -566,6 +677,7 @@ export class ProjectService {
       }
     } finally {
       if (temp) await unlink(temp).catch(() => {});
+      if (pcm) await unlink(pcm).catch(() => {});
     }
   }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { colors, time, short, type Clip, type Marker, type Recording } from './model';
+import type { AudioTrack } from '../../electron/workflow-types';
 import { clipColor, layoutClips } from './clipLayout';
 import { Button } from './ui';
 import s from './Timeline.module.css';
@@ -17,6 +18,10 @@ export function Timeline({
   current,
   onSeek,
   onSelect,
+  selectedMarkerId,
+  onMarkerSelect,
+  waveMode = 'off',
+  audioTracks = [],
 }: {
   recording: Recording;
   markers: Marker[];
@@ -30,10 +35,17 @@ export function Timeline({
   current: number;
   onSeek: (time: number) => void;
   onSelect?: (id: string) => void;
+  selectedMarkerId?: string;
+  onMarkerSelect?: (id: string) => void;
+  waveMode?: 'off' | 'overlay' | 'replace';
+  audioTracks?: AudioTrack[];
 }) {
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
   const [width, setWidth] = useState(640);
+  const [keys, setKeys] = useState(
+    () => localStorage.getItem('virtual-cut.keyframe-ticks') !== 'false',
+  );
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     if (track.current) observer.observe(track.current);
@@ -69,6 +81,16 @@ export function Timeline({
             ))}
           </div>
         )}
+        <Button
+          aria-pressed={keys}
+          title="The small ticks below the filmstrip mark keyframe positions"
+          onClick={() => {
+            setKeys(!keys);
+            localStorage.setItem('virtual-cut.keyframe-ticks', String(!keys));
+          }}
+        >
+          Keyframe ticks
+        </Button>
         <Button onClick={onLegend} aria-pressed={legend} title="Show or hide marker color key">
           {legend ? 'Hide color key' : 'Color key'}
         </Button>
@@ -139,24 +161,88 @@ export function Timeline({
                 style={{ left: percent(m.time), color: colors[m.category] }}
                 title={`${m.category}: ${m.name} · ${time(m.time)}`}
                 aria-label={`Seek to marker: ${m.name}`}
-                onClick={() => onSeek(m.time)}
+                aria-pressed={m.id === selectedMarkerId}
+                onClick={() => {
+                  onMarkerSelect?.(m.id);
+                  onSeek(m.time);
+                }}
               >
                 <span />
               </button>
             ))}
         </div>
-        <div className={s.frames}>
-          {frames.map((src, i) => (
-            <div key={i}>{src && <img src={src} alt="" draggable={false} />}</div>
-          ))}
-        </div>
-        <div className={s.ticks}>
-          {(recording.keys || [])
-            .filter((k) => k >= start && k <= end)
-            .map((k) => (
-              <i key={k} style={{ left: percent(k) }} />
+        <div className={s.filmstrip} data-waveform-mode={waveMode}>
+          <div
+            className={s.frames}
+            style={waveMode === 'replace' ? { visibility: 'hidden' } : undefined}
+          >
+            {frames.map((src, i) => (
+              <div key={i}>{src && <img src={src} alt="" draggable={false} />}</div>
             ))}
+          </div>
+          {waveMode !== 'off' && (
+            <div
+              className={`${s.waveforms} ${waveMode === 'overlay' ? s.waveOverlay : ''}`}
+              aria-label="Audio waveforms"
+            >
+              {audioTracks.map((track) => {
+                const label = track.index === recording.micTrack ? 'Mic' : 'Game',
+                  data = track.waveform;
+                const gain = data ? 1 / Math.max(0.01, ...data.peaks) : 1;
+                const values = Array.from({ length: 512 }, (_, i) => {
+                  const at = start + (i / 511) * span - track.offset;
+                  if (!data || at < 0 || at >= data.duration) return 0;
+                  const first = Math.floor((at / data.duration) * data.peaks.length),
+                    last = Math.min(
+                      data.peaks.length,
+                      Math.max(
+                        first + 1,
+                        Math.ceil(((at + span / 511) / data.duration) * data.peaks.length),
+                      ),
+                    );
+                  return Math.min(1, Math.max(...data.peaks.slice(first, last)) * gain);
+                });
+                const points =
+                  values.map((v, i) => `${i},${25 - v * 23}`).join(' ') +
+                  ' ' +
+                  values.map((v, i) => `${511 - i},${25 + values[511 - i] * 23}`).join(' ');
+                return (
+                  <div
+                    key={track.index}
+                    className={s.waveLane}
+                    data-waveform-track={track.index}
+                    title="Waveform amplitude is scaled per track for visibility; listening volume is unchanged"
+                  >
+                    <span>
+                      {label}
+                      {!data ? ' · Preparing…' : ''}
+                    </span>
+                    {data && (
+                      <svg
+                        viewBox="0 0 511 50"
+                        preserveAspectRatio="none"
+                        role="img"
+                        aria-label={`${label} waveform`}
+                      >
+                        <polygon points={points} />
+                      </svg>
+                    )}
+                  </div>
+                );
+              })}
+              {!audioTracks.length && <span>No audio track selected</span>}
+            </div>
+          )}
         </div>
+        {keys && (
+          <div className={s.ticks} aria-label="Keyframe positions" title="Keyframe positions">
+            {(recording.keys || [])
+              .filter((k) => k >= start && k <= end)
+              .map((k) => (
+                <i key={k} style={{ left: percent(k) }} />
+              ))}
+          </div>
+        )}
         {showClips && (
           <div
             className={s.clips}

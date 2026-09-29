@@ -4,6 +4,17 @@ export interface Batch {
   id: string;
   name: string;
   created: string;
+  audioDefaults?: ImportAudio;
+}
+/** One-based audio stream order, independent of video/subtitle stream indices. */
+export interface ImportAudio {
+  game: number | null;
+  mic: number | null;
+}
+export interface SaveCopy {
+  id: string;
+  kind: 'auto' | 'manual';
+  created: string;
 }
 export interface ProjectInfo {
   id: string;
@@ -31,6 +42,7 @@ export interface ProjectSnapshot {
   jobs: MediaJob[];
   canUndo: boolean;
   canRedo: boolean;
+  saves?: SaveCopy[];
   warning?: string;
 }
 export interface RecentProject {
@@ -47,10 +59,17 @@ export interface ProjectApi {
   current(): Promise<ProjectSnapshot | null>;
   close(): Promise<void>;
   save(id: string, before: Model, after: Model): Promise<ProjectSnapshot>;
+  checkpoint(id: string): Promise<ProjectSnapshot>;
+  restore(id: string, saveId: string): Promise<ProjectSnapshot>;
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;
-  import(id: string, batchId: string, kind: 'files' | 'folder'): Promise<ProjectSnapshot | null>;
+  import(
+    id: string,
+    batchId: string,
+    kind: 'files' | 'folder',
+    audio?: ImportAudio,
+  ): Promise<ProjectSnapshot | null>;
   relink(id: string, sourceId: string): Promise<ProjectSnapshot | null>;
   audio(id: string, sourceId: string): Promise<ProjectSnapshot>;
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;

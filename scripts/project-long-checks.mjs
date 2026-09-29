@@ -37,6 +37,7 @@ try {
   }, source);
   const start = Date.now();
   await page.getByRole('button', { name: 'Import files', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose files…', exact: true }).click();
   const current = () => page.evaluate(() => window.virtualCut.project.current());
   await expect
     .poll(
@@ -61,13 +62,12 @@ try {
   await page
     .getByLabel('mic audio track', { exact: true })
     .selectOption(String(r.audioTracks[1].index));
-  await page.getByRole('button', { name: 'Prepare selected audio', exact: true }).click();
   await expect
     .poll(async () => (await current()).jobs.every((j) => j.state === 'succeeded'), {
       timeout: 120000,
     })
     .toBe(true);
-  await page.getByRole('button', { name: 'Both', exact: true }).click();
+  await page.getByRole('button', { name: 'Combined', exact: true }).click();
   await expect(page.locator('audio')).toHaveCount(2);
   const seekMs = [];
   for (const target of [10, 237, 465]) {

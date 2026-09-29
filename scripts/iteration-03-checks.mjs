@@ -37,10 +37,7 @@ export async function verifyIteration03({ page, app, capture, go, videoReady, st
   await page.keyboard.press('w');
   assert(Math.abs((await model()).clips.find((c) => c.id === 'c1').end - 166.5 * 0.25) < 0.1);
   await page.getByRole('checkbox', { name: 'Selection follows playhead' }).uncheck();
-  await page
-    .locator('[data-cut-clip="c1"]')
-    .getByRole('button', { name: /^Select clip card:/ })
-    .click();
+  await page.locator('[data-cut-clip="c1"]').click({ position: { x: 15, y: 15 } });
   await scrub(0.8);
   assert.equal(await selected(), 'c1');
   await page.keyboard.press('s');
@@ -70,13 +67,13 @@ export async function verifyIteration03({ page, app, capture, go, videoReady, st
     .getByRole('textbox', { name: 'Clip name' })
     .fill('Selected clip test');
   await surface.focus();
-  await page.keyboard.press('Control+Shift+ArrowDown');
+  await page.keyboard.press('Control+ArrowDown');
   await expect(page.locator('[data-recording="r2"]')).toHaveClass(/selected/);
   await videoReady();
   await page.keyboard.press('l');
   await expect.poll(() => page.locator('video').evaluate((v) => v.paused)).toBe(false);
   await page.keyboard.press('k');
-  await page.keyboard.press('Control+Shift+ArrowUp');
+  await page.keyboard.press('Control+ArrowUp');
   await videoReady();
   const deleteButton = page
     .locator(`[data-cut-clip="${right.id}"]`)
