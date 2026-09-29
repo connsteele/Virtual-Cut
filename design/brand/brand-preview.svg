@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600"><rect width="1120" height="600" fill="#121918"/><text x="54" y="57" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="2.5" fill="#71D7CD">VIRTUAL CUT / FINAL LOGO</text><svg x="78" y="122" width="355" height="333" viewBox="44 24 292 274">
+
+  <defs>
+    <mask id="preview-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="360" height="320">
+      <rect width="360" height="320" fill="white"/>
+      <path d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z" fill="black" stroke="black" stroke-width="24" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path id="rear-blade" d="M266 36H300L236 286H202Z" fill="#489F96" mask="url(#preview-gap)"/>
+  <path id="front-blade" d="M56 36H122L236 286H180Z" fill="#71D7CD"/>
+  <path id="film" d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z M190 128H203V140H190Z M218 128H231V140H218Z M246 128H259V140H246Z M228 210H241V222H228Z M256 210H269V222H256Z" fill-rule="evenodd" fill="#EDE6D8"/>
+</svg><path d="M507 105V480" stroke="#34453E"/><svg x="568" y="110" width="224" height="224" viewBox="0 0 256 256"><rect x="4" y="4" width="248" height="248" rx="52" fill="#192322"/><svg x="22" y="27" width="212" height="199" viewBox="44 24 292 274">
+
+  <defs>
+    <mask id="preview-icon-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="360" height="320">
+      <rect width="360" height="320" fill="white"/>
+      <path d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z" fill="black" stroke="black" stroke-width="24" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path id="rear-blade" d="M266 36H300L236 286H202Z" fill="#489F96" mask="url(#preview-icon-gap)"/>
+  <path id="front-blade" d="M56 36H122L236 286H180Z" fill="#71D7CD"/>
+  <path id="film" d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z M190 128H203V140H190Z M218 128H231V140H218Z M246 128H259V140H246Z M228 210H241V222H228Z M256 210H269V222H256Z" fill-rule="evenodd" fill="#EDE6D8"/>
+</svg></svg><text x="594" y="370" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#A8BAB0">WINDOWS APP ICON</text><g font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#C1CFC6"><rect x="848" y="144" width="26" height="26" rx="4" fill="#EDE6D8"/><text x="889" y="163">#EDE6D8</text><rect x="848" y="200" width="26" height="26" rx="4" fill="#71D7CD"/><text x="889" y="219">#71D7CD</text><rect x="848" y="256" width="26" height="26" rx="4" fill="#489F96"/><text x="889" y="275">#489F96</text></g><text x="56" y="541" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#DDE6DF">Ivory film. Three holes above, two below. Teal scissor blades with a continuous overlap.</text></svg>

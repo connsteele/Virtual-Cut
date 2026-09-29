@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="44 24 292 274" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Virtual Cut</title>
+  <defs>
+    <mask id="film-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="360" height="320">
+      <rect width="360" height="320" fill="white"/>
+      <path d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z" fill="black" stroke="black" stroke-width="24" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path id="rear-blade" d="M266 36H300L236 286H202Z" fill="#489F96" mask="url(#film-gap)"/>
+  <path id="front-blade" d="M56 36H122L236 286H180Z" fill="#71D7CD"/>
+  <path id="film" d="M170 114H322Q329 114 324 120L269 172Q266 175 269 178L324 230Q329 236 322 236H226Z M190 128H203V140H190Z M218 128H231V140H218Z M246 128H259V140H246Z M228 210H241V222H228Z M256 210H269V222H256Z" fill-rule="evenodd" fill="#EDE6D8"/>
+</svg>
