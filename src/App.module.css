@@ -96,79 +96,37 @@
   background: #282828;
   border: 1px solid #404040;
 }
-.button-count {
+.layout-name {
   font-size: 10px;
-  min-width: 16px;
-  height: 16px;
   line-height: 16px;
+  padding: 0 5px;
   border-radius: 3px;
   background: #3f3f3f;
   color: #cdcdcd;
 }
-.workspace-heading {
-  height: 60px;
-  flex: 0 0 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 0 26px;
-}
-.workspace-title {
-  display: flex;
-  align-items: baseline;
-  min-width: 0;
-  gap: 14px;
-}
-.workspace-title h1 {
-  font-size: 15px;
-  font-weight: 600;
-}
-.heading-slash {
-  color: #5e5e5e;
-}
-.workspace-title p {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.workspace-meta {
-  display: flex;
-  align-items: center;
+.current-page {
   flex-shrink: 0;
-  gap: 13px;
-  font-size: 11px;
-}
-.preview-label {
-  color: #b2b2b2;
-  padding: 4px 7px;
-  border-radius: 3px;
-  background: #262626;
-  border: 1px solid #373737;
-}
-.meta-dot {
-  color: #5e5e5e;
-}
-.layout-current {
-  color: #c4c4c4;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: 4px;
-  padding: 5px;
-}
-.layout-current:hover {
-  background: var(--raised);
+  font-size: 14px;
+  font-weight: 600;
 }
 .workspace {
   display: flex;
   gap: 10px;
-  padding: 0 12px 12px;
+  padding: 10px 12px 12px;
   flex: 1;
   min-height: 0;
   position: relative;
+}
+.workspace-studio.has-video > .workspace-main {
+  /* Match the 16:9 stage plus the player's two one-pixel borders.
+     Shrink only when the side panels need their minimum working width. */
+  flex: 0 1 var(--studio-viewer-width, 100%);
+}
+.workspace-studio.has-video > .source-rail,
+.workspace-studio.has-video > .context-panel,
+.workspace-studio.has-video > .shared-drawer {
+  flex-grow: 1;
+  min-width: 0;
 }
 .panel {
   border: 1px solid var(--border);
@@ -280,6 +238,9 @@
   font-size: 11px;
   line-height: 1.8;
   color: #9c9c9c;
+}
+.source-filename {
+  overflow-wrap: anywhere;
 }
 .rail-footnote {
   border-top: 1px solid var(--border);
@@ -1462,9 +1423,6 @@
   .workspace-studio > .context-panel {
     flex-basis: 195px;
   }
-  .workspace-meta {
-    gap: 6px;
-  }
   .header-actions {
     gap: 2px;
   }
@@ -1476,12 +1434,6 @@
   }
   .project-picker span {
     max-width: 145px;
-  }
-  .workspace-heading {
-    padding: 0 19px;
-  }
-  .workspace-title {
-    gap: 10px;
   }
   .page-strip nav button {
     width: 80px;
@@ -1519,10 +1471,6 @@
   .app-header {
     height: 56px;
     flex-basis: 56px;
-  }
-  .workspace-heading {
-    height: 49px;
-    flex-basis: 49px;
   }
   .page-strip {
     height: 64px;

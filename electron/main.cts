@@ -14,13 +14,18 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { AppInfo, ProjectFolder } from './contracts.js' with { 'resolution-mode': 'import' };
+import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
+  'resolution-mode': 'import',
+};
+import { VideoAccess, videoExtensions } from './media.cjs';
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
 let mainWindow: BrowserWindow | null = null;
 let folderDialog: Promise<ProjectFolder | null> | null = null;
+let videoDialog: Promise<OpenedVideo | null> | null = null;
+const videoAccess = new VideoAccess();
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -29,6 +34,8 @@ app.setAppUserModelId('com.virtuallegacy.virtualcut');
 // profile) keep their preferences and browser cache separate from normal use.
 // Normal launches retain Electron's standard application-data location.
 const requestedProfile = app.commandLine.getSwitchValue('user-data-dir');
+// Opt-in automation with its own profile can run without taking over the desktop.
+const backgroundTest = Boolean(requestedProfile) && app.commandLine.hasSwitch('background-test');
 if (requestedProfile) {
   if (!path.isAbsolute(requestedProfile))
     throw new Error('--user-data-dir requires an absolute directory.');
@@ -39,6 +46,7 @@ if (requestedProfile) {
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'media', privileges: { standard: true, secure: true, stream: true } },
 ]);
 
 function getRendererUrl(): string {
@@ -125,6 +133,24 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
+  ipcMain.handle('media:open-video', async (event): Promise<OpenedVideo | null> => {
+    assertTrustedSender(event);
+    videoDialog ??= (async () => {
+      const result = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Open a video',
+        buttonLabel: 'Open video',
+        properties: ['openFile'],
+        filters: [{ name: 'Video files', extensions: videoExtensions }],
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      return videoAccess.select(result.filePaths[0]);
+    })();
+    try {
+      return await videoDialog;
+    } finally {
+      videoDialog = null;
+    }
+  });
   ipcMain.handle('app:get-info', (event): AppInfo => {
     assertTrustedSender(event);
     return {
@@ -184,12 +210,16 @@ async function createWindow(): Promise<void> {
       webviewTag: false,
       spellcheck: false,
       devTools: !app.isPackaged,
+      backgroundThrottling: !backgroundTest,
     },
   });
   mainWindow = window;
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => {
+    if (!backgroundTest) window.show();
+  });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
+    videoAccess.clear();
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -198,7 +228,7 @@ async function createWindow(): Promise<void> {
   await window.loadURL(getRendererUrl());
   // Explicitly showing the loaded window also covers Windows launches from a
   // hidden helper process. Only the helper's console should remain hidden.
-  if (!window.isDestroyed() && !window.isVisible()) window.show();
+  if (!backgroundTest && !window.isDestroyed() && !window.isVisible()) window.show();
 }
 
 app
@@ -211,6 +241,7 @@ app
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
     if (!process.env.VIRTUAL_CUT_DEV_URL || app.isPackaged) await registerAppProtocol();
+    protocol.handle('media', (request) => videoAccess.respond(request));
     registerDesktopApi();
     await createWindow();
     app.on('activate', () => {

@@ -11,8 +11,18 @@ export interface ProjectFolder {
   path: string;
 }
 
+export interface OpenedVideo {
+  id: string;
+  name: string;
+  bytes: number;
+  /** Opaque, session-only URL. Only the native picker grants access. */
+  url: string;
+}
+
 export interface VirtualCutApi {
   getAppInfo(): Promise<AppInfo>;
   /** Opens a native picker. Selection does not import, read, or change footage. */
   selectProjectFolder(): Promise<ProjectFolder | null>;
+  /** Opens one video for read-only playback, without importing or copying it. */
+  openVideo(): Promise<OpenedVideo | null>;
 }

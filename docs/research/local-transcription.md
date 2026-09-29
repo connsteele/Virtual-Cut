@@ -74,6 +74,25 @@ The export process should exclude the mic stream while copying the intended vide
 
 ## Evaluation sample
 
+### First microphone sample — September 29, 2026
+
+A one-off review used a disposable copy of Connor's 475.13-second OBS recording, with the second audio stream extracted as 16 kHz mono on G:. The recording is 3840 × 2160 AV1 at 60 fps, with two stereo 48 kHz FLAC audio streams and no embedded chapters. This longer source helps test sparse spoken cues; it still does not establish hour-long playback or processing behavior.
+
+Reused the existing G: cache of faster-whisper 1.2.1, CTranslate2 4.8.2, and large-v3. Ran CPU int8 with four threads at below-normal process priority, without a cloud service, new model download, GPU inference, or a resident server. The full-file VAD pass completed in about 47 seconds; a separate-utterance pass used about 101 seconds of recognition time for 13 utterances. The latter measurement excludes model loading and speech detection, so it is not directly comparable to the first pass's end-to-end time.
+
+Observed limitations:
+
+- All three cue types and useful recording context were present in recognition output, but several short commands were substituted with ordinary words (Note/no/now, Cut/but).
+- Concatenated speech across long silent gaps produced erroneous word anchors, including a Mark attached to the end of the previous utterance. Retain original speech spans and validate command timing against them; do not trust a word-timestamp array by itself.
+- Separating utterances restored useful locality but did not resolve every word. Proper nouns and complete intent must be reviewed; cue/glossary prompting can also introduce an expected command. Disagreement between passes remains visible.
+- Connor supplied two reference corrections: the word around 03:47 is Note despite repeated recognition as “No,” and around 02:37 there is a Cut that unprompted recognition missed. This establishes concrete missed/substituted cues in the sample. He recorded with a wireless-headphone mic and has a DJI mic available for a later matched comparison; its effect has not been measured.
+- The supplied speech includes relative cut targets such as a black transition. Command time and intended cut location must be separate fields.
+- Model output on isolated non-speech activity is not sufficient evidence of a command. Speech detection, signal context, and human review remain necessary.
+
+This prototype is outside Virtual Cut. Normal job exit can be checked for these temporary workers; app cancellation, crash cleanup, and Windows Job Object acceptance requirements remain unimplemented. The local review artifacts are under Connor's approved G: scratch storage rather than tracked with the application.
+
+### Further evaluation
+
 - Clearly spoken dialogue containing distinctive character, location, and item names.
 - Dialogue under music, combat effects, and short battle callouts.
 - Silence/non-speech passages, checking for invented text.

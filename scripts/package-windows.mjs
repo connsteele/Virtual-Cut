@@ -54,6 +54,6 @@ await writeFile(
 );
 await writeFile(
   path.join(destination, 'READ-ME.txt'),
-  'Virtual Cut foundation preview\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nThis is a local, unsigned preview build; installer, signing, and updates come later.\r\nNo media processing or AI models are included.\r\n',
+  'Virtual Cut playback preview\r\n\r\nLaunch Virtual Cut.exe. Keep every file in this folder together.\r\nUse Open video to preview one completed recording.\r\nThis is a local, unsigned preview build; installer, signing, and updates come later.\r\nProject import, cutting, audio-track selection, and AI features come later.\r\n',
 );
 console.log(`Desktop folder ready: ${destination}`);

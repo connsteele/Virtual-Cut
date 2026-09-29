@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleHelp,
   FolderOpen,
+  Film,
   LayoutDashboard,
   MessageSquare,
   NotebookPen,
@@ -17,6 +18,8 @@ import { Brand } from './components/Brand';
 import { Dialog } from './components/Dialog';
 import { LayoutPicker } from './components/LayoutPicker';
 import { Workspace, type ProjectSelection } from './components/Workspace';
+import type { PlaybackBookmark } from './components/VideoPlayer';
+import type { OpenedVideo } from '../electron/contracts';
 import { layouts, pages, preferenceKey, readPreferences, type LayoutId } from './workspace';
 
 const notesKey = 'virtual-cut.scratchpad.v1';
@@ -26,6 +29,9 @@ export function App() {
   const [preferences, setPreferences] = useState(readPreferences);
   const [project, setProject] = useState<ProjectSelection | null>(null);
   const [choosing, setChoosing] = useState(false);
+  const [video, setVideo] = useState<OpenedVideo | null>(null);
+  const [openingVideo, setOpeningVideo] = useState(false);
+  const playbackBookmark = useRef<PlaybackBookmark | null>(null);
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [dialog, setDialog] = useState<'layouts' | 'about' | null>(null);
   const [notice, setNotice] = useState('');
@@ -97,6 +103,27 @@ export function App() {
     const trigger = drawer === 'notes' ? notesTrigger : agentTrigger;
     setDrawer(null);
     trigger.current?.focus();
+  }
+
+  async function openVideo() {
+    if (!window.virtualCut) {
+      setNotice('Open the desktop app to preview a local video.');
+      return;
+    }
+    setOpeningVideo(true);
+    try {
+      const selected = await window.virtualCut.openVideo();
+      if (selected) {
+        setVideo(selected);
+        setNotice('');
+      }
+    } catch {
+      setNotice(
+        'The video could not be opened. Choose a completed, readable video file and try again.',
+      );
+    } finally {
+      setOpeningVideo(false);
+    }
   }
 
   function selectLayout(selected: LayoutId) {
@@ -208,6 +235,7 @@ export function App() {
           </span>
         </div>
         <span className={styles['header-divider']} />
+        <h1 className={styles['current-page']}>{page.label}</h1>
         <button
           className={styles['project-picker']}
           onClick={chooseFolder}
@@ -220,13 +248,18 @@ export function App() {
           <ChevronDown size={13} />
         </button>
         <div className={styles['header-actions']}>
+          <button className={styles['header-button']} onClick={openVideo} disabled={openingVideo}>
+            <Film size={16} />
+            <span>{openingVideo ? 'Opening…' : 'Open video'}</span>
+          </button>
           <button
             className={classNames(styles['header-button'], styles['layouts-button'])}
             onClick={() => setDialog('layouts')}
+            aria-label={`Layouts: ${layout.name}`}
           >
             <LayoutDashboard size={16} />
             <span>Layouts</span>
-            <span className={styles['button-count']}>3</span>
+            <span className={styles['layout-name']}>{layout.name}</span>
           </button>
           <span className={styles['header-divider']} />
           <button
@@ -249,29 +282,16 @@ export function App() {
           </button>
         </div>
       </header>
-      <div className={styles['workspace-heading']}>
-        <div className={styles['workspace-title']}>
-          <h1>{page.label}</h1>
-          <span className={styles['heading-slash']}>/</span>
-          <p>{page.description}</p>
-        </div>
-        <div className={styles['workspace-meta']}>
-          <span className={styles['preview-label']}>Workspace preview</span>
-          <span className={styles['meta-dot']}>·</span>
-          <button className={styles['layout-current']} onClick={() => setDialog('layouts')}>
-            {layout.name}
-            <ChevronDown size={12} />
-          </button>
-        </div>
-      </div>
       <Workspace
         layout={preferences.layout}
         page={preferences.page}
         project={project}
-        onChoose={chooseFolder}
-        choosing={choosing}
         onNotes={() => setDrawer('notes')}
         drawer={drawerContent}
+        video={video}
+        onOpenVideo={openVideo}
+        openingVideo={openingVideo}
+        playbackBookmark={playbackBookmark}
       />
       {notice && (
         <div className={styles['notice']} role="status">
@@ -336,13 +356,13 @@ export function App() {
           </div>
           <h3>Ready to explore</h3>
           <p>
-            Switch pages and layouts, choose a workspace folder, and keep scratch notes on this
-            device.
+            Open one video for playback, compare pages and layouts, choose a workspace folder, and
+            keep scratch notes on this device.
           </p>
           <h3>Coming in later stages</h3>
           <p>
-            Media intake, playback, cutting, marker publishing, review, local transcription, and
-            agent integration.
+            Project media import, audio-track selection, cutting, marker publishing, review, local
+            transcription, and agent integration.
           </p>
           <div className={styles['about-note']}>
             <ArrowUpRight size={16} />

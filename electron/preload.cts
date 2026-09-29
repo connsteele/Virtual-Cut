@@ -6,6 +6,7 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 const api: VirtualCutApi = {
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   selectProjectFolder: () => ipcRenderer.invoke('project:select-folder'),
+  openVideo: () => ipcRenderer.invoke('media:open-video'),
 };
 
 contextBridge.exposeInMainWorld('virtualCut', Object.freeze(api));

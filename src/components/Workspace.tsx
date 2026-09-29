@@ -21,7 +21,9 @@ import {
   SkipForward,
   Volume2,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import type { OpenedVideo } from '../../electron/contracts';
+import { VideoPlayer, type PlaybackBookmark } from './VideoPlayer';
 import { Brand } from './Brand';
 import { pages, type LayoutId, type PageId } from '../workspace';
 
@@ -30,14 +32,28 @@ export interface ProjectSelection {
   path: string;
 }
 
-export function SourceRail({ project }: { project: ProjectSelection | null }) {
+interface PlaybackProps {
+  video: OpenedVideo | null;
+  onOpenVideo: () => void;
+  openingVideo: boolean;
+  playbackBookmark: RefObject<PlaybackBookmark | null>;
+  onStageHeightChange?: (height: number) => void;
+}
+
+export function SourceRail({
+  project,
+  video,
+}: {
+  project: ProjectSelection | null;
+  video: OpenedVideo | null;
+}) {
   return (
     <aside
       className={classNames(styles['source-rail'], styles['panel'])}
       aria-label="Project sources"
     >
       <div className={styles['panel-heading']}>
-        <span>Project</span>
+        <span>Media pool</span>
         <span className={styles['tiny-label']}>LOCAL</span>
       </div>
       <div className={styles['folder-root']}>
@@ -50,7 +66,7 @@ export function SourceRail({ project }: { project: ProjectSelection | null }) {
         <div className={classNames(styles['collection-row'], styles['active'])}>
           <Layers3 size={16} />
           <span>Source recordings</span>
-          <span className={styles['count']}>—</span>
+          <span className={styles['count']}>{video ? '1' : '—'}</span>
         </div>
         <div className={styles['collection-row']}>
           <CheckCheck size={16} />
@@ -67,12 +83,21 @@ export function SourceRail({ project }: { project: ProjectSelection | null }) {
         <div className={styles['empty-mini-icon']}>
           <Folder size={23} strokeWidth={1.2} />
         </div>
-        <p>Everything in its place.</p>
-        <span>Your recordings and reviewed clips will appear here.</span>
+        <p>{video ? 'Open for preview' : 'Everything in its place.'}</p>
+        <span className={styles['source-filename']}>
+          {video ? video.name : 'Your recordings and reviewed clips will appear here.'}
+        </span>
+        {video && <span>{(video.bytes / 1024 / 1024).toFixed(1)} MB · session only</span>}
       </div>
       <div className={styles['rail-footnote']}>
         <Circle size={7} fill="currentColor" />
-        <span>{project ? 'Folder selected · media not loaded' : 'No project folder selected'}</span>
+        <span>
+          {video
+            ? 'One video · read-only preview'
+            : project
+              ? 'Folder selected · media not loaded'
+              : 'No project folder selected'}
+        </span>
       </div>
     </aside>
   );
@@ -81,17 +106,29 @@ export function SourceRail({ project }: { project: ProjectSelection | null }) {
 function Viewer({
   page,
   project,
-  onChoose,
-  choosing,
   compact = false,
+  video,
+  onOpenVideo,
+  openingVideo,
+  playbackBookmark,
+  onStageHeightChange,
 }: {
   page: PageId;
   project: ProjectSelection | null;
-  onChoose: () => void;
-  choosing: boolean;
   compact?: boolean;
-}) {
+} & PlaybackProps) {
   const workspace = pages.find((item) => item.id === page)!;
+  if (video)
+    return (
+      <VideoPlayer
+        key={video.id}
+        video={video}
+        bookmark={playbackBookmark}
+        onOpen={onOpenVideo}
+        opening={openingVideo}
+        onStageHeightChange={onStageHeightChange}
+      />
+    );
   return (
     <section
       className={classNames(styles.viewer, styles.panel, compact && styles['viewer-compact'])}
@@ -118,20 +155,18 @@ function Viewer({
               : workspace.future}
           </p>
           {!compact && (
-            <button className={styles['primary-button']} onClick={onChoose} disabled={choosing}>
+            <button
+              className={styles['primary-button']}
+              onClick={onOpenVideo}
+              disabled={openingVideo}
+            >
               <FolderOpen size={17} />
-              {choosing
-                ? 'Opening folder picker…'
-                : project
-                  ? 'Change project folder'
-                  : 'Choose project folder'}
+              {openingVideo ? 'Opening video picker…' : 'Open a video'}
             </button>
           )}
           {!compact && (
             <span className={styles['viewer-caption']}>
-              {project
-                ? 'Folder selected. Media intake is a later build stage.'
-                : 'Choose a folder to set the workspace location.'}
+              Preview one recording. Project import comes later.
             </span>
           )}
         </div>
@@ -252,14 +287,14 @@ function ContextPanel({ onNotes }: { onNotes: () => void }) {
 
 function MediaCollection({
   page,
-  project,
   onChoose,
   choosing,
+  video,
 }: {
   page: PageId;
-  project: ProjectSelection | null;
   onChoose: () => void;
   choosing: boolean;
+  video: OpenedVideo | null;
 }) {
   const title =
     page === 'review' ? 'Review queue' : page === 'selects' ? 'Your selects' : 'Your footage';
@@ -285,22 +320,20 @@ function MediaCollection({
             <Layers3 size={31} strokeWidth={1} />
           </div>
         </div>
-        <h3>Good footage deserves a home.</h3>
+        <h3>{video ? 'Open for preview' : 'Good footage deserves a home.'}</h3>
         <p>
-          Bring your recordings, reviewed clips, and the context behind them into one workspace.
+          {video
+            ? video.name
+            : 'Bring your recordings, reviewed clips, and the context behind them into one workspace.'}
         </p>
         <button className={styles['primary-button']} onClick={onChoose} disabled={choosing}>
           <FolderOpen size={17} />
-          {choosing
-            ? 'Opening folder picker…'
-            : project
-              ? 'Change project folder'
-              : 'Choose project folder'}
+          {choosing ? 'Opening video picker…' : video ? 'Open another video' : 'Open a video'}
         </button>
         <span className={styles['viewer-caption']}>
-          {project
-            ? 'Folder selected. Media intake comes next.'
-            : 'Media intake will be added in a later stage.'}
+          {video
+            ? 'Session preview · not yet filed or reviewed.'
+            : 'Project import will be added in a later stage.'}
         </span>
       </div>
       <div className={styles['collection-table-head']} aria-hidden="true">
@@ -316,30 +349,44 @@ export function Workspace({
   layout,
   page,
   project,
-  onChoose,
-  choosing,
   onNotes,
   drawer,
+  video,
+  onOpenVideo,
+  openingVideo,
+  playbackBookmark,
 }: {
   layout: LayoutId;
   page: PageId;
   project: ProjectSelection | null;
-  onChoose: () => void;
-  choosing: boolean;
   onNotes: () => void;
   drawer: ReactNode;
-}) {
+} & PlaybackProps) {
+  const [stageHeight, setStageHeight] = useState<number>();
   const collectionPage = page === 'media' || page === 'library' || page === 'review';
+  const playback = {
+    video,
+    onOpenVideo,
+    openingVideo,
+    playbackBookmark,
+    onStageHeightChange: layout === 'studio' ? setStageHeight : undefined,
+  };
   return (
     <div
       className={classNames(
         styles.workspace,
         styles[`workspace-${layout}`],
         Boolean(drawer) && styles['has-drawer'],
+        Boolean(video) && styles['has-video'],
       )}
       data-layout={layout}
+      style={
+        stageHeight === undefined
+          ? undefined
+          : ({ '--studio-viewer-width': `${(stageHeight * 16) / 9 + 2}px` } as CSSProperties)
+      }
     >
-      {layout !== 'focus' && <SourceRail project={project} />}
+      {layout !== 'focus' && <SourceRail project={project} video={video} />}
       <main
         className={classNames(
           styles['workspace-main'],
@@ -352,28 +399,28 @@ export function Workspace({
           <>
             <MediaCollection
               page={page}
-              project={project}
-              onChoose={onChoose}
-              choosing={choosing}
+              onChoose={onOpenVideo}
+              choosing={openingVideo}
+              video={video}
             />
             <div className={styles['library-preview']}>
-              <Viewer
-                page={page}
-                project={project}
-                onChoose={onChoose}
-                choosing={choosing}
-                compact
-              />
+              <Viewer page={page} project={project} compact {...playback} />
               <ContextPanel onNotes={onNotes} />
             </div>
           </>
         ) : (
           <>
-            <Viewer page={page} project={project} onChoose={onChoose} choosing={choosing} />
-            <Timeline page={page} />
+            <Viewer page={page} project={project} {...playback} />
+            {video ? (
+              <div className={styles['workspace-context-line']}>
+                Playback preview · cutting and marker editing come next.
+              </div>
+            ) : (
+              <Timeline page={page} />
+            )}
           </>
         )}
-        {collectionPage && layout !== 'library' && (
+        {collectionPage && layout !== 'library' && !video && (
           <div className={styles['workspace-context-line']}>
             {page === 'media'
               ? 'Recording intake'

@@ -15,6 +15,7 @@
     "start": "node scripts/start.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "test:smoke": "node scripts/smoke.mjs",
+    "test:media": "node --test scripts/media.test.mjs",
     "package:win": "node scripts/package-windows.mjs",
     "lint": "eslint .",
     "format": "prettier --write src electron scripts *.json *.ts *.mjs *.html *.md docs/foundation.md docs/layout-concepts.md",
