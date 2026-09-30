@@ -245,13 +245,24 @@ try {
         duration: el.querySelector(':scope > span').getBoundingClientRect().toJSON(),
         actions: el.querySelector('button').parentElement.getBoundingClientRect().toJSON(),
         overflow: el.scrollWidth > el.clientWidth + 1,
+        stacked:
+          Number.parseFloat(getComputedStyle(document.getElementById('media-pool-panel')).width) -
+            Number.parseFloat(
+              getComputedStyle(document.getElementById('media-pool-panel')).paddingLeft,
+            ) -
+            Number.parseFloat(
+              getComputedStyle(document.getElementById('media-pool-panel')).paddingRight,
+            ) <=
+          380,
       })),
     );
     assert(
       rows.every(
         (r) =>
           !r.overflow &&
-          Math.abs((r.title.top + r.title.bottom - r.date.top - r.date.bottom) / 2) < 2 &&
+          (r.stacked
+            ? r.date.top >= r.title.bottom
+            : Math.abs((r.title.top + r.title.bottom - r.date.top - r.date.bottom) / 2) < 2) &&
           Math.abs((r.duration.top + r.duration.bottom - r.actions.top - r.actions.bottom) / 2) < 2,
       ),
       JSON.stringify(rows),

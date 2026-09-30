@@ -1285,8 +1285,22 @@
   align-items: start;
 }
 .mediaGrid .source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   border: 1px solid var(--line);
   margin: 0;
+}
+.mediaGrid .source > :is(img, .noThumb, strong, time) {
+  grid-column: 1 / -1;
+}
+.mediaGrid .source > span:not(.noThumb) {
+  grid-column: 1;
+  grid-row: 4;
+}
+.mediaGrid .sourceActions {
+  grid-column: 2;
+  grid-row: 4;
 }
 @container media-browser (max-width: 300px) {
   .mediaGrid {
@@ -1367,7 +1381,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.mediaList .thumb {
+.mediaList :is(.thumb, .noThumb) {
   grid-row: span 2;
   width: 74px;
 }
@@ -1386,7 +1400,7 @@
   text-align: right;
   white-space: nowrap;
 }
-.mediaList .source > span {
+.mediaList .source > span:not(.noThumb) {
   grid-column: 2;
   grid-row: 2;
 }
@@ -1403,16 +1417,19 @@
   margin-left: auto;
   color: var(--muted);
   font-size: 12px;
+  max-width: 100%;
+  min-width: 0;
 }
 .mediaSort select {
   max-width: 210px;
+  min-width: 0;
 }
 @container media-browser (max-width: 450px) {
   .mediaList .source {
     grid-template-columns: 54px minmax(0, 1fr) auto;
     gap: 6px;
   }
-  .mediaList .thumb {
+  .mediaList :is(.thumb, .noThumb) {
     width: 54px;
   }
 }
@@ -1445,6 +1462,36 @@
 .mediaList .sourceActions {
   grid-column: 3;
   grid-row: 2;
+}
+@container media-browser (max-width: 380px) {
+  .mediaList .source > strong {
+    grid-column: 2 / -1;
+    grid-row: 1;
+  }
+  .mediaList .sourceDate {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    text-align: left;
+  }
+  .mediaList :is(.thumb, .noThumb) {
+    grid-row: 1 / span 3;
+  }
+  .mediaList .source > span:not(.noThumb),
+  .mediaList .sourceActions {
+    grid-row: 3;
+  }
+}
+@container media-browser (max-width: 280px) {
+  .mediaList :is(.thumb, .noThumb) {
+    grid-row: 1;
+  }
+  .mediaList .sourceDate {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+  .mediaList .source > span:not(.noThumb) {
+    grid-column: 1 / 3;
+  }
 }
 .mediaContext {
   flex-shrink: 0;
