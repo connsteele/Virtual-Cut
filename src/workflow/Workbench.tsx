@@ -41,8 +41,29 @@ import { Player, type Transport } from './Player';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
 import { clipColor } from './clipLayout';
+import type { MediaJob } from '../../electron/project-contracts';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
+function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
+  const latest = new Map<number, MediaJob>();
+  const mode = recording.monitor || 'game';
+  const tracks = new Set(
+    mode === 'mic'
+      ? [recording.micTrack]
+      : mode === 'both'
+        ? [recording.gameTrack, recording.micTrack]
+        : [recording.gameTrack],
+  );
+  for (const job of jobs) {
+    if (job.sourceId !== recording.id || job.kind !== 'audio' || job.track == null) continue;
+    if (!tracks.has(job.track)) continue;
+    const previous = latest.get(job.track);
+    if (!previous || job.updated > previous.updated) latest.set(job.track, job);
+  }
+  return [...latest.values()].find((job) =>
+    ['queued', 'running', 'failed', 'interrupted'].includes(job.state),
+  )?.message;
+}
 function MarkerEditor({
   marks,
   onChange,
@@ -932,16 +953,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         selectedMarkerId={mid}
         onMarkerSelect={(id) => selectMarker(id, record.id)}
         onAudioChange={(patch) => updateRecording(record.id, patch)}
-        audioStatus={
-          project?.jobs.find(
-            (j) =>
-              j.sourceId === record.id &&
-              j.kind === 'audio' &&
-              ((record.monitor !== 'mic' && j.track === record.gameTrack) ||
-                (record.monitor !== 'game' && j.track === record.micTrack)) &&
-              ['queued', 'running', 'failed', 'interrupted'].includes(j.state),
-          )?.message
-        }
+        audioStatus={currentAudioStatus(project?.jobs || [], record)}
         showClips={page === 'cut' || page === 'selects'}
         handleMode={page === 'cut' && handleMode && canEdit && !workspace.blocking}
         trimEnabled={!workspace.busy}

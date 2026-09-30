@@ -257,6 +257,17 @@ try {
     p.model.recordings[0].audioTracks.find((t) => t.index === game.index).previewUrl,
     'New preview generation is persisted and playable on reopen',
   );
+  // Retain an old failure in the job log to exercise successful retry status in UI.
+  service.store.putJob({
+    id: 'older-locked-preview-failure',
+    sourceId: record.id,
+    kind: 'audio',
+    track: game.index,
+    state: 'failed',
+    progress: 0,
+    message: 'Older locked-preview failure',
+    updated: '2000-01-01T00:00:00.000Z',
+  });
   await writeFile(
     path.join(root, 'latest-native.json'),
     JSON.stringify({ passed: true, dir, file, source }, null, 2),

@@ -74,6 +74,9 @@ try {
     assert(Math.abs(offset) < 1, `Page navigation offset from center: ${offset}px`);
   }
   await centered();
+  await expect(
+    page.locator('[aria-label="Preview audio controls"]').getByRole('status'),
+  ).toHaveText('Audio ready');
   await expect(page.getByLabel('Volume', { exact: true })).toHaveValue('1');
   await page.getByLabel('Waveform display').selectOption('overlay');
   await expect(page.locator('[data-waveform-track]')).toHaveCount(2);
@@ -365,6 +368,7 @@ try {
         'stable header and batch controls during quiet undo',
         'handle start/end trim, overlap, clamping, cancel, keyboard and single-step undo',
         'high-contrast name focus',
+        'successful audio retry supersedes older failed status while preserving the job log',
       ],
     }),
   );
