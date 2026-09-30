@@ -16,6 +16,7 @@ import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
+import { FilmstripCache } from './filmstrip.cjs';
 import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -55,6 +56,36 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  private filmstripCache = new FilmstripCache();
+  filmstrip(id: string, sourceId: string, times: number[], token: string) {
+    const store = this.require(id);
+    const source = store.sources().find((s) => s.id === sourceId);
+    const r = store.data.model.recordings.find((r) => r.id === sourceId);
+    if (!source || !r || r.availability !== 'ready')
+      throw new Error('Choose an available recording.');
+    if (
+      typeof token !== 'string' ||
+      !/^[a-f\d-]{36}$/i.test(token) ||
+      !Array.isArray(times) ||
+      times.length < 1 ||
+      times.length > 32 ||
+      times.some((t) => !Number.isFinite(t) || t < 0 || t > r.duration)
+    )
+      throw new Error('Invalid filmstrip request.');
+    if (!r.keys?.length) throw new Error('Keyframe index is unavailable.');
+    return this.filmstripCache.request(
+      this.tool('ffmpeg'),
+      source,
+      r.sourceStart || 0,
+      r.keys,
+      times,
+      token,
+    );
+  }
+  cancelFilmstrip(id: string, token: string, release = false) {
+    this.require(id);
+    this.filmstripCache.cancel(token, release === true);
+  }
   store: ProjectStore | null = null;
   private grants = new Map<string, { access: VideoAccess; url: string }>();
   private active: { id: string; controller: AbortController; finished: Promise<void> } | null =
@@ -121,6 +152,7 @@ export class ProjectService {
   async close() {
     this.switching = true;
     try {
+      await this.filmstripCache.close();
       this.active?.controller.abort();
       await this.active?.finished;
       await this.store?.checkpoint('auto', true);
@@ -180,6 +212,7 @@ export class ProjectService {
         r.availability = 'missing';
       }
       if (previous !== r.availability) {
+        this.filmstripCache.clear();
         dirty = true;
         this.grants.delete(s.file);
       }
@@ -199,6 +232,8 @@ export class ProjectService {
     }
     for (const r of snapshot.model.recordings) {
       const source = store.sources().find((s) => s.id === r.id);
+      r.sourceModified = source?.modified;
+      r.importedAt = source?.importedAt;
       if (source && r.availability === 'ready') {
         try {
           r.url = await this.grant(source.file);
@@ -211,16 +246,12 @@ export class ProjectService {
         const audio = source && this.audioFile(source, track.index);
         if (audio && existsSync(audio)) track.previewUrl = await this.grant(audio);
       }
-      const frames: string[] = [];
-      for (let i = 0; i < 8; i++) {
-        const file = path.join(
-          store.data.project.cache,
-          `${r.id}-${source?.fingerprint}-frame-${i}.jpg`,
-        );
-        if (existsSync(file)) frames.push(await this.grant(file));
-      }
-      r.frames = frames;
-      r.poster = frames[Math.floor(frames.length / 2)] || '';
+      // A stable media-pool poster is separate from the in-memory timeline.
+      const prefix = path.join(store.data.project.cache, `${r.id}-${source?.fingerprint}`);
+      const legacyPoster = `${prefix}-frame-4.jpg`;
+      const poster = existsSync(legacyPoster) ? legacyPoster : `${prefix}-frame-0.jpg`;
+      r.frames = [];
+      r.poster = existsSync(poster) ? await this.grant(poster) : '';
     }
     if (!existsSync(store.data.project.destination))
       snapshot.warning =
@@ -270,6 +301,7 @@ export class ProjectService {
     return path.join(s.file + '.saves', saveId);
   }
   async restore(id: string, saveId: string) {
+    this.filmstripCache.clear();
     const store = this.require(id);
     this.switching = true;
     try {
@@ -327,6 +359,7 @@ export class ProjectService {
     return this.snapshot();
   }
   async removeRecording(id: string, batchId: string, sourceId: string) {
+    this.filmstripCache.clear();
     const s = this.require(id);
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
     const recording = s.data.model.recordings.find((r) => r.id === sourceId);
@@ -399,6 +432,7 @@ export class ProjectService {
     targetId?: string,
     mode: 'preserve' | 'remove' = 'preserve',
   ) {
+    this.filmstripCache.clear();
     const s = this.require(id);
     if (!['preserve', 'remove'].includes(mode)) throw new Error('Choose how to remove this batch.');
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
@@ -550,7 +584,7 @@ export class ProjectService {
       if (!videoExtensions.includes(path.extname(file).slice(1).toLowerCase())) continue;
       const sourceId = randomUUID();
       try {
-        const native = await identify(file, sourceId);
+        const native = { ...(await identify(file, sourceId)), importedAt: Date.now() };
         this.require(id);
         const existing = s
           .sources()
@@ -563,7 +597,12 @@ export class ProjectService {
           const r = s.data.model.recordings.find((r) => r.id === existing.id)!;
           r.batchIds = [...new Set([...(r.batchIds || []), batchId])];
           if (existing.modified !== native.modified) {
-            s.putSource({ ...native, id: existing.id, audioPreviews: existing.audioPreviews });
+            s.putSource({
+              ...native,
+              id: existing.id,
+              importedAt: existing.importedAt,
+              audioPreviews: existing.audioPreviews,
+            });
             r.availability = r.duration ? 'ready' : 'pending';
             this.grants.delete(existing.file);
           }
@@ -876,6 +915,7 @@ export class ProjectService {
     return this.snapshot();
   }
   async relink(id: string, sourceId: string, file: string) {
+    this.filmstripCache.clear();
     const s = this.require(id),
       old = s.sources().find((x) => x.id === sourceId);
     if (!old) throw new Error('Recording not found.');
@@ -887,7 +927,7 @@ export class ProjectService {
         'This file does not match the saved recording fingerprint. Import changed footage as a new recording to protect existing timing.',
       );
     s.transaction(() => {
-      s.putSource({ ...next, audioPreviews: old.audioPreviews });
+      s.putSource({ ...next, importedAt: old.importedAt, audioPreviews: old.audioPreviews });
       const r = s.data.model.recordings.find((r) => r.id === sourceId)!;
       r.sourcePath = next.file;
       r.availability = r.duration ? 'ready' : 'pending';
@@ -975,10 +1015,9 @@ export class ProjectService {
         const info = await inspectMedia(source.file, source.id, this.tool('ffprobe'), signal, (n) =>
           progress(n),
         );
-        const frames = [];
-        for (let i = 0; i < 8; i++) {
-          const file = `${prefix}-frame-${i}.jpg`;
-          temp = `${prefix}-frame-${i}.partial.jpg`;
+        {
+          const file = `${prefix}-frame-0.jpg`;
+          temp = `${prefix}-frame-0.partial.jpg`;
           await launchTool(
             this.tool('ffmpeg'),
             [
@@ -986,7 +1025,7 @@ export class ProjectService {
               'error',
               '-nostdin',
               '-ss',
-              String((info.duration * (i + 0.5)) / 8),
+              String(info.duration / 2),
               '-i',
               source.file,
               '-frames:v',
@@ -1001,7 +1040,6 @@ export class ProjectService {
           if (!existsSync(temp) || (await stat(temp)).size < 100)
             throw new Error('A preview frame could not be decoded.');
           await rename(temp, file);
-          frames.push(file);
           temp = '';
         }
         const final = await stat(source.file);

@@ -54,6 +54,7 @@ import { SourceFolders } from './SourceFolders';
 import { MediaLayout } from './MediaLayout';
 import { useMediaDrop } from './useMediaDrop';
 import { inSourceFolder } from './sourceFolderTree';
+import { mediaSorts, sortMedia, type MediaSort } from './mediaOrder';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
 import { clipColor } from './clipLayout';
@@ -495,6 +496,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
     });
   const mediaDrop = useMediaDrop(workspace, page === 'media');
+  const [mediaSort, setMediaSort] = useState<MediaSort>(() => {
+    const saved = localStorage.getItem('virtual-cut.media-sort');
+    return saved && Object.hasOwn(mediaSorts, saved) ? (saved as MediaSort) : 'date-asc';
+  });
   const transport = useRef<Transport>(null),
     dragging = useRef('');
   const markerRecord = useRef(''),
@@ -565,6 +570,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const activeSourceFolder = recordings.some((x) => inSourceFolder(x, sourceFolderFilter))
     ? sourceFolderFilter
     : '';
+  const mediaRecords = sortMedia(
+    recordings.filter((x) => inSourceFolder(x, activeSourceFolder)),
+    mediaSort,
+  );
   const r =
     recordings.find((r) => r.id === model.selectedRecordingId) ||
     recordings.find((r) => r.id === rid) ||
@@ -853,10 +862,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           return;
         }
         if (!recordings.length) return;
-        const candidates =
-          page === 'media' && activeSourceFolder
-            ? recordings.filter((x) => inSourceFolder(x, activeSourceFolder))
-            : recordings;
+        const candidates = page === 'media' ? mediaRecords : recordings;
         if (!candidates.length) return;
         const index = candidates.findIndex((x) => x.id === r.id);
         selectRecord(
@@ -1002,6 +1008,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         ref={transport}
         onActivityChange={workspace.setPlaybackActive}
         recording={record}
+        projectId={project?.project.id}
         bounds={bounds}
         selectedId={mid ? undefined : cid}
         selectedMarkerId={mid}
@@ -1211,9 +1218,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 Save history
               </Button>
               <Button
-                disabled={
-                  workspace.blocking || (!project.canUndo && workspace.saveState !== 'Saving…')
-                }
+                disabled={workspace.blocking || (!project.canUndo && !workspace.hasPendingEdits)}
                 onClick={() => void history('undo')}
                 title="Undo (Ctrl+Z)"
               >
@@ -1556,37 +1561,72 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     <Button aria-pressed={mediaList} onClick={() => setMediaList(true)}>
                       List
                     </Button>
+                    <label className={s.mediaSort}>
+                      Sort
+                      <select
+                        aria-label="Sort media"
+                        value={mediaSort}
+                        onChange={(e) => {
+                          const value = e.target.value as MediaSort;
+                          setMediaSort(value);
+                          localStorage.setItem('virtual-cut.media-sort', value);
+                        }}
+                      >
+                        {Object.entries(mediaSorts).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   {project && (
                     <p className={s.dropHint}>Drop videos here to import into this batch.</p>
                   )}
                   <div className={mediaList ? s.mediaList : s.mediaGrid}>
-                    {recordings
-                      .filter((x) => inSourceFolder(x, activeSourceFolder))
-                      .map((x) => (
-                        <div
-                          key={x.id}
-                          data-recording={x.id}
-                          tabIndex={0}
-                          aria-label={`Recording: ${x.title}`}
-                          onKeyDown={(e) => {
-                            if (e.target === e.currentTarget && ['Enter', ' '].includes(e.key)) {
-                              e.preventDefault();
-                              selectRecord(x.id);
-                            }
-                          }}
-                          className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
-                          onClick={() => selectRecord(x.id)}
+                    {mediaRecords.map((x) => (
+                      <div
+                        key={x.id}
+                        data-recording={x.id}
+                        tabIndex={0}
+                        aria-label={`Recording: ${x.title}`}
+                        onKeyDown={(e) => {
+                          if (e.target === e.currentTarget && ['Enter', ' '].includes(e.key)) {
+                            e.preventDefault();
+                            selectRecord(x.id);
+                          }
+                        }}
+                        className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
+                        onClick={() => selectRecord(x.id)}
+                      >
+                        <Thumbnail src={x.pinned || x.poster} alt={x.title} />
+                        <strong>{x.title}</strong>
+                        <time
+                          className={s.sourceDate}
+                          dateTime={
+                            x.sourceModified != null
+                              ? new Date(x.sourceModified).toISOString()
+                              : undefined
+                          }
+                          title={`Source file Date modified${x.sourceModified != null ? ': ' + new Date(x.sourceModified).toLocaleString() : ' unavailable'}. Intake: ${x.importedAt != null ? new Date(x.importedAt).toLocaleString() : 'not recorded for this older import'}`}
                         >
-                          <Thumbnail src={x.pinned || x.poster} alt={x.title} />
-                          <strong>{x.title}</strong>
-                          <span>
-                            {short(x.duration)} ·{' '}
-                            {x.sample ? 'Sample' : x.availability || 'Session video'}
-                          </span>
-                          <RecordingActions recording={x} workspace={workspace} />
-                        </div>
-                      ))}
+                          {x.sourceModified != null
+                            ? new Date(x.sourceModified).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })
+                            : 'Date unavailable'}
+                        </time>
+                        <span>
+                          {short(x.duration)} ·{' '}
+                          {x.sample ? 'Sample' : x.availability || 'Session video'}
+                        </span>
+                        <RecordingActions recording={x} workspace={workspace} />
+                      </div>
+                    ))}
                   </div>
                 </>
               }

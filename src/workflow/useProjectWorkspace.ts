@@ -21,6 +21,12 @@ export function useProjectWorkspace() {
     [quiet, setQuiet] = useState(false);
   const saving = useRef<Promise<void> | null>(null),
     working = useRef(false);
+  const [saveNotice, setSaveNotice] = useState<{ text: string } | null>(null);
+  useEffect(() => {
+    if (!saveNotice) return;
+    const timer = setTimeout(() => setSaveNotice(null), 3500);
+    return () => clearTimeout(timer);
+  }, [saveNotice]);
   const activity = useRef(false);
   const [playbackActive, setPlaybackState] = useState(false);
   const setPlaybackActive = useCallback((active: boolean) => {
@@ -36,6 +42,7 @@ export function useProjectWorkspace() {
   }, []);
   const apply = useCallback((value: ProjectSnapshot, replace = false, ancestor = base.current) => {
     const same = session.current?.project.id === value.project.id;
+    if (!same) setSaveNotice(null);
     const next =
       replace || !same ? value.model : mergeEdits(ancestor, modelRef.current, value.model);
     base.current = value.model;
@@ -70,6 +77,7 @@ export function useProjectWorkspace() {
           const value = await window.virtualCut!.project.save(id, base.current, sent);
           if (session.current?.project.id !== id) return;
           apply(value, false, sent);
+          setSaveNotice({ text: 'Saved' });
           setError('');
         }
       })();
@@ -200,7 +208,10 @@ export function useProjectWorkspace() {
       () => window.virtualCut!.project.checkpoint(session.current!.project.id),
       true,
     );
-    if (value && !changed(modelRef.current, base.current)) setSaveState('Manual save made');
+    if (value && !changed(modelRef.current, base.current)) {
+      setSaveState('Manual save made');
+      setSaveNotice({ text: 'Manual save made' });
+    }
   };
   return {
     model,
@@ -208,7 +219,10 @@ export function useProjectWorkspace() {
     setPlaybackActive,
     snapshot,
     recents,
-    saveState,
+    saveState: ['Saved', 'Manual save made'].includes(saveState)
+      ? saveNotice?.text || ''
+      : saveState,
+    hasPendingEdits: edited(model, base.current),
     error,
     busy,
     run,

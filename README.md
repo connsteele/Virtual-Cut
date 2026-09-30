@@ -20,6 +20,8 @@ The local test setup uses six complete 4K AV1 recordings with original audio. Pr
 
 ## Run the app
 
+Version 0.3.5 adds Media dates and sorting (Date oldest-first by default; Intake time and Name also available). Registered project timelines generate nearest-keyframe tiles for the full or zoomed view directly into a bounded memory cache, with no dynamic image files. Hover a tile for its actual source time. Background generation waits while playing/seeking. Saved now appears briefly after a real save. See [dates and filmstrip behavior](docs/filmstrip-feedback.md) for storage, timing and verification details.
+
 Version 0.3.4 waits to autosave until playback/seeking has stopped and changes have settled for two seconds. Pending clip/marker edits also wait while playing or holding a scrub/trim gesture. Save, project operations and normal close capture the latest position. Navigation creates no undo steps; Undo/Redo reverses edits without resetting the viewing position. Cut's viewer shrinks to fit overlapping lanes and controls. Double-click a clip or marker card outside its fields to seek; the same behavior is available in expanded Review details. Ctrl+wheel pans a zoomed timeline, while Alt+wheel zooms. Marker notes accept Enter for multiple lines; names stay single-line. See [the playback/filmstrip assessment](docs/playback-feedback.md) for the remaining high-speed and thumbnail limitations.
 
 With Node 22.12+ installed:

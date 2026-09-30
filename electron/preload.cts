@@ -5,6 +5,10 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 // imports confined to Electron; the shared contract is erased by TypeScript.
 const api: VirtualCutApi = {
   project: {
+    filmstrip: (id, sourceId, times, token) =>
+      ipcRenderer.invoke('workspace:filmstrip', id, sourceId, times, token),
+    cancelFilmstrip: (id, token, release) =>
+      ipcRenderer.invoke('workspace:cancelFilmstrip', id, token, release),
     onCloseRequested: (callback) => {
       const listener = () => callback();
       ipcRenderer.on('workspace:closing', listener);

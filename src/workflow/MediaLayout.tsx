@@ -28,7 +28,9 @@ function read(): Widths {
   }
 }
 function fit(value: Widths, width: number, visible: Visible): Widths {
-  const available = width - 32 - 320 - (visible.folders ? 4 : 0) - (visible.browser ? 4 : 0);
+  // Reserve enough viewer width to avoid wrapping transport/audio into so many
+  // rows that they consume the video height in a compact window.
+  const available = width - 32 - 520 - (visible.folders ? 4 : 0) - (visible.browser ? 4 : 0);
   const folders = visible.folders
     ? Math.max(145, Math.min(value.folders, 520, available - (visible.browser ? 180 : 0)))
     : value.folders;

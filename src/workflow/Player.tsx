@@ -34,6 +34,7 @@ export interface Transport {
 }
 export function Player({
   recording: r,
+  projectId,
   markers,
   clips,
   bounds,
@@ -61,6 +62,7 @@ export function Player({
   ref,
 }: {
   recording: Recording;
+  projectId?: string;
   markers: Marker[];
   clips: Clip[];
   bounds?: { start: number; end: number };
@@ -93,16 +95,17 @@ export function Player({
     reverse = useRef<ReturnType<typeof setInterval> | null>(null),
     speed = useRef(1);
   const gestures = useRef({ scrub: false, trim: false });
+  const [activity, setActivity] = useState(false);
   const reportActivity = useCallback(() => {
     const v = video.current;
-    onActivityChange?.(
-      !!(
-        gestures.current.scrub ||
-        gestures.current.trim ||
-        reverse.current ||
-        (v && (!v.paused || v.seeking))
-      ),
+    const active = !!(
+      gestures.current.scrub ||
+      gestures.current.trim ||
+      reverse.current ||
+      (v && (!v.paused || v.seeking))
     );
+    setActivity(active);
+    onActivityChange?.(active);
   }, [onActivityChange]);
   useEffect(() => {
     const v = video.current!;
@@ -562,6 +565,8 @@ export function Player({
       <Timeline
         key={`${r.id}:${a}:${z}`}
         recording={r}
+        projectId={projectId}
+        suspendFrames={activity}
         markers={markers}
         clips={clips}
         selectedId={selectedId}

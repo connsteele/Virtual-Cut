@@ -15,9 +15,12 @@ import { Button } from './ui';
 import { fitViewport, zoomViewport, type TimelineViewport } from './timelineViewport';
 import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-react';
 import s from './Timeline.module.css';
+import { useFilmstrip } from './useFilmstrip';
 
 export function Timeline({
   recording,
+  projectId,
+  suspendFrames = false,
   markers,
   clips,
   selectedId,
@@ -41,6 +44,8 @@ export function Timeline({
   onScrubActive,
 }: {
   recording: Recording;
+  projectId?: string;
+  suspendFrames?: boolean;
   markers: Marker[];
   clips: Clip[];
   selectedId?: string;
@@ -180,9 +185,19 @@ export function Timeline({
     preview?.id === c.id ? { ...c, [preview.edge]: preview.value } : c;
   const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
   const percent = (t: number) => `${100 * Math.max(0, Math.min(1, (t - start) / span))}%`;
-  // Enough whole 16:9 tiles to fill the strip; sample the nearest available source thumbnail.
-  const count = Math.max(1, Math.ceil(width / 120));
+  // Fill the visible range with bounded tiles; native previews use its nearest keyframes.
+  const count = Math.max(1, Math.min(32, Math.ceil(width / 120)));
+  const filmstrip = useFilmstrip(
+    recording,
+    projectId,
+    start,
+    end,
+    count,
+    suspendFrames,
+    waveMode === 'replace',
+  );
   const frames = Array.from({ length: count }, (_, i) => {
+    if (filmstrip.native) return filmstrip.frames[i]?.data;
     const at = start + ((i + 0.5) / count) * span;
     const index = Math.min(
       recording.frames.length - 1,
@@ -395,12 +410,27 @@ export function Timeline({
             ))}
         </div>
         <div className={s.filmstrip} data-waveform-mode={waveMode}>
+          {filmstrip.native && filmstrip.status && waveMode !== 'replace' && (
+            <span className={s.frameStatus} role="status">
+              {filmstrip.status}
+            </span>
+          )}
           <div
             className={s.frames}
             style={waveMode === 'replace' ? { visibility: 'hidden' } : undefined}
           >
             {frames.map((src, i) => (
-              <div key={i}>{src && <img src={src} alt="" draggable={false} />}</div>
+              <div
+                key={i}
+                data-frame-time={filmstrip.frames[i]?.time}
+                title={
+                  filmstrip.frames[i]
+                    ? `Keyframe ${time(filmstrip.frames[i].time)} · tile center ${time(filmstrip.frames[i].requested)}`
+                    : undefined
+                }
+              >
+                {src && <img src={src} alt="" draggable={false} />}
+              </div>
             ))}
           </div>
           {waveMode !== 'off' && (

@@ -1349,7 +1349,7 @@
 }
 .mediaList .source {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr) auto;
   border-bottom-color: var(--line);
   border-radius: 0;
   margin: 0;
@@ -1357,6 +1357,51 @@
 .mediaList .thumb {
   grid-row: span 2;
   width: 74px;
+}
+.sourceDate {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.mediaGrid .sourceDate {
+  margin: 2px 0 4px;
+}
+.mediaList .sourceDate {
+  grid-column: 3;
+  grid-row: 1;
+  text-align: right;
+}
+.mediaList .source > span {
+  grid-column: 2 / -1;
+}
+.mediaSort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mediaSort select {
+  max-width: 210px;
+}
+@container media-browser (max-width: 450px) {
+  .mediaList .source {
+    grid-template-columns: 74px minmax(0, 1fr);
+  }
+  .mediaList .sourceDate {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: left;
+  }
+  .mediaList .thumb {
+    grid-row: span 3;
+  }
+  .mediaSort {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
 }
 .mediaPreview {
   padding: 14px;
@@ -1385,7 +1430,7 @@
   min-height: 26px;
 }
 .mediaList .sourceActions {
-  grid-column: 2;
+  grid-column: 2 / -1;
 }
 .mediaContext {
   flex-shrink: 0;
@@ -1547,6 +1592,8 @@
   cursor: progress;
 }
 .saveIndicator {
+  min-width: 105px;
+  text-align: right;
   color: #9eb8b2;
   font-size: 11px;
   white-space: nowrap;

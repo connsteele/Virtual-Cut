@@ -103,7 +103,8 @@ try {
   let r = p.model.recordings[0];
   const rid = r.id;
   assert.equal(r.audioTracks.length, 2);
-  assert.equal(r.frames.length, 8);
+  assert(r.poster);
+  assert.equal(r.frames.length, 0, 'Dynamic filmstrip frames are not stored in the project');
   assert(r.keys.length >= 8);
   assert(r.frameTimes.length >= 239);
   assert.equal(p.model.markers[rid][1].name, 'Original chapter name');

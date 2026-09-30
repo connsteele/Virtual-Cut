@@ -66,6 +66,13 @@ export interface RecentProject {
   file: string;
 }
 export interface ProjectApi {
+  filmstrip(
+    id: string,
+    sourceId: string,
+    times: number[],
+    token: string,
+  ): Promise<FilmstripFrame[]>;
+  cancelFilmstrip(id: string, token: string, release?: boolean): Promise<void>;
   onCloseRequested(callback: () => void): () => void;
   finishClose(): Promise<void>;
   recent(): Promise<RecentProject[]>;
@@ -112,4 +119,9 @@ export interface ProjectApi {
     cleanGameConfirmed: boolean,
   ): Promise<ProjectSnapshot | null>;
   revealExport(id: string, exportId: string, kind: 'video' | 'metadata'): Promise<void>;
+}
+export interface FilmstripFrame {
+  requested: number;
+  time: number;
+  data: string;
 }

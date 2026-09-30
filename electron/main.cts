@@ -161,6 +161,16 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
+  // Preview work must not hold the serialized project-edit queue, especially
+  // while a cancellation, Save or close request is waiting.
+  ipcMain.handle('workspace:filmstrip', (event, id, sourceId, times, token) => {
+    assertTrustedSender(event);
+    return projects.filmstrip(id, sourceId, times, token);
+  });
+  ipcMain.handle('workspace:cancelFilmstrip', (event, id, token, release) => {
+    assertTrustedSender(event);
+    projects.cancelFilmstrip(id, token, release);
+  });
   type Calls = Omit<
     ProjectApi,
     'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch' | 'stageDrop'

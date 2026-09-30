@@ -94,6 +94,8 @@ export interface Recording {
   timeBase?: string;
   sourceStart?: number;
   captureTime?: string;
+  sourceModified?: number;
+  importedAt?: number;
   chapterSource?: { id: string; start: number; name: string }[];
   frameTimes?: number[];
   audioTracks?: AudioTrack[];

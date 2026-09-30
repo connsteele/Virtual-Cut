@@ -54,6 +54,15 @@
 .filmstrip {
   position: relative;
 }
+.frameStatus {
+  position: absolute;
+  inset: 5px auto auto 6px;
+  max-width: calc(100% - 12px);
+  font-size: 10px;
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 2;
+}
 .waveforms {
   position: absolute;
   inset: 0;
@@ -159,7 +168,6 @@
 .frames {
   display: flex;
   overflow: hidden;
-  pointer-events: none;
   background: #080e0c;
 }
 .frames > div {

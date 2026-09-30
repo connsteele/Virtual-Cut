@@ -297,8 +297,14 @@ try {
   assert(p.jobs.every((job) => !exclusiveIds.has(job.sourceId)));
   assert(service.store.sources().every((r) => !exclusiveIds.has(r.id)));
   assert.equal(p.canUndo, false);
-  assert(p.cleanup.cacheFilesRemoved >= exclusive.length * 8, 'Owned previews should be removed');
   const cacheAfter = await readdir(path.join(dir, 'cache'));
+  const owned = cacheBefore.filter((name) => [...exclusiveIds].some((id) => name.startsWith(id)));
+  assert(owned.length >= exclusive.length, 'Each inspected source has its poster');
+  assert(
+    owned.every((name) => !cacheAfter.includes(name)),
+    'Owned previews should be removed',
+  );
+  assert.equal(p.cleanup.cacheFilesRemoved, owned.length);
   assert(cacheAfter.includes('user-kept.txt'));
   assert(
     cacheBefore
@@ -332,7 +338,7 @@ try {
     p.model.recordings.find((r) => r.id === editedRecord.id).gameTrack,
     editedRecord.gameTrack,
   );
-  assert(p.model.recordings.find((r) => r.id === editedRecord.id).frames.length === 8);
+  assert(p.model.recordings.find((r) => r.id === editedRecord.id).poster);
   p = await service.deleteBatch(id, cleanupBatch, baselineBatch, 'remove');
   // Cleanup while its exclusive inspection is still active must cancel before
   // unregistering that source, so the worker cannot republish orphaned data.
