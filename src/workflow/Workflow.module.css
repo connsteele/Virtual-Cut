@@ -673,6 +673,12 @@
   border-radius: 5px;
   font-size: 12px;
 }
+.error pre {
+  max-height: 8em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .capture {
   display: block;
   width: 100%;
@@ -1353,6 +1359,13 @@
   border-bottom-color: var(--line);
   border-radius: 0;
   margin: 0;
+  align-items: center;
+}
+.mediaList .source > strong {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .mediaList .thumb {
   grid-row: span 2;
@@ -1371,9 +1384,17 @@
   grid-column: 3;
   grid-row: 1;
   text-align: right;
+  white-space: nowrap;
 }
 .mediaList .source > span {
-  grid-column: 2 / -1;
+  grid-column: 2;
+  grid-row: 2;
+}
+.mediaViewTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .mediaSort {
   display: flex;
@@ -1388,19 +1409,11 @@
 }
 @container media-browser (max-width: 450px) {
   .mediaList .source {
-    grid-template-columns: 74px minmax(0, 1fr);
-  }
-  .mediaList .sourceDate {
-    grid-column: 2;
-    grid-row: 2;
-    text-align: left;
+    grid-template-columns: 54px minmax(0, 1fr) auto;
+    gap: 6px;
   }
   .mediaList .thumb {
-    grid-row: span 3;
-  }
-  .mediaSort {
-    margin-left: 0;
-    flex-wrap: wrap;
+    width: 54px;
   }
 }
 .mediaPreview {
@@ -1430,7 +1443,8 @@
   min-height: 26px;
 }
 .mediaList .sourceActions {
-  grid-column: 2 / -1;
+  grid-column: 3;
+  grid-row: 2;
 }
 .mediaContext {
   flex-shrink: 0;

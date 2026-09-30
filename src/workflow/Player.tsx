@@ -26,6 +26,7 @@ import { time, type Recording, type Marker, type Clip } from './model';
 import { Button, Modal } from './ui';
 import { Timeline } from './Timeline';
 import { PlaybackMetrics } from './PlaybackMetrics';
+import { startScan } from './scanPlayback';
 import s from './Workflow.module.css';
 export interface Transport {
   seek: (time: number) => void;
@@ -91,9 +92,10 @@ export function Player({
 }) {
   const video = useRef<HTMLVideoElement>(null),
     audio = useRef(new Map<number, HTMLAudioElement>()),
-    stage = useRef<HTMLDivElement>(null),
-    reverse = useRef<ReturnType<typeof setInterval> | null>(null),
+    scan = useRef<ReturnType<typeof startScan> | null>(null),
     speed = useRef(1);
+  const playRequest = useRef(0),
+    retryPosition = useRef<number | null>(null);
   const gestures = useRef({ scrub: false, trim: false });
   const [activity, setActivity] = useState(false);
   const reportActivity = useCallback(() => {
@@ -101,7 +103,7 @@ export function Player({
     const active = !!(
       gestures.current.scrub ||
       gestures.current.trim ||
-      reverse.current ||
+      scan.current ||
       (v && (!v.paused || v.seeking))
     );
     setActivity(active);
@@ -123,10 +125,10 @@ export function Player({
     [loopEnabled, setLoopEnabled] = useState(false),
     [seekAction, setSeekAction] = useState(''),
     [error, setError] = useState(''),
+    [errorDetails, setErrorDetails] = useState(''),
     [ready, setReady] = useState(false),
     [snapshot, setSnapshot] = useState(''),
     [snapshotThumbnail, setSnapshotThumbnail] = useState(''),
-    [fit, setFit] = useState<number>(),
     [volume, setVolume] = useState(1),
     [holdFrame, setHoldFrame] = useState(''),
     [waveMode, setWaveMode] = useState<'off' | 'overlay' | 'replace'>(() => {
@@ -150,13 +152,16 @@ export function Player({
       }
     }
     if (frameCallback.current != null) v.cancelVideoFrameCallback(frameCallback.current);
-    if (reverse.current) clearInterval(reverse.current);
-    reverse.current = null;
+    scan.current?.cancel();
+    scan.current = null;
+    playRequest.current++;
+    retryPosition.current = null;
     v.pause();
     speed.current = 1;
     v.playbackRate = 1;
     setReady(false);
     setError('');
+    setErrorDetails('');
     setStatus('Paused');
     setLoopEnabled(false);
     setCurrent(r.position);
@@ -212,23 +217,52 @@ export function Player({
     if (!r.sourcePath) return;
     const v = video.current!,
       elements = audio.current;
+    const lastCorrection = new Map<number, number>();
+    const starting = new Set<HTMLAudioElement>();
     const sync = () => {
       for (const track of monitored) {
         const a = audio.current.get(track.index);
         if (!a) continue;
         const time = v.currentTime - clockOffset - track.offset;
         a.volume = volume;
-        a.playbackRate = v.playbackRate;
-        if (time < 0 || time >= a.duration || v.paused || v.seeking || reverse.current) {
+        if (
+          time < 0 ||
+          time >= a.duration ||
+          v.paused ||
+          v.seeking ||
+          scan.current ||
+          v.playbackRate > 4
+        ) {
           a.pause();
           continue;
         }
-        if (a.readyState >= 1 && Math.abs(a.currentTime - time) > 0.12)
+        if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate;
+        if (a.seeking) continue;
+        // A fixed source-time tolerance shrinks to a few wall-clock milliseconds
+        // when fast forwarding and can make the audio seek again on every tick.
+        const now = performance.now();
+        if (
+          a.readyState >= 1 &&
+          Math.abs(a.currentTime - time) > 0.12 * v.playbackRate &&
+          now - (lastCorrection.get(track.index) ?? -Infinity) > 350
+        ) {
           a.currentTime = Math.max(0, time);
-        if (a.paused) void a.play().catch(() => {});
+          lastCorrection.set(track.index, now);
+        }
+        if (a.paused && !starting.has(a)) {
+          starting.add(a);
+          void a
+            .play()
+            .catch(() => {})
+            .finally(() => starting.delete(a));
+        }
       }
     };
     const seekAudio = () => {
+      if (scan.current || v.playbackRate > 4) {
+        sync();
+        return;
+      }
       for (const track of monitored) {
         const a = audio.current.get(track.index);
         if (a && a.readyState >= 1)
@@ -255,8 +289,9 @@ export function Player({
     callbacks.current = { onPosition, onDuration, onEnded };
   }, [onPosition, onDuration, onEnded]);
   const stop = () => {
-    if (reverse.current) clearInterval(reverse.current);
-    reverse.current = null;
+    playRequest.current++;
+    scan.current?.cancel();
+    scan.current = null;
     video.current?.pause();
     reportActivity();
     setStatus('Paused');
@@ -279,7 +314,7 @@ export function Player({
     if (!looping) return;
     const timer = setInterval(() => {
       const v = video.current;
-      if (!v || v.paused || v.seeking || reverse.current) return;
+      if (!v || v.paused || v.seeking || scan.current) return;
       if (v.currentTime - clockOffset >= loopEnd) seek(loopStart);
     }, 16);
     return () => clearInterval(timer);
@@ -289,21 +324,80 @@ export function Player({
   const forward = (rate: number) => {
     const v = video.current;
     if (!v || !ready) return;
-    if (reverse.current) clearInterval(reverse.current);
-    reverse.current = null;
+    scan.current?.cancel();
+    scan.current = null;
     const position = v.currentTime - clockOffset;
     if (looping && (position < loopStart || position >= loopEnd - 0.001)) seek(loopStart);
     else if (position >= z - 0.04) seek(a);
     speed.current = rate;
     v.playbackRate = rate;
+    const request = ++playRequest.current;
     void v
       .play()
-      .then(() => setStatus(`${rate}× forward`))
+      .then(() => {
+        if (request === playRequest.current && !v.paused) setStatus(`${rate}× forward`);
+      })
       .catch((e) => {
-        if (e.name !== 'AbortError')
-          setError('Playback could not start. Try opening this video again.');
+        if (request === playRequest.current && e.name !== 'AbortError') {
+          stop();
+          setError('Playback could not start. Reload the preview to try again.');
+        }
       });
   };
+  function beginScan(direction: 1 | -1, rate: number) {
+    stop();
+    speed.current = rate;
+    scan.current = startScan({
+      video: video.current!,
+      direction,
+      rate,
+      offset: clockOffset,
+      keys: r.keys || [],
+      range: () => {
+        const loop = loopBounds.current;
+        return loop.looping ? loop : { start: a, end: z, looping: false };
+      },
+      onPosition: (position) => {
+        setCurrent(position);
+        callbacks.current.onPosition?.(position);
+      },
+      onEnd: () => {
+        stop();
+        if (direction > 0) callbacks.current.onEnded?.();
+      },
+    });
+    setStatus(`${rate}× ${direction > 0 ? 'forward' : 'reverse'} scan`);
+    reportActivity();
+  }
+  const scanFallback = useRef(beginScan);
+  useLayoutEffect(() => {
+    scanFallback.current = beginScan;
+  });
+  useEffect(() => {
+    const v = video.current!;
+    let last = v.currentTime,
+      advanced = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      if (
+        v.paused ||
+        v.seeking ||
+        v.error ||
+        v.playbackRate < 4 ||
+        scan.current ||
+        Math.abs(v.currentTime - last) > 0.01
+      ) {
+        last = v.currentTime;
+        advanced = now;
+      } else if (now - advanced > 550) {
+        // Direct native playback is retained while it keeps up. A starved fast
+        // decoder switches to bounded scans rather than leaving a frozen viewer.
+        scanFallback.current(1, speed.current);
+        advanced = now;
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [r.url]);
   function command(key: string) {
     const v = video.current;
     if (!v || !ready) return;
@@ -312,37 +406,24 @@ export function Player({
       return;
     }
     if (key === 'l') {
-      forward(!v.paused ? Math.min(16, speed.current * 2) : 1);
+      const rate = !v.paused || scan.current?.direction === 1 ? Math.min(16, speed.current * 2) : 1;
+      if (scan.current?.direction === 1) beginScan(1, rate);
+      else forward(rate);
       return;
     }
     if (key === ' ' || key === 'k') {
-      if (!v.paused || reverse.current) stop();
+      if (!v.paused || scan.current) stop();
       else forward(1);
       return;
     }
     if (key === 'j') {
-      const rate = reverse.current ? Math.min(16, speed.current * 2) : 1;
-      stop();
-      speed.current = rate;
-      setStatus(`${rate}× reverse scan`);
+      const rate = scan.current?.direction === -1 ? Math.min(16, speed.current * 2) : 1;
       if (
         looping &&
         (v.currentTime - clockOffset < loopStart || v.currentTime - clockOffset >= loopEnd)
       )
         seek(loopEnd - 0.001);
-      reverse.current = setInterval(() => {
-        const loop = loopBounds.current;
-        if (loop.looping && v.currentTime - clockOffset - rate / 12 <= loop.start) {
-          seek(loop.end - 0.001);
-          return;
-        }
-        if (v.currentTime - clockOffset <= a + 0.01) {
-          stop();
-          return;
-        }
-        seek(v.currentTime - clockOffset - rate / 12);
-      }, 83);
-      reportActivity();
+      beginScan(-1, rate);
       return;
     }
     stop();
@@ -382,20 +463,16 @@ export function Player({
   useEffect(() => {
     const v = video.current!;
     return () => {
-      if (reverse.current) clearInterval(reverse.current);
+      scan.current?.cancel();
       v.pause();
     };
   }, []);
   useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setFit((entry.contentRect.height * 16) / 9));
-    if (stage.current) observer.observe(stage.current);
-    return () => observer.disconnect();
-  }, []);
-  useEffect(() => {
     const pause = () => {
       if (document.hidden) {
-        if (reverse.current) clearInterval(reverse.current);
-        reverse.current = null;
+        playRequest.current++;
+        scan.current?.cancel();
+        scan.current = null;
         video.current?.pause();
         reportActivity();
         setStatus('Paused');
@@ -460,14 +537,13 @@ export function Player({
           </span>
         </div>
       </div>
-      <div ref={stage} className={s.stage} data-video-stage>
+      <div className={s.stage} data-video-stage>
         <video
           crossOrigin="anonymous"
           ref={video}
           playsInline
           preload="metadata"
           muted={!!r.sourcePath || (r.sample && !r.fullResolution)}
-          style={{ maxWidth: fit }}
           aria-label={`Video: ${r.title}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
@@ -487,9 +563,14 @@ export function Player({
             setReady(d > 0);
             v.volume = volume;
             v.currentTime =
-              Math.max(a, Math.min((bounds?.end || d) - 0.001, r.position)) + clockOffset;
+              Math.max(
+                a,
+                Math.min((bounds?.end || d) - 0.001, retryPosition.current ?? r.position),
+              ) + clockOffset;
+            const retry = retryPosition.current !== null;
+            retryPosition.current = null;
             callbacks.current.onDuration?.(d);
-            if (autoPlay)
+            if (autoPlay && !retry)
               void v
                 .play()
                 .then(() => setStatus('Sequence playback'))
@@ -497,17 +578,35 @@ export function Player({
           }}
           onLoadedData={revealFrame}
           onSeeked={revealFrame}
-          onError={() =>
+          onError={(e) => {
+            const v = e.currentTarget;
+            setErrorDetails(
+              JSON.stringify(
+                {
+                  code: v.error?.code ?? null,
+                  message: v.error?.message ?? 'Media error event',
+                  sourceTime: Math.max(0, v.currentTime - clockOffset),
+                  rate: speed.current,
+                  readyState: v.readyState,
+                  networkState: v.networkState,
+                },
+                null,
+                2,
+              ),
+            );
+            stop();
+            setReady(false);
+            const code = e.currentTarget.error?.code;
             setError(
               r.sample
                 ? 'Sample media is unavailable in this checkout. Use Open video to preview your own footage.'
-                : 'Unable to play this file. Its codec may be unsupported, or the file may have changed.',
-            )
-          }
+                : `Playback stopped${code ? ` (media error ${code})` : ''}. Reload the preview to try again.`,
+            );
+          }}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
             const position = Math.max(0, v.currentTime - clockOffset);
-            if (looping && !v.paused && !v.seeking && !reverse.current && position >= loopEnd) {
+            if (looping && !v.paused && !v.seeking && !scan.current && position >= loopEnd) {
               // Wrap before notifying selection-follow: the neighboring clip at
               // the out-point must not take over the loop on a delayed update.
               seek(loopStart);
@@ -522,7 +621,7 @@ export function Player({
             }
           }}
           onEnded={() => {
-            if (looping && !reverse.current) {
+            if (looping && !scan.current) {
               seek(loopStart);
               forward(speed.current);
               return;
@@ -532,13 +631,7 @@ export function Player({
           }}
         />
         {holdFrame && (
-          <img
-            className={s.transitionFrame}
-            src={holdFrame}
-            alt=""
-            style={{ maxWidth: fit }}
-            aria-hidden="true"
-          />
+          <img className={s.transitionFrame} src={holdFrame} alt="" aria-hidden="true" />
         )}
       </div>
       {r.sourcePath &&
@@ -558,9 +651,35 @@ export function Player({
             />
           ))}
       {error && (
-        <p className={s.error} role="alert">
+        <div className={s.error} role="alert">
           {error}
-        </p>
+          {!r.sample && (
+            <Button
+              onClick={() => {
+                const v = video.current!;
+                stop();
+                retryPosition.current = Math.max(
+                  a,
+                  Math.min(z - 0.001, v.currentTime - clockOffset),
+                );
+                speed.current = 1;
+                v.playbackRate = 1;
+                setError('');
+                setErrorDetails('');
+                setReady(false);
+                v.load();
+              }}
+            >
+              Reload preview
+            </Button>
+          )}
+          {errorDetails && (
+            <details>
+              <summary>Error details</summary>
+              <pre>{errorDetails}</pre>
+            </details>
+          )}
+        </div>
       )}
       <Timeline
         key={`${r.id}:${a}:${z}`}
@@ -657,7 +776,7 @@ export function Player({
             primary={fastPlaying}
             onClick={() => command('l')}
             aria-label="Forward / faster · L"
-            title="L: forward / faster · 1× / 2× / 4× / 8× / 16× · high-speed preview may skip frames or mute audio"
+            title="L: forward / faster · 1× / 2× / 4× / 8× / 16× · stalled fast playback switches to sampled scanning; audio pauses above 4×"
           >
             <FastForward size={17} />
           </Button>
@@ -731,12 +850,14 @@ export function Player({
                 ))}
               </div>
               <span role="status" className={s.audioReady} title={audioStatus}>
-                {audioStatus ||
-                  (monitored.some((t) => !t.previewUrl)
-                    ? 'Preparing audio…'
-                    : monitored.length
-                      ? 'Audio ready'
-                      : 'No track selected')}
+                {reversePlaying || status.includes('scan') || (fastPlaying && speed.current > 4)
+                  ? 'Audio paused while scanning'
+                  : audioStatus ||
+                    (monitored.some((t) => !t.previewUrl)
+                      ? 'Preparing audio…'
+                      : monitored.length
+                        ? 'Audio ready'
+                        : 'No track selected')}
               </span>
             </>
           )}

@@ -1554,7 +1554,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               }
               browser={
                 <>
-                  <div className={s.tools}>
+                  <div className={s.mediaViewTools}>
                     <Button aria-pressed={!mediaList} onClick={() => setMediaList(false)}>
                       Thumbnails
                     </Button>
@@ -1600,7 +1600,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         onClick={() => selectRecord(x.id)}
                       >
                         <Thumbnail src={x.pinned || x.poster} alt={x.title} />
-                        <strong>{x.title}</strong>
+                        <strong title={x.title}>{x.title}</strong>
                         <time
                           className={s.sourceDate}
                           dateTime={

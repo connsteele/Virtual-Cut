@@ -21,6 +21,7 @@ export function useProjectWorkspace() {
     [quiet, setQuiet] = useState(false);
   const saving = useRef<Promise<void> | null>(null),
     working = useRef(false);
+  const makingCheckpoint = useRef(false);
   const [saveNotice, setSaveNotice] = useState<{ text: string } | null>(null);
   useEffect(() => {
     if (!saveNotice) return;
@@ -77,7 +78,7 @@ export function useProjectWorkspace() {
           const value = await window.virtualCut!.project.save(id, base.current, sent);
           if (session.current?.project.id !== id) return;
           apply(value, false, sent);
-          setSaveNotice({ text: 'Saved' });
+          if (!makingCheckpoint.current) setSaveNotice({ text: 'Saved' });
           setError('');
         }
       })();
@@ -203,14 +204,20 @@ export function useProjectWorkspace() {
     });
   };
   const checkpoint = async () => {
-    if (!session.current) return;
-    const value = await run(
-      () => window.virtualCut!.project.checkpoint(session.current!.project.id),
-      true,
-    );
-    if (value && !changed(modelRef.current, base.current)) {
-      setSaveState('Manual save made');
-      setSaveNotice({ text: 'Manual save made' });
+    if (!session.current || working.current) return;
+    makingCheckpoint.current = true;
+    setSaveNotice(null);
+    try {
+      const value = await run(
+        () => window.virtualCut!.project.checkpoint(session.current!.project.id),
+        true,
+      );
+      if (value && !changed(modelRef.current, base.current)) {
+        setSaveState('Manual save made');
+        setSaveNotice({ text: 'Manual save made' });
+      }
+    } finally {
+      makingCheckpoint.current = false;
     }
   };
   return {
