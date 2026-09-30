@@ -23,6 +23,7 @@ import { Brand } from '../components/Brand';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import { ProjectPanel, BatchTools, RecordingTools, ImportPanel, SaveHistory } from './ProjectPanel';
+import { ExportPanel, ExportHistory } from './ExportPanel';
 import {
   colors,
   initialModel,
@@ -411,6 +412,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const workspace = useProjectWorkspace();
   const { model, setModel, snapshot: project } = workspace;
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [exportClipId, setExportClipId] = useState(''),
+    [exportsOpen, setExportsOpen] = useState(false);
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1210,14 +1213,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </>
               )}
               <span className={s.spacer} />
+              {project && <Button onClick={() => setExportsOpen(true)}>Exports</Button>}
               {page === 'cut' && (
                 <Button
                   primary
-                  disabled={!!project}
-                  title={project ? 'Clip export and filing arrive in Milestone 2' : undefined}
-                  onClick={() => setDialog('export')}
+                  disabled={!!project && (!c || r.availability !== 'ready' || workspace.blocking)}
+                  onClick={() => (project ? setExportClipId(c!.id) : setDialog('export'))}
                 >
-                  Export {clips.length} clips
+                  {project ? 'Export selected clip' : `Export ${clips.length} clips`}
                 </Button>
               )}
               {page === 'selects' && (
@@ -1708,6 +1711,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                     <Button onClick={() => addSelect(clip.id)}>
                                       Add to selects
                                     </Button>
+                                    {project && (
+                                      <Button onClick={() => setExportClipId(clip.id)}>
+                                        Export clip…
+                                      </Button>
+                                    )}
                                     <details>
                                       <summary>Source context</summary>
                                       <p className={s.muted}>
@@ -1731,7 +1739,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               </div>
               <div className={s.toolbar}>
                 <span className={s.muted}>
-                  {readyQueue.length} accepted and ready · preview plan
+                  {readyQueue.length} accepted and ready{!project && ' · preview plan'}
                 </span>
                 <span className={s.spacer} />
                 <Button
@@ -2105,6 +2113,20 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       )}
       {projectsOpen && (
         <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
+      )}
+      {project && exportClipId && (
+        <ExportPanel
+          workspace={workspace}
+          clipId={exportClipId}
+          onClose={() => setExportClipId('')}
+          onQueued={() => {
+            setExportClipId('');
+            setExportsOpen(true);
+          }}
+        />
+      )}
+      {project && exportsOpen && (
+        <ExportHistory workspace={workspace} onClose={() => setExportsOpen(false)} />
       )}
       {notice && (
         <div className={s.notice} role="status">

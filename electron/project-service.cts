@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
   lstat,
@@ -21,6 +21,13 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
 import { editorial } from './project-edits.js';
+import { exportClip as writeClip } from './clip-export.cjs';
+import type {
+  ExportContainer,
+  ExportInput,
+  ExportPlan,
+  ExportRecord,
+} from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -100,6 +107,7 @@ export class ProjectService {
     await this.close();
     this.store = next;
     await next.loadCopies();
+    this.reconcileExports();
     process.env.VIRTUAL_CUT_MEDIA_TEMP = next.data.project.cache;
     await this.refreshAvailability();
     await this.remember();
@@ -181,6 +189,13 @@ export class ProjectService {
     await this.refreshAvailability();
     const store = this.require(),
       snapshot = store.snapshot();
+    for (const item of snapshot.exports) {
+      try {
+        item.current = item.inputHash === this.exportInput(item.plan.clipId).hash;
+      } catch {
+        item.current = false;
+      }
+    }
     for (const r of snapshot.model.recordings) {
       const source = store.sources().find((s) => s.id === r.id);
       if (source && r.availability === 'ready') {
@@ -249,6 +264,7 @@ export class ProjectService {
       this.active?.controller.abort();
       await this.active?.finished;
       await store.restore(saveId);
+      this.reconcileExports();
       await this.refreshAvailability();
       // Cleanup removes disposable previews, not recovery records. Rebuild any
       // missing inspection previews while preserving the restored user's edits.
@@ -558,6 +574,167 @@ export class ProjectService {
     this.queueAudio(sourceId);
     return this.snapshot();
   }
+  private exportInput(clipId: string) {
+    const s = this.require(),
+      clip = s.data.model.clips.find((c) => c.id === clipId),
+      r = s.data.model.recordings.find((r) => r.id === clip?.rid),
+      source = s.sources().find((x) => x.id === clip?.rid);
+    if (!clip || !r || !source || r.availability !== 'ready')
+      throw new Error('Select an available clip after inspection.');
+    if (
+      r.gameTrack == null ||
+      !r.audioTracks?.some((t) => t.index === r.gameTrack) ||
+      r.gameTrack === r.micTrack
+    )
+      throw new Error('Choose a separate game-audio track in Source & audio setup.');
+    const input: ExportInput = {
+      clip: structuredClone(clip),
+      markers: structuredClone(s.data.model.markers[r.id] || []),
+      context: r.context,
+      gameTrack: r.gameTrack,
+      micTrack: r.micTrack ?? null,
+      sourceFile: source.file,
+      sourceFingerprint: source.fingerprint,
+      sourceBytes: source.bytes,
+      sourceModified: source.modified,
+      sourceStart: r.sourceStart || 0,
+      duration: r.duration,
+      captureTime: r.captureTime,
+    };
+    // Review flags and playback position do not change the export payload.
+    const clipPayload = { ...input.clip };
+    delete clipPayload.accepted;
+    delete clipPayload.held;
+    delete clipPayload.filed;
+    const payload = { ...clipPayload, include: undefined };
+    const hash = createHash('sha256')
+      .update(JSON.stringify({ ...input, clip: payload }))
+      .digest('hex');
+    return { input, hash, recording: r };
+  }
+  private reconcileExports() {
+    const s = this.require();
+    for (let record of s.exports()) {
+      if (['queued', 'running'].includes(record.state)) {
+        record = {
+          ...record,
+          state: 'interrupted',
+          message: 'Export interrupted. Retry from Jobs.',
+          updated: new Date().toISOString(),
+        };
+        s.putExport(record);
+      }
+      if (
+        !['planned', 'verified'].includes(record.state) &&
+        !s.jobs().some((j) => j.id === record.plan.id) &&
+        s.sources().some((source) => source.id === record.plan.sourceId)
+      )
+        s.putJob({
+          id: record.plan.id,
+          sourceId: record.plan.sourceId,
+          kind: 'export',
+          state: record.state === 'cancelled' ? 'cancelled' : 'interrupted',
+          progress: 0,
+          message: record.message,
+          updated: record.updated,
+        });
+    }
+  }
+  async exportPlan(id: string, clipId: string, container: ExportContainer): Promise<ExportPlan> {
+    const s = this.require(id);
+    if (!['mp4', 'mkv'].includes(container)) throw new Error('Choose MP4 or MKV.');
+    const { input, hash, recording } = this.exportInput(clipId),
+      { start, end } = input.clip;
+    if (
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      start < 0 ||
+      end > input.duration + 0.000001 ||
+      end <= start
+    )
+      throw new Error('Give this clip a valid range within the recording.');
+    const keys = [...(recording.keys || [])].sort((a, b) => a - b);
+    const lower = keys.filter((t) => t <= start + 0.000001).at(-1),
+      upper = keys.find((t) => t >= end - 0.000001) ?? input.duration;
+    if (lower == null || upper <= lower)
+      throw new Error('Usable outward keyframes are unavailable.');
+    const plan: ExportPlan = {
+      id: randomUUID(),
+      clipId,
+      sourceId: input.clip.rid,
+      name: input.clip.name,
+      sourceName: recording.title,
+      gameTrack: input.gameTrack,
+      container,
+      requested: { start, end },
+      planned: { start: lower, end: upper },
+      revision: s.data.revision,
+      created: new Date().toISOString(),
+    };
+    s.discardExportPlans();
+    s.putExport({
+      plan,
+      input,
+      inputHash: hash,
+      state: 'planned',
+      message: 'Ready to choose an output file.',
+      updated: plan.created,
+    });
+    return plan;
+  }
+  async startExport(id: string, planId: string, output: string, cleanGameConfirmed: boolean) {
+    const s = this.require(id),
+      record = s.exports().find((e) => e.plan.id === planId);
+    if (!record || !['planned', 'failed', 'cancelled', 'interrupted'].includes(record.state))
+      throw new Error('Make a new export plan.');
+    if (cleanGameConfirmed !== true)
+      throw new Error('Confirm that the selected game track has no microphone mixed into it.');
+    if (record.inputHash !== this.exportInput(record.plan.clipId).hash)
+      throw new Error(
+        'The clip or its annotations changed. Reopen the export dialog to review a new plan.',
+      );
+    const directory = await realpath(path.dirname(output)),
+      resolved = path.join(directory, path.basename(output));
+    if (path.extname(resolved).toLowerCase() !== '.' + record.plan.container)
+      throw new Error('Use the selected container extension for the output.');
+    const cache = await realpath(s.data.project.cache);
+    if (resolved.toLowerCase().startsWith(cache.toLowerCase() + path.sep))
+      throw new Error('Save finished clips outside the disposable preview cache.');
+    if (s.sources().some((x) => path.resolve(x.file).toLowerCase() === resolved.toLowerCase()))
+      throw new Error('Choose a new file, separate from every original recording.');
+    const next: ExportRecord = {
+      ...record,
+      output: resolved,
+      metadata: resolved + '.vcut.json',
+      cleanGameConfirmed: true,
+      state: 'queued',
+      verification: resolved === record.output ? record.verification : undefined,
+      message: 'Waiting to export',
+      updated: new Date().toISOString(),
+    };
+    s.putExport(next);
+    s.putJob({
+      id: planId,
+      sourceId: record.plan.sourceId,
+      kind: 'export',
+      state: 'queued',
+      progress: 0,
+      message: next.message,
+      updated: next.updated,
+    });
+    this.pump();
+    return this.snapshot();
+  }
+  async exportLocation(id: string, exportId: string, kind: 'video' | 'metadata') {
+    const record = this.require(id)
+      .exports()
+      .find((e) => e.plan.id === exportId);
+    if (!record || record.state !== 'verified' || !['video', 'metadata'].includes(kind))
+      throw new Error('Choose a verified export.');
+    const file = kind === 'video' ? record.output : record.metadata;
+    if (!file || !existsSync(file)) throw new Error('The exported file is offline or has moved.');
+    return file;
+  }
   async job(id: string, jobId: string, action: 'cancel' | 'retry') {
     const s = this.require(id),
       job = s.jobs().find((j) => j.id === jobId);
@@ -573,9 +750,28 @@ export class ProjectService {
           message: 'Cancelled',
           updated: new Date().toISOString(),
         });
+      if (job.kind === 'export' && job.state === 'queued') {
+        const record = s.exports().find((e) => e.plan.id === jobId)!;
+        s.putExport({
+          ...record,
+          state: 'cancelled',
+          message: 'Cancelled',
+          updated: new Date().toISOString(),
+        });
+      }
     } else if (action === 'retry' && ['failed', 'interrupted', 'cancelled'].includes(job.state)) {
       if (!s.sources().some((x) => x.id === job.sourceId))
         throw new Error('Choose the recording again using Import.');
+      if (job.kind === 'export') {
+        const record = s.exports().find((e) => e.plan.id === jobId);
+        if (!record) throw new Error('Make a new export plan.');
+        s.putExport({
+          ...record,
+          state: 'queued',
+          message: 'Waiting to retry',
+          updated: new Date().toISOString(),
+        });
+      }
       s.putJob({
         ...job,
         state: 'queued',
@@ -646,6 +842,28 @@ export class ProjectService {
     let temp = '',
       pcm = '';
     try {
+      if (job.kind === 'export') {
+        const record = s.exports().find((e) => e.plan.id === job.id);
+        if (!record) throw new Error('Export plan is unavailable.');
+        const done = await writeClip(
+          record,
+          { ffmpeg: this.tool('ffmpeg'), ffprobe: this.tool('ffprobe') },
+          signal,
+          (next, n) => {
+            s.putExport(next);
+            progress(n, next.message);
+          },
+        );
+        s.putExport(done);
+        s.putJob({
+          ...job,
+          state: 'succeeded',
+          progress: 1,
+          message: done.message,
+          updated: done.updated,
+        });
+        return;
+      }
       if (!source) throw new Error('Source file is not registered. Import it again.');
       const actual = await identify(source.file, source.id);
       if (actual.fingerprint !== source.fingerprint || actual.modified !== source.modified)
@@ -838,9 +1056,23 @@ export class ProjectService {
         updated: new Date().toISOString(),
       });
     } catch (e) {
+      if (job.kind === 'export') {
+        const record = s.exports().find((e) => e.plan.id === job.id);
+        if (record)
+          s.putExport({
+            ...record,
+            state: signal.aborted ? (this.switching ? 'interrupted' : 'cancelled') : 'failed',
+            message: signal.aborted
+              ? 'Export stopped. Retry from Jobs.'
+              : e instanceof Error
+                ? e.message
+                : String(e),
+            updated: new Date().toISOString(),
+          });
+      }
       s.putJob({
         ...job,
-        state: signal.aborted ? 'cancelled' : 'failed',
+        state: signal.aborted ? (this.switching ? 'interrupted' : 'cancelled') : 'failed',
         progress: 0,
         message: signal.aborted ? 'Cancelled' : e instanceof Error ? e.message : String(e),
         updated: new Date().toISOString(),

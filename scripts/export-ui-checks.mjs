@@ -1,0 +1,122 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { _electron as electron, expect } from 'playwright/test';
+import { root, require, electronEnvironment } from './shared.mjs';
+const checks = 'G:/GPT/Work/virtual-cut/m2',
+  fixture = JSON.parse(await readFile(path.join(checks, 'latest-native.json'), 'utf8'));
+await mkdir(checks, { recursive: true });
+const dir = await mkdtemp(path.join(checks, 'ui-'));
+const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
+const app = await electron.launch({
+  executablePath: executable || require('electron'),
+  args: [
+    ...(executable ? [] : [root]),
+    `--user-data-dir=${path.join(dir, 'profile')}`,
+    '--background-test',
+  ],
+  cwd: root,
+  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+});
+const page = await app.firstWindow(),
+  errors = [];
+page.setDefaultTimeout(20000);
+page.on('pageerror', (e) => errors.push(e.message));
+const state = () => page.evaluate(() => window.virtualCut.project.current());
+async function capture(name) {
+  const image = await app.evaluate(async ({ BrowserWindow }) => {
+    const wc = BrowserWindow.getAllWindows()[0].webContents;
+    await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
+    await new Promise((r) => setTimeout(r, 150));
+    return (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true }))
+      .toPNG()
+      .toString('base64');
+  });
+  await writeFile(path.join(dir, name + '.png'), Buffer.from(image, 'base64'));
+}
+try {
+  await app.evaluate(({ dialog, BrowserWindow }, file) => {
+    BrowserWindow.getAllWindows()[0].webContents.setAudioMuted(true);
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, fixture.file);
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByRole('button', { name: 'Open project file…', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Export selected clip', exact: true }),
+  ).toBeEnabled();
+  await page.getByRole('button', { name: 'Export selected clip', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export selected clip', exact: true });
+  await expect(dialog.getByRole('table', { name: 'Export ranges' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Choose output file…' })).toBeDisabled();
+  await dialog.getByLabel('Export container').selectOption('mp4');
+  await expect(dialog.getByRole('table', { name: 'Export ranges' })).toBeVisible();
+  await dialog.getByRole('checkbox').check();
+  await capture('export-plan-wide');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1120, 760));
+  await capture('export-plan-compact');
+  const bounds = await dialog.boundingBox();
+  assert(
+    bounds.x >= 0 &&
+      bounds.y >= 0 &&
+      bounds.x + bounds.width <= 1120 &&
+      bounds.y + bounds.height <= 760,
+  );
+  await app.evaluate(({ dialog }) => {
+    dialog.showSaveDialog = async () => ({ canceled: true });
+  });
+  await dialog.getByRole('button', { name: 'Choose output file…' }).click();
+  await expect(dialog).toBeVisible();
+  const output = path.join(dir, 'UI exported clip.mp4');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, output);
+  await dialog.getByRole('button', { name: 'Choose output file…' }).click();
+  const history = page.getByRole('dialog', { name: 'Exports', exact: true });
+  await expect(history).toBeVisible();
+  await expect
+    .poll(async () => (await state()).exports.find((e) => e.output === output)?.state, {
+      timeout: 90000,
+    })
+    .toBe('verified');
+  await expect(history.getByRole('button', { name: /Show video:/ }).last()).toBeVisible();
+  await capture('export-history-compact');
+  let revealed = '';
+  await app.evaluate(({ shell }) => {
+    shell.showItemInFolder = (file) => {
+      globalThis.__exportRevealed = file;
+    };
+  });
+  const row = history
+    .getByRole('row')
+    .filter({ hasText: 'Original video and game audio verified' })
+    .filter({ hasText: 'bframes' })
+    .first();
+  await row.getByRole('button', { name: 'Metadata', exact: true }).click();
+  revealed = await app.evaluate(() => globalThis.__exportRevealed);
+  assert.equal(revealed, output + '.vcut.json');
+  await history.getByRole('button', { name: 'Close dialog' }).click();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 960));
+  const navigation = page.getByRole('navigation', { name: 'Workspace pages' });
+  const center = await navigation.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.x + r.width / 2 - innerWidth / 2;
+  });
+  assert(Math.abs(center) < 1);
+  await navigation.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByRole('button', { name: 'Details', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Export clip…', exact: true }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Export selected clip', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Close dialog' }).click();
+  await navigation.getByRole('button', { name: 'Cut', exact: true }).click();
+  await page.getByRole('button', { name: 'Exports', exact: true }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Exports', exact: true }).getByRole('table'),
+  ).toBeVisible();
+  assert.deepEqual(errors, []);
+  await writeFile(path.join(checks, 'latest-ui.json'), JSON.stringify({ dir, output }, null, 2));
+  console.log('Export UI checks passed:', JSON.stringify({ dir, output }));
+} finally {
+  await app.close();
+}

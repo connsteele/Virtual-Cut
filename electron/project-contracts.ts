@@ -1,4 +1,5 @@
 import type { Model } from './workflow-types.js';
+import type { ExportContainer, ExportPlan, ExportRecord } from './export-contracts.js';
 
 export interface Batch {
   id: string;
@@ -26,7 +27,7 @@ export interface ProjectInfo {
 export interface MediaJob {
   id: string;
   sourceId: string;
-  kind: 'inspect' | 'audio';
+  kind: 'inspect' | 'audio' | 'export';
   track?: number;
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   progress: number;
@@ -40,6 +41,7 @@ export interface ProjectSnapshot {
   revision: number;
   model: Model;
   jobs: MediaJob[];
+  exports: ExportRecord[];
   canUndo: boolean;
   canRedo: boolean;
   saves?: SaveCopy[];
@@ -85,4 +87,11 @@ export interface ProjectApi {
   relink(id: string, sourceId: string): Promise<ProjectSnapshot | null>;
   audio(id: string, sourceId: string): Promise<ProjectSnapshot>;
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;
+  exportPlan(id: string, clipId: string, container: ExportContainer): Promise<ExportPlan>;
+  exportClip(
+    id: string,
+    planId: string,
+    cleanGameConfirmed: boolean,
+  ): Promise<ProjectSnapshot | null>;
+  revealExport(id: string, exportId: string, kind: 'video' | 'metadata'): Promise<void>;
 }

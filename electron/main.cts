@@ -195,6 +195,30 @@ function registerDesktopApi(): void {
   );
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
+  workspace('exportPlan', (id, clipId, container) => projects.exportPlan(id, clipId, container));
+  workspace('exportClip', async (id, planId, confirmed) => {
+    const s = projects.require(id),
+      item = s.exports().find((e) => e.plan.id === planId);
+    if (!item) throw new Error('Make a new export plan.');
+    const name =
+      Array.from(item.plan.name)
+        .filter((c) => c.charCodeAt(0) >= 32)
+        .join('')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .replace(/[. ]+$/g, '')
+        .slice(0, 160) || 'Clip';
+    const chosen = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export a verified clip',
+      defaultPath: path.join(s.data.project.destination, name + '.' + item.plan.container),
+      filters: [{ name: item.plan.container.toUpperCase(), extensions: [item.plan.container] }],
+    });
+    return chosen.canceled || !chosen.filePath
+      ? null
+      : projects.startExport(id, planId, chosen.filePath, confirmed);
+  });
+  workspace('revealExport', async (id, exportId, kind) =>
+    shell.showItemInFolder(await projects.exportLocation(id, exportId, kind)),
+  );
   workspace('close', () => projects.close());
   workspace('finish-close', async () => {
     await projects.close();

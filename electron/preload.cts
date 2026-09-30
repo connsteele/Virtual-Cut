@@ -30,6 +30,12 @@ const api: VirtualCutApi = {
     relink: (id, sourceId) => ipcRenderer.invoke('workspace:relink', id, sourceId),
     audio: (id, sourceId) => ipcRenderer.invoke('workspace:audio', id, sourceId),
     job: (id, jobId, action) => ipcRenderer.invoke('workspace:job', id, jobId, action),
+    exportPlan: (id, clipId, container) =>
+      ipcRenderer.invoke('workspace:exportPlan', id, clipId, container),
+    exportClip: (id, planId, confirmed) =>
+      ipcRenderer.invoke('workspace:exportClip', id, planId, confirmed),
+    revealExport: (id, exportId, kind) =>
+      ipcRenderer.invoke('workspace:revealExport', id, exportId, kind),
   },
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   selectProjectFolder: () => ipcRenderer.invoke('project:select-folder'),

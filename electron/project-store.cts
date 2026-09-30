@@ -14,6 +14,7 @@ import type {
   'resolution-mode': 'import',
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
+import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 export interface NativeSource {
   id: string;
@@ -114,6 +115,17 @@ export class ProjectStore {
               updated: new Date().toISOString(),
             });
       }
+      // Additive native receipts are kept outside the edit journal. Old M1
+      // projects open without changing annotation or timing identities.
+      this.db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+      for (const record of this.exports())
+        if (['running', 'queued'].includes(record.state))
+          this.putExport({
+            ...record,
+            state: 'interrupted',
+            message: 'Export interrupted. Retry from Jobs.',
+            updated: new Date().toISOString(),
+          });
     } catch (e) {
       try {
         this.db!.close();
@@ -332,10 +344,25 @@ export class ProjectStore {
       .prepare('INSERT OR REPLACE INTO jobs (id,body) VALUES (?,?)')
       .run(j.id, JSON.stringify(j));
   }
+  exports(): ExportRecord[] {
+    return this.db
+      .prepare('SELECT body FROM exports ORDER BY rowid DESC')
+      .all()
+      .map((r) => JSON.parse(String(r.body)));
+  }
+  putExport(record: ExportRecord) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO exports (id,body) VALUES (?,?)')
+      .run(record.plan.id, JSON.stringify(record));
+  }
+  discardExportPlans() {
+    this.db.prepare("DELETE FROM exports WHERE json_extract(body, '$.state')='planned'").run();
+  }
   snapshot(): ProjectSnapshot {
     return {
       ...structuredClone(this.data),
       jobs: this.jobs(),
+      exports: this.exports(),
       canUndo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=1 LIMIT 1').get()),
       canRedo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=0 LIMIT 1').get()),
       saves: structuredClone(this.copies),

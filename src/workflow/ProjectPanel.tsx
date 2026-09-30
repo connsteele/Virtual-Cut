@@ -465,7 +465,12 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                   {w.model.recordings.find((r) => r.id === j.sourceId)?.title || 'Import'}
                 </strong>
                 <p>
-                  {j.kind === 'inspect' ? 'Media inspection' : `Audio track ${j.track}`} · {j.state}
+                  {j.kind === 'inspect'
+                    ? 'Media inspection'
+                    : j.kind === 'export'
+                      ? 'Clip export'
+                      : `Audio track ${j.track}`}{' '}
+                  · {j.state}
                 </p>
                 {j.state === 'running' && <progress value={j.progress} max={1} />}
                 <p className={s.muted}>{j.message}</p>
