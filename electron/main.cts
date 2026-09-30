@@ -21,6 +21,7 @@ import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { DemoMedia } from './demo-media.cjs';
 import { ProjectService } from './project-service.cjs';
+import { DroppedImports } from './dropped-imports.cjs';
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 
 const APP_URL = 'app://virtual-cut/';
@@ -31,6 +32,7 @@ let folderDialog: Promise<ProjectFolder | null> | null = null;
 let videoDialog: Promise<OpenedVideo | null> | null = null;
 const videoAccess = new VideoAccess();
 const demoMedia = new DemoMedia();
+const droppedImports = new DroppedImports();
 let projects: ProjectService;
 let closing = false;
 
@@ -161,11 +163,16 @@ async function registerAppProtocol(): Promise<void> {
 function registerDesktopApi(): void {
   type Calls = Omit<
     ProjectApi,
-    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch'
+    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch' | 'stageDrop'
   > & {
     'finish-close': ProjectApi['finishClose'];
     'select-batch': ProjectApi['selectBatch'];
     'delete-batch': ProjectApi['deleteBatch'];
+    stageDrop: (
+      id: string,
+      batchId: string,
+      files: { name: string; path: string }[],
+    ) => ReturnType<ProjectApi['stageDrop']>;
   };
   let request: Promise<unknown> = Promise.resolve();
   const workspace = <K extends keyof Calls>(
@@ -290,6 +297,17 @@ function registerDesktopApi(): void {
       kind === 'folder' ? await projects.gather(r.filePaths[0]) : r.filePaths,
       audio,
     );
+  });
+  workspace('stageDrop', (id, batchId, entries) => {
+    const s = projects.require(id);
+    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Choose a batch first.');
+    return droppedImports.stage(id, batchId, entries);
+  });
+  workspace('discardDrop', (token) => droppedImports.discard(token));
+  workspace('importDrop', (id, batchId, token, audio) => {
+    const s = projects.require(id);
+    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Choose a batch first.');
+    return projects.importFiles(id, batchId, droppedImports.take(id, batchId, token), audio);
   });
   workspace('relink', async (id, sourceId) => {
     projects.require(id);

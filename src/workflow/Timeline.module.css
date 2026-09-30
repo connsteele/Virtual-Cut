@@ -4,11 +4,40 @@
   min-width: 0;
 }
 .legendRow {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-height: 26px;
+}
+.zoomTools,
+.panTools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.zoomTools {
+  margin-left: auto;
+}
+.zoomTools button,
+.panTools button {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+.zoomTools > span {
+  min-width: 34px;
+  text-align: center;
+}
+.panTools {
+  margin-top: 3px;
+}
+.panTools input {
+  flex: 1;
+  min-width: 40px;
+  accent-color: #77d8ce;
 }
 .legendRow > button {
   font-size: 10px;
@@ -80,6 +109,7 @@
   border-radius: 1px;
 }
 .track {
+  overflow: clip;
   position: relative;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -209,6 +239,20 @@
 }
 .clip::after {
   right: 0;
+}
+.clip[data-clipped-start='true'] {
+  border-left-style: dashed;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.clip[data-clipped-end='true'] {
+  border-right-style: dashed;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.clip[data-clipped-start='true']::before,
+.clip[data-clipped-end='true']::after {
+  display: none;
 }
 .clip b {
   color: var(--clip-color);

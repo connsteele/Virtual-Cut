@@ -524,6 +524,7 @@ export function Player({
         </p>
       )}
       <Timeline
+        key={`${r.id}:${a}:${z}`}
         recording={r}
         markers={markers}
         clips={clips}

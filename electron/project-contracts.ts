@@ -12,6 +12,12 @@ export interface ImportAudio {
   game: number | null;
   mic: number | null;
 }
+export interface DroppedImport {
+  token: string;
+  count: number;
+  skipped: number;
+  issues: { name: string; reason: string }[];
+}
 export interface SaveCopy {
   id: string;
   kind: 'auto' | 'manual';
@@ -87,6 +93,14 @@ export interface ProjectApi {
     kind: 'files' | 'folder',
     audio?: ImportAudio,
   ): Promise<ProjectSnapshot | null>;
+  stageDrop(id: string, batchId: string, files: File[]): Promise<DroppedImport>;
+  discardDrop(token: string): Promise<void>;
+  importDrop(
+    id: string,
+    batchId: string,
+    token: string,
+    audio: ImportAudio,
+  ): Promise<ProjectSnapshot>;
   relink(id: string, sourceId: string): Promise<ProjectSnapshot | null>;
   audio(id: string, sourceId: string): Promise<ProjectSnapshot>;
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;

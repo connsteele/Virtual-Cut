@@ -3,7 +3,7 @@ import { JobTime } from './JobTime';
 import { FolderOpen } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
-import type { ImportAudio } from '../../electron/project-contracts';
+import type { DroppedImport, ImportAudio } from '../../electron/project-contracts';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
 
@@ -84,10 +84,12 @@ export function ProjectPanel({
 export function ImportPanel({
   workspace: w,
   kind,
+  drop,
   onClose,
 }: {
   workspace: Workspace;
   kind: 'files' | 'folder';
+  drop?: DroppedImport;
   onClose: () => void;
 }) {
   const p = w.snapshot!,
@@ -98,6 +100,37 @@ export function ImportPanel({
   const audio: ImportAudio = { game, mic: notes ? mic : null };
   return (
     <Modal title="Batch audio setup" onClose={onClose}>
+      {drop && (
+        <section aria-label="Dropped files summary">
+          <p>
+            <strong>
+              {drop.count
+                ? `${drop.count} video ${drop.count === 1 ? 'file' : 'files'} ready to import.`
+                : 'No supported video files found.'}
+            </strong>{' '}
+            {drop.skipped > 0 && `${drop.skipped} skipped.`}
+          </p>
+          <p className={s.muted}>
+            Existing recordings are reused. Files stay in their original locations. Inspection jobs
+            check their media and audio tracks after import.
+          </p>
+          {!!drop.issues.length && (
+            <details open={!drop.count || undefined}>
+              <summary>Skipped files</summary>
+              <ul>
+                {drop.issues.map((item, i) => (
+                  <li key={i}>
+                    {item.name}: {item.reason}
+                  </li>
+                ))}
+              </ul>
+              {drop.skipped > drop.issues.length && (
+                <p>Showing the first {drop.issues.length} skipped files.</p>
+              )}
+            </details>
+          )}
+        </section>
+      )}
       <p>
         These settings apply to new recordings in this import and are remembered for this batch. You
         can adjust individual recordings in Source & audio setup.
@@ -139,6 +172,7 @@ export function ImportPanel({
         primary
         disabled={
           w.busy ||
+          (!!drop && !drop.count) ||
           !Number.isInteger(game) ||
           game < 1 ||
           game > 64 ||
@@ -147,14 +181,23 @@ export function ImportPanel({
         onClick={() =>
           void w
             .run(() =>
-              window.virtualCut!.project.import(p.project.id, p.activeBatchId, kind, audio),
+              drop
+                ? window.virtualCut!.project.importDrop(
+                    p.project.id,
+                    p.activeBatchId,
+                    drop.token,
+                    audio,
+                  )
+                : window.virtualCut!.project.import(p.project.id, p.activeBatchId, kind, audio),
             )
             .then((value) => {
               if (value) onClose();
             })
         }
       >
-        Choose {kind === 'folder' ? 'folder' : 'files'}…
+        {drop
+          ? `Import ${drop.count} ${drop.count === 1 ? 'video' : 'videos'}`
+          : `Choose ${kind === 'folder' ? 'folder' : 'files'}…`}
       </Button>
       {w.error && (
         <p role="alert" className={s.error}>

@@ -12,6 +12,8 @@ import {
 import type { AudioTrack } from '../../electron/workflow-types';
 import { clipColor, layoutClips } from './clipLayout';
 import { Button } from './ui';
+import { fitViewport, zoomViewport, type TimelineViewport } from './timelineViewport';
+import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-react';
 import s from './Timeline.module.css';
 
 export function Timeline({
@@ -22,8 +24,8 @@ export function Timeline({
   showClips,
   legend,
   onLegend,
-  start,
-  end,
+  start: fullStart,
+  end: fullEnd,
   current,
   onSeek,
   onSelect,
@@ -104,7 +106,69 @@ export function Timeline({
     if (track.current) observer.observe(track.current);
     return () => observer.disconnect();
   }, []);
-  const span = Math.max(0.001, end - start);
+  const identity = `${recording.id}:${fullStart}:${fullEnd}`;
+  const minimum = Math.max(0.1, 5 / (recording.fps || 30));
+  const [viewport, setViewport] = useState<{ identity: string; view: TimelineViewport } | null>(
+    null,
+  );
+  const view =
+    viewport?.identity === identity
+      ? fitViewport(viewport.view, fullStart, fullEnd, minimum)
+      : { start: fullStart, end: fullEnd };
+  const { start, end } = view;
+  const span = Math.max(0.001, end - start),
+    fullSpan = Math.max(0.001, fullEnd - fullStart);
+  const zoomed = span < fullSpan - 0.00001;
+  const changeView = (next: TimelineViewport) =>
+    setViewport({ identity, view: fitViewport(next, fullStart, fullEnd, minimum) });
+  const zoom = (
+    factor: number,
+    anchor = current >= start && current <= end ? current : start + span / 2,
+  ) => {
+    if (!drag.current && pointer.current == null)
+      changeView(zoomViewport(view, factor, anchor, fullStart, fullEnd, minimum));
+  };
+  const wheelState = useRef({ view, fullStart, fullEnd, minimum, identity });
+  useEffect(() => {
+    wheelState.current = { view, fullStart, fullEnd, minimum, identity };
+  });
+  useEffect(() => {
+    const el = track.current!;
+    const wheel = (e: WheelEvent) => {
+      if (!e.altKey) return;
+      e.preventDefault();
+      if (drag.current || pointer.current != null) return;
+      const state = wheelState.current,
+        rect = el.getBoundingClientRect();
+      const delta = e.deltaY || e.deltaX;
+      if (!delta || !rect.width) return;
+      const span = state.view.end - state.view.start;
+      const anchor =
+        state.view.start + Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * span;
+      const next = e.shiftKey
+        ? fitViewport(
+            {
+              start: state.view.start + (Math.sign(delta) * span) / 4,
+              end: state.view.end + (Math.sign(delta) * span) / 4,
+            },
+            state.fullStart,
+            state.fullEnd,
+            state.minimum,
+          )
+        : zoomViewport(
+            state.view,
+            delta < 0 ? 1.25 : 0.8,
+            anchor,
+            state.fullStart,
+            state.fullEnd,
+            state.minimum,
+          );
+      wheelState.current = { ...state, view: next };
+      setViewport({ identity: state.identity, view: next });
+    };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => el.removeEventListener('wheel', wheel);
+  }, []);
   const displayClip = (c: Clip) =>
     preview?.id === c.id ? { ...c, [preview.edge]: preview.value } : c;
   const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
@@ -183,6 +247,28 @@ export function Timeline({
             ))}
           </div>
         )}
+        <div className={s.zoomTools} role="group" aria-label="Timeline zoom">
+          <Button
+            aria-label="Zoom out timeline"
+            disabled={!zoomed}
+            title="Zoom out · Alt + wheel down"
+            onClick={() => zoom(0.5)}
+          >
+            <ZoomOut size={13} />
+          </Button>
+          <span aria-label="Timeline zoom level">{(fullSpan / span).toFixed(1)}×</span>
+          <Button
+            aria-label="Zoom in timeline"
+            disabled={span <= minimum + 0.00001}
+            title="Zoom in · Alt + wheel up"
+            onClick={() => zoom(2)}
+          >
+            <ZoomIn size={13} />
+          </Button>
+          <Button disabled={!zoomed} onClick={() => changeView({ start: fullStart, end: fullEnd })}>
+            Fit full {fullStart === 0 && fullEnd === recording.duration ? 'recording' : 'clip'}
+          </Button>
+        </div>
         <Button
           aria-pressed={keys}
           title="The small ticks below the filmstrip mark keyframe positions"
@@ -205,10 +291,12 @@ export function Timeline({
         role="slider"
         tabIndex={0}
         aria-label="Seek video"
-        aria-valuemin={start}
-        aria-valuemax={end}
-        aria-valuenow={Math.max(start, Math.min(end, current))}
+        aria-valuemin={fullStart}
+        aria-valuemax={fullEnd}
+        aria-valuenow={Math.max(fullStart, Math.min(fullEnd, current))}
         aria-valuetext={time(current)}
+        data-view-start={start}
+        data-view-end={end}
         onDragStart={(e) => e.preventDefault()}
         onPointerDown={(e) => {
           if (
@@ -227,9 +315,20 @@ export function Timeline({
           if (clip?.dataset.clip) onSelect?.(clip.dataset.clip);
         }}
         onPointerMove={(e) => {
+          if (drag.current?.pointer === e.pointerId) {
+            moveHandle(e.clientX);
+            return;
+          }
           if (pointer.current === e.pointerId) scrub(e.clientX);
         }}
         onPointerUp={(e) => {
+          if (drag.current?.pointer === e.pointerId) {
+            moveHandle(e.clientX);
+            finishHandle(true);
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            return;
+          }
           if (pointer.current !== e.pointerId) return;
           scrub(e.clientX);
           pointer.current = null;
@@ -237,9 +336,11 @@ export function Timeline({
             e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         onPointerCancel={() => {
+          finishHandle(false);
           pointer.current = null;
         }}
         onLostPointerCapture={() => {
+          finishHandle(false);
           pointer.current = null;
         }}
         onBlur={() => setPointerFocus(false)}
@@ -257,9 +358,9 @@ export function Timeline({
         }}
       >
         <div className={s.ruler}>
-          <span>{short(start)}</span>
-          <span>{short(start + span / 2)}</span>
-          <span>{short(end)}</span>
+          <span>{span < 10 ? time(start) : short(start)}</span>
+          <span>{span < 10 ? time(start + span / 2) : short(start + span / 2)}</span>
+          <span>{span < 10 ? time(end) : short(end)}</span>
         </div>
         <div className={s.markerLane} aria-label="Timeline markers">
           {markers
@@ -384,6 +485,8 @@ export function Timeline({
                   className={s.clip}
                   data-selected={c.id === selectedId}
                   data-handle-mode={handleMode}
+                  data-clipped-start={c.start < start}
+                  data-clipped-end={c.end > end}
                   title={`${String(index + 1).padStart(2, '0')} · ${c.name} · ${time(c.start)} – ${time(c.end)}${layout.overlaps.some((o) => o.start < c.end && o.end > c.start) ? ' · Overlaps another clip' : ''}`}
                   style={
                     {
@@ -406,79 +509,122 @@ export function Timeline({
                     <b>{String(index + 1).padStart(2, '0')}</b> <span>{c.name}</span>
                   </button>
                   {handleMode &&
-                    (['start', 'end'] as const).map((edge) => (
-                      <button
-                        key={edge}
-                        className={s.handle}
-                        data-clip-handle={edge}
-                        title={`Trim ${edge === 'start' ? 'in' : 'out'} point · drag or use arrow keys`}
-                        aria-label={`Trim ${edge} of ${c.name}`}
-                        aria-disabled={!trimEnabled}
-                        onPointerDown={(e) => {
-                          if (e.button !== 0 || !trimEnabled) return;
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onTrimActive?.(true);
-                          onSelect?.(c.id);
-                          drag.current = {
-                            id: c.id,
-                            edge,
-                            clip,
-                            value: c[edge],
-                            pointer: e.pointerId,
-                            recording: recording.id,
-                          };
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                        }}
-                        onPointerMove={(e) => {
-                          if (drag.current?.pointer === e.pointerId) moveHandle(e.clientX);
-                        }}
-                        onPointerUp={(e) => {
-                          if (drag.current?.pointer !== e.pointerId) return;
-                          moveHandle(e.clientX);
-                          finishHandle(true);
-                          if (e.currentTarget.hasPointerCapture(e.pointerId))
-                            e.currentTarget.releasePointerCapture(e.pointerId);
-                        }}
-                        onPointerCancel={() => finishHandle(false)}
-                        onLostPointerCapture={() => finishHandle(false)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                          if (!trimEnabled) return;
-                          if (e.key === 'Escape') {
-                            e.preventDefault();
-                            finishHandle(false);
-                          }
-                          if (
-                            ['ArrowLeft', 'ArrowRight'].includes(e.key) &&
-                            !e.ctrlKey &&
-                            !e.altKey &&
-                            !e.metaKey
-                          ) {
+                    (['start', 'end'] as const)
+                      .filter((edge) => c[edge] >= start && c[edge] <= end)
+                      .map((edge) => (
+                        <button
+                          key={edge}
+                          className={s.handle}
+                          data-clip-handle={edge}
+                          title={`Trim ${edge === 'start' ? 'in' : 'out'} point · drag or use arrow keys`}
+                          aria-label={`Trim ${edge} of ${c.name}`}
+                          aria-disabled={!trimEnabled}
+                          onPointerDown={(e) => {
+                            if (e.button !== 0 || !trimEnabled) return;
                             e.preventDefault();
                             e.stopPropagation();
+                            onTrimActive?.(true);
                             onSelect?.(c.id);
-                            onTrim?.(
-                              c.id,
+                            drag.current = {
+                              id: c.id,
                               edge,
-                              trimTime(
-                                c,
+                              clip,
+                              value: c[edge],
+                              pointer: e.pointerId,
+                              recording: recording.id,
+                            };
+                            // The track remains mounted if a zoomed trim moves the
+                            // clip/edge outside the viewport during this gesture.
+                            track.current!.setPointerCapture(e.pointerId);
+                          }}
+                          onPointerMove={(e) => {
+                            if (drag.current?.pointer === e.pointerId) moveHandle(e.clientX);
+                          }}
+                          onPointerUp={(e) => {
+                            if (drag.current?.pointer !== e.pointerId) return;
+                            moveHandle(e.clientX);
+                            finishHandle(true);
+                            if (e.currentTarget.hasPointerCapture(e.pointerId))
+                              e.currentTarget.releasePointerCapture(e.pointerId);
+                          }}
+                          onPointerCancel={() => finishHandle(false)}
+                          onLostPointerCapture={() => finishHandle(false)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (!trimEnabled) return;
+                            if (e.key === 'Escape') {
+                              e.preventDefault();
+                              finishHandle(false);
+                            }
+                            if (
+                              ['ArrowLeft', 'ArrowRight'].includes(e.key) &&
+                              !e.ctrlKey &&
+                              !e.altKey &&
+                              !e.metaKey
+                            ) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onSelect?.(c.id);
+                              onTrim?.(
+                                c.id,
                                 edge,
-                                c[edge] + (e.key === 'ArrowRight' ? 1 : -1) / (recording.fps || 30),
-                                e.key === 'ArrowRight' ? 1 : -1,
-                              ),
-                            );
-                          }
-                        }}
-                      />
-                    ))}
+                                trimTime(
+                                  c,
+                                  edge,
+                                  c[edge] +
+                                    (e.key === 'ArrowRight' ? 1 : -1) / (recording.fps || 30),
+                                  e.key === 'ArrowRight' ? 1 : -1,
+                                ),
+                              );
+                            }
+                          }}
+                        />
+                      ))}
                 </div>
               );
             })}
           </div>
         )}
-        <div className={s.playhead} style={{ left: percent(current) }} />
+        {current >= start && current <= end && (
+          <div className={s.playhead} style={{ left: percent(current) }} />
+        )}
       </div>
+      {zoomed && (
+        <div className={s.panTools} role="group" aria-label="Timeline pan">
+          <Button
+            aria-label="Pan timeline left"
+            disabled={start <= fullStart + 0.00001}
+            onClick={() => changeView({ start: start - span * 0.75, end: end - span * 0.75 })}
+          >
+            <ArrowLeft size={13} />
+          </Button>
+          <input
+            type="range"
+            aria-label="Visible timeline start"
+            min={fullStart}
+            max={fullEnd - span}
+            step={Math.max(0.00001, minimum / 4)}
+            value={start}
+            onChange={(e) =>
+              changeView({ start: Number(e.target.value), end: Number(e.target.value) + span })
+            }
+          />
+          <Button
+            aria-label="Pan timeline right"
+            disabled={end >= fullEnd - 0.00001}
+            onClick={() => changeView({ start: start + span * 0.75, end: end + span * 0.75 })}
+          >
+            <ArrowRight size={13} />
+          </Button>
+          <Button
+            aria-label="Show playhead in timeline"
+            title="Center the visible range on the playhead"
+            onClick={() => changeView({ start: current - span / 2, end: current + span / 2 })}
+          >
+            <LocateFixed size={13} />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

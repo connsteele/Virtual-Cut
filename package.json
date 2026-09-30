@@ -1,7 +1,7 @@
 {
   "name": "virtual-cut",
   "productName": "Virtual Cut",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "The Virtual Cut footage workspace.",
   "type": "module",
@@ -27,7 +27,8 @@
     "test:feedback": "node scripts/feedback-checks.mjs",
     "test:playback": "node scripts/build.mjs && node scripts/playback-ui-checks.mjs",
     "test:export": "node scripts/export-checks.mjs",
-    "test:folders": "node --experimental-strip-types --test scripts/source-folders.test.mjs"
+    "test:folders": "node --experimental-strip-types --test scripts/source-folders.test.mjs",
+    "test:tools": "node scripts/intake-zoom-checks.mjs"
   },
   "dependencies": {
     "lucide-react": "1.48.0",

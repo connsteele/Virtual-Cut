@@ -52,6 +52,7 @@ import {
 import { Player, type Transport } from './Player';
 import { SourceFolders } from './SourceFolders';
 import { MediaLayout } from './MediaLayout';
+import { useMediaDrop } from './useMediaDrop';
 import { inSourceFolder } from './sourceFolderTree';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
@@ -487,6 +488,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         return '';
       }
     });
+  const mediaDrop = useMediaDrop(workspace, page === 'media');
   const transport = useRef<Transport>(null),
     dragging = useRef('');
   const markerRecord = useRef(''),
@@ -1240,7 +1242,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       </header>
       <div className={s.workspace}>
-        <main id="workspace" className={s.page} data-page={page}>
+        <main id="workspace" className={s.page} data-page={page} {...mediaDrop.handlers}>
+          {mediaDrop.content}
           {(project || page !== 'library') && (
             <div className={s.toolbar}>
               {project ? (
@@ -1290,7 +1293,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           {project && !recordings.length && (
             <div className={s.empty}>
               <h2>Bring recordings into this batch</h2>
-              <p>Use Import files or Import folder above. Your project saves automatically.</p>
+              <p>
+                Use Import files or Import folder above, or drop videos onto the Media page. Your
+                project saves automatically.
+              </p>
             </div>
           )}
           {page === 'cut' && !!r.id && (
@@ -1526,6 +1532,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </Button>
                     <RemoveRecordingButton recording={r} workspace={workspace} />
                   </div>
+                  {project && (
+                    <p className={s.dropHint}>Drop videos here to import into this batch.</p>
+                  )}
                   <div className={mediaList ? s.mediaList : s.mediaGrid}>
                     {recordings
                       .filter((x) => inSourceFolder(x, activeSourceFolder))
@@ -2149,6 +2158,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Enter / Escape', 'Confirm / cancel deletion'],
                 ['← / →', 'Step a frame when the timeline is focused'],
                 ['Shift+← / Shift+→', 'Seek one second when the timeline is focused'],
+                ['Alt + wheel', 'Zoom timeline at the cursor; Fit full recording resets it'],
+                [
+                  'Alt+Shift + wheel',
+                  'Pan the zoomed timeline; buttons and range slider also work with the keyboard',
+                ],
                 ['F11', 'Fullscreen'],
               ].map(([key, description]) => (
                 <tr key={key}>

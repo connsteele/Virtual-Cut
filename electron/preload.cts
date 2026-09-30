@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'import' };
 
 // Sandboxed preloads cannot require arbitrary local modules. Keep runtime
@@ -29,6 +29,24 @@ const api: VirtualCutApi = {
       ipcRenderer.invoke('workspace:delete-batch', id, batchId, targetId, mode),
     import: (id, batchId, kind, audio) =>
       ipcRenderer.invoke('workspace:import', id, batchId, kind, audio),
+    stageDrop: (id, batchId, files) => {
+      if (!Array.isArray(files) || files.length > 10000)
+        return Promise.reject(new Error('Drop up to 10,000 video files at a time.'));
+      // Only native File objects from a drop or file input yield filesystem paths.
+      // Paths stay inside the preload/main boundary, never in renderer state.
+      return ipcRenderer.invoke(
+        'workspace:stageDrop',
+        id,
+        batchId,
+        files.map((file) => ({
+          name: file.name,
+          path: webUtils.getPathForFile(file),
+        })),
+      );
+    },
+    discardDrop: (token) => ipcRenderer.invoke('workspace:discardDrop', token),
+    importDrop: (id, batchId, token, audio) =>
+      ipcRenderer.invoke('workspace:importDrop', id, batchId, token, audio),
     relink: (id, sourceId) => ipcRenderer.invoke('workspace:relink', id, sourceId),
     audio: (id, sourceId) => ipcRenderer.invoke('workspace:audio', id, sourceId),
     job: (id, jobId, action) => ipcRenderer.invoke('workspace:job', id, jobId, action),
