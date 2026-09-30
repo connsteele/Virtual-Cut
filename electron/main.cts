@@ -158,9 +158,13 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
-  type Calls = Omit<ProjectApi, 'onCloseRequested' | 'finishClose' | 'selectBatch'> & {
+  type Calls = Omit<
+    ProjectApi,
+    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch'
+  > & {
     'finish-close': ProjectApi['finishClose'];
     'select-batch': ProjectApi['selectBatch'];
+    'delete-batch': ProjectApi['deleteBatch'];
   };
   let request: Promise<unknown> = Promise.resolve();
   const workspace = <K extends keyof Calls>(
@@ -182,6 +186,7 @@ function registerDesktopApi(): void {
   workspace('history', (id, direction) => projects.history(id, direction));
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
+  workspace('delete-batch', (id, batchId, targetId) => projects.deleteBatch(id, batchId, targetId));
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
   workspace('close', () => projects.close());

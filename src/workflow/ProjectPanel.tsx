@@ -100,6 +100,7 @@ export function ImportPanel({
         These settings apply to new recordings in this import and are remembered for this batch. You
         can adjust individual recordings in Source & audio setup.
       </p>
+      {kind === 'folder' && <p>Folder import includes videos in all nested folders.</p>}
       <label className={s.tools}>
         <input type="checkbox" checked={notes} onChange={(e) => setNotes(e.target.checked)} />
         This batch has microphone audio notes
@@ -224,6 +225,8 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
   const [creating, setCreating] = useState(false),
     [name, setName] = useState(''),
     [jobs, setJobs] = useState(false),
+    [deleting, setDeleting] = useState(false),
+    [targetId, setTargetId] = useState(''),
     [importing, setImporting] = useState<'files' | 'folder' | null>(null);
   const p = w.snapshot;
   if (!p) return null;
@@ -234,7 +237,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       <select
         aria-label="Current batch"
         value={p.activeBatchId}
-        disabled={w.busy}
+        disabled={w.blocking}
         onChange={(e) => {
           const id = e.target.value;
           void w.run(() => api.selectBatch(p.project.id, id));
@@ -246,13 +249,22 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
           </option>
         ))}
       </select>
-      <Button disabled={w.busy} onClick={() => setCreating(true)}>
+      <Button disabled={w.blocking} onClick={() => setCreating(true)}>
         New batch
       </Button>
-      <Button disabled={w.busy} onClick={() => setImporting('files')}>
+      <Button
+        disabled={w.blocking}
+        onClick={() => {
+          setTargetId(p.batches.find((b) => b.id !== p.activeBatchId)?.id || '');
+          setDeleting(true);
+        }}
+      >
+        Delete batch…
+      </Button>
+      <Button disabled={w.blocking} onClick={() => setImporting('files')}>
         Import files
       </Button>
-      <Button disabled={w.busy} onClick={() => setImporting('folder')}>
+      <Button disabled={w.blocking} onClick={() => setImporting('folder')}>
         Import folder
       </Button>
       <Button onClick={() => setJobs(true)}>
@@ -260,6 +272,58 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       </Button>
       {importing && (
         <ImportPanel workspace={w} kind={importing} onClose={() => setImporting(null)} />
+      )}
+      {deleting && (
+        <Modal title="Delete batch" onClose={() => setDeleting(false)}>
+          <p>Delete “{p.batches.find((b) => b.id === p.activeBatchId)?.name}”?</p>
+          <p>
+            This removes the batch grouping. Recordings, clips, markers and source files are kept.
+            Recordings shared with other batches stay there.
+          </p>
+          {p.batches.length > 1 ? (
+            <Field label="Keep recordings belonging only to this batch in">
+              <select
+                aria-label="Keep recordings in batch"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+              >
+                {p.batches
+                  .filter((b) => b.id !== p.activeBatchId)
+                  .map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          ) : (
+            <p>An Unbatched group will keep all its recordings accessible.</p>
+          )}
+          <p className={s.muted}>
+            A manual save is made first. Use Save history to restore this batch.
+          </p>
+          <div className={s.tools}>
+            <Button
+              primary
+              disabled={w.busy}
+              onClick={() =>
+                void w
+                  .run(() => api.deleteBatch(p.project.id, p.activeBatchId, targetId || undefined))
+                  .then((value) => {
+                    if (value) setDeleting(false);
+                  })
+              }
+            >
+              Delete batch
+            </Button>
+            <Button onClick={() => setDeleting(false)}>Cancel</Button>
+          </div>
+          {w.error && (
+            <p role="alert" className={s.error}>
+              {w.error}
+            </p>
+          )}
+        </Modal>
       )}
       {creating && (
         <Modal title="New batch" onClose={() => setCreating(false)}>

@@ -392,6 +392,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
+  const [handleMode, setHandleMode] = useState(false);
+  const trimming = useRef(false);
   const [page, setPage] = useState<PageId>('cut'),
     [rid, setRid] = useState('r1'),
     [cid, setCid] = useState('c1'),
@@ -797,6 +799,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
       if (e.ctrlKey || e.metaKey || e.altKey || !r.id || workspace.busy) return;
       const k = e.key.toLowerCase();
+      if (page === 'cut' && k === 'h') {
+        e.preventDefault();
+        setHandleMode((value) => !value);
+        return;
+      }
       if (
         (page === 'cut' || page === 'review') &&
         (deleteClipId || deleteMarkerId) &&
@@ -936,12 +943,24 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           )?.message
         }
         showClips={page === 'cut' || page === 'selects'}
+        handleMode={page === 'cut' && handleMode && canEdit && !workspace.blocking}
+        trimEnabled={!workspace.busy}
+        onTrimActive={(active) => {
+          trimming.current = active;
+        }}
+        onTrim={(id, edge, value) => {
+          // A seek notification can arrive after pointer-up, before React has
+          // rendered the new extent. Keep that notification from selecting a
+          // different overlapping clip using the previous extent.
+          markerSeek.current = value;
+          updateClip(id, { [edge]: value });
+        }}
         legend={legend}
         onLegend={() => setLegend(!legend)}
         markers={model.markers[record.id] || []}
         clips={model.clips.filter((c) => c.rid === record.id)}
         onPosition={(position) => {
-          if (page === 'cut' && record.id === r.id && follow) {
+          if (page === 'cut' && record.id === r.id && follow && !trimming.current) {
             const under =
               clips.find((x) => x.id === cid && position >= x.start && position < x.end) ||
               clips.find((x) => position >= x.start && position < x.end);
@@ -1086,7 +1105,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     }));
   }
   return (
-    <div className={s.shell} data-workflow="preview">
+    <div className={s.shell} data-workflow="preview" aria-busy={workspace.busy}>
       <header className={s.header}>
         <div className={s.brand}>
           <Brand />
@@ -1108,24 +1127,26 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           {project && (
             <>
               <Button
-                disabled={workspace.busy}
+                disabled={workspace.blocking}
                 onClick={() => void workspace.checkpoint()}
                 title="Save a manual checkpoint (Ctrl+S)"
               >
                 Save
               </Button>
-              <Button disabled={workspace.busy} onClick={() => setSavesOpen(true)}>
+              <Button disabled={workspace.blocking} onClick={() => setSavesOpen(true)}>
                 Save history
               </Button>
               <Button
-                disabled={workspace.busy || (!project.canUndo && workspace.saveState !== 'Saving…')}
+                disabled={
+                  workspace.blocking || (!project.canUndo && workspace.saveState !== 'Saving…')
+                }
                 onClick={() => void history('undo')}
                 title="Undo (Ctrl+Z)"
               >
                 Undo
               </Button>
               <Button
-                disabled={workspace.busy || !project.canRedo}
+                disabled={workspace.blocking || !project.canRedo}
                 onClick={() => void history('redo')}
                 title="Redo (Ctrl+Shift+Z)"
               >
@@ -1133,7 +1154,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               </Button>
             </>
           )}
-          <Button onClick={openVideo} disabled={opening || workspace.busy}>
+          <Button onClick={openVideo} disabled={opening || workspace.blocking}>
             {opening ? 'Opening…' : project ? 'Import' : 'Open video'}
           </Button>
           <Button onClick={fullscreen} aria-label="Fullscreen (F11)">
@@ -1280,6 +1301,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </Button>
                   <Button onClick={addClip} disabled={!r.duration || !canEdit}>
                     <Plus size={15} /> Clip
+                  </Button>
+                  <Button
+                    aria-pressed={handleMode}
+                    disabled={!canEdit}
+                    title="Drag clip edges to adjust their in and out points (H)"
+                    onClick={() => setHandleMode(!handleMode)}
+                  >
+                    H · Handles
                   </Button>
                   <label className={s.followToggle}>
                     <input
@@ -2049,6 +2078,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],
+                ['H', 'Toggle clip handles on the Cut page; drag an edge to trim'],
                 ['M', 'Create and select marker'],
                 ['R', 'Rename selected clip or marker (selects its name)'],
                 ['Backspace', 'Request deletion of selected clip or marker'],

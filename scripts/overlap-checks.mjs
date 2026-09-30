@@ -67,8 +67,8 @@ async function geometry(ranges) {
   const boxes = await page.locator('[data-clip]').evaluateAll((nodes) =>
     nodes.map((n) => {
       const b = n.getBoundingClientRect(),
-        parent = n.parentElement.getBoundingClientRect();
-      const style = getComputedStyle(n);
+        parent = n.closest('[data-clip-lanes]').getBoundingClientRect();
+      const style = getComputedStyle(n.closest('[data-clip-container]'));
       const hit = (x) =>
         document.elementFromPoint(x, b.y + b.height / 2)?.closest('[data-clip]')?.dataset.clip;
       return {
@@ -186,7 +186,9 @@ try {
       fit.sw <= fit.w + 1 && fit.sh <= fit.h + 1 && fit.footer <= fit.h + 1,
       'Workspace remains within the window',
     );
-    await expect(page.getByRole('button', { name: 'Play forward · L', exact: true })).toBeInViewport();
+    await expect(
+      page.getByRole('button', { name: 'Play forward · L', exact: true }),
+    ).toBeInViewport();
     await capture(`${name}-overlap-layout`);
   }
   const nested = [

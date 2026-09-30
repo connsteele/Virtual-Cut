@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile, readFile, readdir, copyFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, readdir, copyFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -161,6 +161,102 @@ try {
     hash,
     'Original media bytes must remain unchanged',
   );
+  // Nested intake, shared membership and reversible batch deletion.
+  const nested = path.join(dir, 'nested');
+  await mkdir(path.join(nested, 'one', 'two'), { recursive: true });
+  await copyFile(source, path.join(nested, 'root.mkv'));
+  await copyFile(source, path.join(nested, 'one', 'middle.MKV'));
+  await copyFile(source, path.join(nested, 'one', 'two', 'deep.mkv'));
+  await writeFile(path.join(nested, 'one', 'ignored.txt'), 'Not a recording');
+  const files = await service.gather(nested);
+  assert.equal(files.length, 3);
+  assert(files.some((file) => file.endsWith('deep.mkv')));
+  const protectedSaves = new Set(p.saves.map((x) => x.id));
+  p = await service.checkpoint(id);
+  const initial = p.saves.find((x) => x.kind === 'manual' && !protectedSaves.has(x.id));
+  const originalClips = structuredClone(p.model.clips);
+  p = await service.batch(id, 'Temporary nested intake');
+  const temporary = p.activeBatchId;
+  await service.importFiles(id, temporary, [...files, source]);
+  p = await settled();
+  assert(p.jobs.every((j) => j.state === 'succeeded'));
+  assert.equal(p.model.recordings.length, 6);
+  p = await service.importFiles(id, temporary, files);
+  assert.equal(p.model.recordings.length, 6, 'Repeated nested import does not duplicate sources');
+  await assert.rejects(() => service.deleteBatch(id, temporary, '../invalid'), /existing batch/);
+  p = await service.deleteBatch(id, temporary, batch);
+  assert.equal(p.batches.length, 1);
+  assert(p.model.recordings.every((r) => r.batchIds.includes(batch)));
+  assert.deepEqual(p.model.clips.slice(0, originalClips.length), originalClips);
+  p = await service.batch(id, 'Empty batch');
+  p = await service.deleteBatch(id, p.activeBatchId, batch);
+  assert.equal(p.model.recordings.length, 6);
+  p = await service.deleteBatch(id, batch);
+  assert.equal(p.batches[0].name, 'Unbatched');
+  assert(p.model.recordings.every((r) => r.batchIds.includes(p.activeBatchId)));
+  await service.close();
+  p = await service.open(file);
+  assert.equal(p.batches[0].name, 'Unbatched');
+  p = await service.restore(id, initial.id);
+  assert.equal(p.batches[0].id, batch);
+  assert.deepEqual(p.model.clips, originalClips);
+  // Upgrade a legacy preview while a Windows player holds it open without share-delete.
+  const native = service.store.sources().find((x) => x.id === record.id);
+  const generated = path.join(dir, 'cache', native.audioPreviews[game.index]);
+  const legacy = path.join(
+    dir,
+    'cache',
+    `${native.id}-${native.fingerprint}-audio-${game.index}.m4a`,
+  );
+  await copyFile(generated, legacy);
+  service.store.transaction(() => {
+    delete native.audioPreviews[game.index];
+    service.store.putSource(native);
+    delete service.store.data.model.recordings[0].audioTracks.find((t) => t.index === game.index)
+      .waveform;
+  });
+  let lock;
+  try {
+    if (process.platform === 'win32') {
+      lock = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          `$f=[System.IO.File]::Open('${legacy.replace(/'/g, "''")}',[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::Read); [Console]::Out.WriteLine('locked'); $null=[Console]::In.ReadLine(); $f.Dispose()`,
+        ],
+        { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      await new Promise((resolve, reject) => {
+        lock.once('error', reject);
+        lock.stdout.once('data', resolve);
+        lock.once('exit', (code) => {
+          if (code) reject(Error('Preview lock helper failed'));
+        });
+      });
+      await assert.rejects(() => rename(legacy, legacy + '.moved'), /EPERM|EACCES|EBUSY/);
+    }
+    await service.prepareAudio(id, record.id);
+    p = await settled();
+    assert(p.jobs.filter((j) => j.sourceId === record.id).every((j) => j.state === 'succeeded'));
+    const published = service.store.sources().find((x) => x.id === record.id).audioPreviews[
+      game.index
+    ];
+    assert.notEqual(published, path.basename(legacy));
+    assert(p.model.recordings[0].audioTracks.find((t) => t.index === game.index).waveform);
+    assert.equal((await readFile(legacy)).length, (await readFile(generated)).length);
+  } finally {
+    if (lock) {
+      lock.stdin.end('\n');
+      await new Promise((resolve) => lock.once('exit', resolve));
+    }
+  }
+  await service.close();
+  p = await service.open(file);
+  assert(
+    p.model.recordings[0].audioTracks.find((t) => t.index === game.index).previewUrl,
+    'New preview generation is persisted and playable on reopen',
+  );
   await writeFile(
     path.join(root, 'latest-native.json'),
     JSON.stringify({ passed: true, dir, file, source }, null, 2),
@@ -179,6 +275,9 @@ try {
         'independent save rotation',
         'reopen',
         'source preservation',
+        'recursive nested intake and duplicate detection',
+        'empty, shared and last-batch deletion, reopen and recovery',
+        'legacy audio preview upgrade while Windows playback locks the old file',
       ],
     }),
   );

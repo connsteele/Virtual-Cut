@@ -35,6 +35,10 @@ export function Player({
   onDuration,
   onPlayable,
   onSelect,
+  handleMode = false,
+  trimEnabled = true,
+  onTrim,
+  onTrimActive,
   selectedMarkerId,
   onMarkerSelect,
   onAudioChange,
@@ -56,6 +60,10 @@ export function Player({
   onDuration?: (duration: number) => void;
   onPlayable?: (ready: boolean) => void;
   onSelect?: (id: string) => void;
+  handleMode?: boolean;
+  trimEnabled?: boolean;
+  onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
+  onTrimActive?: (active: boolean) => void;
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
   onAudioChange?: (patch: Partial<Recording>) => void;
@@ -465,6 +473,13 @@ export function Player({
           seek(t);
         }}
         onSelect={onSelect}
+        handleMode={handleMode}
+        trimEnabled={trimEnabled}
+        onTrim={onTrim}
+        onTrimActive={(active) => {
+          if (active) command('k');
+          onTrimActive?.(active);
+        }}
         selectedMarkerId={selectedMarkerId}
         onMarkerSelect={onMarkerSelect}
         waveMode={waveMode}

@@ -33,6 +33,7 @@ async function seek(at) {
   await expect.poll(() => page.locator('video').evaluate((v) => v.seeking)).toBe(false);
 }
 async function unfocus() {
+  await expect(page.locator('[data-workflow]')).toHaveAttribute('aria-busy', 'false');
   await page.evaluate(() => document.activeElement?.blur());
 }
 async function go(name) {
@@ -63,6 +64,16 @@ try {
   let p = await state();
   const rid = p.model.recordings[0].id,
     cid = p.model.clips[0].id;
+  async function centered() {
+    const offset = await page
+      .getByRole('navigation', { name: 'Workspace pages' })
+      .evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.x + r.width / 2 - innerWidth / 2;
+      });
+    assert(Math.abs(offset) < 1, `Page navigation offset from center: ${offset}px`);
+  }
+  await centered();
   await expect(page.getByLabel('Volume', { exact: true })).toHaveValue('1');
   await page.getByLabel('Waveform display').selectOption('overlay');
   await expect(page.locator('[data-waveform-track]')).toHaveCount(2);
@@ -89,6 +100,23 @@ try {
     window.feedbackVideo = document.querySelector('video');
     window.feedbackLoads = 0;
     window.feedbackVideo.addEventListener('emptied', () => window.feedbackLoads++);
+    window.controlSamples = [];
+    window.controlObserver = new MutationObserver(() => {
+      window.controlSamples.push(
+        [...document.querySelectorAll('header button, [aria-label="Current batch"]')]
+          .filter(
+            (el) =>
+              ['Save', 'Save history', 'Import'].includes(el.textContent.trim()) ||
+              el.matches('select'),
+          )
+          .map((el) => ({ disabled: el.disabled, opacity: getComputedStyle(el).opacity })),
+      );
+    });
+    window.controlObserver.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['disabled', 'class'],
+    });
   });
   await page.keyboard.press('Control+z');
   await expect.poll(async () => (await state()).model.clips.find((c) => c.id === cid).end).toBe(3);
@@ -100,7 +128,80 @@ try {
     'Undo must preserve decoded media and not reload it',
   );
   assert(Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - 4) < 0.05);
+  const samples = await page.evaluate(() => {
+    window.controlObserver.disconnect();
+    return window.controlSamples;
+  });
+  assert(
+    samples.flat().every((x) => !x.disabled && Number(x.opacity) === 1),
+    `Quiet undo must not dim header and batch controls: ${JSON.stringify(samples)}`,
+  );
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+  // Unrelated keys after pointer scrubbing must not create a whole-timeline highlight.
+  const track = page.getByTestId('scrub-surface');
+  await track.click({ position: { x: 30, y: 40 } });
+  await page.keyboard.press('e');
+  assert.equal(await track.evaluate((el) => getComputedStyle(el).outlineStyle), 'none');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(
+    await track.evaluate((el) => getComputedStyle(el).outlineStyle),
+    'solid',
+    'Deliberate keyboard seeking retains a visible focus indicator',
+  );
+  await unfocus();
+  await page.keyboard.press('h');
+  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const handle = (edge) =>
+    page.locator(`[data-clip-container="${cid}"] [data-clip-handle="${edge}"]`);
+  async function dragEdge(edge, at, cancel = false) {
+    const r = await track.boundingBox(),
+      h = await handle(edge).boundingBox();
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(r.x + (at / 8) * r.width, h.y + h.height / 2, { steps: 6 });
+    if (cancel) await page.keyboard.press('Escape');
+    await page.mouse.up();
+  }
+  const clipState = async () => (await state()).model.clips.find((c) => c.id === cid);
+  await dragEdge('start', 0.5);
+  await expect.poll(async () => (await clipState()).start).toBe(0.5);
+  await dragEdge('end', 6);
+  await expect.poll(async () => (await clipState()).end).toBe(6);
+  await expect(page.locator('[data-clip-lanes]')).toHaveAttribute('data-clip-lanes', '2');
+  await expect(page.locator(`[data-cut-clip="${cid}"]`)).toHaveAttribute('data-selected', 'true');
+  await unfocus();
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await clipState()).end).toBe(3);
+  await unfocus();
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await clipState()).start).toBe(0);
+  await dragEdge('end', 4, true);
+  await page.waitForTimeout(350);
+  assert.equal((await clipState()).end, 3, 'Escape cancels the entire handle drag');
+  await dragEdge('start', 9);
+  await expect.poll(async () => (await clipState()).start).toBeGreaterThan(2.9);
+  assert((await clipState()).start < 3, 'A handle cannot cross its opposite edge');
+  await unfocus();
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await clipState()).start).toBe(0);
+  await unfocus();
+  await handle('end').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect
+    .poll(async () => (await clipState()).end)
+    .toBe(p.model.recordings[0].frameTimes.find((t) => t > 3.000001));
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await clipState()).end).toBe(3);
+  await unfocus();
+  await page.keyboard.press('h');
+  await expect(page.locator('[data-clip-handle]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
   await unfocus();
   await page.keyboard.press('r');
   const name = page.locator(`[data-cut-clip="${cid}"] input[aria-label="Clip name"]`);
@@ -108,6 +209,15 @@ try {
     await name.evaluate((el) => el.selectionStart === 0 && el.selectionEnd === el.value.length),
   );
   await page.keyboard.type('Renamed by keyboard');
+  await page.keyboard.press('h');
+  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  assert.equal(
+    await name.evaluate((el) => getComputedStyle(el).outlineColor),
+    'rgb(244, 241, 229)',
+  );
   await page.keyboard.press('Enter');
   await saved();
   await seek(1);
@@ -193,12 +303,27 @@ try {
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await capture('review');
   await go('Media');
+  await centered();
   await page.getByLabel('Waveform display').selectOption('overlay');
   await capture('media-waveforms');
   await go('Cut');
   await capture('cut');
+  const beforeBatch = await state();
+  await page.getByRole('button', { name: 'New batch', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Batch name').fill('Disposable UI batch');
+  await page.getByRole('button', { name: 'Create batch', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete batch…', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('A manual save is made first');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal((await state()).batches.length, 2);
+  await page.getByRole('button', { name: 'Delete batch…', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete batch', exact: true }).click();
+  await expect.poll(async () => (await state()).batches.length).toBe(1);
+  assert.deepEqual((await state()).model.clips, beforeBatch.model.clips);
+  await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
   await expect.poll(() => page.evaluate(() => innerWidth)).toBeLessThanOrEqual(1100);
+  await centered();
   await capture('compact');
   const dimensions = await page.evaluate(() => ({
     w: innerWidth,
@@ -235,6 +360,11 @@ try {
         'no thumbnail poster',
         'green accepted state',
         'compact layout',
+        'centered page navigation at wide and compact sizes',
+        'unrelated E key focus behavior and keyboard seek accessibility',
+        'stable header and batch controls during quiet undo',
+        'handle start/end trim, overlap, clamping, cancel, keyboard and single-step undo',
+        'high-contrast name focus',
       ],
     }),
   );

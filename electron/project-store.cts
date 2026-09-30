@@ -21,6 +21,7 @@ export interface NativeSource {
   bytes: number;
   modified: number;
   fingerprint: string;
+  audioPreviews?: Record<number, string>;
 }
 interface Data {
   project: ProjectInfo;

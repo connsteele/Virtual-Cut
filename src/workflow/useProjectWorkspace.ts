@@ -180,5 +180,6 @@ export function useProjectWorkspace() {
     sample,
     checkpoint,
     quiet,
+    blocking: busy && !quiet,
   };
 }

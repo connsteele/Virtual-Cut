@@ -64,6 +64,7 @@ export interface ProjectApi {
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;
+  deleteBatch(id: string, batchId: string, targetId?: string): Promise<ProjectSnapshot>;
   import(
     id: string,
     batchId: string,

@@ -1,6 +1,6 @@
 # Milestone 1 — durable project workspace
 
-Implemented September 29, 2026 for user testing; the feedback pass is version 0.2.1. Notion tickets VC-2, VC-3, VC-6, VC-7, VC-8, VC-9, and VC-10 define acceptance. Automated checks do not replace the user-testing gate.
+Implemented September 29, 2026 for user testing; the current feedback follow-up is version 0.2.2. Notion tickets VC-2, VC-3, VC-6, VC-7, VC-8, VC-9, and VC-10 define acceptance. Automated checks do not replace the user-testing gate.
 
 ## Storage and identity
 
@@ -65,3 +65,21 @@ Use disposable profiles and test media on G:. Verify project isolation/reopen, e
 - Build/type checks, lint, media access tests, native project checks, shell/workflow checks, timestamp-offset checks, long-source playback and new feedback regressions passed. The final packaged project and feedback UI checks ran with only Windows directories on PATH, confirming the included FFmpeg/FFprobe.
 - Evidence: packaged project `G:\GPT\Work\virtual-cut\milestone-1\ui-sNC4sg`; packaged feedback `G:\GPT\Work\virtual-cut\m1-feedback\ui-k31c7e`; native feedback `G:\GPT\Work\virtual-cut\m1-feedback\native-WySADH`; native project `G:\GPT\Work\virtual-cut\milestone-1\native-dJFX0t`; timing `G:\GPT\Work\virtual-cut\milestone-1\timing-M6pXIK`; long-source `G:\GPT\Work\virtual-cut\milestone-1\long-YoDFpD`.
 - Tests used isolated app profiles and disposable source copies on G:. No original I: footage or user project data was changed. Connor's hands-on acceptance remains open. Exports/physical filing are M2; transcription and agent integration remain later milestones.
+
+## M1 review follow-up — version 0.2.2
+
+- The timeline highlight was the global `:focus-visible` outline on a mouse-focused seek slider. Chromium's keyboard focus behavior can expose it on an unrelated key such as E, which has no assigned edit command. Pointer scrubbing now suppresses that incidental ring; Tab focus and deliberate arrow-key seeking keep visible keyboard focus.
+- Quiet undo no longer temporarily disables/dims the header and batch tools. Native operations remain serialized and the workspace exposes its busy state to accessibility tools. Video identity, decoded frame and source position remain stable. Undo/Redo availability can still change when the history actually changes.
+- Bottom navigation uses equal flexible columns on either side of its fixed center. The previous right-side span had become a shortcuts container without its balancing flex rule. Center alignment is measured to within one pixel in wide and compact windows.
+- Folder import already traversed nested folders; the import dialog now states this. Three-level synthetic intake verifies recursion, supported extension filtering and repeated-intake identity reuse. Symbolic links and dot-prefixed entries remain excluded, and the project's preview cache is excluded.
+- Delete batch confirms removing the grouping, makes a manual checkpoint first and preserves sources, clips, markers, jobs and notes. Shared sources stay in their other batches; exclusive sources transfer to the chosen remaining batch. Deleting the last batch creates Unbatched so those sources remain accessible. Save history restores a deleted batch; ordinary edit undo is separate.
+- H toggles Handle mode on Cut. Visible edge grips trim the source-relative in/out points and preview the boundary frame while dragging. Inspected presentation timestamps are used when available, including irregular spacing; source and minimum-range limits are enforced. Release commits one editorial change, Escape/pointer cancellation abandons it, and keyboard arrows can move a focused grip one frame. Overlap lanes update during the drag, and delayed seek events cannot redirect selection to a neighboring clip at commit. Typing H in a field remains normal text entry.
+- Selected clip/marker cards and focused clip names have a pale high-contrast outline. Marker category colors remain independent of these selection cues.
+- The screenshot's audio-preview rename failure exposed replacement of an existing listening cache file. Audio/waveform upgrades now publish a fresh, verified generation and persist its native cache basename, while the previous generation remains available to readers and save recovery. A real Windows read lock verifies that the old preview cannot be renamed, yet the new preparation succeeds and survives reopen. Existing legacy caches remain compatible; original source media and export timing are unchanged.
+
+## Version 0.2.2 packaged handoff
+
+- Build: `G:\GPT\Work\virtual-cut\m1-followup\builds\Virtual-Cut-0.2.2-win-x64-2026-09-30T00-35-51-482Z\Virtual Cut.exe`. Close the older app window before opening this portable copy; keep its files together.
+- Build/type checks, lint, media access, hidden Electron shell smoke, all-page workflow, overlap geometry, native project/storage, timestamp-offset and feedback checks passed. Final packaged feedback and project UI checks used Windows-only PATH, exercising bundled FFmpeg/FFprobe. The existing long-source performance measurement above was not rerun because this pass changes cache publication and controls rather than playback clock logic.
+- Evidence: packaged feedback `G:\GPT\Work\virtual-cut\m1-feedback\ui-QaMn4H`; packaged project `G:\GPT\Work\virtual-cut\milestone-1\ui-nUXz2Y`; native feedback `G:\GPT\Work\virtual-cut\m1-feedback\native-dRAqaP`; native project `G:\GPT\Work\virtual-cut\milestone-1\native-z9KqAO`; timing `G:\GPT\Work\virtual-cut\milestone-1\timing-Cflv6x`; shell/workflow screenshots `G:\GPT\Work\virtual-cut\m1-followup`.
+- Connor's R01–R08 checkbox results from 0.2.1 remain recorded. R09–R12 and optional O01–O04 remain unfinished; the same Notion guide gains N01–N07 for this follow-up. M1 remains in User testing. Originals, the real app profile and user projects were not used for regression mutations.

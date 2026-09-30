@@ -88,6 +88,11 @@
   user-select: none;
   cursor: ew-resize;
 }
+/* Pointer scrubbing should not gain a large keyboard ring on an unrelated key.
+   Tab focus and arrow-key seeking still receive the normal visible focus ring. */
+.track[data-pointer-focus='true']:focus-visible {
+  outline: none;
+}
 .ruler {
   display: flex;
   justify-content: space-between;
@@ -182,7 +187,7 @@
   border: 1px solid color-mix(in srgb, var(--clip-color) 70%, transparent);
   border-radius: 3px;
   text-align: left;
-  padding: 3px min(7px, 0.4%);
+  padding: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -215,22 +220,61 @@
 .clip:hover {
   background: color-mix(in srgb, var(--clip-color) 36%, transparent);
 }
-.clip[aria-pressed='true'] {
+.clip[data-selected='true'] {
   background: color-mix(in srgb, var(--clip-color) 46%, #13211eb3);
   border-color: #f4f1e5;
   box-shadow: inset 0 0 0 1px #f4f1e5;
   color: #fff;
   z-index: 3;
 }
-.clip[aria-pressed='true']::before,
-.clip[aria-pressed='true']::after {
+.clip[data-selected='true']::before,
+.clip[data-selected='true']::after {
   width: 3px;
   background: #f4f1e5;
 }
-.clip:focus-visible {
+.clip:has(:focus-visible) {
   outline: 2px solid #fff;
   outline-offset: 0;
   z-index: 4;
+}
+.clipLabel {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 3px 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.clip[data-handle-mode='true'] .clipLabel {
+  padding-inline: 12px;
+}
+.handle {
+  position: absolute;
+  inset-block: 0;
+  width: min(10px, 40%);
+  padding: 0;
+  background: #f4f1e530;
+  border: 0;
+  border-inline: 2px solid #f4f1e5;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 4;
+}
+.handle[data-clip-handle='start'] {
+  left: 0;
+}
+.handle[data-clip-handle='end'] {
+  right: 0;
+}
+.handle:hover,
+.handle:active {
+  background: #f4f1e5aa;
 }
 .playhead {
   position: absolute;

@@ -926,8 +926,8 @@
   flex-shrink: 0;
 }
 .footer {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 4px;
   height: 65px;
   flex-shrink: 0;
@@ -940,15 +940,19 @@
   height: 100%;
 }
 .footer > span {
-  flex: 1;
+  min-width: 0;
   align-self: center;
   padding: 0 18px;
   font-size: 10px;
 }
-.footer > span:last-child {
-  text-align: right;
+.footer > .tools {
+  min-width: 0;
+  justify-content: flex-end;
+  padding-right: 14px;
+  align-self: center;
+  flex-wrap: wrap;
 }
-.footer button {
+.footer nav button {
   width: 116px;
   display: flex;
   flex-direction: column;
@@ -1114,6 +1118,13 @@
 .clipName {
   width: 100%;
   font-weight: 500 !important;
+}
+.shell .clipName:focus-visible {
+  outline-color: #f4f1e5;
+}
+.clipTile.selected {
+  border-color: #f4f1e5 !important;
+  box-shadow: inset 0 0 0 1px #f4f1e5;
 }
 .clipSwatch {
   display: inline-block;

@@ -22,6 +22,10 @@ export function Timeline({
   onMarkerSelect,
   waveMode = 'off',
   audioTracks = [],
+  handleMode = false,
+  trimEnabled = true,
+  onTrim,
+  onTrimActive,
 }: {
   recording: Recording;
   markers: Marker[];
@@ -39,9 +43,47 @@ export function Timeline({
   onMarkerSelect?: (id: string) => void;
   waveMode?: 'off' | 'overlay' | 'replace';
   audioTracks?: AudioTrack[];
+  handleMode?: boolean;
+  trimEnabled?: boolean;
+  onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
+  onTrimActive?: (active: boolean) => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
+  const drag = useRef<{
+    id: string;
+    edge: 'start' | 'end';
+    clip: Clip;
+    value: number;
+    pointer: number;
+    recording: string;
+  } | null>(null);
+  const callbacks = useRef({ onTrimActive });
+  const [preview, setPreview] = useState<{
+    id: string;
+    edge: 'start' | 'end';
+    value: number;
+  } | null>(null);
+  const [pointerFocus, setPointerFocus] = useState(false);
+  useEffect(() => {
+    callbacks.current = { onTrimActive };
+  }, [onTrimActive]);
+  useEffect(() => {
+    const cancel = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !drag.current) return;
+      e.preventDefault();
+      drag.current = null;
+      setPreview(null);
+      callbacks.current.onTrimActive?.(false);
+    };
+    document.addEventListener('keydown', cancel);
+    return () => {
+      document.removeEventListener('keydown', cancel);
+      drag.current = null;
+      setPreview(null);
+      callbacks.current.onTrimActive?.(false);
+    };
+  }, [handleMode, recording.id, trimEnabled]);
   const [width, setWidth] = useState(640);
   const [keys, setKeys] = useState(
     () => localStorage.getItem('virtual-cut.keyframe-ticks') !== 'false',
@@ -52,7 +94,9 @@ export function Timeline({
     return () => observer.disconnect();
   }, []);
   const span = Math.max(0.001, end - start);
-  const layout = layoutClips(showClips ? clips : [], start, end);
+  const displayClip = (c: Clip) =>
+    preview?.id === c.id ? { ...c, [preview.edge]: preview.value } : c;
+  const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
   const percent = (t: number) => `${100 * Math.max(0, Math.min(1, (t - start) / span))}%`;
   // Enough whole 16:9 tiles to fill the strip; sample the nearest available source thumbnail.
   const count = Math.max(1, Math.ceil(width / 120));
@@ -67,6 +111,53 @@ export function Timeline({
   function scrub(x: number) {
     const rect = track.current!.getBoundingClientRect();
     onSeek(start + Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * span);
+  }
+  function trimTime(c: Clip, edge: 'start' | 'end', value: number, step?: number) {
+    const frame = 1 / (recording.fps || 30),
+      min = Math.max(frame, 0.021);
+    let snapped = Math.round(value / frame) * frame;
+    const frames = recording.frameTimes;
+    if (frames?.length) {
+      const at = step ? c[edge] + Math.sign(step) * 0.000001 : value;
+      let lo = 0,
+        hi = frames.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (frames[mid] < at) lo = mid + 1;
+        else hi = mid;
+      }
+      const right = frames[Math.min(lo, frames.length - 1)],
+        left = frames[Math.max(0, lo - 1)];
+      snapped = step
+        ? step > 0
+          ? right
+          : left
+        : Math.abs(right - at) < Math.abs(left - at)
+          ? right
+          : left;
+    }
+    if (value >= recording.duration) snapped = recording.duration;
+    if (value <= 0) snapped = 0;
+    return edge === 'start'
+      ? Math.max(0, Math.min(c.end - min, snapped))
+      : Math.min(recording.duration, Math.max(c.start + min, snapped));
+  }
+  function moveHandle(x: number) {
+    const d = drag.current;
+    if (!d) return;
+    const rect = track.current!.getBoundingClientRect();
+    d.value = trimTime(d.clip, d.edge, start + ((x - rect.left) / rect.width) * span);
+    setPreview({ id: d.id, edge: d.edge, value: d.value });
+    onSeek(d.value);
+  }
+  function finishHandle(commit: boolean) {
+    const d = drag.current;
+    if (!d) return;
+    drag.current = null;
+    setPreview(null);
+    if (commit && d.recording === recording.id && d.value !== d.clip[d.edge])
+      onTrim?.(d.id, d.edge, d.value);
+    callbacks.current.onTrimActive?.(false);
   }
   return (
     <div className={s.timeline} data-testid="combined-timeline">
@@ -98,6 +189,7 @@ export function Timeline({
       <div
         ref={track}
         className={s.track}
+        data-pointer-focus={pointerFocus}
         data-testid="scrub-surface"
         role="slider"
         tabIndex={0}
@@ -108,8 +200,13 @@ export function Timeline({
         aria-valuetext={time(current)}
         onDragStart={(e) => e.preventDefault()}
         onPointerDown={(e) => {
-          if (e.button !== 0 || (e.target as HTMLElement).closest('[data-marker]')) return;
+          if (
+            e.button !== 0 ||
+            (e.target as HTMLElement).closest('[data-marker],[data-clip-handle]')
+          )
+            return;
           e.preventDefault();
+          setPointerFocus(true);
           e.currentTarget.focus({ preventScroll: true });
           pointer.current = e.pointerId;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -133,11 +230,13 @@ export function Timeline({
         onLostPointerCapture={() => {
           pointer.current = null;
         }}
+        onBlur={() => setPointerFocus(false)}
         onKeyDown={(e) => {
           if ((e.target as HTMLElement).closest('button') || e.ctrlKey || e.altKey || e.metaKey)
             return;
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             e.preventDefault();
+            setPointerFocus(false);
             onSeek(
               current +
                 (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : 1 / (recording.fps || 30)),
@@ -263,30 +362,107 @@ export function Timeline({
                 }}
               />
             ))}
-            {layout.items.map(({ clip: c, index, lane }) => (
-              <button
-                key={c.id}
-                data-clip={c.id}
-                data-clip-lane={lane}
-                className={s.clip}
-                aria-pressed={c.id === selectedId}
-                aria-label={`Select clip: ${c.name}`}
-                title={`${String(index + 1).padStart(2, '0')} · ${c.name} · ${time(c.start)} – ${time(c.end)}${layout.overlaps.some((o) => o.start < c.end && o.end > c.start) ? ' · Overlaps another clip' : ''}`}
-                style={
-                  {
-                    '--clip-color': clipColor(c.id),
-                    '--clip-lane': lane,
-                    left: percent(c.start),
-                    width: `${(100 * (Math.min(end, c.end) - Math.max(start, c.start))) / span}%`,
-                  } as CSSProperties
-                }
-                onClick={(e) => {
-                  if (e.detail === 0) onSelect?.(c.id);
-                }}
-              >
-                <b>{String(index + 1).padStart(2, '0')}</b> <span>{c.name}</span>
-              </button>
-            ))}
+            {layout.items.map(({ clip, index, lane }) => {
+              const c = displayClip(clip);
+              return (
+                <div
+                  key={c.id}
+                  data-clip-container={c.id}
+                  data-clip-lane={lane}
+                  className={s.clip}
+                  data-selected={c.id === selectedId}
+                  data-handle-mode={handleMode}
+                  title={`${String(index + 1).padStart(2, '0')} · ${c.name} · ${time(c.start)} – ${time(c.end)}${layout.overlaps.some((o) => o.start < c.end && o.end > c.start) ? ' · Overlaps another clip' : ''}`}
+                  style={
+                    {
+                      '--clip-color': clipColor(c.id),
+                      '--clip-lane': lane,
+                      left: percent(c.start),
+                      width: `${(100 * (Math.min(end, c.end) - Math.max(start, c.start))) / span}%`,
+                    } as CSSProperties
+                  }
+                >
+                  <button
+                    className={s.clipLabel}
+                    data-clip={c.id}
+                    aria-label={`Select clip: ${c.name}`}
+                    aria-pressed={c.id === selectedId}
+                    onClick={(e) => {
+                      if (e.detail === 0) onSelect?.(c.id);
+                    }}
+                  >
+                    <b>{String(index + 1).padStart(2, '0')}</b> <span>{c.name}</span>
+                  </button>
+                  {handleMode &&
+                    (['start', 'end'] as const).map((edge) => (
+                      <button
+                        key={edge}
+                        className={s.handle}
+                        data-clip-handle={edge}
+                        title={`Trim ${edge === 'start' ? 'in' : 'out'} point · drag or use arrow keys`}
+                        aria-label={`Trim ${edge} of ${c.name}`}
+                        aria-disabled={!trimEnabled}
+                        onPointerDown={(e) => {
+                          if (e.button !== 0 || !trimEnabled) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onTrimActive?.(true);
+                          onSelect?.(c.id);
+                          drag.current = {
+                            id: c.id,
+                            edge,
+                            clip,
+                            value: c[edge],
+                            pointer: e.pointerId,
+                            recording: recording.id,
+                          };
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                        }}
+                        onPointerMove={(e) => {
+                          if (drag.current?.pointer === e.pointerId) moveHandle(e.clientX);
+                        }}
+                        onPointerUp={(e) => {
+                          if (drag.current?.pointer !== e.pointerId) return;
+                          moveHandle(e.clientX);
+                          finishHandle(true);
+                          if (e.currentTarget.hasPointerCapture(e.pointerId))
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                        }}
+                        onPointerCancel={() => finishHandle(false)}
+                        onLostPointerCapture={() => finishHandle(false)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (!trimEnabled) return;
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            finishHandle(false);
+                          }
+                          if (
+                            ['ArrowLeft', 'ArrowRight'].includes(e.key) &&
+                            !e.ctrlKey &&
+                            !e.altKey &&
+                            !e.metaKey
+                          ) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onSelect?.(c.id);
+                            onTrim?.(
+                              c.id,
+                              edge,
+                              trimTime(
+                                c,
+                                edge,
+                                c[edge] + (e.key === 'ArrowRight' ? 1 : -1) / (recording.fps || 30),
+                                e.key === 'ArrowRight' ? 1 : -1,
+                              ),
+                            );
+                          }
+                        }}
+                      />
+                    ))}
+                </div>
+              );
+            })}
           </div>
         )}
         <div className={s.playhead} style={{ left: percent(current) }} />

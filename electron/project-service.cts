@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ProjectStore } from './project-store.cjs';
+import { ProjectStore, type NativeSource } from './project-store.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
 import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
@@ -126,6 +126,14 @@ export class ProjectService {
     this.grants.set(file, { access, url: video.url });
     return video.url;
   }
+  private audioFile(source: NativeSource, index: number) {
+    const prefix = `${source.id}-${source.fingerprint}-audio-${index}`;
+    const name = source.audioPreviews?.[index];
+    // Only native cache basenames are accepted, including in an edited project file.
+    const valid =
+      name?.startsWith(prefix + '-') && /^[a-f0-9-]{36}\.m4a$/.test(name.slice(prefix.length + 1));
+    return path.join(this.require().data.project.cache, valid ? name! : prefix + '.m4a');
+  }
   respond(request: Request): Promise<Response> | null {
     for (const grant of this.grants.values())
       if (grant.url === request.url) return grant.access.respond(request);
@@ -173,11 +181,8 @@ export class ProjectService {
         }
       } else r.url = '';
       for (const track of r.audioTracks || []) {
-        const audio = path.join(
-          store.data.project.cache,
-          `${r.id}-${source?.fingerprint}-audio-${track.index}.m4a`,
-        );
-        if (existsSync(audio)) track.previewUrl = await this.grant(audio);
+        const audio = source && this.audioFile(source, track.index);
+        if (audio && existsSync(audio)) track.previewUrl = await this.grant(audio);
       }
       const frames: string[] = [];
       for (let i = 0; i < 8; i++) {
@@ -260,6 +265,36 @@ export class ProjectService {
     s.write();
     return this.snapshot();
   }
+  async deleteBatch(id: string, batchId: string, targetId?: string) {
+    const s = this.require(id);
+    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
+    const remaining = s.data.batches.filter((b) => b.id !== batchId);
+    if (targetId && !remaining.some((b) => b.id === targetId))
+      throw new Error('Choose an existing batch for the remaining recordings.');
+    await s.checkpoint('manual');
+    s.transaction(() => {
+      const target = remaining.find((b) => b.id === targetId) ||
+        remaining[0] || {
+          id: randomUUID(),
+          name: 'Unbatched',
+          created: new Date().toISOString(),
+        };
+      s.data.batches = remaining.length ? remaining : [target];
+      for (const r of s.data.model.recordings) {
+        if (!r.batchIds?.includes(batchId)) continue;
+        const other = r.batchIds.filter((id) => id !== batchId);
+        r.batchIds = other.length ? other : [target.id];
+      }
+      if (s.data.activeBatchId === batchId) s.data.activeBatchId = target.id;
+      const records = s.data.model.recordings.filter((r) =>
+        r.batchIds?.includes(s.data.activeBatchId),
+      );
+      if (!records.some((r) => r.id === s.data.model.selectedRecordingId))
+        s.data.model.selectedRecordingId = records[0]?.id || '';
+      s.data.revision++;
+    });
+    return this.snapshot();
+  }
   async gather(folder: string): Promise<string[]> {
     const files: string[] = [];
     const cache = this.require().data.project.cache;
@@ -306,7 +341,7 @@ export class ProjectService {
           const r = s.data.model.recordings.find((r) => r.id === existing.id)!;
           r.batchIds = [...new Set([...(r.batchIds || []), batchId])];
           if (existing.modified !== native.modified) {
-            s.putSource({ ...native, id: existing.id });
+            s.putSource({ ...native, id: existing.id, audioPreviews: existing.audioPreviews });
             r.availability = r.duration ? 'ready' : 'pending';
             this.grants.delete(existing.file);
           }
@@ -386,9 +421,7 @@ export class ProjectService {
       if (
         index != null &&
         (!r.audioTracks?.find((t) => t.index === index)?.waveform ||
-          !existsSync(
-            path.join(s.data.project.cache, `${r.id}-${native.fingerprint}-audio-${index}.m4a`),
-          ))
+          !existsSync(this.audioFile(native, index)))
       )
         this.enqueue(sourceId, 'audio', index);
     this.pump();
@@ -439,7 +472,7 @@ export class ProjectService {
         'This file does not match the saved recording fingerprint. Import changed footage as a new recording to protect existing timing.',
       );
     s.transaction(() => {
-      s.putSource(next);
+      s.putSource({ ...next, audioPreviews: old.audioPreviews });
       const r = s.data.model.recordings.find((r) => r.id === sourceId)!;
       r.sourcePath = next.file;
       r.availability = r.duration ? 'ready' : 'pending';
@@ -570,9 +603,11 @@ export class ProjectService {
         });
         this.queueAudio(source.id);
       } else {
-        const file = `${prefix}-audio-${job.track}.m4a`;
-        temp = `${prefix}-audio-${job.track}.partial.m4a`;
-        pcm = `${prefix}-audio-${job.track}.partial.f32`;
+        // Publish a fresh generation. Windows may lock a preview currently playing;
+        // replacing that file breaks waveform upgrades and retry preparation.
+        const file = `${prefix}-audio-${job.track}-${randomUUID()}.m4a`;
+        temp = `${prefix}-audio-${job.track}-${job.id}.partial.m4a`;
+        pcm = `${prefix}-audio-${job.track}-${job.id}.partial.f32`;
         const record = s.data.model.recordings.find((r) => r.id === source.id)!;
         const duration = record.duration;
         const expected = record.audioTracks?.find((t) => t.index === job.track)?.duration;
@@ -642,10 +677,19 @@ export class ProjectService {
         const final = await stat(source.file);
         if (final.size !== source.bytes || final.mtimeMs !== source.modified)
           throw new Error('Recording changed during audio preparation.');
+        const peaks = await waveform(pcm, 8000);
+        signal.throwIfAborted();
         await rename(temp, file);
         temp = '';
-        const peaks = await waveform(pcm, 8000);
         s.transaction(() => {
+          const native = s.sources().find((x) => x.id === source.id)!;
+          s.putSource({
+            ...native,
+            audioPreviews: {
+              ...native.audioPreviews,
+              [job.track!]: path.basename(file),
+            },
+          });
           const track = s.data.model.recordings
             .find((r) => r.id === source.id)
             ?.audioTracks?.find((t) => t.index === job.track);
