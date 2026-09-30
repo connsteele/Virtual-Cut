@@ -62,6 +62,8 @@ Provide configurable bindings and use Connor's familiar bindings in the initial 
 
 The app uses R to rename the selected clip or marker; Backspace requests inline deletion, Enter confirms, and Escape cancels. Ctrl+S makes a manual checkpoint beside continuous saves. Selection follows playhead retains the last clip through gaps; direct marker clicks take priority. These shortcuts do not intercept text editing.
 
+**Transport clarification — September 29, 2026:** K (the earlier J mention was a typo) and Space toggle Play/Pause. J retains silent reverse scan. L starts forward at 1× from pause, then accelerates to 2× and 4×. Play/Pause shares one button; the active transport command highlights teal. The player can loop the selected clip's current In/Out range. Audio listening choices, status, volume and waveform display form one right-aligned group. Media bins represent actual source folders; Review's folders remain planned destinations. Batch removal can preserve work or remove exclusive app records and derived previews with a recovery checkpoint; original recordings and shared work are retained.
+
 Connor previously used Backspace in LosslessCut to remove a range endpoint after chapter import. Importing OBS markers directly as points removes that corrective step. The marker and clip card workflow now implements selection and typing-field guards.
 
 ## Transcript feature requested for exploration

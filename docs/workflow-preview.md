@@ -1,5 +1,7 @@
 # Desktop workflow preview
 
+This document records the earlier sample prototype. The current durable project app and its M1 cleanup are documented in [Milestone 1](milestone-1.md). Current bindings use Ctrl+Up/Down for page items and K/Space for Play/Pause.
+
 September 29, 2026: UI iteration 03 updates the native React workspace inside the Electron app, using CSS Modules. It opens maximized; F11 toggles fullscreen. It is a UI feedback build, with a shared editable sample model instead of a project database.
 
 ## Try the pages

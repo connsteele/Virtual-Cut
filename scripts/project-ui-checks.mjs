@@ -146,7 +146,7 @@ try {
   await page.getByRole('button', { name: 'Combined', exact: true }).click();
   await saved();
   await expect(page.locator('audio')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();
+  await page.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
   await expect
     .poll(() => page.locator('audio').evaluateAll((items) => items.every((a) => !a.paused)))
     .toBe(true);
@@ -163,7 +163,7 @@ try {
         ),
     )
     .toBeLessThan(0.25);
-  await page.getByRole('button', { name: 'Pause · K', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
   await expect
     .poll(() => page.locator('audio').evaluateAll((items) => items.every((a) => a.paused)))
     .toBe(true);

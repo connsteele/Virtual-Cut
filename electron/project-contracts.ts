@@ -44,6 +44,11 @@ export interface ProjectSnapshot {
   canRedo: boolean;
   saves?: SaveCopy[];
   warning?: string;
+  cleanup?: {
+    cacheFilesRemoved: number;
+    cacheFilesRetained: number;
+    cacheCleanupIncomplete?: boolean;
+  };
 }
 export interface RecentProject {
   id: string;
@@ -61,10 +66,16 @@ export interface ProjectApi {
   save(id: string, before: Model, after: Model): Promise<ProjectSnapshot>;
   checkpoint(id: string): Promise<ProjectSnapshot>;
   restore(id: string, saveId: string): Promise<ProjectSnapshot>;
+  revealSave(id: string, saveId: string): Promise<void>;
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;
-  deleteBatch(id: string, batchId: string, targetId?: string): Promise<ProjectSnapshot>;
+  deleteBatch(
+    id: string,
+    batchId: string,
+    targetId?: string,
+    mode?: 'preserve' | 'remove',
+  ): Promise<ProjectSnapshot>;
   import(
     id: string,
     batchId: string,

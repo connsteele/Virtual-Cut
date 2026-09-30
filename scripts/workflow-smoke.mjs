@@ -120,7 +120,7 @@ try {
       () =>
         !document.querySelector('video').seeking && document.querySelector('video').readyState >= 2,
     );
-    await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();
+    await page.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
     await expect
       .poll(() => page.locator('video').evaluate((v) => v.currentTime))
       .toBeGreaterThan(r.duration * 0.55 + 0.1);
@@ -140,7 +140,7 @@ try {
     .toBeCloseTo(catalog[0].keys[1], 1);
   await page.getByRole('button', { name: 'Previous keyframe', exact: true }).click();
   await expect.poll(() => page.locator('video').evaluate((v) => v.currentTime)).toBeLessThan(0.1);
-  await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();
+  await page.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
   await expect
     .poll(() => page.locator('video').evaluate((v) => v.currentTime))
     .toBeGreaterThan(0.2);

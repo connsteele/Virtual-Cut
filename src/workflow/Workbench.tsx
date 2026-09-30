@@ -38,6 +38,8 @@ import {
   type Recording,
 } from './model';
 import { Player, type Transport } from './Player';
+import { SourceFolders } from './SourceFolders';
+import { inSourceFolder } from './sourceFolderTree';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
 import { clipColor } from './clipLayout';
@@ -438,6 +440,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [expanded, setExpanded] = useState(''),
     [reviewTree, setReviewTree] = useState(false),
     [folderFilter, setFolderFilter] = useState(''),
+    [sourceFolderFilter, setSourceFolderFilter] = useState(''),
     [checked, setChecked] = useState<string[]>([]),
     [mediaList, setMediaList] = useState(false),
     [pool, setPool] = useState<string[]>(['c1', 'c3']),
@@ -500,12 +503,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       ?.focus({ preventScroll: true });
   }, [deleteClipId, deleteMarkerId]);
   useEffect(() => {
-    const pause = () => transport.current?.command('k');
+    const pause = () => transport.current?.command('pause');
     window.addEventListener('virtual-cut-pause-workspace', pause);
     return () => window.removeEventListener('virtual-cut-pause-workspace', pause);
   }, []);
   useEffect(() => {
-    if (dialog || folderIds.length) transport.current?.command('k');
+    if (dialog || folderIds.length) transport.current?.command('pause');
   }, [dialog, folderIds]);
   const recordings = project
     ? model.recordings.filter((x) => x.batchIds?.includes(project.activeBatchId))
@@ -549,6 +552,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setExpanded('');
     setChecked([]);
     setFolderFilter('');
+    setSourceFolderFilter('');
     setCid('');
     setMid('');
     setDeleteClipId('');
@@ -558,14 +562,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   }, [projectKey, batchKey]);
   async function history(direction: 'undo' | 'redo') {
     if (!project) return;
-    transport.current?.command('k');
+    transport.current?.command('pause');
     await workspace.run(
       () => window.virtualCut!.project.history(project.project.id, direction),
       true,
     );
   }
   function inspectReview(clip: Clip, field = '') {
-    transport.current?.command('k');
+    transport.current?.command('pause');
     setExpanded(clip.id);
     updateRecording(clip.rid, { position: clip.start });
     if (field)
@@ -650,7 +654,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     markerSeek.current = position;
   }
   function selectRecord(id: string) {
-    transport.current?.command('k');
+    transport.current?.command('pause');
     setRid(id);
     setMid('');
     setDeleteClipId('');
@@ -729,7 +733,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setNotice('Added to ' + sequenceName);
   }
   function go(next: PageId) {
-    transport.current?.command('k');
+    transport.current?.command('pause');
     setPlayingSequence(false);
     setNotice('');
     setPage(next);
@@ -795,14 +799,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         }
         if (!recordings.length) return;
         const candidates =
-          page === 'media' && folderFilter
-            ? recordings.filter((x) =>
-                model.clips.some(
-                  (c) =>
-                    c.rid === x.id &&
-                    (c.folder === folderFilter || c.folder.startsWith(folderFilter + '/')),
-                ),
-              )
+          page === 'media' && sourceFolderFilter
+            ? recordings.filter((x) => inSourceFolder(x, sourceFolderFilter))
             : recordings;
         if (!candidates.length) return;
         const index = candidates.findIndex((x) => x.id === r.id);
@@ -892,7 +890,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       const video = await window.virtualCut.openVideo();
       if (video) {
         const id = 'local-' + video.id;
-        transport.current?.command('k');
+        transport.current?.command('pause');
         setModel((m) => ({
           ...m,
           recordings: [
@@ -1228,7 +1226,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   disabled={!!project}
                   onClick={() => {
                     setPlayingSequence(false);
-                    transport.current?.command('k');
+                    transport.current?.command('pause');
                     setDialog('handoff');
                   }}
                 >
@@ -1452,19 +1450,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             <div className={s.media}>
               <aside className={s.rail}>
                 <h3>Media pool</h3>
-                <Button aria-pressed={!folderFilter} onClick={() => setFolderFilter('')}>
+                <Button
+                  aria-pressed={!sourceFolderFilter}
+                  onClick={() => setSourceFolderFilter('')}
+                >
                   All recordings
                 </Button>
-                {[...new Set(model.clips.map((c) => c.folder.split('/')[0]))].map((f) => (
-                  <Button
-                    key={f}
-                    aria-pressed={folderFilter === f}
-                    onClick={() => setFolderFilter(f)}
-                  >
-                    <FolderOpen size={14} />
-                    {f}
-                  </Button>
-                ))}
+                <SourceFolders
+                  recordings={recordings}
+                  selected={sourceFolderFilter}
+                  onSelect={setSourceFolderFilter}
+                />
               </aside>
               <div className={s.mediaContent}>
                 <div className={s.mediaBrowser}>
@@ -1478,16 +1474,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </div>
                   <div className={mediaList ? s.mediaList : s.mediaGrid}>
                     {recordings
-                      .filter(
-                        (x) =>
-                          !folderFilter ||
-                          model.clips.some(
-                            (c) => c.rid === x.id && c.folder.startsWith(folderFilter),
-                          ),
-                      )
+                      .filter((x) => inSourceFolder(x, sourceFolderFilter))
                       .map((x) => (
                         <button
                           key={x.id}
+                          data-recording={x.id}
                           className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
                           onClick={() => selectRecord(x.id)}
                         >
@@ -1857,7 +1848,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     <Button
                       disabled={!model.sequence.length}
                       onClick={() => {
-                        transport.current?.command('k');
+                        transport.current?.command('pause');
                         const first = model.sequence[0];
                         updateRecording(first.rid, { position: effective(first).start });
                         setEid(first.id);
@@ -2086,7 +2077,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Ctrl+S', 'Manual save checkpoint'],
                 ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / Redo'],
                 ['Ctrl+↑ / Ctrl+↓', 'Previous / next item in the current page'],
-                ['J / K / L', 'Reverse scan / pause / play (press again for faster playback)'],
+                ['J / K / L', 'J: reverse scan · K: play/pause · L: forward/faster'],
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],
@@ -2199,7 +2190,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               <Button
                 primary
                 onClick={() => {
-                  transport.current?.command('k');
+                  transport.current?.command('pause');
                   setModel(initialModel());
                   setRid('r1');
                   setCid('c1');

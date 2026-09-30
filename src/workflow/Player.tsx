@@ -7,6 +7,7 @@ import {
   Pause,
   Play,
   Rewind,
+  Repeat2,
   SkipBack,
   SkipForward,
   StepBack,
@@ -81,6 +82,8 @@ export function Player({
   const [current, setCurrent] = useState(r.position),
     [duration, setDuration] = useState(r.duration),
     [status, setStatus] = useState('Paused'),
+    [loopEnabled, setLoopEnabled] = useState(false),
+    [seekAction, setSeekAction] = useState(''),
     [error, setError] = useState(''),
     [ready, setReady] = useState(false),
     [snapshot, setSnapshot] = useState(''),
@@ -115,6 +118,7 @@ export function Player({
     setReady(false);
     setError('');
     setStatus('Paused');
+    setLoopEnabled(false);
     setCurrent(r.position);
     setDuration(r.duration);
     v.src = r.url;
@@ -139,6 +143,19 @@ export function Player({
   }
   const a = bounds?.start || 0,
     z = bounds?.end || duration;
+  const selectedClip = clips.find((clip) => clip.id === selectedId);
+  const loopRange = bounds || selectedClip;
+  const loopStart = Math.max(a, loopRange?.start ?? a),
+    loopEnd = Math.min(z, loopRange?.end ?? z);
+  const canLoop = !!loopRange && loopEnd > loopStart + 0.02;
+  const looping = loopEnabled && canLoop;
+  const loopBounds = useRef({ looping, start: loopStart, end: loopEnd });
+  useLayoutEffect(() => {
+    loopBounds.current = { looping, start: loopStart, end: loopEnd };
+  }, [looping, loopStart, loopEnd]);
+  const playing = status !== 'Paused';
+  const reversePlaying = status.includes('reverse');
+  const fastPlaying = status.includes('forward') && speed.current > 1;
   const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
   const callbacks = useRef({ onPosition, onDuration, onEnded });
   useEffect(() => {
@@ -203,6 +220,11 @@ export function Player({
     video.current?.pause();
     setStatus('Paused');
   };
+  useEffect(() => {
+    if (!seekAction) return;
+    const timer = setTimeout(() => setSeekAction(''), 350);
+    return () => clearTimeout(timer);
+  }, [seekAction]);
   const seek = (t: number) => {
     const v = video.current;
     if (!v || !Number.isFinite(z) || z <= 0) return;
@@ -211,12 +233,25 @@ export function Player({
     setCurrent(position);
     callbacks.current.onPosition?.(position);
   };
+  useEffect(() => {
+    if (!looping) return;
+    const timer = setInterval(() => {
+      const v = video.current;
+      if (!v || v.paused || v.seeking || reverse.current) return;
+      if (v.currentTime - clockOffset >= loopEnd) seek(loopStart);
+    }, 16);
+    return () => clearInterval(timer);
+    // Loop bounds change with selection and trimming; seek clamps to the source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [looping, loopStart, loopEnd, clockOffset]);
   const forward = (rate: number) => {
     const v = video.current;
     if (!v || !ready) return;
     if (reverse.current) clearInterval(reverse.current);
     reverse.current = null;
-    if (v.currentTime - clockOffset >= z - 0.04) seek(a);
+    const position = v.currentTime - clockOffset;
+    if (looping && (position < loopStart || position >= loopEnd - 0.001)) seek(loopStart);
+    else if (position >= z - 0.04) seek(a);
     speed.current = rate;
     v.playbackRate = rate;
     void v
@@ -230,7 +265,7 @@ export function Player({
   function command(key: string) {
     const v = video.current;
     if (!v || !ready) return;
-    if (key === 'k') {
+    if (key === 'pause') {
       stop();
       return;
     }
@@ -238,7 +273,7 @@ export function Player({
       forward(!v.paused ? Math.min(4, speed.current * 2) : 1);
       return;
     }
-    if (key === ' ') {
+    if (key === ' ' || key === 'k') {
       if (!v.paused || reverse.current) stop();
       else forward(1);
       return;
@@ -248,7 +283,17 @@ export function Player({
       stop();
       speed.current = rate;
       setStatus(`${rate}× reverse scan`);
+      if (
+        looping &&
+        (v.currentTime - clockOffset < loopStart || v.currentTime - clockOffset >= loopEnd)
+      )
+        seek(loopEnd - 0.001);
       reverse.current = setInterval(() => {
+        const loop = loopBounds.current;
+        if (loop.looping && v.currentTime - clockOffset - rate / 12 <= loop.start) {
+          seek(loop.end - 0.001);
+          return;
+        }
         if (v.currentTime - clockOffset <= a + 0.01) {
           stop();
           return;
@@ -258,6 +303,7 @@ export function Player({
       return;
     }
     stop();
+    setSeekAction(key);
     const position = v.currentTime - clockOffset;
     const boundaries = [...new Set([a, z, ...clips.flatMap((c) => [c.start, c.end])])]
       .filter((t) => t >= a && t <= z)
@@ -339,6 +385,7 @@ export function Player({
       aria-label="Footage viewer"
       onKeyDown={(e) => {
         if (
+          e.repeat ||
           (e.target as HTMLElement).closest(
             'input:not([type=range]),textarea,select,[contenteditable=true]',
           ) ||
@@ -413,15 +460,26 @@ export function Player({
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
             const position = Math.max(0, v.currentTime - clockOffset);
+            if (looping && !v.paused && !v.seeking && !reverse.current && position >= loopEnd) {
+              // Wrap before notifying selection-follow: the neighboring clip at
+              // the out-point must not take over the loop on a delayed update.
+              seek(loopStart);
+              return;
+            }
             setCurrent(position);
             callbacks.current.onPosition?.(position);
-            if (position >= z - 0.045 && !v.paused) {
+            if (!looping && position >= z - 0.045 && !v.paused) {
               v.pause();
               setStatus('Paused');
               callbacks.current.onEnded?.();
             }
           }}
           onEnded={() => {
+            if (looping && !reverse.current) {
+              seek(loopStart);
+              forward(speed.current);
+              return;
+            }
             setStatus('Paused');
             callbacks.current.onEnded?.();
           }}
@@ -477,7 +535,7 @@ export function Player({
         trimEnabled={trimEnabled}
         onTrim={onTrim}
         onTrimActive={(active) => {
-          if (active) command('k');
+          if (active) stop();
           onTrimActive?.(active);
         }}
         selectedMarkerId={selectedMarkerId}
@@ -496,6 +554,7 @@ export function Player({
           <Button
             disabled={!ready}
             onClick={() => command('start')}
+            primary={seekAction === 'start'}
             aria-label="Previous clip boundary"
           >
             <SkipBack size={17} />
@@ -503,6 +562,7 @@ export function Player({
           <Button
             disabled={!ready || !r.keys?.length}
             onClick={() => command('key-prev')}
+            primary={seekAction === 'key-prev'}
             aria-label="Previous keyframe"
             title={r.keys ? 'Previous keyframe' : 'Keyframe indexing comes later for local footage'}
           >
@@ -511,31 +571,41 @@ export function Player({
           <Button
             disabled={!ready || !r.fps}
             onClick={() => command('frame-prev')}
+            primary={seekAction === 'frame-prev'}
             aria-label="Previous frame"
             title={r.fps ? 'Previous frame' : 'Source frame rate has not been probed'}
           >
             <StepBack size={17} />
           </Button>
-          <Button disabled={!ready} onClick={() => command('j')} aria-label="Reverse · J">
+          <Button
+            disabled={!ready}
+            primary={reversePlaying}
+            onClick={() => command('j')}
+            aria-label="Reverse · J"
+          >
             <Rewind size={17} />
-          </Button>
-          <Button disabled={!ready} onClick={() => command('k')} aria-label="Pause · K">
-            <Pause size={17} />
           </Button>
           <Button
             disabled={!ready}
-            primary
-            onClick={() => forward(1)}
-            aria-label="Play forward · L"
+            primary={playing && !reversePlaying && !fastPlaying}
+            onClick={() => command('k')}
+            aria-label={playing ? 'Pause · K / Space' : 'Play · K / Space'}
+            data-play-pause
           >
-            <Play size={18} />
+            {playing ? <Pause size={18} /> : <Play size={18} />}
           </Button>
-          <Button disabled={!ready} onClick={() => command('l')} aria-label="Faster forward">
+          <Button
+            disabled={!ready}
+            primary={fastPlaying}
+            onClick={() => command('l')}
+            aria-label="Forward / faster · L"
+          >
             <FastForward size={17} />
           </Button>
           <Button
             disabled={!ready || !r.fps}
             onClick={() => command('frame-next')}
+            primary={seekAction === 'frame-next'}
             aria-label="Next frame"
           >
             <StepForward size={17} />
@@ -543,84 +613,107 @@ export function Player({
           <Button
             disabled={!ready || !r.keys?.length}
             onClick={() => command('key-next')}
+            primary={seekAction === 'key-next'}
             aria-label="Next keyframe"
           >
             KF <ChevronsRight size={16} />
           </Button>
-          <Button disabled={!ready} onClick={() => command('end')} aria-label="Next clip boundary">
+          <Button
+            disabled={!ready}
+            primary={seekAction === 'end'}
+            onClick={() => command('end')}
+            aria-label="Next clip boundary"
+          >
             <SkipForward size={17} />
           </Button>
           <Button disabled={!ready} onClick={capture} aria-label="Capture current frame">
             <Camera size={17} />
           </Button>
+          <Button
+            disabled={!ready || !canLoop}
+            aria-label="Loop selected clip"
+            aria-pressed={looping}
+            title={canLoop ? 'Loop selected clip' : 'Select a clip to loop'}
+            onClick={() => setLoopEnabled(!looping)}
+          >
+            <Repeat2 size={17} />
+          </Button>
         </div>
         <div className={s.playbackStatus}>
-          <span title="J: reverse · K: pause · L: play / faster" aria-label="Playback status">
+          <span
+            title="J: reverse · K: play / pause · L: forward / faster"
+            aria-label="Playback status"
+          >
             {status}
           </span>
-          {(!r.sample || r.fullResolution) && (
-            <label>
-              <Volume2 size={14} />
-              <input
-                aria-label="Volume"
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={volume}
-                onChange={(e) => {
-                  setVolume(Number(e.target.value));
-                  if (video.current) video.current.volume = Number(e.target.value);
-                }}
-              />
-            </label>
-          )}
         </div>
       </div>
-      {r.sourcePath && (
-        <div className={s.audioControls} aria-label="Preview audio controls">
-          <span>Listen</span>
-          {(['game', 'mic', 'both'] as const).map((mode) => (
-            <Button
-              key={mode}
-              aria-pressed={(r.monitor || 'game') === mode}
-              disabled={
-                mode === 'game'
-                  ? r.gameTrack == null
-                  : mode === 'mic'
-                    ? r.micTrack == null
-                    : r.gameTrack == null || r.micTrack == null
-              }
-              onClick={() => onAudioChange?.({ monitor: mode })}
-            >
-              {mode === 'game' ? 'Game' : mode === 'mic' ? 'Mic' : 'Combined'}
-            </Button>
-          ))}
-          <span role="status" className={s.muted}>
-            {audioStatus ||
-              (monitored.some((t) => !t.previewUrl)
-                ? 'Preparing audio…'
-                : monitored.length
-                  ? 'Audio ready'
-                  : 'No track selected')}
-          </span>
-          <span className={s.spacer} />
+      {(!r.sample || r.fullResolution) && (
+        <div className={s.audioControls} role="group" aria-label="Preview audio controls">
+          {r.sourcePath && (
+            <>
+              <span className={s.audioLabel}>Listen</span>
+              <div className={s.listenChoices} role="group" aria-label="Listen to">
+                {(['game', 'mic', 'both'] as const).map((mode) => (
+                  <Button
+                    key={mode}
+                    aria-pressed={(r.monitor || 'game') === mode}
+                    disabled={
+                      mode === 'game'
+                        ? r.gameTrack == null
+                        : mode === 'mic'
+                          ? r.micTrack == null
+                          : r.gameTrack == null || r.micTrack == null
+                    }
+                    onClick={() => onAudioChange?.({ monitor: mode })}
+                  >
+                    {mode === 'game' ? 'Game' : mode === 'mic' ? 'Mic' : 'Combined'}
+                  </Button>
+                ))}
+              </div>
+              <span role="status" className={s.audioReady} title={audioStatus}>
+                {audioStatus ||
+                  (monitored.some((t) => !t.previewUrl)
+                    ? 'Preparing audio…'
+                    : monitored.length
+                      ? 'Audio ready'
+                      : 'No track selected')}
+              </span>
+            </>
+          )}
           <label>
-            Waveforms{' '}
-            <select
-              aria-label="Waveform display"
-              value={waveMode}
+            <Volume2 size={14} />
+            <input
+              aria-label="Volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
               onChange={(e) => {
-                const mode = e.target.value as typeof waveMode;
-                setWaveMode(mode);
-                localStorage.setItem('virtual-cut.waveforms', mode);
+                setVolume(Number(e.target.value));
+                if (video.current) video.current.volume = Number(e.target.value);
               }}
-            >
-              <option value="off">Off</option>
-              <option value="overlay">Overlay</option>
-              <option value="replace">Replace filmstrip</option>
-            </select>
+            />
           </label>
+          {r.sourcePath && (
+            <label>
+              Waveforms{' '}
+              <select
+                aria-label="Waveform display"
+                value={waveMode}
+                onChange={(e) => {
+                  const mode = e.target.value as typeof waveMode;
+                  setWaveMode(mode);
+                  localStorage.setItem('virtual-cut.waveforms', mode);
+                }}
+              >
+                <option value="off">Off</option>
+                <option value="overlay">Overlay</option>
+                <option value="replace">Replace filmstrip</option>
+              </select>
+            </label>
+          )}
         </div>
       )}
       {snapshot && (

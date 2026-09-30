@@ -78,6 +78,68 @@ try {
     page.locator('[aria-label="Preview audio controls"]').getByRole('status'),
   ).toHaveText('Audio ready');
   await expect(page.getByLabel('Volume', { exact: true })).toHaveValue('1');
+  const audioBox = await page
+    .getByRole('group', { name: 'Preview audio controls', exact: true })
+    .boundingBox();
+  const volumeBox = await page.getByLabel('Volume', { exact: true }).boundingBox();
+  assert(
+    volumeBox.y >= audioBox.y && volumeBox.y + volumeBox.height <= audioBox.y + audioBox.height + 1,
+    'Volume is inside the audio group',
+  );
+  assert.equal(
+    await page
+      .getByText('Listen', { exact: true })
+      .evaluate((el) => getComputedStyle(el).fontWeight),
+    '650',
+  );
+  const toggle = page.locator('[data-play-pause]');
+  await unfocus();
+  await page.keyboard.press('k');
+  await expect(toggle).toHaveAccessibleName('Pause · K / Space');
+  await expect
+    .poll(() => page.locator('video').evaluate((v) => !v.paused && v.playbackRate === 1))
+    .toBe(true);
+  await expect(toggle).toHaveCSS('background-color', 'rgb(4, 99, 95)');
+  const teal = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await page.keyboard.press('k');
+  await expect(toggle).toHaveAccessibleName('Play · K / Space');
+  await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const faster = page.getByRole('button', { name: 'Forward / faster · L', exact: true });
+  await page.keyboard.press('l');
+  await expect.poll(() => page.locator('video').evaluate((v) => v.playbackRate)).toBe(1);
+  await page.keyboard.press('l');
+  await expect.poll(() => page.locator('video').evaluate((v) => v.playbackRate)).toBe(2);
+  await expect(faster).toHaveCSS('background-color', teal);
+  await page.keyboard.press('l');
+  await expect.poll(() => page.locator('video').evaluate((v) => v.playbackRate)).toBe(4);
+  await page.keyboard.press('k');
+  await seek(2);
+  await page.keyboard.press('j');
+  await expect(page.getByLabel('Playback status')).toContainText('reverse');
+  await expect(page.getByRole('button', { name: 'Reverse · J', exact: true })).toHaveCSS(
+    'background-color',
+    teal,
+  );
+  await page.keyboard.press('k');
+  await expect(page.getByLabel('Playback status')).toHaveText('Paused');
+  // Loop a clip ending beside another one; delayed timeupdate must not select
+  // its neighbor or turn the loop into whole-recording playback.
+  const followBox = page.getByRole('checkbox', { name: 'Selection follows playhead' });
+  await followBox.uncheck();
+  await page.locator(`[data-cut-clip="${cid}"]`).click({ position: { x: 20, y: 20 } });
+  const loopButton = page.getByRole('button', { name: 'Loop selected clip', exact: true });
+  await loopButton.click();
+  await followBox.check();
+  await seek(2.9);
+  await unfocus();
+  await page.keyboard.press('l');
+  await expect
+    .poll(() => page.locator('video').evaluate((v) => v.currentTime), { intervals: [50] })
+    .toBeLessThan(2);
+  await expect(page.locator(`[data-cut-clip="${cid}"]`)).toHaveAttribute('data-selected', 'true');
+  await expect(loopButton).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('k');
+  await loopButton.click();
   await page.getByLabel('Waveform display').selectOption('overlay');
   await expect(page.locator('[data-waveform-track]')).toHaveCount(2);
   await expect(page.getByRole('img', { name: 'Mic waveform', exact: true })).toBeVisible();
@@ -219,7 +281,7 @@ try {
   );
   assert.equal(
     await name.evaluate((el) => getComputedStyle(el).outlineColor),
-    'rgb(244, 241, 229)',
+    'rgb(113, 215, 205)',
   );
   await page.keyboard.press('Enter');
   await saved();
@@ -264,6 +326,20 @@ try {
   await page.getByLabel('Clip name', { exact: true }).first().fill('Changed after manual save');
   await saved();
   await page.getByRole('button', { name: 'Save history', exact: true }).click();
+  const saveTable = page.getByRole('table', { name: 'Save history', exact: true });
+  await expect(saveTable.getByRole('columnheader')).toHaveText(['Type', 'Date', 'Time', 'Actions']);
+  await app.evaluate(({ shell }) => {
+    shell.showItemInFolder = (file) => {
+      globalThis.revealedSave = file;
+    };
+  });
+  await page
+    .getByRole('button', { name: /^Open save folder:/ })
+    .first()
+    .click();
+  const revealed = await app.evaluate(() => globalThis.revealedSave);
+  assert.equal(path.dirname(revealed), fixture.file + '.saves');
+  await capture('save-history');
   await page.getByRole('button', { name: 'Restore…', exact: true }).first().click();
   await page.getByRole('button', { name: 'Restore save', exact: true }).click();
   await expect(page.getByLabel('Clip name', { exact: true }).first()).toHaveValue(
@@ -307,6 +383,11 @@ try {
   await capture('review');
   await go('Media');
   await centered();
+  await expect(page.getByRole('button', { name: /^Source folder:/ })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Source folder:/ }).first()).toHaveAttribute(
+    'title',
+    fixture.dir.replaceAll('\\', '/'),
+  );
   await page.getByLabel('Waveform display').selectOption('overlay');
   await capture('media-waveforms');
   await go('Cut');
@@ -323,6 +404,48 @@ try {
   await page.getByRole('button', { name: 'Delete batch', exact: true }).click();
   await expect.poll(async () => (await state()).batches.length).toBe(1);
   assert.deepEqual((await state()).model.clips, beforeBatch.model.clips);
+  // Nested intake updates the actual source tree. A child folder excludes its
+  // similarly prefixed sibling and Ctrl+Down stays inside the filtered pool.
+  await page.getByRole('button', { name: 'New batch', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Batch name').fill('UI cleanup and source folders');
+  await page.getByRole('button', { name: 'Create batch', exact: true }).click();
+  await app.evaluate(({ dialog }, nested) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [nested] });
+  }, fixture.nested);
+  await page.getByRole('button', { name: 'Import folder', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose folder…', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await state()).jobs.filter((j) => j.state === 'queued' || j.state === 'running').length,
+      { timeout: 60000 },
+    )
+    .toBe(0);
+  await go('Media');
+  await expect(page.getByRole('button', { name: /^Source folder:/ })).toHaveCount(3);
+  const deepPath = fixture.nested.replaceAll('\\', '/') + '/one/two';
+  await page.getByRole('button', { name: `Source folder: ${deepPath}`, exact: true }).click();
+  await expect(page.locator('[data-recording]')).toHaveCount(1);
+  await unfocus();
+  await page.keyboard.press('Control+ArrowDown');
+  await expect
+    .poll(async () => {
+      const value = await state();
+      return value.model.recordings
+        .find((r) => r.id === value.model.selectedRecordingId)
+        ?.sourcePath?.endsWith('deep.mkv');
+    })
+    .toBe(true);
+  await page.getByRole('button', { name: 'All recordings', exact: true }).click();
+  await expect(page.locator('[data-recording]')).toHaveCount(3);
+  await capture('source-folders');
+  await page.getByRole('button', { name: 'Delete batch…', exact: true }).click();
+  await page.getByLabel('Batch removal', { exact: true }).selectOption('remove');
+  await expect(page.getByRole('dialog')).toContainText('Original video files are never deleted');
+  await page.getByRole('button', { name: 'Delete batch', exact: true }).click();
+  await expect
+    .poll(async () => (await state()).model.recordings.length)
+    .toBe(beforeBatch.model.recordings.length);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
   await expect.poll(() => page.evaluate(() => innerWidth)).toBeLessThanOrEqual(1100);
@@ -368,6 +491,12 @@ try {
         'stable header and batch controls during quiet undo',
         'handle start/end trim, overlap, clamping, cancel, keyboard and single-step undo',
         'high-contrast name focus',
+        'K toggle, L acceleration, J reverse and state-aware transport colors',
+        'selected-clip loop retains selection at adjacent boundary',
+        'right-grouped audio and distinct Listen label',
+        'save table and restricted native folder action',
+        'nested source-folder navigation and filtered Ctrl+Up/Down',
+        'UI batch app-data cleanup',
         'successful audio retry supersedes older failed status while preserving the job log',
       ],
     }),

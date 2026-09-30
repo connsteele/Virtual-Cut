@@ -81,7 +81,7 @@ try {
     }, target);
     seekMs.push(Date.now() - start);
   }
-  await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();
+  await page.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
   await expect
     .poll(() => page.locator('audio').evaluateAll((items) => items.every((a) => !a.paused)))
     .toBe(true);
@@ -113,7 +113,7 @@ try {
       maxAudioDriftSeconds: Math.max(...samples.map((s) => s.drift)),
     };
   });
-  await page.getByRole('button', { name: 'Pause · K', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
   assert(playback.advanced > 3.5);
   assert(playback.maxAudioDriftSeconds < 0.3, JSON.stringify(playback));
   const after = await stat(source);

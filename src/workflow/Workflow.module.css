@@ -237,6 +237,32 @@
 .rail > p {
   margin-top: 18px;
 }
+.sourceFolder > summary {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  list-style: none;
+}
+.sourceFolder:not([open]) > summary > svg {
+  transform: rotate(-90deg);
+}
+.sourceFolder > div:not(.sourceFolderButton) {
+  padding-left: 10px;
+}
+.sourceFolderButton {
+  width: 100%;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.sourceFolderButton > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sourceFolderButton > small {
+  margin-left: auto;
+  color: var(--muted);
+}
 .source {
   display: flex;
   flex-direction: column;
@@ -443,8 +469,27 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-end;
   margin-top: 5px;
   font-size: 12px;
+}
+.audioLabel {
+  color: var(--accent);
+  font-weight: 650;
+  padding-right: 5px;
+  border-right: 1px solid var(--line);
+}
+.listenChoices {
+  display: flex;
+  gap: 2px;
+}
+.audioReady {
+  color: var(--muted);
+  max-width: min(360px, 100%);
+  overflow-wrap: anywhere;
+}
+.audioControls input[type='range'] {
+  width: 65px;
 }
 .audioControls .button {
   min-height: 26px;
@@ -459,6 +504,30 @@
 .audioControls select {
   font-size: 11px;
   padding: 3px 5px;
+}
+.saveTableWrap {
+  overflow: auto;
+  max-height: 55vh;
+}
+.saveTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.saveTable th,
+.saveTable td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.saveTable th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.saveTable time {
+  white-space: nowrap;
 }
 .button.acceptedButton[aria-pressed='true'] {
   color: #c7ebba;
@@ -520,7 +589,7 @@
   white-space: nowrap;
 }
 .playbackStatus {
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 .playbackStatus label {
   display: flex;
@@ -1120,7 +1189,7 @@
   font-weight: 500 !important;
 }
 .shell .clipName:focus-visible {
-  outline-color: #f4f1e5;
+  outline-color: var(--accent);
 }
 .clipTile.selected {
   border-color: #f4f1e5 !important;

@@ -8,6 +8,7 @@ import {
   net,
   protocol,
   session,
+  shell,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -183,10 +184,15 @@ function registerDesktopApi(): void {
   workspace('save', (id, before, after) => projects.save(id, before, after));
   workspace('checkpoint', (id) => projects.checkpoint(id));
   workspace('restore', (id, saveId) => projects.restore(id, saveId));
+  workspace('revealSave', async (id, saveId) =>
+    shell.showItemInFolder(await projects.saveLocation(id, saveId)),
+  );
   workspace('history', (id, direction) => projects.history(id, direction));
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
-  workspace('delete-batch', (id, batchId, targetId) => projects.deleteBatch(id, batchId, targetId));
+  workspace('delete-batch', (id, batchId, targetId, mode) =>
+    projects.deleteBatch(id, batchId, targetId, mode),
+  );
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
   workspace('close', () => projects.close());

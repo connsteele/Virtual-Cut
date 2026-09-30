@@ -1,6 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
@@ -224,6 +235,13 @@ export class ProjectService {
     await this.require(id).checkpoint('manual');
     return this.snapshot();
   }
+  async saveLocation(id: string, saveId: string) {
+    const s = this.require(id);
+    await s.loadCopies();
+    if (!s.snapshot().saves?.some((copy) => copy.id === saveId))
+      throw new Error('Choose an available save copy.');
+    return path.join(s.file + '.saves', saveId);
+  }
   async restore(id: string, saveId: string) {
     const store = this.require(id);
     this.switching = true;
@@ -231,6 +249,21 @@ export class ProjectService {
       this.active?.controller.abort();
       await this.active?.finished;
       await store.restore(saveId);
+      await this.refreshAvailability();
+      // Cleanup removes disposable previews, not recovery records. Rebuild any
+      // missing inspection previews while preserving the restored user's edits.
+      for (const r of store.data.model.recordings) {
+        const source = store.sources().find((s) => s.id === r.id);
+        if (source && r.availability === 'ready') {
+          if (
+            !existsSync(
+              path.join(store.data.project.cache, `${source.id}-${source.fingerprint}-frame-0.jpg`),
+            )
+          )
+            this.enqueue(r.id, 'inspect');
+          else this.queueAudio(r.id);
+        }
+      }
     } finally {
       this.switching = false;
       this.pump();
@@ -265,35 +298,129 @@ export class ProjectService {
     s.write();
     return this.snapshot();
   }
-  async deleteBatch(id: string, batchId: string, targetId?: string) {
+  async deleteBatch(
+    id: string,
+    batchId: string,
+    targetId?: string,
+    mode: 'preserve' | 'remove' = 'preserve',
+  ) {
     const s = this.require(id);
+    if (!['preserve', 'remove'].includes(mode)) throw new Error('Choose how to remove this batch.');
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
     const remaining = s.data.batches.filter((b) => b.id !== batchId);
     if (targetId && !remaining.some((b) => b.id === targetId))
       throw new Error('Choose an existing batch for the remaining recordings.');
-    await s.checkpoint('manual');
-    s.transaction(() => {
-      const target = remaining.find((b) => b.id === targetId) ||
-        remaining[0] || {
-          id: randomUUID(),
-          name: 'Unbatched',
-          created: new Date().toISOString(),
-        };
-      s.data.batches = remaining.length ? remaining : [target];
-      for (const r of s.data.model.recordings) {
-        if (!r.batchIds?.includes(batchId)) continue;
-        const other = r.batchIds.filter((id) => id !== batchId);
-        r.batchIds = other.length ? other : [target.id];
+    const removed = new Set(
+      mode === 'remove'
+        ? s.data.model.recordings
+            .filter(
+              (r) => r.batchIds?.includes(batchId) && !r.batchIds.some((id) => id !== batchId),
+            )
+            .map((r) => r.id)
+        : [],
+    );
+    const native = s.sources().filter((source) => removed.has(source.id));
+    const originals = new Set(
+      (
+        await Promise.all(
+          s.sources().map((source) => realpath(source.file).catch(() => path.resolve(source.file))),
+        )
+      ).map((file) => file.toLowerCase()),
+    );
+    this.switching = true;
+    let cleanup:
+      | { cacheFilesRemoved: number; cacheFilesRetained: number; cacheCleanupIncomplete?: boolean }
+      | undefined;
+    try {
+      if (
+        this.active &&
+        s.jobs().some((j) => j.id === this.active!.id && removed.has(j.sourceId))
+      ) {
+        this.active.controller.abort();
+        await this.active.finished;
       }
-      if (s.data.activeBatchId === batchId) s.data.activeBatchId = target.id;
-      const records = s.data.model.recordings.filter((r) =>
-        r.batchIds?.includes(s.data.activeBatchId),
-      );
-      if (!records.some((r) => r.id === s.data.model.selectedRecordingId))
-        s.data.model.selectedRecordingId = records[0]?.id || '';
-      s.data.revision++;
-    });
-    return this.snapshot();
+      await s.checkpoint('manual');
+      s.transaction(() => {
+        const target = remaining.find((b) => b.id === targetId) ||
+          remaining[0] || {
+            id: randomUUID(),
+            name: 'Unbatched',
+            created: new Date().toISOString(),
+          };
+        s.data.batches = remaining.length ? remaining : [target];
+        for (const r of s.data.model.recordings) {
+          if (!r.batchIds?.includes(batchId)) continue;
+          const other = r.batchIds.filter((id) => id !== batchId);
+          r.batchIds = other.length ? other : [target.id];
+        }
+        if (removed.size) {
+          s.data.model.recordings = s.data.model.recordings.filter((r) => !removed.has(r.id));
+          s.data.model.clips = s.data.model.clips.filter((c) => !removed.has(c.rid));
+          s.data.model.sequence = s.data.model.sequence.filter((e) => !removed.has(e.rid));
+          for (const target of s.data.model.targets)
+            target.items = target.items.filter((e) => !removed.has(e.rid));
+          for (const sourceId of removed) {
+            delete s.data.model.markers[sourceId];
+            delete s.data.model.markerBaseline?.[sourceId];
+            s.removeSource(sourceId);
+          }
+          // Editorial undo must not resurrect records whose native registration
+          // was removed. The protective checkpoint is the recovery mechanism.
+          s.clearHistory();
+        }
+        if (s.data.activeBatchId === batchId) s.data.activeBatchId = target.id;
+        const records = s.data.model.recordings.filter((r) =>
+          r.batchIds?.includes(s.data.activeBatchId),
+        );
+        if (!records.some((r) => r.id === s.data.model.selectedRecordingId))
+          s.data.model.selectedRecordingId = records[0]?.id || '';
+        s.data.revision++;
+      });
+      if (mode === 'remove') {
+        cleanup = { cacheFilesRemoved: 0, cacheFilesRetained: 0 };
+        try {
+          const cache = await realpath(s.data.project.cache);
+          const prefixes = native
+            .filter(
+              (source) =>
+                /^[a-f\d-]{36}$/i.test(source.id) && /^[a-f\d]{64}$/i.test(source.fingerprint),
+            )
+            .map((source) => `${source.id}-${source.fingerprint}`);
+          const suffix =
+            /^-(?:frame-[0-7](?:\.partial)?\.jpg|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32))$/i;
+          for (const entry of await readdir(cache, { withFileTypes: true })) {
+            if (!entry.isFile() || entry.isSymbolicLink()) continue;
+            const prefix = prefixes.find(
+              (prefix) =>
+                entry.name.startsWith(prefix) && suffix.test(entry.name.slice(prefix.length)),
+            );
+            if (!prefix) continue;
+            const file = path.resolve(cache, entry.name);
+            if (path.dirname(file) !== cache || originals.has(file.toLowerCase())) continue;
+            try {
+              // Never follow a changed cache entry or unlink another hard link.
+              const info = await lstat(file);
+              if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) {
+                cleanup.cacheFilesRetained++;
+                continue;
+              }
+              this.grants.delete(file);
+              await unlink(file);
+              cleanup.cacheFilesRemoved++;
+            } catch (e) {
+              if ((e as NodeJS.ErrnoException).code !== 'ENOENT') cleanup.cacheFilesRetained++;
+            }
+          }
+          for (const source of native) this.grants.delete(source.file);
+        } catch {
+          cleanup.cacheCleanupIncomplete = true;
+        }
+      }
+    } finally {
+      this.switching = false;
+      this.pump();
+    }
+    return { ...(await this.snapshot()), cleanup };
   }
   async gather(folder: string): Promise<string[]> {
     const files: string[] = [];
@@ -569,10 +696,17 @@ export class ProjectService {
           const r = s.data.model.recordings.find((r) => r.id === source.id)!;
           const { markers, ...facts } = info;
           const defaults = r.importAudio || { game: 1, mic: null };
-          const game =
-            defaults.game == null ? null : (info.audioTracks[defaults.game - 1]?.index ?? null);
-          const mic =
-            defaults.mic == null ? null : (info.audioTracks[defaults.mic - 1]?.index ?? null);
+          const existing = !!s.data.model.markerBaseline?.[source.id];
+          const game = existing
+            ? r.gameTrack
+            : defaults.game == null
+              ? null
+              : (info.audioTracks[defaults.game - 1]?.index ?? null);
+          const mic = existing
+            ? r.micTrack
+            : defaults.mic == null
+              ? null
+              : (info.audioTracks[defaults.mic - 1]?.index ?? null);
           Object.assign(r, facts, {
             availability: 'ready',
             error: '',

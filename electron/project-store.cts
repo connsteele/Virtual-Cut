@@ -314,6 +314,13 @@ export class ProjectStore {
       .prepare('INSERT OR REPLACE INTO sources (id,body) VALUES (?,?)')
       .run(s.id, JSON.stringify(s));
   }
+  removeSource(id: string) {
+    this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);
+    this.db.prepare('DELETE FROM sources WHERE id=?').run(id);
+  }
+  clearHistory() {
+    this.db.exec('DELETE FROM history');
+  }
   jobs(): MediaJob[] {
     return this.db
       .prepare('SELECT body FROM jobs ORDER BY rowid DESC')

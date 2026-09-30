@@ -19,11 +19,12 @@ const api: VirtualCutApi = {
     save: (id, before, after) => ipcRenderer.invoke('workspace:save', id, before, after),
     checkpoint: (id) => ipcRenderer.invoke('workspace:checkpoint', id),
     restore: (id, saveId) => ipcRenderer.invoke('workspace:restore', id, saveId),
+    revealSave: (id, saveId) => ipcRenderer.invoke('workspace:revealSave', id, saveId),
     history: (id, direction) => ipcRenderer.invoke('workspace:history', id, direction),
     batch: (id, name) => ipcRenderer.invoke('workspace:batch', id, name),
     selectBatch: (id, batchId) => ipcRenderer.invoke('workspace:select-batch', id, batchId),
-    deleteBatch: (id, batchId, targetId) =>
-      ipcRenderer.invoke('workspace:delete-batch', id, batchId, targetId),
+    deleteBatch: (id, batchId, targetId, mode) =>
+      ipcRenderer.invoke('workspace:delete-batch', id, batchId, targetId, mode),
     import: (id, batchId, kind, audio) =>
       ipcRenderer.invoke('workspace:import', id, batchId, kind, audio),
     relink: (id, sourceId) => ipcRenderer.invoke('workspace:relink', id, sourceId),

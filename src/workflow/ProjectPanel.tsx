@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FolderOpen } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
 import type { ImportAudio } from '../../electron/project-contracts';
@@ -179,32 +180,70 @@ export function SaveHistory({
         are kept beside the project file. Restoring first makes a manual checkpoint of your current
         work.
       </p>
-      <div className={s.jobList}>
-        {(p.saves || []).map((copy) => (
-          <section className={s.clipTile} key={copy.id}>
-            <strong>{copy.kind === 'auto' ? 'Autosave' : 'Manual save'}</strong>
-            <p>{new Date(copy.created).toLocaleString()}</p>
-            {confirm === copy.id ? (
-              <div className={s.tools}>
-                <span>Restore this state? Media jobs will pause.</span>
-                <Button
-                  onClick={() =>
-                    void w
-                      .run(() => window.virtualCut!.project.restore(p.project.id, copy.id))
-                      .then((value) => {
-                        if (value) onClose();
-                      })
-                  }
-                >
-                  Restore save
-                </Button>
-                <Button onClick={() => setConfirm('')}>Cancel</Button>
-              </div>
-            ) : (
-              <Button onClick={() => setConfirm(copy.id)}>Restore…</Button>
-            )}
-          </section>
-        ))}
+      <div className={s.saveTableWrap}>
+        <table className={s.saveTable} aria-label="Save history">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...(p.saves || [])]
+              .sort((a, b) => b.created.localeCompare(a.created))
+              .map((copy) => (
+                <tr key={copy.id}>
+                  <td>{copy.kind === 'auto' ? 'Autosave' : 'Manual save'}</td>
+                  <td>
+                    <time dateTime={copy.created}>
+                      {new Date(copy.created).toLocaleDateString()}
+                    </time>
+                  </td>
+                  <td>
+                    <time dateTime={copy.created}>
+                      {new Date(copy.created).toLocaleTimeString()}
+                    </time>
+                  </td>
+                  <td>
+                    {confirm === copy.id ? (
+                      <div className={s.tools}>
+                        <span>Restore this state? Media jobs will pause.</span>
+                        <Button
+                          onClick={() =>
+                            void w
+                              .run(() => window.virtualCut!.project.restore(p.project.id, copy.id))
+                              .then((value) => {
+                                if (value) onClose();
+                              })
+                          }
+                        >
+                          Restore save
+                        </Button>
+                        <Button onClick={() => setConfirm('')}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div className={s.tools}>
+                        <Button onClick={() => setConfirm(copy.id)}>Restore…</Button>
+                        <Button
+                          aria-label={`Open save folder: ${new Date(copy.created).toLocaleString()}`}
+                          title="Open save folder"
+                          onClick={() =>
+                            void w.run(() =>
+                              window.virtualCut!.project.revealSave(p.project.id, copy.id),
+                            )
+                          }
+                        >
+                          <FolderOpen size={15} />
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
       {!p.saves?.length && (
         <p>
@@ -227,11 +266,20 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
     [jobs, setJobs] = useState(false),
     [deleting, setDeleting] = useState(false),
     [targetId, setTargetId] = useState(''),
+    [deleteMode, setDeleteMode] = useState<'preserve' | 'remove'>('preserve'),
+    [cleanupNotice, setCleanupNotice] = useState(''),
     [importing, setImporting] = useState<'files' | 'folder' | null>(null);
   const p = w.snapshot;
   if (!p) return null;
   const api = window.virtualCut!.project;
   const pending = p.jobs.filter((j) => j.state !== 'succeeded');
+  const exclusive = p.model.recordings.filter(
+    (r) => r.batchIds?.includes(p.activeBatchId) && r.batchIds.length === 1,
+  );
+  const exclusiveIds = new Set(exclusive.map((r) => r.id));
+  const shared = p.model.recordings.filter(
+    (r) => r.batchIds?.includes(p.activeBatchId) && r.batchIds.length > 1,
+  );
   return (
     <>
       <select
@@ -256,6 +304,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
         disabled={w.blocking}
         onClick={() => {
           setTargetId(p.batches.find((b) => b.id !== p.activeBatchId)?.id || '');
+          setDeleteMode('preserve');
           setDeleting(true);
         }}
       >
@@ -270,37 +319,74 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       <Button onClick={() => setJobs(true)}>
         Jobs {pending.length > 0 ? `· ${pending.length}` : ''}
       </Button>
+      {cleanupNotice && (
+        <span role="status" className={s.muted}>
+          {cleanupNotice}{' '}
+          <Button aria-label="Dismiss cleanup status" onClick={() => setCleanupNotice('')}>
+            ×
+          </Button>
+        </span>
+      )}
       {importing && (
         <ImportPanel workspace={w} kind={importing} onClose={() => setImporting(null)} />
       )}
       {deleting && (
         <Modal title="Delete batch" onClose={() => setDeleting(false)}>
           <p>Delete “{p.batches.find((b) => b.id === p.activeBatchId)?.name}”?</p>
-          <p>
-            This removes the batch grouping. Recordings, clips, markers and source files are kept.
-            Recordings shared with other batches stay there.
-          </p>
-          {p.batches.length > 1 ? (
-            <Field label="Keep recordings belonging only to this batch in">
-              <select
-                aria-label="Keep recordings in batch"
-                value={targetId}
-                onChange={(e) => setTargetId(e.target.value)}
-              >
-                {p.batches
-                  .filter((b) => b.id !== p.activeBatchId)
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
+          <Field label="Batch removal">
+            <select
+              aria-label="Batch removal"
+              value={deleteMode}
+              onChange={(e) => setDeleteMode(e.target.value as typeof deleteMode)}
+            >
+              <option value="preserve">Remove grouping · keep recordings and edits</option>
+              <option value="remove">Remove batch and its app data</option>
+            </select>
+          </Field>
+          {deleteMode === 'remove' ? (
+            <>
+              <p>
+                Remove {exclusive.length} exclusive recordings from this project, including{' '}
+                {p.model.clips.filter((c) => exclusiveIds.has(c.rid)).length} clips,{' '}
+                {exclusive.reduce((n, r) => n + (p.model.markers[r.id]?.length || 0), 0)} markers,
+                their notes and {p.jobs.filter((j) => exclusiveIds.has(j.sourceId)).length} media
+                jobs. Their disposable audio and image previews are cleaned up.
+              </p>
+              <p>
+                {shared.length} shared recordings and their edits stay in other batches. Original
+                video files are never deleted.
+              </p>
+            </>
           ) : (
-            <p>An Unbatched group will keep all its recordings accessible.</p>
+            <p>
+              This removes the batch grouping. Recordings, clips, markers and source files are kept.
+              Recordings shared with other batches stay there.
+            </p>
           )}
+          {deleteMode === 'preserve' &&
+            (p.batches.length > 1 ? (
+              <Field label="Keep recordings belonging only to this batch in">
+                <select
+                  aria-label="Keep recordings in batch"
+                  value={targetId}
+                  onChange={(e) => setTargetId(e.target.value)}
+                >
+                  {p.batches
+                    .filter((b) => b.id !== p.activeBatchId)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+            ) : (
+              <p>An Unbatched group will keep all its recordings accessible.</p>
+            ))}
           <p className={s.muted}>
             A manual save is made first. Use Save history to restore this batch.
+            {deleteMode === 'remove' &&
+              ' Earlier saves are retained; previews can be regenerated. Cleanup clears edit Undo history. Files in use may remain in the preview cache.'}
           </p>
           <div className={s.tools}>
             <Button
@@ -308,9 +394,22 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
               disabled={w.busy}
               onClick={() =>
                 void w
-                  .run(() => api.deleteBatch(p.project.id, p.activeBatchId, targetId || undefined))
+                  .run(() =>
+                    api.deleteBatch(
+                      p.project.id,
+                      p.activeBatchId,
+                      targetId || undefined,
+                      deleteMode,
+                    ),
+                  )
                   .then((value) => {
-                    if (value) setDeleting(false);
+                    if (value) {
+                      setDeleting(false);
+                      if (value.cleanup)
+                        setCleanupNotice(
+                          `Batch removed. ${value.cleanup.cacheFilesRemoved} preview files removed.${value.cleanup.cacheFilesRetained || value.cleanup.cacheCleanupIncomplete ? ' Some previews remain in use or could not be removed.' : ''}`,
+                        );
+                    }
                   })
               }
             >

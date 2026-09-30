@@ -257,6 +257,100 @@ try {
     p.model.recordings[0].audioTracks.find((t) => t.index === game.index).previewUrl,
     'New preview generation is persisted and playable on reopen',
   );
+  // Remove exclusive app records/cache, retain shared work and restore from
+  // a real pre-cleanup checkpoint whose previews must be regenerated.
+  const baselineBatch = p.activeBatchId;
+  const baselineCount = p.model.recordings.length;
+  p = await service.batch(id, 'Cleanup test');
+  const cleanupBatch = p.activeBatchId;
+  await service.importFiles(id, cleanupBatch, [source, ...files]);
+  p = await settled();
+  const exclusive = p.model.recordings.filter(
+    (r) => r.batchIds.includes(cleanupBatch) && r.batchIds.length === 1,
+  );
+  const exclusiveIds = new Set(exclusive.map((r) => r.id));
+  let edited = structuredClone(p.model);
+  edited.clips.find((c) => exclusiveIds.has(c.rid)).note = 'Recover this note after cleanup';
+  const editedRecord = edited.recordings.find((r) => exclusiveIds.has(r.id));
+  [editedRecord.gameTrack, editedRecord.micTrack] = [editedRecord.micTrack, editedRecord.gameTrack];
+  edited.markers[editedRecord.id].push({
+    id: 'cleanup-marker',
+    time: 1,
+    name: 'Recover marker',
+    note: 'Cleanup note',
+    category: 'Context',
+    topic: '',
+  });
+  p = await service.save(id, p.model, edited);
+  const protectedCache = path.join(dir, 'cache', 'user-kept.txt');
+  await writeFile(protectedCache, 'Do not remove unrelated cache-folder files');
+  const cacheBefore = await readdir(path.join(dir, 'cache'));
+  const savesBeforeCleanup = new Set(p.saves.map((copy) => copy.id));
+  await assert.rejects(
+    () => service.deleteBatch(id, cleanupBatch, baselineBatch, 'invalid'),
+    /how to remove/,
+  );
+  p = await service.deleteBatch(id, cleanupBatch, baselineBatch, 'remove');
+  assert.equal(p.model.recordings.length, baselineCount);
+  assert(p.model.recordings.find((r) => r.id === record.id).batchIds.includes(baselineBatch));
+  assert(p.model.clips.every((c) => !exclusiveIds.has(c.rid)));
+  assert(p.jobs.every((job) => !exclusiveIds.has(job.sourceId)));
+  assert(service.store.sources().every((r) => !exclusiveIds.has(r.id)));
+  assert.equal(p.canUndo, false);
+  assert(p.cleanup.cacheFilesRemoved >= exclusive.length * 8, 'Owned previews should be removed');
+  const cacheAfter = await readdir(path.join(dir, 'cache'));
+  assert(cacheAfter.includes('user-kept.txt'));
+  assert(
+    cacheBefore
+      .filter((name) => name.startsWith(record.id))
+      .every((name) => cacheAfter.includes(name)),
+    'Shared caches remain',
+  );
+  for (const video of files)
+    assert.equal(
+      createHash('sha256')
+        .update(await readFile(video))
+        .digest('hex'),
+      hash,
+    );
+  await assert.rejects(() => service.saveLocation(id, '../outside.vcut'), /available save/);
+  const preCleanup = p.saves.find(
+    (copy) => copy.kind === 'manual' && !savesBeforeCleanup.has(copy.id),
+  );
+  assert.equal(
+    await service.saveLocation(id, preCleanup.id),
+    path.join(file + '.saves', preCleanup.id),
+  );
+  await service.close();
+  p = await service.open(file);
+  assert.equal(p.model.recordings.length, baselineCount);
+  p = await service.restore(id, preCleanup.id);
+  p = await settled();
+  assert(p.model.clips.some((c) => c.note === 'Recover this note after cleanup'));
+  assert(p.model.markers[editedRecord.id].some((m) => m.id === 'cleanup-marker'));
+  assert.equal(
+    p.model.recordings.find((r) => r.id === editedRecord.id).gameTrack,
+    editedRecord.gameTrack,
+  );
+  assert(p.model.recordings.find((r) => r.id === editedRecord.id).frames.length === 8);
+  p = await service.deleteBatch(id, cleanupBatch, baselineBatch, 'remove');
+  // Cleanup while its exclusive inspection is still active must cancel before
+  // unregistering that source, so the worker cannot republish orphaned data.
+  p = await service.batch(id, 'Active cleanup');
+  const activeBatch = p.activeBatchId;
+  const activeSource = path.join(dir, 'active-cleanup.mkv');
+  await copyFile(source, activeSource);
+  await service.importFiles(id, activeBatch, [activeSource]);
+  p = await service.deleteBatch(id, activeBatch, baselineBatch, 'remove');
+  p = await settled();
+  assert.equal(p.model.recordings.length, baselineCount);
+  assert.equal(service.store.sources().length, baselineCount);
+  assert.equal(
+    createHash('sha256')
+      .update(await readFile(activeSource))
+      .digest('hex'),
+    hash,
+  );
   // Retain an old failure in the job log to exercise successful retry status in UI.
   service.store.putJob({
     id: 'older-locked-preview-failure',
@@ -270,7 +364,7 @@ try {
   });
   await writeFile(
     path.join(root, 'latest-native.json'),
-    JSON.stringify({ passed: true, dir, file, source }, null, 2),
+    JSON.stringify({ passed: true, dir, file, source, nested }, null, 2),
   );
   console.log(
     JSON.stringify({
@@ -289,6 +383,10 @@ try {
         'recursive nested intake and duplicate detection',
         'empty, shared and last-batch deletion, reopen and recovery',
         'legacy audio preview upgrade while Windows playback locks the old file',
+        'batch app-data cleanup preserves originals/shared work and unrelated cache files',
+        'cleanup checkpoint restores notes, markers, audio assignments and regenerated previews',
+        'active-job cleanup cannot republish removed sources',
+        'native save-location lookup rejects paths outside known checkpoints',
       ],
     }),
   );

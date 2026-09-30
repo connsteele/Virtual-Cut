@@ -187,7 +187,7 @@ try {
       'Workspace remains within the window',
     );
     await expect(
-      page.getByRole('button', { name: 'Play forward · L', exact: true }),
+      page.getByRole('button', { name: 'Play · K / Space', exact: true }),
     ).toBeInViewport();
     await capture(`${name}-overlap-layout`);
   }

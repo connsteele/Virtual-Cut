@@ -72,7 +72,7 @@ try {
   assert.equal(mkv.sourceStart, 4);
   assert(Math.abs(mkv.duration - 8.008) < 0.04);
   await page.locator(`[data-recording="${mkv.id}"]`).click();
-  await expect(page.getByRole('button', { name: 'Play forward · L', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Play · K / Space', exact: true })).toBeEnabled();
   await page.locator('video').evaluate((v) => {
     v.currentTime = 6;
   });
@@ -85,7 +85,7 @@ try {
       ),
     )
     .toBe(true);
-  await page.getByRole('button', { name: 'Play forward · L', exact: true }).click();
+  await page.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
   await expect.poll(() => page.locator('audio').evaluate((a) => a.paused)).toBe(false);
   const drift = await page
     .locator('audio')
@@ -93,10 +93,10 @@ try {
       Math.abs(a.currentTime - (document.querySelector('video').currentTime - 4 + 0.023)),
     );
   assert(drift < 0.2, String(drift));
-  await page.getByRole('button', { name: 'Pause · K', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
   await page.locator(`[data-recording="${mp4.id}"]`).click();
   await expect(page.getByText(/timestamp offset is not supported/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Play forward · L', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Play · K / Space', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Q · In', exact: true })).toBeDisabled();
   await writeFile(
     path.join(base, 'latest-timing.json'),
