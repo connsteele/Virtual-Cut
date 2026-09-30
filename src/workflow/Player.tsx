@@ -17,6 +17,7 @@ import {
 import { time, type Recording, type Marker, type Clip } from './model';
 import { Button, Modal } from './ui';
 import { Timeline } from './Timeline';
+import { PlaybackMetrics } from './PlaybackMetrics';
 import s from './Workflow.module.css';
 export interface Transport {
   seek: (time: number) => void;
@@ -117,6 +118,8 @@ export function Player({
     if (reverse.current) clearInterval(reverse.current);
     reverse.current = null;
     v.pause();
+    speed.current = 1;
+    v.playbackRate = 1;
     setReady(false);
     setError('');
     setStatus('Paused');
@@ -272,7 +275,7 @@ export function Player({
       return;
     }
     if (key === 'l') {
-      forward(!v.paused ? Math.min(4, speed.current * 2) : 1);
+      forward(!v.paused ? Math.min(16, speed.current * 2) : 1);
       return;
     }
     if (key === ' ' || key === 'k') {
@@ -281,7 +284,7 @@ export function Player({
       return;
     }
     if (key === 'j') {
-      const rate = reverse.current ? Math.min(4, speed.current * 2) : 1;
+      const rate = reverse.current ? Math.min(16, speed.current * 2) : 1;
       stop();
       speed.current = rate;
       setStatus(`${rate}× reverse scan`);
@@ -407,13 +410,16 @@ export function Player({
     >
       <div className={s.viewerHeading}>
         <strong title={r.title}>{r.title}</strong>
-        <span>
-          {r.fullResolution
-            ? `${r.width} × ${r.height} · ${r.codec?.toUpperCase()} · ${r.fps?.toFixed(2)} fps`
-            : r.sample
-              ? 'Sample footage'
-              : 'Local video · session only'}
-        </span>
+        <div className={s.viewerFacts}>
+          <PlaybackMetrics key={r.url} video={video} scanning={reversePlaying || fastPlaying} />
+          <span>
+            {r.fullResolution
+              ? `${r.width} × ${r.height} · ${r.codec?.toUpperCase()} · Source ${r.fps?.toFixed(2)} fps`
+              : r.sample
+                ? 'Sample footage'
+                : 'Local video · session only'}
+          </span>
+        </div>
       </div>
       <div ref={stage} className={s.stage} data-video-stage>
         <video
@@ -585,6 +591,7 @@ export function Player({
             primary={reversePlaying}
             onClick={() => command('j')}
             aria-label="Reverse · J"
+            title="J: reverse scan · 1× / 2× / 4× / 8× / 16× · silent, sampled frames"
           >
             <Rewind size={17} />
           </Button>
@@ -602,6 +609,7 @@ export function Player({
             primary={fastPlaying}
             onClick={() => command('l')}
             aria-label="Forward / faster · L"
+            title="L: forward / faster · 1× / 2× / 4× / 8× / 16× · high-speed preview may skip frames or mute audio"
           >
             <FastForward size={17} />
           </Button>

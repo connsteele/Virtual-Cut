@@ -510,6 +510,70 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
   );
 }
 
+export function RemoveRecordingButton({
+  recording: r,
+  workspace: w,
+}: {
+  recording: Recording;
+  workspace: Workspace;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const p = w.snapshot;
+  if (!p || !r.batchIds?.includes(p.activeBatchId)) return null;
+  const shared = r.batchIds.some((id) => id !== p.activeBatchId);
+  const clips = w.model.clips.filter((c) => c.rid === r.id).length;
+  const markers = w.model.markers[r.id]?.length || 0;
+  return (
+    <>
+      <Button disabled={w.blocking} onClick={() => setConfirm(true)}>
+        Remove from batch…
+      </Button>
+      {confirm && (
+        <Modal title="Remove recording from batch" onClose={() => setConfirm(false)}>
+          <p>
+            Remove “{r.title}” from “{p.batches.find((b) => b.id === p.activeBatchId)?.name}”?
+          </p>
+          <p>
+            {shared
+              ? 'This recording and its edits stay available in its other batches.'
+              : `Its ${clips} clip(s), ${markers} marker(s) and recording notes will be removed from this project.`}
+          </p>
+          <p>Original video files and finished exports are never moved or deleted.</p>
+          <p className={s.muted}>
+            A manual save is made first. Use Save history to restore the recording and its edits.
+            This clears the current edit Undo history.
+          </p>
+          <div className={s.tools}>
+            <Button
+              primary
+              disabled={w.busy}
+              onClick={() =>
+                void w
+                  .run(() =>
+                    window.virtualCut!.project.removeRecording(p.project.id, p.activeBatchId, r.id),
+                  )
+                  .then((value) => {
+                    if (value) setConfirm(false);
+                  })
+              }
+            >
+              Remove recording
+            </Button>
+            <Button disabled={w.busy} onClick={() => setConfirm(false)}>
+              Cancel
+            </Button>
+          </div>
+          {w.error && (
+            <p role="alert" className={s.error}>
+              {w.error}
+            </p>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export function RecordingTools({
   recording: r,
   workspace: w,
@@ -533,9 +597,12 @@ export function RecordingTools({
           {r.audioWarning}
         </p>
       )}
-      <Button disabled={w.busy} onClick={() => void w.run(() => api.relink(p.project.id, r.id))}>
-        Relink original…
-      </Button>
+      <div className={s.tools}>
+        <Button disabled={w.busy} onClick={() => void w.run(() => api.relink(p.project.id, r.id))}>
+          Relink original…
+        </Button>
+        <RemoveRecordingButton recording={r} workspace={w} />
+      </div>
       {r.availability === 'ready' && (
         <>
           <div className={s.pair}>

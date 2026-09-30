@@ -315,6 +315,73 @@ export class ProjectService {
     s.write();
     return this.snapshot();
   }
+  async removeRecording(id: string, batchId: string, sourceId: string) {
+    const s = this.require(id);
+    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
+    const recording = s.data.model.recordings.find((r) => r.id === sourceId);
+    if (!recording?.batchIds?.includes(batchId))
+      throw new Error('This recording is no longer in the chosen batch.');
+    const otherBatches = recording.batchIds.filter((b) => b !== batchId);
+    this.switching = true;
+    try {
+      // Shared sources remain registered, so their ongoing work can continue.
+      if (
+        !otherBatches.length &&
+        this.active &&
+        s.jobs().some((j) => j.id === this.active!.id && j.sourceId === sourceId)
+      ) {
+        this.active.controller.abort();
+        await this.active.finished;
+      }
+      await s.checkpoint('manual');
+      s.transaction(() => {
+        if (otherBatches.length) recording.batchIds = otherBatches;
+        else {
+          const model = s.data.model;
+          const removedIds = new Set([
+            sourceId,
+            ...model.clips.filter((c) => c.rid === sourceId).map((c) => c.id),
+            ...(model.markers[sourceId] || []).map((m) => m.id),
+          ]);
+          model.links = model.links.filter(
+            (link) => !removedIds.has(link.from) && !removedIds.has(link.to),
+          );
+          model.recordings = model.recordings.filter((r) => r.id !== sourceId);
+          model.clips = model.clips.filter((c) => c.rid !== sourceId);
+          model.sequence = model.sequence.filter((e) => e.rid !== sourceId);
+          for (const target of model.targets)
+            target.items = target.items.filter((e) => e.rid !== sourceId);
+          delete model.markers[sourceId];
+          delete model.markerBaseline?.[sourceId];
+          for (const record of s.exports()) {
+            if (record.plan.sourceId !== sourceId || record.state === 'verified') continue;
+            s.putExport({
+              ...record,
+              state: 'cancelled',
+              message: 'Recording removed from the project. Restore its save to retry.',
+              updated: new Date().toISOString(),
+            });
+          }
+          s.removeSource(sourceId);
+        }
+        // Recovery includes native registration and batch membership; a manual
+        // checkpoint is required instead of a partial editorial undo.
+        s.clearHistory();
+        const available = s.data.model.recordings.filter((r) =>
+          r.batchIds?.includes(s.data.activeBatchId),
+        );
+        if (!available.some((r) => r.id === s.data.model.selectedRecordingId))
+          s.data.model.selectedRecordingId = available[0]?.id || '';
+        s.data.revision++;
+      });
+    } finally {
+      this.switching = false;
+      this.pump();
+    }
+    // This action changes project records only. Originals, published exports
+    // and previews remain on disk, including media needed by saved checkpoints.
+    return this.snapshot();
+  }
   async deleteBatch(
     id: string,
     batchId: string,

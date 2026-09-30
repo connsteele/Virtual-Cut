@@ -432,6 +432,7 @@
   padding: 0 0 9px;
   min-width: 0;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .viewerHeading strong {
   font-size: 12px;
@@ -440,10 +441,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.viewerHeading > span {
+.viewerFacts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 16px;
+  margin-left: auto;
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
+}
+.playbackMetrics {
+  font-variant-numeric: tabular-nums;
+  min-width: 215px;
+  text-align: right;
 }
 .stage {
   position: relative;
@@ -536,6 +547,7 @@
 }
 .markerCard {
   padding: 10px;
+  margin: 10px 0;
   border: 1px solid #354943;
   border-radius: 6px;
   cursor: pointer;
@@ -1255,14 +1267,38 @@
 .mediaDivider {
   cursor: col-resize;
   touch-action: none;
-  background: var(--line);
+  background: #101616;
+}
+.mediaDivider[data-panel='folders'] {
+  background: #1b2221;
 }
 .mediaDivider:hover,
 .mediaDivider:focus-visible {
   background: var(--accent);
 }
+.mediaPanelControls .button {
+  padding: 4px;
+  min-height: 26px;
+}
+.mediaPanelControls {
+  background: #1b2221;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-right: 1px solid var(--line);
+}
+.clipIdentity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1;
+}
+.clipIdentity .clipSwatch {
+  align-self: center;
+}
 .clipDuration {
-  margin-left: 8px;
   margin-right: auto;
   color: var(--muted);
   font-variant-numeric: tabular-nums;

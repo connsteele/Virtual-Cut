@@ -125,11 +125,12 @@ try {
   await page.keyboard.press('ArrowRight');
   await expect(folderDivider).toHaveAttribute('aria-valuenow', String(initialFolders + 20));
   const box = await browserDivider.boundingBox();
+  const initialBrowser = Number(await browserDivider.getAttribute('aria-valuenow'));
   await page.mouse.move(box.x + box.width / 2, box.y + 100);
   await page.mouse.down();
-  await page.mouse.move(box.x - 220, box.y + 100, { steps: 8 });
+  await page.mouse.move(box.x + box.width / 2 - initialBrowser + 220, box.y + 100, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(() => browserDivider.getAttribute('aria-valuenow')).toBe('207');
+  await expect.poll(() => browserDivider.getAttribute('aria-valuenow')).toBe('220');
   const cards = page.locator('[data-recording]');
   const first = await cards.nth(0).boundingBox(),
     second = await cards.nth(1).boundingBox();
@@ -139,8 +140,40 @@ try {
   );
   await capture('media-resized-wide');
   const preferences = await page.evaluate(() => localStorage.getItem('virtual-cut.media-panels'));
+  const viewerBeforeCollapse = await page.locator('video').evaluate((v) => ({
+    url: v.currentSrc,
+    position: v.currentTime,
+    width: v.closest('[data-video-stage]').getBoundingClientRect().width,
+  }));
+  await page.getByRole('button', { name: 'Hide folders', exact: true }).click();
+  await expect(folderDivider).toHaveCount(0);
+  assert((await cards.count()) > 0);
+  await capture('media-folders-hidden');
+  await page.getByRole('button', { name: 'Show folders', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide media pool', exact: true }).click();
+  await expect(cards).toHaveCount(0);
+  await expect(browserDivider).toHaveCount(0);
+  await expect(folderDivider).toBeVisible();
+  await capture('media-pool-hidden');
+  await page.getByRole('button', { name: 'Hide both panels', exact: true }).click();
+  await expect(folderDivider).toHaveCount(0);
+  const viewerCollapsed = await page.locator('video').evaluate((v) => ({
+    url: v.currentSrc,
+    position: v.currentTime,
+    width: v.closest('[data-video-stage]').getBoundingClientRect().width,
+  }));
+  assert.equal(viewerCollapsed.url, viewerBeforeCollapse.url);
+  assert(Math.abs(viewerCollapsed.position - viewerBeforeCollapse.position) < 0.05);
+  // The stage expands; the video itself can already be capped by its aspect ratio and height.
+  assert(viewerCollapsed.width > viewerBeforeCollapse.width);
+  await capture('media-pool-collapsed');
   await navigation.getByRole('button', { name: 'Cut', exact: true }).click();
   await navigation.getByRole('button', { name: 'Media', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Show both panels', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show both panels', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(folderDivider).toBeVisible();
+  await expect(browserDivider).toHaveAttribute('aria-valuenow', '220');
   assert.equal(
     await page.evaluate(() => localStorage.getItem('virtual-cut.media-panels')),
     preferences,

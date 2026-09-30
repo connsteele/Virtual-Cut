@@ -23,6 +23,8 @@ const api: VirtualCutApi = {
     history: (id, direction) => ipcRenderer.invoke('workspace:history', id, direction),
     batch: (id, name) => ipcRenderer.invoke('workspace:batch', id, name),
     selectBatch: (id, batchId) => ipcRenderer.invoke('workspace:select-batch', id, batchId),
+    removeRecording: (id, batchId, sourceId) =>
+      ipcRenderer.invoke('workspace:removeRecording', id, batchId, sourceId),
     deleteBatch: (id, batchId, targetId, mode) =>
       ipcRenderer.invoke('workspace:delete-batch', id, batchId, targetId, mode),
     import: (id, batchId, kind, audio) =>

@@ -22,7 +22,14 @@ import {
 import { Brand } from '../components/Brand';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
-import { ProjectPanel, BatchTools, RecordingTools, ImportPanel, SaveHistory } from './ProjectPanel';
+import {
+  ProjectPanel,
+  BatchTools,
+  RecordingTools,
+  ImportPanel,
+  SaveHistory,
+  RemoveRecordingButton,
+} from './ProjectPanel';
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import {
   colors,
@@ -143,8 +150,10 @@ function MarkerEditor({
               style={{ color: markerColor(m) }}
               onChange={(e) => onChange(m.id, { color: e.target.value as MarkerColor })}
             >
-              {Object.keys(markerColors).map((color) => (
-                <option key={color}>{color}</option>
+              {Object.entries(markerColors).map(([color, hex]) => (
+                <option key={color} style={{ color: hex, backgroundColor: '#121a19' }}>
+                  {color}
+                </option>
               ))}
             </select>
             <Button aria-label={`Delete marker: ${m.name}`} onClick={() => onConfirm(m.id)}>
@@ -545,6 +554,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const recordings = project
     ? model.recordings.filter((x) => x.batchIds?.includes(project.activeBatchId))
     : model.recordings;
+  const activeSourceFolder = recordings.some((x) => inSourceFolder(x, sourceFolderFilter))
+    ? sourceFolderFilter
+    : '';
   const r =
     recordings.find((r) => r.id === model.selectedRecordingId) ||
     recordings.find((r) => r.id === rid) ||
@@ -834,8 +846,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         }
         if (!recordings.length) return;
         const candidates =
-          page === 'media' && sourceFolderFilter
-            ? recordings.filter((x) => inSourceFolder(x, sourceFolderFilter))
+          page === 'media' && activeSourceFolder
+            ? recordings.filter((x) => inSourceFolder(x, activeSourceFolder))
             : recordings;
         if (!candidates.length) return;
         const index = candidates.findIndex((x) => x.id === r.id);
@@ -1409,13 +1421,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     }}
                   >
                     <div className={s.tools}>
-                      <span className={s.tools}>
+                      <span className={s.clipIdentity}>
                         <i
                           className={s.clipSwatch}
                           style={{ background: clipColor(x.id) }}
                           aria-hidden="true"
                         />
-                        {String(clips.indexOf(x) + 1).padStart(2, '0')}
+                        <span>{String(clips.indexOf(x) + 1).padStart(2, '0')}</span>
                         <span className={s.clipDuration}>{time(x.end - x.start)}</span>
                       </span>
                       <span className={s.spacer} />
@@ -1490,16 +1502,15 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             <MediaLayout
               folders={
                 <>
-                  <h3>Media pool</h3>
                   <Button
-                    aria-pressed={!sourceFolderFilter}
+                    aria-pressed={!activeSourceFolder}
                     onClick={() => setSourceFolderFilter('')}
                   >
                     All recordings
                   </Button>
                   <SourceFolders
                     recordings={recordings}
-                    selected={sourceFolderFilter}
+                    selected={activeSourceFolder}
                     onSelect={setSourceFolderFilter}
                   />
                 </>
@@ -1513,10 +1524,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     <Button aria-pressed={mediaList} onClick={() => setMediaList(true)}>
                       List
                     </Button>
+                    <RemoveRecordingButton recording={r} workspace={workspace} />
                   </div>
                   <div className={mediaList ? s.mediaList : s.mediaGrid}>
                     {recordings
-                      .filter((x) => inSourceFolder(x, sourceFolderFilter))
+                      .filter((x) => inSourceFolder(x, activeSourceFolder))
                       .map((x) => (
                         <button
                           key={x.id}
@@ -2123,7 +2135,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Ctrl+S', 'Manual save checkpoint'],
                 ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / Redo'],
                 ['Ctrl+↑ / Ctrl+↓', 'Previous / next item in the current page'],
-                ['J / K / L', 'J: reverse scan · K: play/pause · L: forward/faster'],
+                [
+                  'J / K / L',
+                  'J: reverse scan · K: play/pause · L: forward/faster (1×, 2×, 4×, 8×, 16×)',
+                ],
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],

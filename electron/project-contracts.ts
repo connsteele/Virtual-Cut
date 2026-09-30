@@ -74,6 +74,7 @@ export interface ProjectApi {
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;
+  removeRecording(id: string, batchId: string, sourceId: string): Promise<ProjectSnapshot>;
   deleteBatch(
     id: string,
     batchId: string,

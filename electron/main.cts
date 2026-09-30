@@ -190,6 +190,9 @@ function registerDesktopApi(): void {
   workspace('history', (id, direction) => projects.history(id, direction));
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
+  workspace('removeRecording', (id, batchId, sourceId) =>
+    projects.removeRecording(id, batchId, sourceId),
+  );
   workspace('delete-batch', (id, batchId, targetId, mode) =>
     projects.deleteBatch(id, batchId, targetId, mode),
   );
