@@ -20,6 +20,7 @@ const api: VirtualCutApi = {
     checkpoint: (id) => ipcRenderer.invoke('workspace:checkpoint', id),
     restore: (id, saveId) => ipcRenderer.invoke('workspace:restore', id, saveId),
     revealSave: (id, saveId) => ipcRenderer.invoke('workspace:revealSave', id, saveId),
+    revealSource: (id, sourceId) => ipcRenderer.invoke('workspace:revealSource', id, sourceId),
     history: (id, direction) => ipcRenderer.invoke('workspace:history', id, direction),
     batch: (id, name) => ipcRenderer.invoke('workspace:batch', id, name),
     selectBatch: (id, batchId) => ipcRenderer.invoke('workspace:select-batch', id, batchId),

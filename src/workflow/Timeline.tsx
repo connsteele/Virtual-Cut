@@ -135,7 +135,7 @@ export function Timeline({
   useEffect(() => {
     const el = track.current!;
     const wheel = (e: WheelEvent) => {
-      if (!e.altKey) return;
+      if (!e.altKey && !e.ctrlKey) return;
       e.preventDefault();
       if (drag.current || pointer.current != null) return;
       const state = wheelState.current,
@@ -145,24 +145,25 @@ export function Timeline({
       const span = state.view.end - state.view.start;
       const anchor =
         state.view.start + Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * span;
-      const next = e.shiftKey
-        ? fitViewport(
-            {
-              start: state.view.start + (Math.sign(delta) * span) / 4,
-              end: state.view.end + (Math.sign(delta) * span) / 4,
-            },
-            state.fullStart,
-            state.fullEnd,
-            state.minimum,
-          )
-        : zoomViewport(
-            state.view,
-            delta < 0 ? 1.25 : 0.8,
-            anchor,
-            state.fullStart,
-            state.fullEnd,
-            state.minimum,
-          );
+      const next =
+        e.ctrlKey || e.shiftKey
+          ? fitViewport(
+              {
+                start: state.view.start + (Math.sign(delta) * span) / 4,
+                end: state.view.end + (Math.sign(delta) * span) / 4,
+              },
+              state.fullStart,
+              state.fullEnd,
+              state.minimum,
+            )
+          : zoomViewport(
+              state.view,
+              delta < 0 ? 1.25 : 0.8,
+              anchor,
+              state.fullStart,
+              state.fullEnd,
+              state.minimum,
+            );
       wheelState.current = { ...state, view: next };
       setViewport({ identity: state.identity, view: next });
     };

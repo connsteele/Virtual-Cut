@@ -7,6 +7,7 @@ const changed = (a: Model, b: Model) =>
   a.selectedRecordingId !== b.selectedRecordingId ||
   editorial(a) !== editorial(b) ||
   a.recordings.some((r) => r.position !== b.recordings.find((x) => x.id === r.id)?.position);
+const edited = (a: Model, b: Model) => editorial(a) !== editorial(b);
 export function useProjectWorkspace() {
   const [model, rawSetModel] = useState(loadModel);
   const modelRef = useRef(model),
@@ -24,7 +25,7 @@ export function useProjectWorkspace() {
     const value = typeof action === 'function' ? action(modelRef.current) : action;
     modelRef.current = value;
     rawSetModel(value);
-    if (session.current && changed(value, base.current)) setSaveState('Saving…');
+    if (session.current && edited(value, base.current)) setSaveState('Saving…');
   }, []);
   const apply = useCallback((value: ProjectSnapshot, replace = false, ancestor = base.current) => {
     const same = session.current?.project.id === value.project.id;
@@ -35,31 +36,52 @@ export function useProjectWorkspace() {
     setSnapshot(value);
     modelRef.current = next;
     rawSetModel(next);
-    setSaveState(changed(next, value.model) ? 'Saving…' : 'Saved');
+    setSaveState(edited(next, value.model) ? 'Saving…' : 'Saved');
   }, []);
-  const flush = useCallback(async () => {
-    if (saving.current) return saving.current;
-    const task = (async () => {
-      while (session.current && changed(modelRef.current, base.current)) {
-        const id = session.current.project.id;
-        const sent = modelRef.current;
-        const value = await window.virtualCut!.project.save(id, base.current, sent);
-        if (session.current?.project.id !== id) return;
-        apply(value, false, sent);
-        setError('');
+  const flush = useCallback(
+    async (captureLatest = true) => {
+      while (saving.current) {
+        await saving.current;
+        // Explicit Save, project operations and close must also capture navigation
+        // that arrived while an earlier automatic write was in flight.
+        if (!captureLatest) return;
       }
-    })();
-    saving.current = task;
-    try {
-      await task;
-    } catch (e) {
-      setSaveState('Not saved');
-      setError(e instanceof Error ? e.message : String(e));
-      throw e;
-    } finally {
-      saving.current = null;
-    }
-  }, [apply]);
+      const task = (async () => {
+        // Take one navigation snapshot. Playback may advance while native storage
+        // responds; only new editorial changes justify another immediate write.
+        let first = true;
+        while (
+          session.current &&
+          (first ? changed(modelRef.current, base.current) : edited(modelRef.current, base.current))
+        ) {
+          first = false;
+          const id = session.current.project.id;
+          const sent = modelRef.current;
+          const value = await window.virtualCut!.project.save(id, base.current, sent);
+          if (session.current?.project.id !== id) return;
+          apply(value, false, sent);
+          setError('');
+        }
+      })();
+      saving.current = task;
+      try {
+        await task;
+      } catch (e) {
+        setSaveState('Not saved');
+        setError(e instanceof Error ? e.message : String(e));
+        throw e;
+      } finally {
+        saving.current = null;
+      }
+    },
+    [apply],
+  );
+  const editKey = editorial(model);
+  const navigationKey = JSON.stringify([
+    model.selectedRecordingId,
+    model.recordings.map((r) => [r.id, r.position]),
+  ]);
+  const projectId = snapshot?.project.id;
   useEffect(() => {
     if (!snapshot) {
       try {
@@ -70,10 +92,32 @@ export function useProjectWorkspace() {
       return;
     }
     const timeout = setTimeout(() => {
-      void flush().catch(() => {});
+      void flush(false).catch(() => {});
     }, 250);
     return () => clearTimeout(timeout);
-  }, [model, snapshot, flush]);
+    // Position updates must not restart the editorial debounce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editKey, projectId, flush]);
+  useEffect(() => {
+    // Save once after navigation settles, or at most every 30 seconds while
+    // playback/scrubbing continues. Explicit Save, operations and close flush too.
+    const timer = setTimeout(() => {
+      if (projectId) void flush(false).catch(() => {});
+      else {
+        try {
+          localStorage.setItem(modelKey, storedModel(modelRef.current));
+        } catch {
+          setError('Sample changes could not be saved.');
+        }
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [navigationKey, projectId, flush]);
+  useEffect(() => {
+    if (!projectId) return;
+    const timer = setInterval(() => void flush(false).catch(() => {}), 30000);
+    return () => clearInterval(timer);
+  }, [projectId, flush]);
   useEffect(() => {
     const api = window.virtualCut?.project;
     if (!api) return;

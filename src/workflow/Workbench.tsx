@@ -28,7 +28,7 @@ import {
   RecordingTools,
   ImportPanel,
   SaveHistory,
-  RemoveRecordingButton,
+  RecordingActions,
 } from './ProjectPanel';
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import {
@@ -123,6 +123,11 @@ function MarkerEditor({
           data-selected={selectedId === m.id}
           tabIndex={0}
           onClick={() => onSelect(m.id)}
+          onDoubleClick={(e) => {
+            if ((e.target as HTMLElement).closest('button,input,textarea,select')) return;
+            onSelect(m.id);
+            onSeek(m.time);
+          }}
           onFocus={() => onSelect(m.id)}
           onKeyDown={(e) => {
             if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -166,9 +171,10 @@ function MarkerEditor({
             value={m.name}
             onChange={(e) => onChange(m.id, { name: e.target.value })}
           />
-          <input
+          <textarea
             aria-label="Marker note"
             placeholder="Note (optional)"
+            rows={2}
             value={m.note || ''}
             onChange={(e) => onChange(m.id, { note: e.target.value })}
           />
@@ -1100,7 +1106,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }}
       onChange={(id, p) => editMarker(id, p, recordId)}
       onDelete={(id) => deleteMarker(id, recordId)}
-      onSeek={(t) => transport.current?.seek(t)}
+      onSeek={(t) => {
+        transport.current?.command('pause');
+        transport.current?.seek(t);
+      }}
       onAdd={() => addMarker(recordId)}
     />
   );
@@ -1309,10 +1318,18 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </Button>
                 </div>
                 {recordings.map((x) => (
-                  <button
+                  <div
                     data-recording={x.id}
                     className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
                     key={x.id}
+                    tabIndex={0}
+                    aria-label={`Recording: ${x.title}`}
+                    onKeyDown={(e) => {
+                      if (e.target === e.currentTarget && ['Enter', ' '].includes(e.key)) {
+                        e.preventDefault();
+                        selectRecord(x.id);
+                      }
+                    }}
                     onClick={() => selectRecord(x.id)}
                   >
                     {thumbs && <Thumbnail src={x.pinned || x.poster} alt={x.title} />}
@@ -1321,7 +1338,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       {short(x.duration)} · {model.clips.filter((c) => c.rid === x.id).length} clips
                       · {(model.markers[x.id] || []).length} markers
                     </span>
-                  </button>
+                    <RecordingActions recording={x} workspace={workspace} />
+                  </div>
                 ))}
                 <p className={s.muted}>Ctrl ↑ / ↓ · Batch</p>
               </aside>
@@ -1416,6 +1434,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       selectClip(x.id);
                     }}
                     onFocus={() => selectClip(x.id)}
+                    onDoubleClick={(event) => {
+                      if ((event.target as HTMLElement).closest('button,input,select,textarea'))
+                        return;
+                      transport.current?.command('pause');
+                      selectClip(x.id);
+                      transport.current?.seek(x.start);
+                    }}
                     onKeyDown={(event) => {
                       if (
                         event.target === event.currentTarget &&
@@ -1530,7 +1555,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     <Button aria-pressed={mediaList} onClick={() => setMediaList(true)}>
                       List
                     </Button>
-                    <RemoveRecordingButton recording={r} workspace={workspace} />
                   </div>
                   {project && (
                     <p className={s.dropHint}>Drop videos here to import into this batch.</p>
@@ -1539,9 +1563,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     {recordings
                       .filter((x) => inSourceFolder(x, activeSourceFolder))
                       .map((x) => (
-                        <button
+                        <div
                           key={x.id}
                           data-recording={x.id}
+                          tabIndex={0}
+                          aria-label={`Recording: ${x.title}`}
+                          onKeyDown={(e) => {
+                            if (e.target === e.currentTarget && ['Enter', ' '].includes(e.key)) {
+                              e.preventDefault();
+                              selectRecord(x.id);
+                            }
+                          }}
                           className={`${s.source} ${x.id === r.id ? s.selected : ''}`}
                           onClick={() => selectRecord(x.id)}
                         >
@@ -1551,7 +1583,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                             {short(x.duration)} ·{' '}
                             {x.sample ? 'Sample' : x.availability || 'Session video'}
                           </span>
-                        </button>
+                          <RecordingActions recording={x} workspace={workspace} />
+                        </div>
                       ))}
                   </div>
                 </>
@@ -1743,11 +1776,25 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                     model.recordings.find((r) => r.id === clip.rid)!,
                                     clip,
                                   )}
-                                  <div>
+                                  <div
+                                    onDoubleClick={(event) => {
+                                      if (
+                                        (event.target as HTMLElement).closest(
+                                          'button,input,select,textarea,summary,[data-marker-card]',
+                                        )
+                                      )
+                                        return;
+                                      transport.current?.command('pause');
+                                      transport.current?.seek(clip.start);
+                                    }}
+                                  >
                                     <div data-review-field="markers">
                                       {markerEditor(clip.rid, clip)}
                                     </div>
-                                    <div data-review-field="name">
+                                    <div
+                                      data-review-field="name"
+                                      title="Double-click to seek to the clip start"
+                                    >
                                       <Field label="Clip name">
                                         <input
                                           value={clip.name}
@@ -2160,7 +2207,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Shift+← / Shift+→', 'Seek one second when the timeline is focused'],
                 ['Alt + wheel', 'Zoom timeline at the cursor; Fit full recording resets it'],
                 [
-                  'Alt+Shift + wheel',
+                  'Ctrl + wheel / Alt+Shift + wheel',
                   'Pan the zoomed timeline; buttons and range slider also work with the keyboard',
                 ],
                 ['F11', 'Fullscreen'],

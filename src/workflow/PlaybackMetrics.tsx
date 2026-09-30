@@ -77,7 +77,7 @@ export function PlaybackMetrics({
       aria-label="Playback metrics"
       data-dropped={counts.measured ? counts.dropped : ''}
       data-total={counts.measured ? counts.total : ''}
-      title="Browser-reported frames during uninterrupted 1× playback. FPS covers the last half-second; dropped/total counts accumulate for this source. Pause freezes the counts. Seeks, loading and faster/reverse scanning are excluded. Resets on source change or reload; these are preview metrics, not export measurements."
+      title="Dropped x / y means x frames dropped out of y total frames reported by the browser during uninterrupted 1× playback. FPS covers the last half-second; counts accumulate for this source. Pause freezes the counts. Seeks, loading and faster/reverse scanning are excluded. Resets on source change or reload; these are preview metrics, not export measurements."
     >
       {!available
         ? 'Playback metrics unavailable'

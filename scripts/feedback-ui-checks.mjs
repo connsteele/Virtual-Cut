@@ -455,14 +455,20 @@ try {
   await expect(page.locator('[data-recording]')).toHaveCount(3);
   await capture('source-folders');
   const removingId = (await state()).model.selectedRecordingId;
-  await page.getByRole('button', { name: 'Remove from batch…', exact: true }).first().click();
+  await page
+    .locator(`[data-recording="${removingId}"]`)
+    .getByRole('button', { name: /^Remove from batch:/ })
+    .click();
   const removalDialog = page.getByRole('dialog', { name: 'Remove recording from batch' });
   await expect(removalDialog).toContainText(
     'Original video files and finished exports are never moved or deleted',
   );
   await removalDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.locator('[data-recording]')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Remove from batch…', exact: true }).first().click();
+  await page
+    .locator(`[data-recording="${removingId}"]`)
+    .getByRole('button', { name: /^Remove from batch:/ })
+    .click();
   await removalDialog.getByRole('button', { name: 'Remove recording', exact: true }).click();
   await expect(page.locator('[data-recording]')).toHaveCount(2);
   assert(!(await state()).model.recordings.some((r) => r.id === removingId));

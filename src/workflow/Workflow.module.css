@@ -340,7 +340,10 @@
   gap: 10px;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
+}
+.cutCenter > .tools {
+  flex-shrink: 0;
 }
 .inspector {
   padding: 16px;
@@ -399,13 +402,13 @@
 }
 .markerEditor > h3 {
   padding: 0 0 9px;
-  border-bottom: 1px solid var(--line);
 }
 .markerRow {
   padding: 10px 0 12px;
   border-bottom: 1px solid var(--line);
 }
-.markerRow > input {
+.markerRow > input,
+.markerRow > textarea {
   width: 100%;
   margin: 6px 0;
 }
@@ -443,7 +446,7 @@
 .player {
   container: footage-viewer / inline-size;
   flex: 1;
-  min-height: min-content;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -483,7 +486,8 @@
 .stage {
   position: relative;
   flex: 1;
-  min-height: 100px;
+  min-height: 0;
+  flex-basis: 0;
   background: #090e0d;
   display: flex;
   align-items: center;
@@ -581,6 +585,7 @@
   cursor: pointer;
 }
 .stage video {
+  position: absolute;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -1357,10 +1362,30 @@
   padding: 14px;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.mediaPreview > details[open] {
+  max-height: 30%;
+  overflow-y: auto;
+}
+.sourceActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+}
+.source[data-recording] {
+  cursor: pointer;
+}
+.sourceActions .button {
+  padding: 4px 6px;
+  min-height: 26px;
+}
+.mediaList .sourceActions {
+  grid-column: 2;
 }
 .mediaContext {
   flex-shrink: 0;

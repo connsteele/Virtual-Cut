@@ -43,6 +43,9 @@ try {
   assert(p.jobs.every((j) => j.state === 'succeeded'));
   const shared = p.model.recordings.find((r) => r.sourcePath === first);
   const exclusive = p.model.recordings.find((r) => r.sourcePath === second);
+  assert.equal(await service.sourceLocation(id, shared.id), first);
+  await assert.rejects(() => service.sourceLocation(id, '../../elsewhere'), /no longer in/);
+  await assert.rejects(() => service.sourceLocation('other-project', shared.id));
   const edited = structuredClone(p.model);
   edited.recordings.forEach((r) => {
     r.context = 'Retain this recording context';

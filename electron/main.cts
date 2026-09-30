@@ -194,6 +194,9 @@ function registerDesktopApi(): void {
   workspace('revealSave', async (id, saveId) =>
     shell.showItemInFolder(await projects.saveLocation(id, saveId)),
   );
+  workspace('revealSource', async (id, sourceId) =>
+    shell.showItemInFolder(await projects.sourceLocation(id, sourceId)),
+  );
   workspace('history', (id, direction) => projects.history(id, direction));
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));

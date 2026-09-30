@@ -77,6 +77,7 @@ export interface ProjectApi {
   checkpoint(id: string): Promise<ProjectSnapshot>;
   restore(id: string, saveId: string): Promise<ProjectSnapshot>;
   revealSave(id: string, saveId: string): Promise<void>;
+  revealSource(id: string, sourceId: string): Promise<void>;
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;

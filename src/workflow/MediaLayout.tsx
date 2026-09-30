@@ -126,6 +126,22 @@ export function MediaLayout({
     >
       <div className={s.mediaPanelControls} role="group" aria-label="Media panels">
         <Button
+          aria-label={visible.folders || visible.browser ? 'Hide both panels' : 'Show both panels'}
+          onClick={() =>
+            changeVisibility({
+              folders: !(visible.folders || visible.browser),
+              browser: !(visible.folders || visible.browser),
+            })
+          }
+        >
+          {visible.folders || visible.browser ? (
+            <PanelLeftClose size={16} />
+          ) : (
+            <PanelLeftOpen size={16} />
+          )}
+        </Button>
+
+        <Button
           aria-label={visible.folders ? 'Hide folders' : 'Show folders'}
           aria-expanded={visible.folders}
           aria-controls="source-folders-panel"
@@ -140,21 +156,6 @@ export function MediaLayout({
           onClick={() => changeVisibility({ ...visible, browser: !visible.browser })}
         >
           <Images size={16} />
-        </Button>
-        <Button
-          aria-label={visible.folders || visible.browser ? 'Hide both panels' : 'Show both panels'}
-          onClick={() =>
-            changeVisibility({
-              folders: !(visible.folders || visible.browser),
-              browser: !(visible.folders || visible.browser),
-            })
-          }
-        >
-          {visible.folders || visible.browser ? (
-            <PanelLeftClose size={16} />
-          ) : (
-            <PanelLeftOpen size={16} />
-          )}
         </Button>
       </div>
       {visible.folders && (

@@ -251,6 +251,17 @@ export class ProjectService {
     await this.require(id).checkpoint('manual');
     return this.snapshot();
   }
+  async sourceLocation(id: string, sourceId: string) {
+    const s = this.require(id);
+    const source = s.sources().find((item) => item.id === sourceId);
+    if (!source || !s.data.model.recordings.some((r) => r.id === sourceId))
+      throw new Error('This recording is no longer in the project.');
+    if (!(await stat(source.file).catch(() => null))?.isFile())
+      throw new Error(
+        'The original file is unavailable. Reconnect its drive or relink the recording.',
+      );
+    return source.file;
+  }
   async saveLocation(id: string, saveId: string) {
     const s = this.require(id);
     await s.loadCopies();

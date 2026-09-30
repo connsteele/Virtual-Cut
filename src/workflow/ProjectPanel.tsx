@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { JobTime } from './JobTime';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Trash2 } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
 import type { DroppedImport, ImportAudio } from '../../electron/project-contracts';
@@ -556,9 +556,11 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
 export function RemoveRecordingButton({
   recording: r,
   workspace: w,
+  icon = false,
 }: {
   recording: Recording;
   workspace: Workspace;
+  icon?: boolean;
 }) {
   const [confirm, setConfirm] = useState(false);
   const p = w.snapshot;
@@ -568,8 +570,12 @@ export function RemoveRecordingButton({
   const markers = w.model.markers[r.id]?.length || 0;
   return (
     <>
-      <Button disabled={w.blocking} onClick={() => setConfirm(true)}>
-        Remove from batch…
+      <Button
+        disabled={w.blocking}
+        aria-label={icon ? `Remove from batch: ${r.title}` : undefined}
+        onClick={() => setConfirm(true)}
+      >
+        {icon ? <Trash2 size={15} /> : 'Remove from batch…'}
       </Button>
       {confirm && (
         <Modal title="Remove recording from batch" onClose={() => setConfirm(false)}>
@@ -617,6 +623,35 @@ export function RemoveRecordingButton({
   );
 }
 
+export function RecordingActions({
+  recording: r,
+  workspace: w,
+}: {
+  recording: Recording;
+  workspace: Workspace;
+}) {
+  const p = w.snapshot;
+  if (!p) return null;
+  return (
+    <div
+      className={s.sourceActions}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <Button
+        disabled={w.blocking}
+        aria-label={`Show source in Explorer: ${r.title}`}
+        onClick={() =>
+          void w.run(() => window.virtualCut!.project.revealSource(p.project.id, r.id), true)
+        }
+      >
+        <FolderOpen size={15} />
+      </Button>
+      <RemoveRecordingButton recording={r} workspace={w} icon />
+    </div>
+  );
+}
+
 export function RecordingTools({
   recording: r,
   workspace: w,
@@ -644,7 +679,6 @@ export function RecordingTools({
         <Button disabled={w.busy} onClick={() => void w.run(() => api.relink(p.project.id, r.id))}>
           Relink original…
         </Button>
-        <RemoveRecordingButton recording={r} workspace={w} />
       </div>
       {r.availability === 'ready' && (
         <>
