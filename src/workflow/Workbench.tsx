@@ -1000,6 +1000,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       <Player
         key={sequence ? eid : page === 'review' ? expanded : page}
         ref={transport}
+        onActivityChange={workspace.setPlaybackActive}
         recording={record}
         bounds={bounds}
         selectedId={mid ? undefined : cid}

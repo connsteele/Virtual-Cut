@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import {
   Camera,
   ChevronsLeft,
@@ -34,6 +42,7 @@ export function Player({
   legend = true,
   onLegend = () => {},
   onPosition,
+  onActivityChange,
   onDuration,
   onPlayable,
   onSelect,
@@ -60,6 +69,7 @@ export function Player({
   legend?: boolean;
   onLegend?: () => void;
   onPosition?: (time: number) => void;
+  onActivityChange?: (active: boolean) => void;
   onDuration?: (duration: number) => void;
   onPlayable?: (ready: boolean) => void;
   onSelect?: (id: string) => void;
@@ -82,6 +92,28 @@ export function Player({
     stage = useRef<HTMLDivElement>(null),
     reverse = useRef<ReturnType<typeof setInterval> | null>(null),
     speed = useRef(1);
+  const gestures = useRef({ scrub: false, trim: false });
+  const reportActivity = useCallback(() => {
+    const v = video.current;
+    onActivityChange?.(
+      !!(
+        gestures.current.scrub ||
+        gestures.current.trim ||
+        reverse.current ||
+        (v && (!v.paused || v.seeking))
+      ),
+    );
+  }, [onActivityChange]);
+  useEffect(() => {
+    const v = video.current!;
+    const events = ['play', 'pause', 'seeking', 'seeked', 'ended', 'emptied'] as const;
+    events.forEach((event) => v.addEventListener(event, reportActivity));
+    reportActivity();
+    return () => {
+      events.forEach((event) => v.removeEventListener(event, reportActivity));
+      onActivityChange?.(false);
+    };
+  }, [reportActivity, onActivityChange]);
   const [current, setCurrent] = useState(r.position),
     [duration, setDuration] = useState(r.duration),
     [status, setStatus] = useState('Paused'),
@@ -223,6 +255,7 @@ export function Player({
     if (reverse.current) clearInterval(reverse.current);
     reverse.current = null;
     video.current?.pause();
+    reportActivity();
     setStatus('Paused');
   };
   useEffect(() => {
@@ -235,6 +268,7 @@ export function Player({
     if (!v || !Number.isFinite(z) || z <= 0) return;
     const position = Math.max(a, Math.min(z - 0.001, t));
     v.currentTime = position + clockOffset;
+    reportActivity();
     setCurrent(position);
     callbacks.current.onPosition?.(position);
   };
@@ -305,6 +339,7 @@ export function Player({
         }
         seek(v.currentTime - clockOffset - rate / 12);
       }, 83);
+      reportActivity();
       return;
     }
     stop();
@@ -359,12 +394,13 @@ export function Player({
         if (reverse.current) clearInterval(reverse.current);
         reverse.current = null;
         video.current?.pause();
+        reportActivity();
         setStatus('Paused');
       }
     };
     document.addEventListener('visibilitychange', pause);
     return () => document.removeEventListener('visibilitychange', pause);
-  }, []);
+  }, [reportActivity]);
   function capture() {
     const v = video.current;
     if (!v || v.readyState < 2) return;
@@ -544,8 +580,14 @@ export function Player({
         trimEnabled={trimEnabled}
         onTrim={onTrim}
         onTrimActive={(active) => {
+          gestures.current.trim = active;
           if (active) stop();
+          reportActivity();
           onTrimActive?.(active);
+        }}
+        onScrubActive={(active) => {
+          gestures.current.scrub = active;
+          reportActivity();
         }}
         selectedMarkerId={selectedMarkerId}
         onMarkerSelect={onMarkerSelect}

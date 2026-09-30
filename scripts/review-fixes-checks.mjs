@@ -18,7 +18,7 @@ if (process.argv.includes('--reopen')) {
         p.model.recordings.find((r) => r.id === p.model.selectedRecordingId).position - 6.25,
       ) < 0.001,
     );
-    assert.equal(p.model.clips.find((c) => c.id === 'clip-1').name, 'Saved during seeking');
+    assert.equal(p.model.clips.find((c) => c.id === 'clip-1').name, 'Saved after seeking');
   } finally {
     await service.close();
   }
@@ -285,32 +285,84 @@ if (process.argv.includes('--reopen')) {
     });
     await page.waitForTimeout(33000);
     const during = await state();
-    assert(
-      during.revision - before.revision <= 2,
-      `Too many navigation saves: ${during.revision - before.revision}`,
-    );
-    assert(
-      during.revision > before.revision,
-      'Long navigation still has a periodic checkpoint of position',
-    );
+    assert.equal(during.revision, before.revision, 'No automatic writes during navigation');
     assert.deepEqual(
       during.saves,
       before.saves,
       'Navigation does not generate save-history copies',
     );
-    await clip.locator('input').first().fill('Saved during seeking');
-    await expect
-      .poll(async () => (await state()).model.clips.find((c) => c.id === 'clip-1').name, {
-        timeout: 2500,
-      })
-      .toBe('Saved during seeking');
+    await clip.locator('input').first().fill('Saved after seeking');
+    await page.waitForTimeout(2800);
+    assert.equal(
+      (await state()).revision,
+      before.revision,
+      'Edits also wait for transport to stop',
+    );
+    await expect(page.getByRole('banner').getByRole('status')).toHaveText('Unsaved changes');
     await page.evaluate(() => clearInterval(window.seekTest));
     await seek(4.25);
     await page.waitForTimeout(2400);
     await expect
       .poll(async () => (await state()).model.recordings.find((r) => r.id === f.rid).position)
       .toBeCloseTo(4.25, 2);
+    assert.equal(
+      (await state()).model.clips.find((c) => c.id === 'clip-1').name,
+      'Saved after seeking',
+    );
     evidence.savesIn33Seconds = during.revision - before.revision;
+    // Holding the scrub pointer still is not an idle transport.
+    const settled = await state();
+    const box = await track.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.4, box.y + 8);
+    await page.mouse.down();
+    await page.waitForTimeout(2800);
+    assert.equal((await state()).revision, settled.revision, 'Held scrub does not save');
+    await page.mouse.up();
+    await page.waitForTimeout(2400);
+    assert((await state()).revision > settled.revision, 'Released scrub saves after settling');
+    await seek(1);
+    await page.waitForTimeout(2400);
+    const beforePlaying = await state();
+    await page.locator('video').evaluate((v) => v.play());
+    await page.waitForTimeout(3200);
+    assert.equal(await page.locator('video').evaluate((v) => v.paused), false);
+    assert.equal(
+      (await state()).revision,
+      beforePlaying.revision,
+      'Forward playback does not save',
+    );
+    await page.locator('video').evaluate((v) => v.pause());
+    await page.waitForTimeout(2400);
+    assert((await state()).revision > beforePlaying.revision, 'Paused playback saves');
+    await seek(7);
+    await page.waitForTimeout(2400);
+    const beforeReverse = await state();
+    await page.getByRole('button', { name: 'Reverse · J', exact: true }).click();
+    await page.waitForTimeout(2800);
+    assert.equal((await state()).revision, beforeReverse.revision, 'Reverse scan does not save');
+    await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
+    await page.waitForTimeout(2400);
+    // Navigation does not hide the last edit behind position-only Undo steps or
+    // clear Redo. Undo/Redo of the name must also leave the decoded frame alone.
+    await seek(4.75);
+    await page.waitForTimeout(2400);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(clip.locator('input').first()).toHaveValue('Overlap 1');
+    await expect.poll(position).toBeCloseTo(4.75, 2);
+    await seek(5);
+    await page.waitForTimeout(2400);
+    await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect(clip.locator('input').first()).toHaveValue('Saved after seeking');
+    await expect.poll(position).toBeCloseTo(5, 2);
+    evidence.idleOnlySaving = [
+      'continuous seeks',
+      'held scrub',
+      'forward playback',
+      'reverse scan',
+      'edits deferred until stop',
+    ];
+    evidence.undo = 'Navigation skipped; Redo retained; current viewing position preserved';
     await seek(5.25);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect

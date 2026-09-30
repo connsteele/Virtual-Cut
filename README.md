@@ -20,7 +20,7 @@ The local test setup uses six complete 4K AV1 recordings with original audio. Pr
 
 ## Run the app
 
-Version 0.3.4 reduces playhead-only saves to a 30-second cadence while navigating, plus a save after two seconds at rest. Clip/marker edits retain their short save delay; Save, project operations and normal close capture the latest position. Cut's viewer shrinks to fit overlapping lanes and controls. Double-click a clip or marker card outside its fields to seek; the same behavior is available in expanded Review details. Ctrl+wheel pans a zoomed timeline, while Alt+wheel zooms. Marker notes accept Enter for multiple lines; names stay single-line. See [the playback/filmstrip assessment](docs/playback-feedback.md) for the remaining high-speed and thumbnail limitations.
+Version 0.3.4 waits to autosave until playback/seeking has stopped and changes have settled for two seconds. Pending clip/marker edits also wait while playing or holding a scrub/trim gesture. Save, project operations and normal close capture the latest position. Navigation creates no undo steps; Undo/Redo reverses edits without resetting the viewing position. Cut's viewer shrinks to fit overlapping lanes and controls. Double-click a clip or marker card outside its fields to seek; the same behavior is available in expanded Review details. Ctrl+wheel pans a zoomed timeline, while Alt+wheel zooms. Marker notes accept Enter for multiple lines; names stay single-line. See [the playback/filmstrip assessment](docs/playback-feedback.md) for the remaining high-speed and thumbnail limitations.
 
 With Node 22.12+ installed:
 

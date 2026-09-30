@@ -21,11 +21,18 @@ export function useProjectWorkspace() {
     [quiet, setQuiet] = useState(false);
   const saving = useRef<Promise<void> | null>(null),
     working = useRef(false);
+  const activity = useRef(false);
+  const [playbackActive, setPlaybackState] = useState(false);
+  const setPlaybackActive = useCallback((active: boolean) => {
+    // The ref also guards a timer that was queued just before playback began.
+    activity.current = active;
+    setPlaybackState(active);
+  }, []);
   const setModel = useCallback((action: SetStateAction<Model>) => {
     const value = typeof action === 'function' ? action(modelRef.current) : action;
     modelRef.current = value;
     rawSetModel(value);
-    if (session.current && edited(value, base.current)) setSaveState('Saving…');
+    if (session.current && edited(value, base.current)) setSaveState('Unsaved changes');
   }, []);
   const apply = useCallback((value: ProjectSnapshot, replace = false, ancestor = base.current) => {
     const same = session.current?.project.id === value.project.id;
@@ -36,7 +43,7 @@ export function useProjectWorkspace() {
     setSnapshot(value);
     modelRef.current = next;
     rawSetModel(next);
-    setSaveState(edited(next, value.model) ? 'Saving…' : 'Saved');
+    setSaveState(edited(next, value.model) ? 'Unsaved changes' : 'Saved');
   }, []);
   const flush = useCallback(
     async (captureLatest = true) => {
@@ -46,17 +53,20 @@ export function useProjectWorkspace() {
         // that arrived while an earlier automatic write was in flight.
         if (!captureLatest) return;
       }
+      if (!captureLatest && activity.current) return;
       const task = (async () => {
         // Take one navigation snapshot. Playback may advance while native storage
         // responds; only new editorial changes justify another immediate write.
         let first = true;
         while (
           session.current &&
+          (captureLatest || !activity.current) &&
           (first ? changed(modelRef.current, base.current) : edited(modelRef.current, base.current))
         ) {
           first = false;
           const id = session.current.project.id;
           const sent = modelRef.current;
+          if (edited(sent, base.current)) setSaveState('Saving…');
           const value = await window.virtualCut!.project.save(id, base.current, sent);
           if (session.current?.project.id !== id) return;
           apply(value, false, sent);
@@ -83,25 +93,11 @@ export function useProjectWorkspace() {
   ]);
   const projectId = snapshot?.project.id;
   useEffect(() => {
-    if (!snapshot) {
-      try {
-        localStorage.setItem(modelKey, storedModel(model));
-      } catch {
-        setError('Sample changes could not be saved.');
-      }
-      return;
-    }
-    const timeout = setTimeout(() => {
-      void flush(false).catch(() => {});
-    }, 250);
-    return () => clearTimeout(timeout);
-    // Position updates must not restart the editorial debounce.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editKey, projectId, flush]);
-  useEffect(() => {
-    // Save once after navigation settles, or at most every 30 seconds while
-    // playback/scrubbing continues. Explicit Save, operations and close flush too.
+    // Automatic writes wait for both transport and edits to settle. A held scrub
+    // or stalled decoder remains active even if no position events arrive.
+    if (playbackActive) return;
     const timer = setTimeout(() => {
+      if (activity.current) return;
       if (projectId) void flush(false).catch(() => {});
       else {
         try {
@@ -112,12 +108,7 @@ export function useProjectWorkspace() {
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [navigationKey, projectId, flush]);
-  useEffect(() => {
-    if (!projectId) return;
-    const timer = setInterval(() => void flush(false).catch(() => {}), 30000);
-    return () => clearInterval(timer);
-  }, [projectId, flush]);
+  }, [editKey, navigationKey, playbackActive, projectId, flush]);
   useEffect(() => {
     const api = window.virtualCut?.project;
     if (!api) return;
@@ -214,6 +205,7 @@ export function useProjectWorkspace() {
   return {
     model,
     setModel,
+    setPlaybackActive,
     snapshot,
     recents,
     saveState,

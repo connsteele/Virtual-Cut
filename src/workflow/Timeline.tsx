@@ -38,6 +38,7 @@ export function Timeline({
   trimEnabled = true,
   onTrim,
   onTrimActive,
+  onScrubActive,
 }: {
   recording: Recording;
   markers: Marker[];
@@ -60,6 +61,7 @@ export function Timeline({
   trimEnabled?: boolean;
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
+  onScrubActive?: (active: boolean) => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
@@ -71,7 +73,7 @@ export function Timeline({
     pointer: number;
     recording: string;
   } | null>(null);
-  const callbacks = useRef({ onTrimActive });
+  const callbacks = useRef({ onTrimActive, onScrubActive });
   const [preview, setPreview] = useState<{
     id: string;
     edge: 'start' | 'end';
@@ -79,8 +81,8 @@ export function Timeline({
   } | null>(null);
   const [pointerFocus, setPointerFocus] = useState(false);
   useEffect(() => {
-    callbacks.current = { onTrimActive };
-  }, [onTrimActive]);
+    callbacks.current = { onTrimActive, onScrubActive };
+  }, [onTrimActive, onScrubActive]);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !drag.current) return;
@@ -88,13 +90,17 @@ export function Timeline({
       drag.current = null;
       setPreview(null);
       callbacks.current.onTrimActive?.(false);
+      pointer.current = null;
+      callbacks.current.onScrubActive?.(false);
     };
     document.addEventListener('keydown', cancel);
     return () => {
       document.removeEventListener('keydown', cancel);
       drag.current = null;
+      pointer.current = null;
       setPreview(null);
       callbacks.current.onTrimActive?.(false);
+      callbacks.current.onScrubActive?.(false);
     };
   }, [handleMode, recording.id, trimEnabled]);
   const [width, setWidth] = useState(640);
@@ -310,6 +316,7 @@ export function Timeline({
           setPointerFocus(true);
           e.currentTarget.focus({ preventScroll: true });
           pointer.current = e.pointerId;
+          onScrubActive?.(true);
           e.currentTarget.setPointerCapture(e.pointerId);
           scrub(e.clientX);
           const clip = (e.target as HTMLElement).closest<HTMLElement>('[data-clip]');
@@ -333,16 +340,19 @@ export function Timeline({
           if (pointer.current !== e.pointerId) return;
           scrub(e.clientX);
           pointer.current = null;
+          onScrubActive?.(false);
           if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         onPointerCancel={() => {
           finishHandle(false);
           pointer.current = null;
+          onScrubActive?.(false);
         }}
         onLostPointerCapture={() => {
           finishHandle(false);
           pointer.current = null;
+          onScrubActive?.(false);
         }}
         onBlur={() => setPointerFocus(false)}
         onKeyDown={(e) => {
