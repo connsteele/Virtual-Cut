@@ -1220,6 +1220,8 @@
   overflow: hidden;
 }
 .mediaBrowser {
+  container-type: inline-size;
+  container-name: media-browser;
   padding: 14px;
   border-right: 1px solid var(--line);
   min-height: 0;
@@ -1237,6 +1239,47 @@
 .mediaGrid .source {
   border: 1px solid var(--line);
   margin: 0;
+}
+@container media-browser (max-width: 300px) {
+  .mediaGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mediaSplit {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.mediaDivider {
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--line);
+}
+.mediaDivider:hover,
+.mediaDivider:focus-visible {
+  background: var(--accent);
+}
+.clipDuration {
+  margin-left: 8px;
+  margin-right: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.jobCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.jobDetails {
+  min-width: 0;
+  flex: 1;
+}
+.jobDetails p {
+  overflow-wrap: anywhere;
 }
 .mediaList .source {
   display: grid;

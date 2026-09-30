@@ -46,6 +46,7 @@ try {
   ).toBeEnabled();
   await page.getByRole('button', { name: 'Export selected clip', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Export selected clip', exact: true });
+  await expect(dialog.getByLabel('Export container')).toHaveValue('source');
   await expect(dialog.getByRole('table', { name: 'Export ranges' })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Choose output file…' })).toBeDisabled();
   await dialog.getByLabel('Export container').selectOption('mp4');
@@ -114,6 +115,43 @@ try {
   await expect(
     page.getByRole('dialog', { name: 'Exports', exact: true }).getByRole('table'),
   ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Time', exact: true })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Close dialog' }).click();
+  await navigation.getByRole('button', { name: 'Media', exact: true }).click();
+  const folderDivider = page.getByRole('separator', { name: 'Resize source folders' });
+  const browserDivider = page.getByRole('separator', { name: 'Resize media browser' });
+  await folderDivider.focus();
+  const initialFolders = Number(await folderDivider.getAttribute('aria-valuenow'));
+  await page.keyboard.press('ArrowRight');
+  await expect(folderDivider).toHaveAttribute('aria-valuenow', String(initialFolders + 20));
+  const box = await browserDivider.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 220, box.y + 100, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => browserDivider.getAttribute('aria-valuenow')).toBe('207');
+  const cards = page.locator('[data-recording]');
+  const first = await cards.nth(0).boundingBox(),
+    second = await cards.nth(1).boundingBox();
+  assert(
+    Math.abs(first.x - second.x) < 1 && second.y > first.y,
+    'Narrow media browser becomes one column',
+  );
+  await capture('media-resized-wide');
+  const preferences = await page.evaluate(() => localStorage.getItem('virtual-cut.media-panels'));
+  await navigation.getByRole('button', { name: 'Cut', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Media', exact: true }).click();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('virtual-cut.media-panels')),
+    preferences,
+  );
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1120, 760));
+  await capture('media-resized-compact');
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  assert(!overflow, 'Resized media panels fit compact app width');
+  await page.getByRole('button', { name: /^Jobs/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Media jobs' })).toBeVisible();
+  await capture('jobs-actions-compact');
   assert.deepEqual(errors, []);
   await writeFile(path.join(checks, 'latest-ui.json'), JSON.stringify({ dir, output }, null, 2));
   console.log('Export UI checks passed:', JSON.stringify({ dir, output }));

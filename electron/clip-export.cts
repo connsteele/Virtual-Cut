@@ -13,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
-import { colors } from './workflow-types.js';
+import { colors, markerColor, markerColorName } from './workflow-types.js';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -39,6 +39,7 @@ interface Media {
   chapters: { start_time: string; tags?: { title?: string } }[];
 }
 type Tools = { ffmpeg: string; ffprobe: string };
+const quickTime = (container: string) => ['mp4', 'mov', 'm4v'].includes(container);
 export async function fileHash(file: string, signal?: AbortSignal) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) {
@@ -105,13 +106,17 @@ function tick(s: Stream) {
   const [a, b] = s.time_base.split('/').map(Number);
   return a / b;
 }
-function seekBoundary(audio: Packet[], firstVideo: Packet, enabled: boolean) {
+function seekBoundary(audio: Packet[], firstVideo: Packet, enabled: boolean, videoTick: number) {
   if (!enabled) return 0;
   const crossing = audio.reduce<Packet | undefined>(
     (found, p) => (p.pts <= firstVideo.pts && p.pts + p.duration > firstVideo.pts ? p : found),
     undefined,
   );
-  return Math.min(firstVideo.dts, crossing?.pts ?? firstVideo.dts);
+  // FFmpeg rounds an output seek separately in each stream's clock. Align to
+  // a video tick before seeking: a FLAC boundary between 60 Hz video ticks can
+  // otherwise round past the retained keyframe in the packet filter.
+  const boundary = Math.min(firstVideo.dts, crossing?.pts ?? firstVideo.dts);
+  return Math.floor((boundary + 1e-9) / videoTick) * videoTick;
 }
 function verify(
   source: Media,
@@ -199,7 +204,7 @@ function verify(
     throw new Error('Video packet duration is unavailable; this cut cannot be verified yet.');
   const videoEnd = expected.reduce((n, p) => Math.max(n, p.pts + p.duration), -Infinity);
   const hasSeek = record.plan.planned.start > 0.000001;
-  const audioBegin = seekBoundary(sa, expected[0], hasSeek);
+  const audioBegin = seekBoundary(sa, expected[0], hasSeek, tick(video));
   const expectedFirst = hasSeek ? sa.findIndex((p) => p.pts >= audioBegin - 0.000001) : 0;
   const expectedLast = sa.reduce((found, p, i) => (p.pts < videoEnd - 0.0000001 ? i : found), -1);
   if (!aa.length || first !== expectedFirst || previous !== expectedLast)
@@ -243,7 +248,7 @@ function chapters(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 's
   }));
   // QuickTime chapter tracks assign their first chapter to zero. A neutral
   // leading chapter prevents the first real annotation from being retimed.
-  if (record.plan.container === 'mp4' && entries.length && entries[0].start > 0)
+  if (quickTime(record.plan.container) && entries.length && entries[0].start > 0)
     entries.unshift({ start: 0, name: 'Clip start' });
   return entries;
 }
@@ -318,6 +323,14 @@ export async function exportClip(
   signal: AbortSignal,
   update: (record: ExportRecord, progress: number) => void,
 ): Promise<ExportRecord> {
+  const began = performance.now();
+  record = {
+    ...record,
+    started: new Date().toISOString(),
+    elapsedMs: 0,
+    annotationVersion: record.annotationVersion ?? (record.verification ? 1 : 2),
+  };
+  const elapsedMs = () => Math.round(performance.now() - began);
   if (
     !record.output ||
     !record.metadata ||
@@ -338,7 +351,13 @@ export async function exportClip(
     lock = output + '.vcut-lock';
   let ownedLock = false;
   const report = (message: string, progress: number) => {
-    record = { ...record, state: 'running', message, updated: new Date().toISOString() };
+    record = {
+      ...record,
+      state: 'running',
+      message,
+      elapsedMs: elapsedMs(),
+      updated: new Date().toISOString(),
+    };
     update(record, progress);
   };
   try {
@@ -392,6 +411,7 @@ export async function exportClip(
       return {
         ...record,
         state: 'verified',
+        elapsedMs: elapsedMs(),
         message: 'Verified video and metadata recovered.',
         updated: new Date().toISOString(),
       };
@@ -437,7 +457,7 @@ export async function exportClip(
       throw new Error('This video range has no verifiable packet durations.');
     const videoEnd = selectedPackets.reduce((n, p) => Math.max(n, p.pts + p.duration), -Infinity);
     const hasSeek = record.plan.planned.start > 0.000001,
-      seek = seekBoundary(audioPackets, start, hasSeek);
+      seek = seekBoundary(audioPackets, start, hasSeek, tick(video));
     const args = ['-v', 'error', '-nostdin', '-copyts', '-i', record.input.sourceFile];
     if (hasSeek) args.push('-ss', String(seek));
     args.push('-to', String(videoEnd));
@@ -469,7 +489,7 @@ export async function exportClip(
       '-n',
       raw,
     );
-    if (record.plan.container === 'mp4')
+    if (quickTime(record.plan.container))
       args.splice(args.length - 1, 0, '-movie_timescale', '1000000');
     await launchTool(tools.ffmpeg, args, signal);
     report('Verifying copied packet timing', 0.5);
@@ -514,7 +534,7 @@ export async function exportClip(
       '-strict',
       '-2',
       '-n',
-      ...(record.plan.container === 'mp4' ? ['-movie_timescale', '1000000'] : []),
+      ...(quickTime(record.plan.container) ? ['-movie_timescale', '1000000'] : []),
       final,
     ];
     await launchTool(tools.ffmpeg, chapterArgs, signal);
@@ -558,6 +578,7 @@ export async function exportClip(
     return {
       ...record,
       state: 'verified',
+      elapsedMs: elapsedMs(),
       message: 'Original video and game audio verified; metadata saved.',
       updated: new Date().toISOString(),
     };
@@ -580,7 +601,7 @@ function annotation(record: ExportRecord, v: ExportVerification) {
     JSON.stringify(
       {
         schema: 'virtual-cut-export',
-        version: 1,
+        version: record.annotationVersion ?? 1,
         exportId: plan.id,
         created: plan.created,
         clip: input.clip,
@@ -606,7 +627,9 @@ function annotation(record: ExportRecord, v: ExportVerification) {
           .filter((m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end)
           .map((m) => ({
             ...m,
-            color: colors[m.category],
+            ...(record.annotationVersion === 2
+              ? { colorName: markerColorName(m), color: markerColor(m) }
+              : { color: colors[m.category] }),
             sourceTime: m.time,
             clipTime: m.time - v.actual.start,
             containerTime: m.time + input.sourceStart + v.timestampShift,

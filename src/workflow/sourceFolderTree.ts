@@ -53,8 +53,11 @@ export function sourceFolders(recordings: Recording[]): SourceFolder[] {
   }
   sort(roots);
   // Hide redundant drive/ancestor chains while retaining the real full path.
-  return roots.map((node) => {
+  function compact(node: SourceFolder) {
     while (!node.count && node.children.length === 1) node = node.children[0];
     return node;
-  });
+  }
+  return roots.flatMap((node) =>
+    !node.count && /^[A-Za-z]:$/.test(node.label) ? node.children.map(compact) : [compact(node)],
+  );
 }

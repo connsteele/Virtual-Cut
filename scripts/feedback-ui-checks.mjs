@@ -289,8 +289,9 @@ try {
   await unfocus();
   await page.keyboard.press('m');
   await expect(page.locator('[data-marker-card][data-selected=true]')).toHaveCount(1);
-  await page.keyboard.press('r');
   const markerName = page.getByLabel('Marker name', { exact: true });
+  await expect(markerName).toBeFocused();
+  await expect(page.getByLabel('Marker color', { exact: true })).toHaveValue('Blue');
   assert(
     await markerName.evaluate(
       (el) => el.selectionStart === 0 && el.selectionEnd === el.value.length,
@@ -303,6 +304,20 @@ try {
   await page.getByRole('button', { name: /Seek to marker: Keyboard marke/ }).click();
   await expect(page.locator('[data-marker-card][data-selected=true]')).toHaveCount(1);
   await expect(page.locator('[data-cut-clip][data-selected=true]')).toHaveCount(0);
+  // Clicking the filmstrip clears marker priority, even at the same playhead.
+  const scrubBox = await page.getByTestId('scrub-surface').boundingBox();
+  await page
+    .getByTestId('scrub-surface')
+    .click({ position: { x: scrubBox.width / p.model.recordings[0].duration, y: 45 } });
+  await expect(page.locator('[data-marker-card][data-selected=true]')).toHaveCount(0);
+  await unfocus();
+  await page.keyboard.press('r');
+  await expect(page.getByLabel('Clip name', { exact: true }).first()).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: /Seek to marker: Keyboard marke/ }).click();
+  await page.getByLabel('Marker color', { exact: true }).selectOption('Fuchsia');
+  await saved();
+  assert.equal((await state()).model.markers[rid][0].color, 'Fuchsia');
   await unfocus();
   await page.keyboard.press('Backspace');
   await expect(page.locator('[data-delete-confirm]')).toBeVisible();

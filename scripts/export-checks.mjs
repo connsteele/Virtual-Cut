@@ -15,5 +15,6 @@ async function native(script) {
   });
 }
 await native('export-native-checks.mjs');
+await native('export-feedback-native.mjs');
 if (process.env.VIRTUAL_CUT_REAL_EXPORT === '1') await native('export-real-check.mjs');
 await runNode(path.join(root, 'scripts/export-ui-checks.mjs'));

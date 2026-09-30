@@ -26,6 +26,9 @@ import { ProjectPanel, BatchTools, RecordingTools, ImportPanel, SaveHistory } fr
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import {
   colors,
+  markerColors,
+  markerColor,
+  markerColorName,
   initialModel,
   invalidate,
   time,
@@ -35,11 +38,13 @@ import {
   type Clip,
   type Entry,
   type Marker,
+  type MarkerColor,
   type Model,
   type Recording,
 } from './model';
 import { Player, type Transport } from './Player';
 import { SourceFolders } from './SourceFolders';
+import { MediaLayout } from './MediaLayout';
 import { inSourceFolder } from './sourceFolderTree';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
@@ -121,7 +126,7 @@ function MarkerEditor({
           <div className={s.tools}>
             <button
               className={s.markerLabel}
-              style={{ color: colors[m.category] }}
+              style={{ color: markerColor(m) }}
               onClick={() => {
                 onSelect(m.id);
                 onSeek(m.time);
@@ -132,6 +137,16 @@ function MarkerEditor({
                 {m.category} · {time(m.time)}
               </span>
             </button>
+            <select
+              aria-label="Marker color"
+              value={markerColorName(m)}
+              style={{ color: markerColor(m) }}
+              onChange={(e) => onChange(m.id, { color: e.target.value as MarkerColor })}
+            >
+              {Object.keys(markerColors).map((color) => (
+                <option key={color}>{color}</option>
+              ))}
+            </select>
             <Button aria-label={`Delete marker: ${m.name}`} onClick={() => onConfirm(m.id)}>
               <Trash2 size={15} />
             </Button>
@@ -433,6 +448,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     ),
     [deleteClipId, setDeleteClipId] = useState(''),
     [mid, setMid] = useState(''),
+    [renameMarkerId, setRenameMarkerId] = useState(''),
     [deleteMarkerId, setDeleteMarkerId] = useState(''),
     [drawer, setDrawer] = useState(''),
     [agent, setAgent] = useState('Copilot'),
@@ -476,6 +492,19 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     markerRecord.current = recordId;
     markerSeek.current = model.markers[recordId]?.find((m) => m.id === id)?.time ?? null;
   }
+  useLayoutEffect(() => {
+    if (!renameMarkerId) return;
+    const card = [...document.querySelectorAll<HTMLElement>('[data-marker-card]')].find(
+      (el) => el.dataset.markerCard === renameMarkerId,
+    );
+    const input = card?.querySelector<HTMLInputElement>('input[aria-label="Marker name"]');
+    if (input) {
+      input.focus({ preventScroll: true });
+      input.select();
+      card?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      setRenameMarkerId('');
+    }
+  }, [renameMarkerId, model.markers]);
   useEffect(() => {
     const id = mid || cid;
     if (!id || page !== 'cut') return;
@@ -646,6 +675,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             time: position,
             name: 'New marker',
             category: 'Context' as const,
+            color: 'Blue' as const,
             topic: '',
           },
         ].sort((a, b) => a.time - b.time),
@@ -655,6 +685,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setMid(id);
     markerRecord.current = recordId;
     markerSeek.current = position;
+    transport.current?.command('pause');
+    setRenameMarkerId(id);
   }
   function selectRecord(id: string) {
     transport.current?.command('pause');
@@ -953,6 +985,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         selectedId={mid ? undefined : cid}
         selectedMarkerId={mid}
         onMarkerSelect={(id) => selectMarker(id, record.id)}
+        onMarkerDeselect={() => {
+          setMid('');
+          setDeleteMarkerId('');
+          markerSeek.current = null;
+        }}
         onAudioChange={(patch) => updateRecording(record.id, patch)}
         audioStatus={currentAudioStatus(project?.jobs || [], record)}
         showClips={page === 'cut' || page === 'selects'}
@@ -1379,6 +1416,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                           aria-hidden="true"
                         />
                         {String(clips.indexOf(x) + 1).padStart(2, '0')}
+                        <span className={s.clipDuration}>{time(x.end - x.start)}</span>
                       </span>
                       <span className={s.spacer} />
                       <Button
@@ -1430,7 +1468,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         />
                       </Field>
                     </div>
-                    <span className={s.muted}>{time(x.end - x.start)}</span>
                   </div>
                 ))}
                 {!clips.length && <p className={s.muted}>Choose + Clip to begin a draft.</p>}
@@ -1450,23 +1487,25 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             </div>
           )}
           {page === 'media' && !!r.id && (
-            <div className={s.media}>
-              <aside className={s.rail}>
-                <h3>Media pool</h3>
-                <Button
-                  aria-pressed={!sourceFolderFilter}
-                  onClick={() => setSourceFolderFilter('')}
-                >
-                  All recordings
-                </Button>
-                <SourceFolders
-                  recordings={recordings}
-                  selected={sourceFolderFilter}
-                  onSelect={setSourceFolderFilter}
-                />
-              </aside>
-              <div className={s.mediaContent}>
-                <div className={s.mediaBrowser}>
+            <MediaLayout
+              folders={
+                <>
+                  <h3>Media pool</h3>
+                  <Button
+                    aria-pressed={!sourceFolderFilter}
+                    onClick={() => setSourceFolderFilter('')}
+                  >
+                    All recordings
+                  </Button>
+                  <SourceFolders
+                    recordings={recordings}
+                    selected={sourceFolderFilter}
+                    onSelect={setSourceFolderFilter}
+                  />
+                </>
+              }
+              browser={
+                <>
                   <div className={s.tools}>
                     <Button aria-pressed={!mediaList} onClick={() => setMediaList(false)}>
                       Thumbnails
@@ -1494,36 +1533,35 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         </button>
                       ))}
                   </div>
-                </div>
-                <div className={s.mediaPreview}>
-                  {player(r)}
-                  <RecordingTools
-                    recording={r}
-                    workspace={workspace}
-                    onChange={(patch) => updateRecording(r.id, patch)}
-                  />
-                  <details className={s.mediaContext}>
-                    <summary>Recording context</summary>
-                    <textarea
-                      aria-label="Recording context"
-                      value={r.context}
-                      onChange={(e) => updateRecording(r.id, { context: e.target.value })}
-                    />
-                    <Button primary onClick={() => go('cut')}>
-                      Open in Cut
-                    </Button>
-                    {!project && (
-                      <p className={s.muted}>
-                        {r.fullResolution
-                          ? 'Original-resolution demo copy. Default audio track is used.'
-                          : 'Default audio track is used.'}{' '}
-                        Track selection and transcription come later.
-                      </p>
-                    )}
-                  </details>
-                </div>
-              </div>
-            </div>
+                </>
+              }
+            >
+              {player(r)}
+              <RecordingTools
+                recording={r}
+                workspace={workspace}
+                onChange={(patch) => updateRecording(r.id, patch)}
+              />
+              <details className={s.mediaContext}>
+                <summary>Recording context</summary>
+                <textarea
+                  aria-label="Recording context"
+                  value={r.context}
+                  onChange={(e) => updateRecording(r.id, { context: e.target.value })}
+                />
+                <Button primary onClick={() => go('cut')}>
+                  Open in Cut
+                </Button>
+                {!project && (
+                  <p className={s.muted}>
+                    {r.fullResolution
+                      ? 'Original-resolution demo copy. Default audio track is used.'
+                      : 'Default audio track is used.'}{' '}
+                    Track selection and transcription come later.
+                  </p>
+                )}
+              </details>
+            </MediaLayout>
           )}
           {page === 'review' && (
             <>
@@ -2090,7 +2128,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],
                 ['H', 'Toggle clip handles on the Cut page; drag an edge to trim'],
-                ['M', 'Create and select marker'],
+                ['M', 'Create a Blue marker and name it'],
                 ['R', 'Rename selected clip or marker (selects its name)'],
                 ['Backspace', 'Request deletion of selected clip or marker'],
                 ['Enter / Escape', 'Confirm / cancel deletion'],
@@ -2137,7 +2175,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       )}
       <footer className={s.footer}>
-        <span className={s.muted}>{project ? 'Project workspace · M1' : 'Workflow preview'}</span>
+        <span className={s.muted}>{project ? 'Project workspace' : 'Workflow preview'}</span>
         <nav aria-label="Workspace pages">
           {pages.map((p) => (
             <button

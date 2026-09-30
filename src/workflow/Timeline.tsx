@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { colors, time, short, type Clip, type Marker, type Recording } from './model';
+import {
+  markerColors,
+  markerColor,
+  markerColorName,
+  time,
+  short,
+  type Clip,
+  type Marker,
+  type Recording,
+} from './model';
 import type { AudioTrack } from '../../electron/workflow-types';
 import { clipColor, layoutClips } from './clipLayout';
 import { Button } from './ui';
@@ -20,6 +29,7 @@ export function Timeline({
   onSelect,
   selectedMarkerId,
   onMarkerSelect,
+  onMarkerDeselect,
   waveMode = 'off',
   audioTracks = [],
   handleMode = false,
@@ -41,6 +51,7 @@ export function Timeline({
   onSelect?: (id: string) => void;
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
+  onMarkerDeselect?: () => void;
   waveMode?: 'off' | 'overlay' | 'replace';
   audioTracks?: AudioTrack[];
   handleMode?: boolean;
@@ -164,9 +175,9 @@ export function Timeline({
       <div className={s.legendRow}>
         {legend && (
           <div className={s.legend} aria-label="Marker color key">
-            {Object.entries(colors).map(([name, color]) => (
+            {[...new Set(markers.map(markerColorName).concat('Blue'))].map((name) => (
               <span key={name}>
-                <i style={{ background: color }} />
+                <i style={{ background: markerColors[name] }} />
                 {name}
               </span>
             ))}
@@ -206,6 +217,7 @@ export function Timeline({
           )
             return;
           e.preventDefault();
+          onMarkerDeselect?.();
           setPointerFocus(true);
           e.currentTarget.focus({ preventScroll: true });
           pointer.current = e.pointerId;
@@ -257,7 +269,7 @@ export function Timeline({
                 key={m.id}
                 data-marker={m.id}
                 className={s.marker}
-                style={{ left: percent(m.time), color: colors[m.category] }}
+                style={{ left: percent(m.time), color: markerColor(m) }}
                 title={`${m.category}: ${m.name} · ${time(m.time)}`}
                 aria-label={`Seek to marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}

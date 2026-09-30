@@ -24,6 +24,7 @@ import { editorial } from './project-edits.js';
 import { exportClip as writeClip } from './clip-export.cjs';
 import type {
   ExportContainer,
+  ExportContainerChoice,
   ExportInput,
   ExportPlan,
   ExportRecord,
@@ -640,11 +641,17 @@ export class ProjectService {
         });
     }
   }
-  async exportPlan(id: string, clipId: string, container: ExportContainer): Promise<ExportPlan> {
+  async exportPlan(id: string, clipId: string, choice: ExportContainerChoice): Promise<ExportPlan> {
     const s = this.require(id);
-    if (!['mp4', 'mkv'].includes(container)) throw new Error('Choose MP4 or MKV.');
+    if (!['source', 'mp4', 'mkv'].includes(choice))
+      throw new Error('Choose Same as source, MP4 or MKV.');
     const { input, hash, recording } = this.exportInput(clipId),
       { start, end } = input.clip;
+    const container = (
+      choice === 'source' ? path.extname(input.sourceFile).slice(1).toLowerCase() : choice
+    ) as ExportContainer;
+    if (!['mp4', 'mkv', 'mov', 'm4v', 'webm'].includes(container))
+      throw new Error('This source container is not supported for copying yet. Choose MP4 or MKV.');
     if (
       !Number.isFinite(start) ||
       !Number.isFinite(end) ||
@@ -674,6 +681,7 @@ export class ProjectService {
     s.discardExportPlans();
     s.putExport({
       plan,
+      annotationVersion: 2,
       input,
       inputHash: hash,
       state: 'planned',
@@ -709,6 +717,8 @@ export class ProjectService {
       cleanGameConfirmed: true,
       state: 'queued',
       verification: resolved === record.output ? record.verification : undefined,
+      started: undefined,
+      elapsedMs: undefined,
       message: 'Waiting to export',
       updated: new Date().toISOString(),
     };
@@ -769,6 +779,8 @@ export class ProjectService {
           ...record,
           state: 'queued',
           message: 'Waiting to retry',
+          started: undefined,
+          elapsedMs: undefined,
           updated: new Date().toISOString(),
         });
       }
@@ -777,6 +789,8 @@ export class ProjectService {
         state: 'queued',
         progress: 0,
         message: 'Waiting to retry',
+        started: undefined,
+        elapsedMs: undefined,
         updated: new Date().toISOString(),
       });
       this.pump();
@@ -821,6 +835,9 @@ export class ProjectService {
     this.active = { id: job.id, controller, finished };
   }
   private async run(job: MediaJob, signal: AbortSignal) {
+    const began = performance.now();
+    job = { ...job, started: new Date().toISOString(), elapsedMs: 0 };
+    const elapsedMs = () => Math.round(performance.now() - began);
     const s = this.require(),
       source = s.sources().find((x) => x.id === job.sourceId);
     let last = 0;
@@ -835,6 +852,7 @@ export class ProjectService {
         state: 'running',
         progress: n,
         message,
+        elapsedMs: elapsedMs(),
         updated: new Date().toISOString(),
       });
     };
@@ -850,16 +868,17 @@ export class ProjectService {
           { ffmpeg: this.tool('ffmpeg'), ffprobe: this.tool('ffprobe') },
           signal,
           (next, n) => {
-            s.putExport(next);
+            s.putExport({ ...next, started: job.started, elapsedMs: elapsedMs() });
             progress(n, next.message);
           },
         );
-        s.putExport(done);
+        s.putExport({ ...done, started: job.started, elapsedMs: elapsedMs() });
         s.putJob({
           ...job,
           state: 'succeeded',
           progress: 1,
           message: done.message,
+          elapsedMs: elapsedMs(),
           updated: done.updated,
         });
         return;
@@ -1053,6 +1072,7 @@ export class ProjectService {
         state: 'succeeded',
         progress: 1,
         message: 'Complete',
+        elapsedMs: elapsedMs(),
         updated: new Date().toISOString(),
       });
     } catch (e) {
@@ -1061,6 +1081,8 @@ export class ProjectService {
         if (record)
           s.putExport({
             ...record,
+            started: job.started,
+            elapsedMs: elapsedMs(),
             state: signal.aborted ? (this.switching ? 'interrupted' : 'cancelled') : 'failed',
             message: signal.aborted
               ? 'Export stopped. Retry from Jobs.'
@@ -1075,6 +1097,7 @@ export class ProjectService {
         state: signal.aborted ? (this.switching ? 'interrupted' : 'cancelled') : 'failed',
         progress: 0,
         message: signal.aborted ? 'Cancelled' : e instanceof Error ? e.message : String(e),
+        elapsedMs: elapsedMs(),
         updated: new Date().toISOString(),
       });
       if (job.kind === 'inspect') {

@@ -42,6 +42,7 @@ export function Player({
   onTrimActive,
   selectedMarkerId,
   onMarkerSelect,
+  onMarkerDeselect,
   onAudioChange,
   audioStatus,
   onFrame,
@@ -67,6 +68,7 @@ export function Player({
   onTrimActive?: (active: boolean) => void;
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
+  onMarkerDeselect?: () => void;
   onAudioChange?: (patch: Partial<Recording>) => void;
   audioStatus?: string;
   onFrame?: (url: string) => void;
@@ -540,6 +542,7 @@ export function Player({
         }}
         selectedMarkerId={selectedMarkerId}
         onMarkerSelect={onMarkerSelect}
+        onMarkerDeselect={onMarkerDeselect}
         waveMode={waveMode}
         audioTracks={monitored}
       />

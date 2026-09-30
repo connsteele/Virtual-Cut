@@ -221,6 +221,7 @@ export async function inspectMedia(
       time: c.start - sourceStart,
       name: c.name,
       category: 'Context' as const,
+      color: 'Blue' as const,
       topic: '',
     }))
     .filter((m) => Number.isFinite(m.time) && m.time >= 0 && m.time <= duration);

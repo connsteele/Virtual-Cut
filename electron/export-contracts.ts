@@ -1,6 +1,7 @@
 import type { Clip, Marker } from './workflow-types.js';
 
-export type ExportContainer = 'mp4' | 'mkv';
+export type ExportContainer = 'mp4' | 'mkv' | 'mov' | 'm4v' | 'webm';
+export type ExportContainerChoice = 'source' | 'mp4' | 'mkv';
 export interface ExportPlan {
   id: string;
   clipId: string;
@@ -42,6 +43,9 @@ export interface ExportVerification {
   sha256: string;
 }
 export interface ExportRecord {
+  annotationVersion?: 1 | 2;
+  started?: string;
+  elapsedMs?: number;
   plan: ExportPlan;
   input: ExportInput;
   inputHash: string;

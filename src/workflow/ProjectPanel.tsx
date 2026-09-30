@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { JobTime } from './JobTime';
 import { FolderOpen } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
@@ -455,41 +456,50 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       {jobs && (
         <Modal title="Media jobs" onClose={() => setJobs(false)}>
           <p className={s.muted}>
-            Inspection and audio previews run one at a time. Interrupted work can be retried after
-            reopening the project.
+            Inspection, audio previews and exports run one at a time. Interrupted work can be
+            retried after reopening the project.
           </p>
           <div className={s.jobList}>
             {p.jobs.map((j) => (
-              <section key={j.id} className={s.clipTile}>
-                <strong>
-                  {w.model.recordings.find((r) => r.id === j.sourceId)?.title || 'Import'}
-                </strong>
-                <p>
-                  {j.kind === 'inspect'
-                    ? 'Media inspection'
-                    : j.kind === 'export'
-                      ? 'Clip export'
-                      : `Audio track ${j.track}`}{' '}
-                  · {j.state}
-                </p>
-                {j.state === 'running' && <progress value={j.progress} max={1} />}
-                <p className={s.muted}>{j.message}</p>
-                {['queued', 'running'].includes(j.state) && (
-                  <Button
-                    disabled={w.busy}
-                    onClick={() => void w.run(() => api.job(p.project.id, j.id, 'cancel'))}
-                  >
-                    Cancel job
-                  </Button>
-                )}
-                {['failed', 'cancelled', 'interrupted'].includes(j.state) && (
-                  <Button
-                    disabled={w.busy}
-                    onClick={() => void w.run(() => api.job(p.project.id, j.id, 'retry'))}
-                  >
-                    Retry job
-                  </Button>
-                )}
+              <section key={j.id} className={`${s.clipTile} ${s.jobCard}`}>
+                <div className={s.jobDetails}>
+                  <strong>
+                    {w.model.recordings.find((r) => r.id === j.sourceId)?.title || 'Import'}
+                  </strong>
+                  <p>
+                    {j.kind === 'inspect'
+                      ? 'Media inspection'
+                      : j.kind === 'export'
+                        ? 'Clip export'
+                        : `Audio track ${j.track}`}{' '}
+                    · {j.state} ·{' '}
+                    <JobTime
+                      started={j.started}
+                      elapsedMs={j.elapsedMs}
+                      running={j.state === 'running'}
+                    />
+                  </p>
+                  {j.state === 'running' && <progress value={j.progress} max={1} />}
+                  <p className={s.muted}>{j.message}</p>
+                </div>
+                <div className={s.tools}>
+                  {['queued', 'running'].includes(j.state) && (
+                    <Button
+                      disabled={w.busy}
+                      onClick={() => void w.run(() => api.job(p.project.id, j.id, 'cancel'))}
+                    >
+                      Cancel job
+                    </Button>
+                  )}
+                  {['failed', 'cancelled', 'interrupted'].includes(j.state) && (
+                    <Button
+                      disabled={w.busy}
+                      onClick={() => void w.run(() => api.job(p.project.id, j.id, 'retry'))}
+                    >
+                      Retry job
+                    </Button>
+                  )}
+                </div>
               </section>
             ))}
           </div>

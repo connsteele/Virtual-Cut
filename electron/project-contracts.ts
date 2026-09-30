@@ -1,5 +1,5 @@
 import type { Model } from './workflow-types.js';
-import type { ExportContainer, ExportPlan, ExportRecord } from './export-contracts.js';
+import type { ExportContainerChoice, ExportPlan, ExportRecord } from './export-contracts.js';
 
 export interface Batch {
   id: string;
@@ -25,6 +25,8 @@ export interface ProjectInfo {
   cache: string;
 }
 export interface MediaJob {
+  started?: string;
+  elapsedMs?: number;
   id: string;
   sourceId: string;
   kind: 'inspect' | 'audio' | 'export';
@@ -87,7 +89,7 @@ export interface ProjectApi {
   relink(id: string, sourceId: string): Promise<ProjectSnapshot | null>;
   audio(id: string, sourceId: string): Promise<ProjectSnapshot>;
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;
-  exportPlan(id: string, clipId: string, container: ExportContainer): Promise<ExportPlan>;
+  exportPlan(id: string, clipId: string, container: ExportContainerChoice): Promise<ExportPlan>;
   exportClip(
     id: string,
     planId: string,

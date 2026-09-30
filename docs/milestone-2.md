@@ -1,8 +1,8 @@
-# Milestone 2 — verified single-clip export (0.3.0)
+# Milestone 2 — verified single-clip export (0.3.1)
 
 ## Delivered slice
 
-Cut's **Export selected clip** and an expanded Review card's **Export clip…** open a range/audio/container review. Choose MP4 or MKV, confirm that the assigned game track has no microphone mixed into it, then choose one new output file. Original video and that audio stream are copied; the output contains exactly one audio stream, as audio track 1. Native validation blocks a missing game track, a shared game/mic track, changed source identities, changed plans, registered-original destinations and the disposable cache.
+Cut's **Export selected clip** and an expanded Review card's **Export clip…** open a range/audio/container review. **Same as source** is the default (MP4, MKV, MOV, M4V or WebM); MP4 and MKV remain explicit alternatives. Unsupported source containers ask for an alternative, with no silent conversion or re-encoding. Confirm that the assigned game track has no microphone mixed into it, then choose one new output file. Original video and that audio stream are copied; the output contains exactly one audio stream, as audio track 1. Native validation blocks a missing game track, a shared game/mic track, changed source identities, changed plans, registered-original destinations and the disposable cache.
 
 The existing review queue is not filed or marked Done by this action. **Exports** shows durable receipts, verified actual ranges, failures, cancellation/retry and native Explorer actions for the video and its `.vcut.json` companion. Receipts are outside editorial Undo and survive restoring older saves; differing current work is labelled **Earlier edits**. Original recordings stay intact.
 
@@ -20,11 +20,12 @@ The implementation follows the documented timestamp options in [FFmpeg](https://
 
 ## Metadata and dates
 
-- Embedded: chapter names and their verified container timestamps. MP4's first QuickTime chapter is anchored to zero; a neutral **Clip start** chapter is inserted when necessary to keep the first real marker from being moved there. It is not an editorial marker in the companion file.
+- Embedded: chapter names and their verified container timestamps. QuickTime containers (MP4, MOV and M4V) anchor their first chapter to zero; a neutral **Clip start** chapter is inserted when necessary to keep the first real marker from being moved there. It is not an editorial marker in the companion file. Connor confirmed chapter names are visible in his regular video player.
 - Companion: schema/version/export identity, clip and original names, intended folder, clip note, recording context, requested/planned/actual range, source identity/path/date, chosen audio, complete in-range marker identities/names/categories/colors/topics/multiline notes, source/clip/container times, output SHA-256 and verification metrics.
 - Only markers inside the actual video range are exported; overlapping clips have independent metadata records. A companion file is not automatically read by Resolve.
 - Date modified follows the established LosslessCut policy: source Date modified + requested clip start. Embedded creation metadata is retained; no capture date is guessed. Explorer's generic Date column and Resolve's dates still require manual review.
-- Existing Resolve research supports MP4/MKV chapter names/times in Studio 21.1. Current-build color, distinct marker-note and clip-note transfer are **unverified**. Portable preservation is implemented; a Resolve metadata helper is not implemented or implied.
+- Connor's current Resolve screenshots show named chapters at matching times, Blue markers and successful initial/reimport behavior for the MP4/MKV proofs. Arbitrary marker-color, marker-note and clip-note transfer remain **unverified**. Portable preservation is implemented; a Resolve metadata helper is not implemented or implied.
+- New markers explicitly default to Blue and immediately enter name editing. Colors use the 16 names in Resolve's installed MarkerColor SDK enum, independently of category. New companion schema version 2 stores both `colorName` and hex color. Legacy version 1 recovery retains its previous serialized category colors; existing verified receipts are not rewritten. Swatches are app representations of the named colors, not measured Resolve UI pixels.
 
 ## Publication and recovery
 
@@ -50,9 +51,20 @@ These automated results verify the implemented copy/timing contract. They do not
 
 ## Remaining M2 work
 
-- Connor's new M201–M207 review checks, keeping unfinished F01–F07 and O01–O05.
-- Manual import of the provided MP4/MKV proofs in a disposable Resolve project: record version, playback, chapter names/times, colors, both kinds of notes, dates and reimport behavior. Decide the default container and whether a bounded metadata helper is needed from that evidence.
+- Connor completed F01–F07 and M201–M206. Preserve these recipes, screenshots and callouts in collapsed Notion history. Retain M207 and O01–O05, plus the targeted 0.3.1 follow-up checks.
+- Complete M207: richer color/note transfer and MKV audio-tail duration presentation. Both older proof files contain exactly 542 video packets and 96 original audio packets. Resolve reports 542 frames for MP4 and 548 for MKV; the retained compressed audio tail ends around 9.127 s, beyond the 9.033 s video range. Container duration interpretation is the likely cause (inference from packets and screenshots), not additional encoded frames or changed A/V timing. Do not mark this gate done until the remaining behavior/metadata workflow is accepted.
 - Reviewed batch names/destinations and real Windows folder filing, collision choices, per-item durable receipts, interruption reconciliation and safe stage cleanup, then one representative real batch. No claim that M2 or production readiness is complete yet.
 - Long-source verification performance and broader unsupported codec/container/time-layout cases. Current packet inspection is bounded at two million media packets; unsupported copies fail explicitly.
 
 Transcription/agents, direct Selects/timeline handoff, and source deletion remain later work. No runtime AI calls or USD tracking are introduced.
+
+## Version 0.3.1 feedback pass — September 29–30, 2026
+
+- Reproduced the reported Cenry failure on a disposable G: copy: AV1 video has a 1/60 clock and FLAC has a 1/48000 clock. A seek derived from the audio packet rounded differently in the video clock, dropping the first retained keyframe. Verification blocked 599 packets where 600 were intended. Seek boundaries now floor to the source video clock before filtering. The exact requested 54.973–64.465 s range verifies at 54.566667–64.566667 s with all 600 video / 105 game-audio packets and a maximum timing error of 1 µs; source hashes remain unchanged. No validation gate was relaxed.
+- Added synthetic 60 Hz AV1/FLAC coverage, MOV/M4V/WebM copies with chapters, default source-container resolution, version-one companion recovery and optional `VIRTUAL_CUT_CENRY_COPY` (G: copy only) coverage in `test:export`. Final coverage, including legacy companion-version detection, passed in `G:\GPT\Work\virtual-cut\m2-feedback\native-LpPTdQ`.
+- Existing export checks passed for B-frames, VFR, timestamp offsets, separate audio, cancellation/retry, collisions and restore/reopen. Real demo MP4/MKV exports retain 542/96 packets, with maximum timing rounding of 55 µs / 0.667 ms. Evidence: `G:\GPT\Work\virtual-cut\m2\native-U1seVd` and `av1-flac-XAr6Rk`.
+- Processing time is recorded per job attempt from execution start, excluding queued time, and retained on success/failure/cancellation. Retry resets it; older receipts show unavailable instead of a guessed duration. Job actions sit on the right; export history has a Time column.
+- Media folder/browser separators support dragging, keyboard arrows and reset, with saved widths and a one-column narrow thumbnail grid. Empty drive/ancestor chains are compacted while real folder paths/counts/filtering are retained. Clip durations sit beside their index. Marker creation focuses/selects its name; a non-marker timeline click clears marker priority.
+- Read-only audit of Connor's output folder confirmed CSC Clip.mp4 and its companion match source Date modified + requested 26.554304 s within 0.696 ms. The other pair, m205.mp4 and companion, match within 0.359 ms. This verifies Date modified, not Explorer's generic Date column. Evidence: `G:\GPT\Work\virtual-cut\m2-feedback\date-audit.json`.
+- M1 feedback regressions passed: `G:\GPT\Work\virtual-cut\m1-feedback\native-p6Lqks` and `ui-n3l9wk`. Export/resizer UI passed: `G:\GPT\Work\virtual-cut\m2\ui-5p7EU6`. Compact/wide screenshots were inspected. Automated results do not tick Connor's new review checks.
+- Portable app: `G:\GPT\Work\virtual-cut\m2-feedback\builds\Virtual-Cut-0.3.1-win-x64-2026-09-30T06-52-02-760Z\Virtual Cut.exe`. Keep the build folder together. Packaged export/resizer UI passed with Windows-only PATH in `G:\GPT\Work\virtual-cut\m2\ui-OsPPaM`; packaged desktop-shell checks passed in `G:\GPT\Work\virtual-cut\m2-feedback\packaged-shell`. These checks exercised the bundled media tools. Build/type checks, lint, formatting and source-folder tests passed.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import type { ExportContainer, ExportPlan } from '../../electron/export-contracts';
+import type { ExportContainerChoice, ExportPlan } from '../../electron/export-contracts';
+import { JobTime } from './JobTime';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
@@ -20,9 +21,7 @@ export function ExportPanel({
 }) {
   const clip = w.model.clips.find((c) => c.id === clipId),
     recording = w.model.recordings.find((r) => r.id === clip?.rid);
-  const [container, setContainer] = useState<ExportContainer>(
-      recording?.sourcePath?.toLowerCase().endsWith('.mkv') ? 'mkv' : 'mp4',
-    ),
+  const [container, setContainer] = useState<ExportContainerChoice>('source'),
     [plan, setPlan] = useState<ExportPlan>(),
     [error, setError] = useState(''),
     [preparing, setPreparing] = useState(true),
@@ -59,12 +58,18 @@ export function ExportPanel({
           value={container}
           disabled={w.busy}
           onChange={(e) => {
-            setContainer(e.target.value as ExportContainer);
+            setContainer(e.target.value as ExportContainerChoice);
             setPlan(undefined);
             setPreparing(true);
             setError('');
           }}
         >
+          <option value="source">
+            Same as source
+            {recording?.sourcePath
+              ? ` (${recording.sourcePath.split('.').at(-1)?.toUpperCase()})`
+              : ''}
+          </option>
           <option value="mp4">MP4</option>
           <option value="mkv">MKV</option>
         </select>
@@ -112,9 +117,10 @@ export function ExportPanel({
         Chapter names and times are embedded in the video. Resolve color and note transfer still
         needs manual review.
       </p>
-      {container === 'mp4' && (
+      {plan && ['mp4', 'mov', 'm4v'].includes(plan.container) && (
         <p className={s.muted}>
-          MP4 may add a neutral “Clip start” chapter so the first real marker keeps its time.
+          {plan.container.toUpperCase()} may add a neutral “Clip start” chapter so the first real
+          marker keeps its time.
         </p>
       )}
       <Button
@@ -162,6 +168,7 @@ export function ExportHistory({
             <tr>
               <th>Clip</th>
               <th>Status / range</th>
+              <th>Time</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -186,6 +193,13 @@ export function ExportHistory({
                     </span>
                   )}
                   <span className={s.muted}>{e.message}</span>
+                </td>
+                <td>
+                  <JobTime
+                    started={e.started}
+                    elapsedMs={e.elapsedMs}
+                    running={e.state === 'running'}
+                  />
                 </td>
                 <td>
                   <div className={s.tools}>

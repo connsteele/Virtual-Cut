@@ -6,6 +6,44 @@ export const colors: Record<Category, string> = {
   Story: '#89b9ee',
   Context: '#b1bdbb',
 };
+// Names/order match Resolve's MarkerColor API. Categories remain independent.
+export const markerColors = {
+  Blue: '#3f80d6',
+  Cyan: '#26bfd0',
+  Green: '#47ad57',
+  Yellow: '#e7d746',
+  Red: '#dc4b4b',
+  Pink: '#e58fb9',
+  Purple: '#964ac3',
+  Fuchsia: '#d44db4',
+  Rose: '#d98e9e',
+  Lavender: '#b6a1db',
+  Sky: '#93c8e6',
+  Mint: '#98d5bd',
+  Lemon: '#ece49d',
+  Sand: '#d6c299',
+  Cocoa: '#987862',
+  Cream: '#e6ddc2',
+} as const;
+export type MarkerColor = keyof typeof markerColors;
+export function markerColorName(marker: Marker): MarkerColor {
+  if (marker.color && Object.hasOwn(markerColors, marker.color)) return marker.color;
+  // Keep legacy category meanings; new markers explicitly start Blue.
+  return (
+    (
+      {
+        Character: 'Lavender',
+        Combat: 'Red',
+        Mechanic: 'Yellow',
+        Story: 'Blue',
+        Context: 'Blue',
+      } as const
+    )[marker.category] || 'Blue'
+  );
+}
+export function markerColor(marker: Marker) {
+  return markerColors[markerColorName(marker)];
+}
 export interface Marker {
   id: string;
   time: number;
@@ -13,6 +51,7 @@ export interface Marker {
   category: Category;
   topic: string;
   note?: string;
+  color?: MarkerColor;
 }
 export interface Clip {
   id: string;
