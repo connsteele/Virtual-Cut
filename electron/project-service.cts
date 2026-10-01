@@ -214,9 +214,10 @@ export class ProjectService {
   private async grant(file: string) {
     const cached = this.grants.get(file);
     if (cached) return cached.url;
+    const projectId = this.store?.data.project.id;
     const access = new VideoAccess((details) =>
       this.diagnostics?.record('media-read-failed', {
-        projectId: this.store?.data.project.id,
+        projectId,
         ...details,
       }),
     );

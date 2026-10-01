@@ -191,6 +191,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
             <div className={s.unavailable} role="alert">
               <strong>Completed preview unavailable</strong>
               <p>{error}</p>
+              {w.error && w.error !== error && <p>{w.error}</p>}
               {attempted && (
                 <Button primary onClick={() => relink(attempted)}>
                   Relink completed video…

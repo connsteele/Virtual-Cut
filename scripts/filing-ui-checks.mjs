@@ -1,6 +1,6 @@
 import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
@@ -73,6 +73,40 @@ try {
     .toBeGreaterThan(0.5);
   await expect(library).toContainText('Range note');
   await capture('library-wide');
+  // A missing completed pair shows a centered relink action. A failed relink
+  // must reveal its specific reason rather than hiding behind the first error.
+  const beforeRelink = await current(),
+    movedClip = beforeRelink.library.find((c) => c.name === 'Second'),
+    otherClip = beforeRelink.library.find((c) => c.name === 'First'),
+    relinkFolder = path.join(dir, 'relinked-library'),
+    relinkFile = path.join(relinkFolder, path.basename(movedClip.output));
+  await mkdir(relinkFolder);
+  await rename(movedClip.output, relinkFile);
+  await rename(movedClip.output + '.vcut.json', relinkFile + '.vcut.json');
+  await page.getByRole('button', { name: 'Preview completed clip: Second', exact: true }).click();
+  await expect(library.getByRole('alert')).toContainText('Completed preview unavailable');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async (_window, options) => {
+      globalThis.relinkPickerRoot = options.defaultPath;
+      return { canceled: false, filePaths: [file] };
+    };
+  }, otherClip.output);
+  await library.getByRole('button', { name: 'Relink completed video…', exact: true }).click();
+  await expect(library.getByRole('alert')).toContainText('does not match');
+  assert.equal(
+    await app.evaluate(() => globalThis.relinkPickerRoot),
+    beforeRelink.project.destination,
+  );
+  await capture('library-relink-error');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, relinkFile);
+  await library.getByRole('button', { name: 'Relink completed video…', exact: true }).click();
+  await expect(library.locator('p', { hasText: 'Finished file' })).toContainText(relinkFile);
+  await expect(library.getByRole('alert')).toHaveCount(0);
+  await expect(
+    library.getByLabel('Library folder').getByRole('option', { name: relinkFolder, exact: true }),
+  ).toHaveCount(1);
   await page.getByLabel('Search completed clips').fill('');
   await nav.getByRole('button', { name: 'Review', exact: true }).click();
   const card = page.locator('[data-card="collision"]');
