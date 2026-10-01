@@ -1,3 +1,5 @@
+import { markerIntersects } from '../../electron/marker-ranges';
+import { adjustMarker, markerTime } from './markerTiming';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Check,
@@ -104,6 +106,7 @@ function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
 }
 function MarkerEditor({
   marks,
+  recording,
   onChange,
   onDelete,
   onSeek,
@@ -116,10 +119,11 @@ function MarkerEditor({
   onConfirm,
 }: {
   marks: Marker[];
+  recording: Recording;
   onChange: (id: string, patch: Partial<Marker>) => void;
   onDelete: (id: string) => void;
   onSeek: (t: number) => void;
-  onAdd: () => void;
+  onAdd: (range?: boolean) => void;
   terms: Model['terms'];
   canAdd?: boolean;
   selectedId: string;
@@ -172,6 +176,7 @@ function MarkerEditor({
                 ◆{' '}
                 <span>
                   {m.category} · {time(m.time)}
+                  {m.end != null ? ` – ${time(m.end)} (${time(m.end - m.time)})` : ''}
                 </span>
               </button>
               <select
@@ -195,6 +200,76 @@ function MarkerEditor({
               value={m.name}
               onChange={(e) => onChange(m.id, { name: e.target.value })}
             />
+            <div className={s.markerTiming}>
+              <label>
+                Start
+                <input
+                  key={`start:${m.time}`}
+                  type="number"
+                  aria-label="Marker start"
+                  min={0}
+                  max={recording.duration}
+                  step={1 / (recording.fps || 30)}
+                  defaultValue={Number(m.time.toFixed(3))}
+                  onBlur={(e) => {
+                    if (
+                      e.currentTarget.value.trim() &&
+                      Number.isFinite(e.currentTarget.valueAsNumber)
+                    )
+                      onChange(
+                        m.id,
+                        adjustMarker(
+                          recording,
+                          m,
+                          m.end == null ? 'move' : 'start',
+                          e.currentTarget.valueAsNumber,
+                        ),
+                      );
+                    e.currentTarget.value = String(m.time);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                  }}
+                />
+              </label>
+              {m.end != null ? (
+                <label>
+                  End
+                  <input
+                    key={`end:${m.end}`}
+                    type="number"
+                    aria-label="Marker end"
+                    min={m.time}
+                    max={recording.duration}
+                    step={1 / (recording.fps || 30)}
+                    defaultValue={Number(m.end.toFixed(3))}
+                    onBlur={(e) => {
+                      if (
+                        e.currentTarget.value.trim() &&
+                        Number.isFinite(e.currentTarget.valueAsNumber)
+                      )
+                        onChange(
+                          m.id,
+                          adjustMarker(recording, m, 'end', e.currentTarget.valueAsNumber),
+                        );
+                      e.currentTarget.value = String(m.end);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
+                  />
+                </label>
+              ) : (
+                <Button
+                  onClick={() => onChange(m.id, adjustMarker(recording, m, 'extend', m.time + 1))}
+                >
+                  Make range
+                </Button>
+              )}
+            </div>
+            {m.end != null && (
+              <Button onClick={() => onChange(m.id, { end: undefined })}>Make point marker</Button>
+            )}
             <textarea
               aria-label="Marker note"
               placeholder="Note (optional)"
@@ -243,11 +318,14 @@ function MarkerEditor({
         ))}
       {!marks.length && <p className={s.muted}>No markers in this clip.</p>}
       <Button
-        onClick={onAdd}
+        onClick={() => onAdd()}
         disabled={!canAdd}
         title={!canAdd ? 'Wait for playable footage to add a timed marker' : undefined}
       >
         <Plus size={15} /> Marker
+      </Button>
+      <Button onClick={() => onAdd(true)} disabled={!canAdd}>
+        <Plus size={15} /> Range marker
       </Button>
     </section>
   );
@@ -593,6 +671,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       setRenameMarkerId('');
     }
   }, [renameMarkerId, model.markers]);
+  const selectedMarkerTiming = mid
+    ? Object.values(model.markers)
+        .flat()
+        .find((m) => m.id === mid)
+    : undefined;
+  const inspectorTrackingKey = `${page}:${mid || cid}:${selectedMarkerTiming?.time}:${selectedMarkerTiming?.end}`;
   useEffect(() => {
     const id = mid || cid;
     if (!id || page !== 'cut') return;
@@ -616,7 +700,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         behavior:
           mid || matchMedia('(prefers-reduced-motion:reduce)').matches ? 'instant' : 'smooth',
       });
-  }, [cid, mid, page, model.markers]);
+    // Source position updates must not pull the inspector away from manual scrolling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspectorTrackingKey]);
   useEffect(() => {
     if (!deleteClipId && !deleteMarkerId) return;
     document
@@ -782,9 +868,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     if (mid === id) setMid('');
     setDeleteMarkerId('');
   }
-  function addMarker(recordId = r.id) {
+  function addMarker(recordId = r.id, range = false) {
     if (project && !canEdit) return;
-    const position = transport.current?.current() || 0,
+    const recording = model.recordings.find((x) => x.id === recordId)!;
+    const position = markerTime(recording, transport.current?.current() || 0),
       id = uid();
     setModel((m) => ({
       ...m,
@@ -795,7 +882,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           {
             id,
             time: position,
-            name: 'New marker',
+            ...(range ? { end: Math.min(recording.duration, position + 1) } : {}),
+            name: range ? 'New range marker' : 'New marker',
             category: 'Context' as const,
             color: 'Blue' as const,
             topic: '',
@@ -1023,7 +1111,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
       if (page === 'cut' && ['q', 'w', 'm', 's'].includes(k)) {
         e.preventDefault();
-        if (k === 'm') addMarker();
+        if (k === 'm') addMarker(r.id, e.shiftKey);
         else if (k === 's') split();
         else trim(k === 'q' ? 'start' : 'end');
       }
@@ -1125,9 +1213,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         selectedId={mid ? undefined : cid}
         selectedMarkerId={mid}
         onMarkerSelect={(id) => selectMarker(id, record.id)}
-        onMarkerMove={(id, time) => {
+        onMarkerMove={(id, time, end) => {
           markerSeek.current = time;
-          editMarker(id, { time }, record.id);
+          editMarker(id, { time, end }, record.id);
         }}
         onMarkerDeselect={() => {
           setMid('');
@@ -1214,8 +1302,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const markerEditor = (recordId: string, clip?: Clip) => (
     <MarkerEditor
       marks={(model.markers[recordId] || []).filter(
-        (m) => !clip || (m.time >= clip.start && m.time < clip.end),
+        (m) => !clip || markerIntersects(m, clip.start, clip.end),
       )}
+      recording={model.recordings.find((r) => r.id === recordId)!}
       terms={model.terms}
       canAdd={!project || canEdit}
       selectedId={mid}
@@ -1234,7 +1323,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         transport.current?.command('pause');
         transport.current?.seek(t);
       }}
-      onAdd={() => addMarker(recordId)}
+      onAdd={(range) => addMarker(recordId, range)}
     />
   );
   const destinationIssues = project ? localDestinationIssues(model) : {};
@@ -2620,7 +2709,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   'H',
                   'Manipulate on Cut: drag clip edges to trim or circular markers to move; Left/Right nudges a focused marker',
                 ],
-                ['M', 'Create a Blue marker and name it'],
+                ['M / Shift+M', 'Create a Blue point / range marker and name it'],
                 ['R', 'Rename selected clip or marker (selects its name)'],
                 ['Backspace', 'Request deletion of selected clip or marker'],
                 ['Enter / Escape', 'Confirm / cancel deletion'],

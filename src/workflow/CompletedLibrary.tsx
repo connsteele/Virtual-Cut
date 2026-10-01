@@ -1,3 +1,4 @@
+import { retainedMemory } from './useFilmstrip';
 import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, Link2 } from 'lucide-react';
 import type { RetainedClip } from '../../electron/export-contracts';
@@ -27,6 +28,10 @@ export function CompletedLibrary({
   const p = w.snapshot!,
     clips = p.library || [],
     folders = [...new Set(clips.map((c) => c.folder))].sort();
+  useEffect(() => {
+    retainedMemory.sync(p.project.id, []);
+    return () => retainedMemory.sync('', []);
+  }, [p.project.id]);
   useEffect(
     () => () => {
       request.current++;
@@ -299,7 +304,8 @@ export function CompletedLibrary({
                       >
                         <strong>{m.name}</strong>
                         <span>
-                          {time(m.time)} · {m.category}
+                          {time(m.time)}
+                          {m.end != null ? ` – ${time(m.end)}` : ''} · {m.category}
                         </span>
                         {m.note && <span className={s.note}>{m.note}</span>}
                       </button>

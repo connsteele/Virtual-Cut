@@ -165,12 +165,13 @@ export function validateEdits(model: Model): Model {
         !text(m.name, 10000) ||
         !r ||
         !validTime(m.time, r) ||
+        (m.end != null && (!validTime(m.end, r) || micro(m.end) <= micro(m.time))) ||
         !['Character', 'Combat', 'Mechanic', 'Story', 'Context'].includes(m.category) ||
         !text(m.note || '')
       )
         throw new Error('Invalid marker.');
       seen.add(m.id);
-      return { ...m, time: micro(m.time) };
+      return { ...m, time: micro(m.time), ...(m.end != null ? { end: micro(m.end) } : {}) };
     });
   }
   for (const r of model.recordings) {

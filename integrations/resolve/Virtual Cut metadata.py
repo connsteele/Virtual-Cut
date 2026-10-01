@@ -41,7 +41,7 @@ def load_companion(media_path):
         raise ValueError('Companion metadata is too large.')
     with open(companion_path, encoding='utf-8') as handle:
         data = json.load(handle)
-    if data.get('schema') != 'virtual-cut-export' or data.get('version') not in (1, 2, 3):
+    if data.get('schema') != 'virtual-cut-export' or data.get('version') not in (1, 2, 3, 4):
         raise ValueError('Choose a Virtual Cut export companion.')
     if not re.fullmatch(r'[a-fA-F0-9-]{36}', data.get('exportId', '')):
         raise ValueError('Companion export identity is invalid.')
@@ -81,6 +81,14 @@ def plan_markers(data, fps, existing):
             raise ValueError('A companion marker has invalid identity, timing or text.')
         ids.add(marker_id)
         expected = math.floor(seconds * fps + 1e-7)
+        marker_duration = 1
+        if marker.get('end') is not None:
+            end_seconds = marker.get('containerEnd')
+            if data.get('version', 1) < 4 or not isinstance(end_seconds, (float, int)) or not math.isfinite(end_seconds) or end_seconds <= seconds or end_seconds > duration + data['verified'].get('videoStart', 0) + .002:
+                raise ValueError('A range marker has invalid end timing.')
+            if not cfr:
+                conflicts.append(name + ': range duration needs verified constant frame timing.'); continue
+            marker_duration = max(1, math.floor(end_seconds * fps + 1e-7) - expected)
         owned = [(frame, value) for frame, value in existing.items()
                  if ownership(value) and ownership(value).get('export') == export_id and ownership(value).get('marker') == marker_id]
         candidates = [(frame, value) for frame, value in existing.items()
@@ -109,7 +117,7 @@ def plan_markers(data, fps, existing):
         reserved[frame] = marker_id
         if old is None and frame in existing:
             conflicts.append(name + ': another marker occupies the target frame.'); continue
-        target = {'name': name, 'note': note, 'color': color, 'duration': 1}
+        target = {'name': name, 'note': note, 'color': color, 'duration': marker_duration}
         target['customData'] = PREFIX + json.dumps({'export': export_id, 'marker': marker_id,
                                                   'signature': digest(fields(target, frame))}, sort_keys=True)
         if old and fields(old, frame) == fields(target, frame) and old.get('customData') == target['customData']:
@@ -118,7 +126,7 @@ def plan_markers(data, fps, existing):
                         'action': 'Enrich chapter' if old else 'Add marker'})
     # Version 3 explicitly identifies the muxer's leading chapter. Never infer
     # ownership from a title alone, or delete a genuine/user-edited marker.
-    generated = data.get('generatedChapters', []) if data.get('version') == 3 else []
+    generated = data.get('generatedChapters', []) if data.get('version', 1) >= 3 else []
     if generated == [{'name': 'Clip start', 'containerTime': 0, 'purpose': 'quicktime-leading-anchor'}] and data['markers'] and all(m.get('containerTime', m.get('clipTime', 0)) * fps >= 1 for m in data['markers']):
         anchor = existing.get(0)
         if anchor and fields(anchor, 0) == {'frame': 0.0, 'name': 'Clip start', 'note': '', 'color': 'Blue', 'duration': 1} and not anchor.get('customData'):
@@ -194,7 +202,7 @@ def show_window(resolve, bmd):
     dispatcher = bmd.UIDispatcher(ui)
     window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 850, 600]}, ui.VGroup([
         ui.Label({'Text': 'Select imported videos in the Media Pool, then check the plan. Companions must sit beside their videos.', 'WordWrap': True, 'Weight': 0}),
-        ui.Label({'Text': 'Only marker names, notes and colors are applied. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
+        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
         ui.TextEdit({'ID': 'Plan', 'ReadOnly': True, 'PlainText': 'No plan checked yet.'}),
         ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0}),
         ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply marker metadata', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
@@ -220,7 +228,7 @@ def show_window(resolve, bmd):
                     target = change['after']
                     if target is None:
                         lines.append('  ' + change['action'] + ' at frame ' + str(change['frame'])); continue
-                    lines.append('  ' + change['action'] + ' at frame ' + str(change['frame']) + ': ' + target['name'] + ' [' + target['color'] + ']\n    ' + target['note'].replace('\n', '\n    '))
+                    lines.append('  ' + change['action'] + ' at frame ' + str(change['frame']) + ': ' + target['name'] + ' (' + str(target['duration']) + ' frames) [' + target['color'] + ']\n    ' + target['note'].replace('\n', '\n    '))
                 for conflict in plan['conflicts']:
                     errors.append(conflict); lines.append('  CONFLICT: ' + conflict)
                 if not plan['changes'] and not plan['conflicts']:

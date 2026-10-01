@@ -52,6 +52,14 @@ Connor passed M243–M245 save review and M246–M248 core workflows. The [0.3.1
 
 ## Library preview parity — 0.3.17
 
+### Version 0.3.18 refinements
+
+Library reuses visited full overviews within its bounded in-memory image store; zoom-detail images are discarded when leaving that view. Native verified-output indices/peaks reuse up to six outputs / 8 MiB serialized estimate. Image accounting is bounded at 192 tiles / approximately 24 MiB, not a total process/GPU memory guarantee. Finished pairs are still verified on every selection. Leaving Library or changing projects clears thumbnail memory. Automatic pre-generation during filing remains deferred for measurement.
+
+Version 4 companions preserve each range marker's original source start/end and its clipped extent inside the actual outward export. Library uses the clipped extent. Update the Resolve helper to transfer durations using verified constant-frame-rate evidence; unverified variable-rate ranges and markers sharing a start frame report conflicts. Existing user-edited durations remain protected. Embedded chapters only provide names/start navigation, so overlapping range semantics remain in the companion and explicit helper step. Live Resolve range acceptance remains M271.
+
+### Original preview preparation
+
 Library indexes the verified completed output, including when the original is offline. Keyframe thumbnails use the bounded in-memory filmstrip pipeline and share the normal zoom/keyframe controls. A single game-audio waveform comes from the finished audio stream, with Off/Overlay/Replace controls; playback uses the file's embedded audio. No unavailable microphone selector is shown. Silent and no-audio files are handled explicitly.
 
 The session index and at most 2049 audio peak values stay in memory. No PCM or image sequence is written, and nothing is added to project saves. Native cancellation and renderer URL cleanup run on selection/page/project changes. The first preparation scans the file and can take time on long clips; playback remains available during preparation.

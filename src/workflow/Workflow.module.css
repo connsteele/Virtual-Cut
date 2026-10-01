@@ -1872,3 +1872,20 @@
 .handoffPage > h3 {
   margin-block: 16px;
 }
+
+.markerTiming {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.markerTiming label {
+  min-width: 0;
+  color: var(--muted);
+}
+.markerTiming input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 5px;
+}

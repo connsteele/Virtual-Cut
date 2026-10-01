@@ -136,7 +136,7 @@ async function copy(file, start, end, container, label) {
   assert.equal(done.state, 'verified');
   assert(done.elapsedMs > 0 && done.started);
   const receipt = JSON.parse(await readFile(done.metadata, 'utf8'));
-  assert.equal(receipt.version, 3);
+  assert.equal(receipt.version, 4);
   assert.equal(receipt.markers[0].colorName, 'Blue');
   assert.equal(receipt.markers[0].color, '#3f80d6');
   assert.equal(receipt.markers[0].note, 'Portable note');

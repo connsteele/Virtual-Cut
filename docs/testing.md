@@ -1,6 +1,6 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.17 has eight fast, twelve native and fourteen desktop scripts. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.18 has eight fast, thirteen native and fifteen desktop scripts (36 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 | Command                                                       | Gate                                                                                                                                                          |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,6 +35,10 @@ The Resolve helper has Python reconciliation/rollback/ownership tests and a nati
 ## Version 0.3.16 additions
 
 The eighth fast script checks date/name sorting, both grouping modes, deterministic/missing dates, multiple completed revisions, current Done location selection and draft preservation. Review and Library desktop gates exercise global interleaved groups, unchanged saved edits, verified external relink and reopen, stable focused typing/viewer identity during regrouping, native Explorer paths and wide/compact Handoff controls. Native helper checks cover missing/unmanaged/current/outdated/customized states, update backups, confirmed owned removal, invalid ownership metadata and link/directory preservation; Python reconciliation tests remain included. Code coverage measurement stays separate under VC-50.
+
+## Version 0.3.18 additions
+
+Two maintained scripts cover range marker native persistence/export and real Electron interaction/layout. Existing marker tests cover movement, clipping and overlap lanes; helper tests include duration conversion, idempotency, user-edited duration protection and explicit variable-rate conflicts. Filing checks measure verified preview revisit reuse; Library UI asserts reuse of the same overview URL after a clip switch. Native/export checks verify version 4 companions and legacy receipt compatibility. See [0.3.18 review notes](review-0.3.18.md) for manual acceptance boundaries.
 
 ## Version 0.3.17 additions
 

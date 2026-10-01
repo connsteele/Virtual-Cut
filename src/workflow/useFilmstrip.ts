@@ -7,7 +7,7 @@ import {
   filmstripTiles,
 } from './filmstripMemory';
 
-const retainedMemory = new FilmstripMemory();
+export const retainedMemory = new FilmstripMemory();
 
 export function useFilmstrip(
   recording: Recording,
@@ -27,8 +27,8 @@ export function useFilmstrip(
   const [error, setError] = useState('');
   useEffect(() => {
     if (!recording.retained) return;
-    retainedMemory.sync(projectId || '', [recording]);
-    return () => retainedMemory.sync('', []);
+    retainedMemory.retain(projectId || '', recording);
+    return () => retainedMemory.releaseDetails(source);
     // The source key includes all preview identity fields.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
@@ -58,6 +58,7 @@ export function useFilmstrip(
       alive = false;
       clearTimeout(timer);
       void api.cancelFilmstrip(projectId!, request).catch(() => {});
+      if (recording.retained && !overview) memory.releaseDetails(source);
     };
   }, [
     memory,
@@ -68,6 +69,7 @@ export function useFilmstrip(
     ready,
     projectId,
     recording.id,
+    recording.retained,
     suspended,
     hidden,
     overview,

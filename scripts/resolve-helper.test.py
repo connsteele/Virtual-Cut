@@ -78,6 +78,23 @@ class Tests(unittest.TestCase):
         self.data['markers'] = []; self.save()
         self.assertEqual(helper.plan_clip(Item(self.file, self.old))['changes'], [])
 
+    def test_range_duration_idempotence_and_conflict(self):
+        self.data['version'] = 4
+        self.data['markers'][0].update(end=8, containerEnd=2.554444, duration=2)
+        self.save()
+        item = Item(self.file, self.old)
+        plan = helper.plan_clip(item)
+        self.assertFalse(plan['conflicts'])
+        helper.apply_clip(plan)
+        self.assertEqual(item.markers[33]['duration'], 120)
+        self.assertEqual(helper.plan_clip(item)['changes'], [])
+        item.markers[33]['duration'] = 119
+        self.assertTrue(helper.plan_clip(item)['conflicts'])
+        del self.data['verified']['constantFrameDuration']; self.save()
+        self.assertTrue(helper.plan_clip(Item(self.file, self.old))['conflicts'])
+        self.data['markers'][0]['containerEnd'] = -1; self.save()
+        with self.assertRaisesRegex(ValueError, 'end timing'): helper.plan_clip(Item(self.file, self.old))
+
     def test_conflicts_and_stale_plan(self):
         item = Item(self.file, self.old)
         item.markers[33]['note'] = 'User note'

@@ -4,6 +4,7 @@ import { conceptGroup, references, uid, type Model, type Term, type Note } from 
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
 import { FolderGraph, type GraphNode as Node } from './FolderGraph';
+import { markerIntersects } from '../../electron/marker-ranges';
 export function Library({
   model: m,
   setModel,
@@ -74,7 +75,7 @@ export function Library({
         ...m.recordings.flatMap((r) =>
           (m.markers[r.id] || []).flatMap((x) => {
             const clips = m.clips.filter(
-              (c) => c.rid === r.id && x.time >= c.start && x.time < c.end,
+              (c) => c.rid === r.id && markerIntersects(x, c.start, c.end),
             );
             return [
               { from: x.topic, to: x.id, label: 'labels' },
@@ -211,8 +212,7 @@ export function Library({
                   matches({ id: c.id, name: c.name, kind: 'Clip' }) ||
                   m.markers[c.rid]?.some(
                     (x) =>
-                      x.time >= c.start &&
-                      x.time < c.end &&
+                      markerIntersects(x, c.start, c.end) &&
                       matches({ id: x.topic, name: x.name, kind: 'Marker' }),
                   ),
               )

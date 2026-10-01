@@ -16,7 +16,7 @@ import { fitViewport, zoomViewport, type TimelineViewport } from './timelineView
 import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-react';
 import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
-import { markerTime } from './markerTiming';
+import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
 
 export function Timeline({
   recording,
@@ -62,7 +62,7 @@ export function Timeline({
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
   onMarkerDeselect?: () => void;
-  onMarkerMove?: (id: string, time: number) => void;
+  onMarkerMove?: (id: string, time: number, end?: number) => void;
   waveMode?: 'off' | 'overlay' | 'replace';
   audioTracks?: AudioTrack[];
   handleMode?: boolean;
@@ -76,12 +76,17 @@ export function Timeline({
   const markerDrag = useRef<{
     marker: Marker;
     x: number;
-    value: number;
+    value: { time: number; end?: number };
+    edge: 'move' | 'start' | 'end' | 'extend';
     pointer: number;
     recording: string;
     moved: boolean;
   } | null>(null);
-  const [markerPreview, setMarkerPreview] = useState<{ id: string; time: number } | null>(null);
+  const [markerPreview, setMarkerPreview] = useState<{
+    id: string;
+    time: number;
+    end?: number;
+  } | null>(null);
   const drag = useRef<{
     id: string;
     edge: 'start' | 'end';
@@ -200,6 +205,12 @@ export function Timeline({
   const displayClip = (c: Clip) =>
     preview?.id === c.id ? { ...c, [preview.edge]: preview.value } : c;
   const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
+  const markerLayout = layoutMarkers(
+    markers.map((m) => (markerPreview?.id === m.id ? { ...m, ...markerPreview } : m)),
+    start,
+    end,
+    width,
+  );
   const percent = (t: number) => `${100 * Math.max(0, Math.min(1, (t - start) / span))}%`;
   // Fill the visible range with bounded tiles; native previews use its nearest keyframes.
   const count = Math.max(1, Math.min(31, Math.ceil(width / 120)));
@@ -231,20 +242,23 @@ export function Timeline({
     if (!d || (!d.moved && Math.abs(x - d.x) < 3)) return;
     d.moved = true;
     const width = track.current!.getBoundingClientRect().width;
-    d.value = markerTime(
-      recording,
-      Math.max(fullStart, Math.min(fullEnd, d.marker.time + ((x - d.x) / width) * span)),
-    );
-    setMarkerPreview({ id: d.marker.id, time: d.value });
-    onSeek(d.value);
+    const origin = d.edge === 'end' ? d.marker.end! : d.marker.time;
+    d.value = adjustMarker(recording, d.marker, d.edge, origin + ((x - d.x) / width) * span);
+    setMarkerPreview({ id: d.marker.id, ...d.value });
+    onSeek(d.edge === 'end' ? d.value.end! : d.value.time);
   }
   function finishMarker(commit: boolean) {
     const d = markerDrag.current;
     if (!d) return;
     markerDrag.current = null;
     setMarkerPreview(null);
-    if (commit && d.moved && d.recording === recording.id && d.value !== d.marker.time)
-      onMarkerMove?.(d.marker.id, d.value);
+    if (
+      commit &&
+      d.moved &&
+      d.recording === recording.id &&
+      (d.value.time !== d.marker.time || d.value.end !== d.marker.end)
+    )
+      onMarkerMove?.(d.marker.id, d.value.time, d.value.end);
     onTrimActive?.(false);
   }
   function trimTime(c: Clip, edge: 'start' | 'end', value: number, step?: number) {
@@ -361,7 +375,9 @@ export function Timeline({
         onPointerDown={(e) => {
           if (
             e.button !== 0 ||
-            (e.target as HTMLElement).closest('[data-marker],[data-clip-handle]')
+            (e.target as HTMLElement).closest(
+              '[data-marker],[data-marker-range],[data-clip-handle]',
+            )
           )
             return;
           e.preventDefault();
@@ -439,70 +455,116 @@ export function Timeline({
           <span>{span < 10 ? time(start + span / 2) : short(start + span / 2)}</span>
           <span>{span < 10 ? time(end) : short(end)}</span>
         </div>
-        <div className={s.markerLane} aria-label="Timeline markers">
-          {markers
-            .map((m) => (markerPreview?.id === m.id ? { ...m, time: markerPreview.time } : m))
-            .filter((m) => m.time >= start && m.time < end)
-            .map((m) => (
+        <div
+          className={s.markerLane}
+          aria-label="Timeline markers"
+          style={{ height: markerLayout.lanes * 26 }}
+        >
+          {markerLayout.items.map(({ marker: m, lane }) => {
+            const range = m.end != null;
+            const controls = (edge: 'move' | 'start' | 'end') => ({
+              onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+                if (!handleMode || !trimEnabled || !onMarkerMove || e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.focus({ preventScroll: true });
+                onTrimActive?.(true);
+                onMarkerSelect?.(m.id);
+                onSeek(m.time);
+                markerDrag.current = {
+                  marker: m,
+                  x: e.clientX,
+                  value: { time: m.time, end: m.end },
+                  edge: !range && e.shiftKey ? 'extend' : edge,
+                  pointer: e.pointerId,
+                  recording: recording.id,
+                  moved: false,
+                };
+                track.current!.setPointerCapture(e.pointerId);
+              },
+              onKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>) => {
+                if (
+                  !handleMode ||
+                  !trimEnabled ||
+                  !onMarkerMove ||
+                  e.ctrlKey ||
+                  e.metaKey ||
+                  e.altKey ||
+                  !['ArrowLeft', 'ArrowRight'].includes(e.key)
+                )
+                  return;
+                e.preventDefault();
+                e.stopPropagation();
+                const direction = e.key === 'ArrowRight' ? 1 : -1;
+                const origin = edge === 'end' ? m.end! : m.time;
+                const value = e.shiftKey
+                  ? origin + direction
+                  : markerTime(recording, origin, direction);
+                const next = adjustMarker(recording, m, edge, value);
+                onMarkerSelect?.(m.id);
+                onSeek(edge === 'end' ? next.end! : next.time);
+                onMarkerMove(m.id, next.time, next.end);
+              },
+              onClick: () => {
+                onMarkerSelect?.(m.id);
+                onSeek(m.time);
+              },
+            });
+            return range ? (
+              <div
+                key={m.id}
+                data-marker-range={m.id}
+                data-selected={m.id === selectedMarkerId}
+                data-manipulate={handleMode}
+                className={s.markerRange}
+                style={{
+                  left: percent(m.time),
+                  width: `${(100 * (Math.min(end, m.end!) - Math.max(start, m.time))) / span}%`,
+                  top: lane * 26,
+                  color: markerColor(m),
+                }}
+              >
+                <button
+                  {...controls('move')}
+                  data-marker={m.id}
+                  className={s.rangeBody}
+                  aria-label={`Seek to marker: ${m.name}`}
+                  aria-pressed={m.id === selectedMarkerId}
+                  title={`${m.name} · ${time(m.time)} – ${time(m.end!)} · ${time(m.end! - m.time)}${handleMode ? ' · Drag to move range' : ''}`}
+                >
+                  <span>{m.name}</span>
+                </button>
+                {(['start', 'end'] as const).map((edge) => (
+                  <button
+                    key={edge}
+                    {...controls(edge)}
+                    className={`${s.rangeEdge} ${edge === 'start' ? s.rangeStart : s.rangeEnd}`}
+                    disabled={handleMode && !trimEnabled}
+                    data-marker-edge={edge}
+                    aria-label={`Marker ${edge}: ${m.name}`}
+                    title={`${edge === 'start' ? 'Start' : 'End'} · ${time(edge === 'start' ? m.time : m.end!)}${handleMode ? ' · Drag to resize' : ''}`}
+                  >
+                    <span />
+                  </button>
+                ))}
+              </div>
+            ) : (
               <button
                 key={m.id}
+                {...controls('move')}
                 data-marker={m.id}
                 data-manipulate={handleMode}
                 className={s.marker}
-                style={{ left: percent(m.time), color: markerColor(m) }}
-                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag or use Left/Right to move' : ''}`}
+                style={{ left: percent(m.time), top: lane * 26, color: markerColor(m) }}
+                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag to move; Shift-drag to make a range' : ''}`}
                 aria-label={`Seek to marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}
                 aria-disabled={handleMode && !trimEnabled}
-                onPointerDown={(e) => {
-                  if (!handleMode || !trimEnabled || !onMarkerMove || e.button !== 0) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.currentTarget.focus({ preventScroll: true });
-                  onTrimActive?.(true);
-                  onMarkerSelect?.(m.id);
-                  onSeek(m.time);
-                  markerDrag.current = {
-                    marker: m,
-                    x: e.clientX,
-                    value: m.time,
-                    pointer: e.pointerId,
-                    recording: recording.id,
-                    moved: false,
-                  };
-                  track.current!.setPointerCapture(e.pointerId);
-                }}
-                onKeyDown={(e) => {
-                  if (
-                    !handleMode ||
-                    !trimEnabled ||
-                    !onMarkerMove ||
-                    e.ctrlKey ||
-                    e.metaKey ||
-                    e.altKey ||
-                    !['ArrowLeft', 'ArrowRight'].includes(e.key)
-                  )
-                    return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const direction = e.key === 'ArrowRight' ? 1 : -1;
-                  const value = markerTime(
-                    recording,
-                    e.shiftKey ? m.time + direction : m.time,
-                    e.shiftKey ? 0 : direction,
-                  );
-                  onMarkerSelect?.(m.id);
-                  onSeek(value);
-                  onMarkerMove(m.id, value);
-                }}
-                onClick={() => {
-                  onMarkerSelect?.(m.id);
-                  onSeek(m.time);
-                }}
               >
                 <span />
               </button>
-            ))}
+            );
+          })}
         </div>
         <div
           className={s.filmstrip}

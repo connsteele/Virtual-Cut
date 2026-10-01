@@ -1,3 +1,4 @@
+import { markerIntersects } from '../../electron/marker-ranges';
 import folders from './sample-folders.json';
 import demoRecordings from './demo-recordings.json';
 export * from '../../electron/workflow-types';
@@ -215,7 +216,7 @@ export function migrateModel(saved: Model): Model {
   };
 }
 export function reviewChanges(model: Model, clip: Clip) {
-  const within = (m: Marker) => m.time >= clip.start && m.time < clip.end;
+  const within = (m: Marker) => markerIntersects(m, clip.start, clip.end);
   const before = (model.markerBaseline?.[clip.rid] || []).filter(within);
   const after = (model.markers[clip.rid] || []).filter(within);
   const ids = new Set([...before, ...after].map((m) => m.id));

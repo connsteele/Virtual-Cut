@@ -1,3 +1,4 @@
+import { markerIntersects } from './marker-ranges.js';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -24,6 +25,7 @@ interface Stream {
   codec_type: string;
   codec_name: string;
   time_base: string;
+  r_frame_rate?: string;
   disposition?: { attached_pic?: number };
 }
 interface Packet {
@@ -222,10 +224,15 @@ function verify(
   )
     throw new Error('Verified output would omit part of the requested clip.');
   const presented = [...expected].sort((a, b) => a.pts - b.pts);
-  const frameDuration = presented[0].duration;
+  const rate = (video.r_frame_rate || '').split('/').map(Number);
+  const nominal =
+    rate.length === 2 && rate[0] > 0 && rate[1] > 0 ? rate[1] / rate[0] : presented[0].duration;
+  const frameDuration = (record.annotationVersion ?? 1) >= 4 ? nominal : presented[0].duration;
   const uniform = presented.every(
     (p, i) =>
       Math.abs(p.duration - frameDuration) <= tick(video) + 0.000002 &&
+      ((record.annotationVersion ?? 1) < 4 ||
+        Math.abs(p.pts - presented[0].pts - i * frameDuration) <= tick(video) + 0.000002) &&
       (!i || Math.abs(p.pts - presented[i - 1].pts - frameDuration) <= tick(video) + 0.000002),
   );
   return {
@@ -246,19 +253,34 @@ function escapeMetadata(s: string) {
 }
 function chapters(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
   const markers = record.input.markers
-    .filter((m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end)
+    .filter((m) =>
+      (record.annotationVersion ?? 1) >= 4
+        ? markerIntersects(m, v.actual.start, v.actual.end)
+        : m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
+    )
     .sort((a, b) => a.time - b.time);
-  const entries = markers.map((m) => ({
+  let entries: { start: number; name: string; generated?: boolean }[] = markers.map((m) => ({
     start: Math.max(
       0,
-      Math.round((m.time + record.input.sourceStart + v.timestampShift) * 1000000),
+      Math.round(
+        ((m.end != null ? Math.max(m.time, v.actual.start) : m.time) +
+          record.input.sourceStart +
+          v.timestampShift) *
+          1000000,
+      ),
     ),
     name: m.name,
   }));
+  // Chapters cannot express overlapping ranges or two identities at one start.
+  // Keep every marker in the companion; a single chapter is only a navigation hint.
+  if ((record.annotationVersion ?? 1) >= 4)
+    entries = entries.filter(
+      (entry, index) => index === 0 || entry.start !== entries[index - 1].start,
+    );
   // QuickTime chapter tracks assign their first chapter to zero. A neutral
   // leading chapter prevents the first real annotation from being retimed.
   if (quickTime(record.plan.container) && entries.length && entries[0].start > 0)
-    entries.unshift({ start: 0, name: 'Clip start' });
+    entries.unshift({ start: 0, name: 'Clip start', generated: true });
   return entries;
 }
 function metadataText(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
@@ -338,7 +360,7 @@ export async function exportClip(
     ...record,
     started: new Date().toISOString(),
     elapsedMs: 0,
-    annotationVersion: record.annotationVersion ?? (record.verification ? 1 : 3),
+    annotationVersion: record.annotationVersion ?? (record.verification ? 1 : 4),
   };
   const elapsedMs = () => Math.round(performance.now() - began);
   if (
@@ -647,25 +669,47 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
         context: input.context,
         ...((record.annotationVersion ?? 1) >= 3
           ? {
-              generatedChapters:
-                chapters(record, v).length >
-                input.markers.filter(
-                  (m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
-                ).length
-                  ? [{ name: 'Clip start', containerTime: 0, purpose: 'quicktime-leading-anchor' }]
-                  : [],
+              generatedChapters: (
+                (record.annotationVersion ?? 1) >= 4
+                  ? chapters(record, v).some((chapter) => chapter.generated)
+                  : chapters(record, v).length >
+                    input.markers.filter((m) =>
+                      (record.annotationVersion ?? 1) >= 4
+                        ? markerIntersects(m, v.actual.start, v.actual.end)
+                        : m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
+                    ).length
+              )
+                ? [{ name: 'Clip start', containerTime: 0, purpose: 'quicktime-leading-anchor' }]
+                : [],
             }
           : {}),
         markers: input.markers
-          .filter((m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end)
+          .filter((m) =>
+            (record.annotationVersion ?? 1) >= 4
+              ? markerIntersects(m, v.actual.start, v.actual.end)
+              : m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
+          )
           .map((m) => ({
             ...m,
             ...((record.annotationVersion ?? 1) >= 2
               ? { colorName: markerColorName(m), color: markerColor(m) }
               : { color: colors[m.category] }),
             sourceTime: m.time,
-            clipTime: m.time - v.actual.start,
-            containerTime: m.time + input.sourceStart + v.timestampShift,
+            clipTime: (m.end != null ? Math.max(m.time, v.actual.start) : m.time) - v.actual.start,
+            containerTime:
+              (m.end != null ? Math.max(m.time, v.actual.start) : m.time) +
+              input.sourceStart +
+              v.timestampShift,
+            ...(m.end != null
+              ? {
+                  sourceEnd: m.end,
+                  sourceDuration: m.end - m.time,
+                  clipEnd: Math.min(m.end, v.actual.end) - v.actual.start,
+                  containerEnd:
+                    Math.min(m.end, v.actual.end) + input.sourceStart + v.timestampShift,
+                  duration: Math.min(m.end, v.actual.end) - Math.max(m.time, v.actual.start),
+                }
+              : {}),
           })),
         compatibility: {
           embedded: 'Chapter names and container timestamps',

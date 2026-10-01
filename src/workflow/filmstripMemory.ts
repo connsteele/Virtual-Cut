@@ -5,7 +5,7 @@ export function filmstripSource(project: string, r: Recording) {
   return JSON.stringify([
     project,
     r.id,
-    r.url,
+    r.retained ? '' : r.url,
     r.sourcePath,
     r.sourceModified,
     r.sourceStart,
@@ -76,6 +76,16 @@ export class FilmstripMemory {
       }
     }
     if (changed) this.changed();
+  }
+  retain(project: string, recording: Recording) {
+    if (this.project !== project) this.sync(project, []);
+    this.valid.add(filmstripSource(project, recording));
+  }
+  releaseDetails(source: string) {
+    for (const [id, entry] of this.entries) {
+      if (entry.source === source && !entry.overview) this.remove(id);
+    }
+    this.changed();
   }
   get(source: string, at: number) {
     return this.entries.get(key(source, at))?.frame;

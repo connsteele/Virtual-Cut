@@ -86,7 +86,7 @@ export function Player({
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
   onMarkerDeselect?: () => void;
-  onMarkerMove?: (id: string, time: number) => void;
+  onMarkerMove?: (id: string, time: number, end?: number) => void;
   onAudioChange?: (patch: Partial<Recording>) => void;
   audioStatus?: string;
   onFrame?: (url: string) => void;

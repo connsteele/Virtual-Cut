@@ -483,7 +483,9 @@ const retainedBefore = {
 const previewToken = '11111111-1111-4111-8111-111111111111';
 const offlineOriginal = recovered.input.sourceFile + '.offline-preview-check';
 await rename(recovered.input.sourceFile, offlineOriginal);
+const previewStarted = performance.now();
 const preview = await service.inspectRetained(id, retained.exportId, previewToken);
+const previewFirstMs = performance.now() - previewStarted;
 assert.ok(preview.keys.length > 0);
 assert.equal(preview.audioTracks.length, 1);
 assert.equal(preview.retained, true);
@@ -497,6 +499,18 @@ const tiles = await service.filmstrip(
 );
 assert.equal(tiles.length, 2);
 assert.ok(tiles.every((t) => t.data.startsWith('data:image/jpeg;')));
+service.releaseRetained(id, previewToken);
+const revisitStarted = performance.now();
+const revisit = await service.inspectRetained(id, retained.exportId, previewToken);
+console.log('Library preview preparation milliseconds:', {
+  first: previewFirstMs,
+  revisit: performance.now() - revisitStarted,
+});
+assert.strictEqual(
+  revisit,
+  preview,
+  'Verified revisit reuses the bounded in-memory index/waveform',
+);
 service.releaseRetained(id, previewToken);
 assert.throws(() => service.filmstrip(id, retained.exportId, [0], previewToken), /available/);
 const cancelledPreview = service.inspectRetained(id, retained.exportId, previewToken);

@@ -1,3 +1,4 @@
+import { markerIntersects, relativeMarker } from './marker-ranges.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
@@ -73,6 +74,8 @@ export class ProjectService {
   private filingPlans = new Map<string, { plan: FilingPlan; records: ExportRecord[] }>();
   private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
   private filmstripCache = new FilmstripCache();
+  private retainedDetails = new Map<string, Awaited<ReturnType<typeof inspectRetainedOutput>>>();
+  private retainedDetailsProject = '';
   private retainedPreview?: {
     token: string;
     controller: AbortController;
@@ -104,14 +107,30 @@ export class ProjectService {
     this.retainedPreview = task;
     await verifyPublished(record, task.controller.signal);
     if (task.controller.signal.aborted) throw new Error('Cancelled');
-    const value = await inspectRetainedOutput(
-      record.output,
-      exportId,
-      this.tool('ffprobe'),
-      this.tool('ffmpeg'),
-      task.controller.signal,
-    );
+    if (this.retainedDetailsProject !== id) {
+      this.retainedDetails.clear();
+      this.retainedDetailsProject = id;
+    }
+    const cacheKey = JSON.stringify([exportId, record.output, record.verification?.sha256]);
+    const value =
+      this.retainedDetails.get(cacheKey) ||
+      (await inspectRetainedOutput(
+        record.output,
+        exportId,
+        this.tool('ffprobe'),
+        this.tool('ffmpeg'),
+        task.controller.signal,
+      ));
     if (task.controller.signal.aborted || this.store !== store) throw new Error('Cancelled');
+    this.retainedDetails.delete(cacheKey);
+    this.retainedDetails.set(cacheKey, value);
+    // Bounded indices/peaks only. Never retain output bytes or decoded video surfaces.
+    while (
+      this.retainedDetails.size > 6 ||
+      JSON.stringify([...this.retainedDetails.values()]).length > 8 * 1024 * 1024
+    ) {
+      this.retainedDetails.delete(this.retainedDetails.keys().next().value!);
+    }
     task.value = value;
     return value.recording;
   }
@@ -241,6 +260,7 @@ export class ProjectService {
     this.switching = true;
     try {
       this.releaseRetained();
+      this.retainedDetails.clear();
       await this.filmstripCache.close();
       this.active?.controller.abort();
       await this.active?.finished;
@@ -504,6 +524,7 @@ export class ProjectService {
   }
   async restore(id: string, saveId: string) {
     this.releaseRetained();
+    this.retainedDetails.clear();
     this.filmstripCache.clear();
     const store = this.require(id);
     this.switching = true;
@@ -563,6 +584,7 @@ export class ProjectService {
   }
   async removeRecording(id: string, batchId: string, sourceId: string) {
     this.releaseRetained();
+    this.retainedDetails.clear();
     this.filmstripCache.clear();
     const s = this.require(id);
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
@@ -637,6 +659,7 @@ export class ProjectService {
     mode: 'preserve' | 'remove' = 'preserve',
   ) {
     this.releaseRetained();
+    this.retainedDetails.clear();
     this.filmstripCache.clear();
     const s = this.require(id);
     if (!['preserve', 'remove'].includes(mode)) throw new Error('Choose how to remove this batch.');
@@ -1004,7 +1027,7 @@ export class ProjectService {
     };
     return {
       plan,
-      annotationVersion: 3,
+      annotationVersion: 4,
       input,
       inputHash: hash,
       state: 'planned',
@@ -1281,12 +1304,12 @@ export class ProjectService {
             note: e.input.clip.note || '',
             context: e.input.context,
             markers: e.input.markers
-              .filter(
-                (m) =>
-                  m.time >= e.verification!.actual.start - 0.000001 &&
-                  m.time < e.verification!.actual.end,
+              .filter((m) =>
+                markerIntersects(m, e.verification!.actual.start, e.verification!.actual.end),
               )
-              .map((m) => ({ ...m, time: Math.max(0, m.time - e.verification!.actual.start) })),
+              .map((m) =>
+                relativeMarker(m, e.verification!.actual.start, e.verification!.actual.end),
+              ),
             available:
               !!info?.isFile() &&
               !info.isSymbolicLink() &&
@@ -1401,6 +1424,7 @@ export class ProjectService {
   }
   async relink(id: string, sourceId: string, file: string) {
     this.releaseRetained();
+    this.retainedDetails.clear();
     this.filmstripCache.clear();
     const s = this.require(id),
       old = s.sources().find((x) => x.id === sourceId);

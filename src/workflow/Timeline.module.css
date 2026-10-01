@@ -149,6 +149,71 @@
   background: #111a18;
   border-bottom: 1px solid #3a4a46;
 }
+.markerRange {
+  position: absolute;
+  height: 24px;
+  min-width: 3px;
+}
+.rangeBody {
+  position: absolute;
+  inset: 4px 0;
+  width: 100%;
+  padding: 0 10px;
+  border: 0;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+}
+.rangeEdge {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 24px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  touch-action: none;
+}
+.rangeEdge span {
+  display: block;
+  width: 8px;
+  height: 16px;
+  background: currentColor;
+}
+.rangeStart {
+  left: -8px;
+}
+.rangeEnd {
+  right: -8px;
+}
+.rangeStart span {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 68%);
+}
+.rangeEnd span {
+  clip-path: polygon(0 0, 100% 0, 100% 68%, 0 100%);
+}
+.markerRange[data-manipulate='true'] .rangeStart span {
+  clip-path: none;
+  border-radius: 12px 0 0 12px;
+}
+.markerRange[data-manipulate='true'] .rangeEnd span {
+  clip-path: none;
+  border-radius: 0 12px 12px 0;
+}
+.markerRange[data-manipulate='true'] .rangeEdge {
+  cursor: ew-resize;
+}
+.markerRange[data-manipulate='true'] .rangeBody {
+  cursor: grab;
+  touch-action: none;
+}
+.markerRange[data-selected='true'] .rangeBody {
+  outline: 1px solid var(--text);
+}
 .marker {
   position: absolute;
   bottom: 0;

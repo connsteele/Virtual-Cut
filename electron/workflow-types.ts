@@ -47,6 +47,8 @@ export function markerColor(marker: Marker) {
 export interface Marker {
   id: string;
   time: number;
+  /** Exclusive source end; absent for a point marker. */
+  end?: number;
   name: string;
   category: Category;
   topic: string;

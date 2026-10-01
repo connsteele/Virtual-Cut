@@ -84,3 +84,22 @@ test('overview pressure also evicts, removal and project change drop all old ide
   memory.sync('other', recordings);
   assert.equal(memory.stats().entries, 0);
 });
+
+test('Library keeps bounded overviews across grant changes and releases zoom details', async () => {
+  const memory = new FilmstripMemory();
+  const r = recording('output', { retained: true, sourcePath: 'output.mp4', sourceModified: 1 });
+  memory.retain('project', r);
+  const source = filmstripSource('project', r);
+  memory.put(source, [frame(1)], true, [1]);
+  memory.put(source, [frame(2)], false, [2]);
+  const url = memory.get(source, 2).data;
+  memory.releaseDetails(source);
+  assert.equal(memory.get(source, 2), undefined);
+  await assert.rejects(fetch(url));
+  assert.equal(filmstripSource('project', { ...r, url: 'new-grant' }), source);
+  assert(memory.get(source, 1));
+  memory.retain('project', recording('other', { retained: true }));
+  assert(memory.get(source, 1));
+  memory.sync('', []);
+  assert.equal(memory.stats().entries, 0);
+});

@@ -94,6 +94,17 @@ try {
   await expect(library.getByLabel('Timeline zoom level')).toHaveText('2.0×');
   await expect(library.locator('[data-frame-time]').first()).toBeVisible({ timeout: 30000 });
   await library.getByRole('button', { name: 'Fit full recording', exact: true }).click();
+  await expect(library.locator('[data-frame-time] img').first()).toBeVisible();
+  const overviewUrl = await library.locator('[data-frame-time] img').first().getAttribute('src');
+  await page.getByLabel('Search completed clips').fill('');
+  await page.getByRole('button', { name: 'Preview completed clip: First', exact: true }).click();
+  await expect(library.locator('[data-frame-time] img').first()).toBeVisible({ timeout: 30000 });
+  await secondCard.click();
+  await expect(library.locator('[data-frame-time] img').first()).toHaveAttribute(
+    'src',
+    overviewUrl,
+    { timeout: 30000 },
+  );
   await capture('library-viewer-wide');
   const viewerHeight = await library
     .locator('video')
