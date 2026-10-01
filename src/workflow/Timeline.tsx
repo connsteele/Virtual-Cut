@@ -504,7 +504,11 @@ export function Timeline({
               </button>
             ))}
         </div>
-        <div className={s.filmstrip} data-waveform-mode={waveMode}>
+        <div
+          className={s.filmstrip}
+          data-waveform-mode={waveMode}
+          hidden={!filmstrip.native && !recording.frames.length && waveMode === 'off'}
+        >
           {filmstrip.native && filmstrip.status && waveMode !== 'replace' && (
             <span className={s.frameStatus} role="status">
               {filmstrip.status}

@@ -92,6 +92,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
           event.altKey ||
           event.metaKey ||
           event.defaultPrevented ||
+          !!loading ||
           !selected ||
           (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]') ||
           document.querySelector('dialog[open]')
@@ -141,8 +142,11 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
                 data-navigate-item
                 className={s.pick}
                 aria-label={`Preview completed clip: ${c.name}`}
-                disabled={loading === c.exportId}
-                onClick={() => void open(c)}
+                aria-disabled={loading === c.exportId}
+                aria-busy={loading === c.exportId}
+                onClick={() => {
+                  if (loading !== c.exportId) void open(c);
+                }}
               >
                 <strong>{c.name}</strong>
                 <span>
@@ -220,7 +224,8 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
                   }}
                 />
               </div>
-              <div className={s.facts}>
+              <details className={s.facts}>
+                <summary>Clip details &amp; markers</summary>
                 <p>
                   <strong>Source</strong> {selected.source}
                 </p>
@@ -236,22 +241,24 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
                 )}
                 <h3>Markers</h3>
                 <div className={s.markers}>
-                  {selected.markers.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => transport.current?.seek(m.time)}
-                      style={{ borderLeftColor: markerColor(m) }}
-                    >
-                      <strong>{m.name}</strong>
-                      <span>
-                        {time(m.time)} · {m.category}
-                      </span>
-                      {m.note && <span className={s.note}>{m.note}</span>}
-                    </button>
-                  ))}
+                  {[...selected.markers]
+                    .sort((a, b) => a.time - b.time)
+                    .map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => transport.current?.seek(m.time)}
+                        style={{ borderLeftColor: markerColor(m) }}
+                      >
+                        <strong>{m.name}</strong>
+                        <span>
+                          {time(m.time)} · {m.category}
+                        </span>
+                        {m.note && <span className={s.note}>{m.note}</span>}
+                      </button>
+                    ))}
                   {!selected.markers.length && <p>No markers in this completed cut.</p>}
                 </div>
-              </div>
+              </details>
             </>
           )}
           {!record && !loading && !error && (

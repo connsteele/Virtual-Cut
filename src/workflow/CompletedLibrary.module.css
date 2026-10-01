@@ -27,8 +27,7 @@
   flex: 1;
   min-height: 0;
 }
-.list,
-.detail {
+.list {
   overflow: auto;
   min-height: 0;
 }
@@ -69,6 +68,9 @@
   gap: 0.5rem;
 }
 .detail {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
@@ -90,13 +92,20 @@
 .viewer {
   display: flex;
   flex-direction: column;
-  min-height: 24rem;
-  height: min(62vh, 45rem);
-  flex-shrink: 0;
+  min-height: 0;
+  flex: 1;
 }
 .facts {
+  flex: 0 1 auto;
+  max-height: 40%;
+  overflow: auto;
   padding: 0.6rem;
   overflow-wrap: anywhere;
+}
+.facts summary {
+  cursor: pointer;
+  color: #70d6ce;
+  padding: 0.2rem 0;
 }
 .note {
   white-space: pre-wrap;
@@ -124,9 +133,5 @@
   }
   .root {
     padding: 0.6rem;
-  }
-  .viewer {
-    min-height: 18rem;
-    height: 55vh;
   }
 }

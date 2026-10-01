@@ -67,7 +67,11 @@ try {
   );
   await card(fixture.clipIds[0]).getByRole('checkbox').check();
   await card(fixture.clipIds[1]).getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Destination · 2', exact: true }).click();
+  const selection = page.getByRole('group', { name: 'Selected review clips' });
+  await expect(selection).toContainText('2 selected');
+  await capture('bulk-destination-wide');
+  await selection.getByRole('button', { name: 'Change destination…', exact: true }).click();
+  await expect(modal()).toContainText('Destination for 2 clips');
   await modal().getByRole('button', { name: 'Destination root' }).click();
   await modal().getByRole('button', { name: 'Existing', exact: true }).click();
   await modal().getByLabel('New child folder (optional)').fill('CON');
@@ -96,6 +100,14 @@ try {
   await capture('folder-wide');
   await modal().getByRole('button', { name: 'Assign folder' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(async () => (await state()).model.clips.every((c) => c.folder === 'Existing/Planned UI'))
+    .toBe(true);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(async () => (await state()).model.clips.every((c) => c.folder === 'Existing'))
+    .toBe(true);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect
     .poll(async () => (await state()).model.clips.every((c) => c.folder === 'Existing/Planned UI'))
     .toBe(true);
@@ -132,6 +144,42 @@ try {
     'true',
   );
   await expect(page.getByRole('button', { name: 'Play · K / Space', exact: true })).toBeEnabled();
+  // Add a late-created clip between earlier ones. Editing time reorders the view,
+  // while identifiers, colors, and the saved creation-order arrays remain intact.
+  await page.getByRole('button', { name: 'Clip', exact: true }).click();
+  const created = page.locator('[data-cut-clip][data-selected="true"]');
+  const createdId = await created.getAttribute('data-cut-clip');
+  await created.getByLabel('Clip name', { exact: true }).fill('Chronology');
+  await created.getByLabel('Out', { exact: true }).fill('5.5');
+  await created.getByLabel('In', { exact: true }).fill('1');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const clipOrder = () =>
+    page.locator('[data-cut-clip]').evaluateAll((cards) => cards.map((c) => c.dataset.cutClip));
+  assert.deepEqual(await clipOrder(), [fixture.clipIds[0], createdId, fixture.clipIds[1]]);
+  await expect(page.locator(`[data-clip="${createdId}"] b`)).toHaveText('02');
+  const swatch = await page
+    .locator(`[data-clip="${createdId}"]`)
+    .evaluate((e) => getComputedStyle(e).backgroundColor);
+  await created.getByLabel('In', { exact: true }).fill('4');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  assert.deepEqual(await clipOrder(), [...fixture.clipIds, createdId]);
+  await expect(page.locator(`[data-clip="${createdId}"] b`)).toHaveText('03');
+  assert.equal(
+    await page
+      .locator(`[data-clip="${createdId}"]`)
+      .evaluate((e) => getComputedStyle(e).backgroundColor),
+    swatch,
+  );
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(clipOrder).toEqual([fixture.clipIds[0], createdId, fixture.clipIds[1]]);
+  assert.deepEqual(
+    (await state()).model.clips.map((c) => c.id),
+    [...fixture.clipIds, createdId],
+  );
+  await capture('chronological-clips');
+  await page.getByRole('button', { name: 'Delete clip: Chronology', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete clip', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('button', { name: 'H · Manipulate', exact: true }).click();
   const pin = page.locator('[data-marker="move-marker"]');
   await expect(pin).toHaveAttribute('data-manipulate', 'true');
@@ -182,6 +230,20 @@ try {
   await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(async () => (await marker()).time).toBeGreaterThan(2);
+  assert.deepEqual(
+    await page
+      .locator('[data-marker-card]')
+      .evaluateAll((cards) => cards.map((c) => c.dataset.markerCard)),
+    ['later-marker', 'move-marker'],
+  );
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(async () => page.locator('[data-marker-card]').first().getAttribute('data-marker-card'))
+    .toBe('move-marker');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect
+    .poll(async () => page.locator('[data-marker-card]').first().getAttribute('data-marker-card'))
+    .toBe('later-marker');
   assert(
     Math.abs((await marker()).time - (2 + 1 / 30)) < 0.0001,
     `Nudged marker: ${JSON.stringify(await marker())}`,
@@ -213,6 +275,13 @@ try {
   const bounds = await modal().boundingBox();
   assert(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1100);
   await modal().getByRole('button', { name: 'Close dialog' }).click();
+  await selection.getByRole('button', { name: 'Select visible', exact: true }).click();
+  await expect(selection).toContainText('2 selected');
+  await capture('bulk-destination-compact');
+  await selection.getByRole('button', { name: 'Clear selection', exact: true }).click();
+  await expect(
+    selection.getByRole('button', { name: 'Change destination…', exact: true }),
+  ).toBeDisabled();
   await page.getByRole('button', { name: 'Diagnostics', exact: true }).click();
   await expect(modal()).toContainText('Local logging available');
   await app.evaluate(

@@ -55,15 +55,48 @@ try {
   ).toBeVisible();
   await page.getByLabel('Search completed clips').fill('café');
   await expect(page.getByRole('button', { name: /Preview completed clip:/ })).toHaveCount(1);
-  await page.getByRole('button', { name: 'Preview completed clip: Second', exact: true }).click();
+  // Real native verification still runs; delay its response to exercise focus
+  // during a larger-file verification instead of hiding the race with tiny fixtures.
+  await app.evaluate(({ ipcMain }) => {
+    const handler = ipcMain._invokeHandlers.get('workspace:retainedMedia');
+    ipcMain.removeHandler('workspace:retainedMedia');
+    ipcMain.handle('workspace:retainedMedia', async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      return handler(...args);
+    });
+  });
+  const secondCard = page.getByRole('button', {
+    name: 'Preview completed clip: Second',
+    exact: true,
+  });
+  await secondCard.click();
   const library = page.getByRole('region', { name: 'Completed Library' });
+  await expect(library.getByRole('status')).toContainText('Verifying');
+  await expect(secondCard).toBeFocused();
   await expect
     .poll(() => library.locator('video').evaluate((v) => v.readyState))
     .toBeGreaterThanOrEqual(2);
+  await expect(secondCard).toBeFocused();
   await page.keyboard.press('l');
   await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('1× forward');
   await page.keyboard.press('k');
   await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('Paused');
+  await page.getByLabel('Search completed clips').fill('');
+  await page.getByLabel('Search completed clips').pressSequentially('jkl');
+  await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('Paused');
+  await page.getByLabel('Search completed clips').fill('café');
+  await capture('library-viewer-wide');
+  const viewerHeight = await library
+    .locator('video')
+    .evaluate((v) => v.getBoundingClientRect().height);
+  const libraryHeight = (await library.boundingBox()).height;
+  const playerHeight = (await library.getByRole('region', { name: 'Footage viewer' }).boundingBox())
+    .height;
+  assert(
+    playerHeight > libraryHeight * 0.8,
+    `Player should fill the available Library space: ${playerHeight}/${libraryHeight}; video=${viewerHeight}`,
+  );
+  await library.locator('summary', { hasText: 'Clip details & markers' }).click();
   await library
     .getByRole('button', { name: /Red marker/ })
     .last()
@@ -164,6 +197,10 @@ try {
     .poll(() => library.locator('video').evaluate((v) => v.readyState))
     .toBeGreaterThanOrEqual(2);
   await expect(library.locator('p', { hasText: 'Finished file' })).toContainText('Collision.mkv');
+  // Collapse metadata to devote the compact window to playback.
+  if (await library.locator('details[open] > summary').count())
+    await library.locator('details[open] > summary').click();
+  assert(await library.locator('video').evaluate((v) => v.getBoundingClientRect().height > 180));
   await capture('library-compact');
   await page.getByLabel('Search completed clips').focus();
   await expect(page.getByLabel('Search completed clips')).toBeFocused();

@@ -211,6 +211,19 @@ export function FilingPanel({
                         >
                           Retry
                         </Button>
+                      ) : ['queued', 'running'].includes(e.state) ? (
+                        <Button
+                          aria-label={`Cancel filing: ${e.plan.name}`}
+                          disabled={w.busy}
+                          onClick={() =>
+                            void w.run(
+                              () => window.virtualCut!.project.job(id, e.plan.id, 'cancel'),
+                              true,
+                            )
+                          }
+                        >
+                          Cancel
+                        </Button>
                       ) : null}
                     </td>
                   </tr>

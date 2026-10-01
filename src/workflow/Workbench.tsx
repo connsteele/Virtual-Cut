@@ -127,108 +127,110 @@ function MarkerEditor({
   return (
     <section className={s.markerEditor}>
       <h3>Markers</h3>
-      {marks.map((m) => (
-        <div
-          className={`${s.markerRow} ${s.markerCard} ${selectedId === m.id ? s.selected : ''}`}
-          key={m.id}
-          data-marker-card={m.id}
-          data-selected={selectedId === m.id}
-          tabIndex={0}
-          onClick={() => onSelect(m.id)}
-          onDoubleClick={(e) => {
-            if ((e.target as HTMLElement).closest('button,input,textarea,select')) return;
-            onSelect(m.id);
-            onSeek(m.time);
-          }}
-          onFocus={() => onSelect(m.id)}
-          onKeyDown={(e) => {
-            if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault();
+      {[...marks]
+        .sort((a, b) => a.time - b.time)
+        .map((m) => (
+          <div
+            className={`${s.markerRow} ${s.markerCard} ${selectedId === m.id ? s.selected : ''}`}
+            key={m.id}
+            data-marker-card={m.id}
+            data-selected={selectedId === m.id}
+            tabIndex={0}
+            onClick={() => onSelect(m.id)}
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('button,input,textarea,select')) return;
               onSelect(m.id);
-            }
-          }}
-        >
-          <div className={s.tools}>
-            <button
-              className={s.markerLabel}
-              style={{ color: markerColor(m) }}
-              onClick={() => {
+              onSeek(m.time);
+            }}
+            onFocus={() => onSelect(m.id)}
+            onKeyDown={(e) => {
+              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
                 onSelect(m.id);
-                onSeek(m.time);
-              }}
-            >
-              ◆{' '}
-              <span>
-                {m.category} · {time(m.time)}
-              </span>
-            </button>
-            <select
-              aria-label="Marker color"
-              value={markerColorName(m)}
-              style={{ color: markerColor(m) }}
-              onChange={(e) => onChange(m.id, { color: e.target.value as MarkerColor })}
-            >
-              {Object.entries(markerColors).map(([color, hex]) => (
-                <option key={color} style={{ color: hex, backgroundColor: '#121a19' }}>
-                  {color}
-                </option>
-              ))}
-            </select>
-            <Button aria-label={`Delete marker: ${m.name}`} onClick={() => onConfirm(m.id)}>
-              <Trash2 size={15} />
-            </Button>
-          </div>
-          <input
-            aria-label="Marker name"
-            value={m.name}
-            onChange={(e) => onChange(m.id, { name: e.target.value })}
-          />
-          <textarea
-            aria-label="Marker note"
-            placeholder="Note (optional)"
-            rows={2}
-            value={m.note || ''}
-            onChange={(e) => onChange(m.id, { note: e.target.value })}
-          />
-          <div className={s.pair}>
-            <select
-              aria-label="Marker category"
-              value={m.category}
-              onChange={(e) => onChange(m.id, { category: e.target.value as Category })}
-            >
-              {Object.keys(colors).map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Linked glossary term"
-              value={m.topic}
-              onChange={(e) => onChange(m.id, { topic: e.target.value })}
-            >
-              <option value="">No term</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {confirm === m.id && (
-            <div ref={confirmation} className={s.confirm} role="alert" data-delete-confirm>
-              <span>Delete this marker?</span>
-              <Button
+              }
+            }}
+          >
+            <div className={s.tools}>
+              <button
+                className={s.markerLabel}
+                style={{ color: markerColor(m) }}
                 onClick={() => {
-                  onDelete(m.id);
-                  onConfirm('');
+                  onSelect(m.id);
+                  onSeek(m.time);
                 }}
               >
-                Delete
+                ◆{' '}
+                <span>
+                  {m.category} · {time(m.time)}
+                </span>
+              </button>
+              <select
+                aria-label="Marker color"
+                value={markerColorName(m)}
+                style={{ color: markerColor(m) }}
+                onChange={(e) => onChange(m.id, { color: e.target.value as MarkerColor })}
+              >
+                {Object.entries(markerColors).map(([color, hex]) => (
+                  <option key={color} style={{ color: hex, backgroundColor: '#121a19' }}>
+                    {color}
+                  </option>
+                ))}
+              </select>
+              <Button aria-label={`Delete marker: ${m.name}`} onClick={() => onConfirm(m.id)}>
+                <Trash2 size={15} />
               </Button>
-              <Button onClick={() => onConfirm('')}>Cancel</Button>
             </div>
-          )}
-        </div>
-      ))}
+            <input
+              aria-label="Marker name"
+              value={m.name}
+              onChange={(e) => onChange(m.id, { name: e.target.value })}
+            />
+            <textarea
+              aria-label="Marker note"
+              placeholder="Note (optional)"
+              rows={2}
+              value={m.note || ''}
+              onChange={(e) => onChange(m.id, { note: e.target.value })}
+            />
+            <div className={s.pair}>
+              <select
+                aria-label="Marker category"
+                value={m.category}
+                onChange={(e) => onChange(m.id, { category: e.target.value as Category })}
+              >
+                {Object.keys(colors).map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+              <select
+                aria-label="Linked glossary term"
+                value={m.topic}
+                onChange={(e) => onChange(m.id, { topic: e.target.value })}
+              >
+                <option value="">No term</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {confirm === m.id && (
+              <div ref={confirmation} className={s.confirm} role="alert" data-delete-confirm>
+                <span>Delete this marker?</span>
+                <Button
+                  onClick={() => {
+                    onDelete(m.id);
+                    onConfirm('');
+                  }}
+                >
+                  Delete
+                </Button>
+                <Button onClick={() => onConfirm('')}>Cancel</Button>
+              </div>
+            )}
+          </div>
+        ))}
       {!marks.length && <p className={s.muted}>No markers in this clip.</p>}
       <Button
         onClick={onAdd}
@@ -643,7 +645,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       sample: false,
       context: '',
     } as Recording);
-  const clips = model.clips.filter((c) => c.rid === r.id),
+  const clips = model.clips.filter((c) => c.rid === r.id).sort((a, b) => a.start - b.start),
     c = mid ? undefined : clips.find((c) => c.id === cid);
   const e = model.sequence.find((e) => e.id === eid) || model.sequence[0];
   useEffect(() => {
@@ -1000,6 +1002,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         return;
       }
       if (
+        !(page === 'library' && project) &&
         ['j', 'k', 'l', ' '].includes(k) &&
         !(k === ' ' && (e.target as HTMLElement).closest('button,input[type=checkbox]'))
       ) {
@@ -1137,7 +1140,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         legend={legend}
         onLegend={() => setLegend(!legend)}
         markers={model.markers[record.id] || []}
-        clips={model.clips.filter((c) => c.rid === record.id)}
+        clips={model.clips.filter((c) => c.rid === record.id).sort((a, b) => a.start - b.start)}
         onPosition={(position) => {
           if (page === 'cut' && record.id === r.id && follow && !trimming.current) {
             const under =
@@ -1260,6 +1263,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         a.name.localeCompare(b.name, undefined, { numeric: true }) ||
         a.id.localeCompare(b.id),
     );
+  // Actions apply only to the selected cards currently visible in this batch/filter.
+  const selectedReviewIds = filtered.filter((c) => checked.includes(c.id)).map((c) => c.id);
   const effective = (e: Entry) => ({
     ...e,
     start: Math.max(0, e.start - handles),
@@ -1848,11 +1853,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     Destination plan
                   </Button>
                 )}
-                {checked.length > 0 && (
-                  <Button onClick={() => setFolderIds(checked)}>
-                    Destination · {checked.length}
-                  </Button>
-                )}
               </div>
               <ReviewColumns
                 folders={
@@ -1871,6 +1871,29 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 }
               >
                 <div className={s.scroll} data-scroll>
+                  <div
+                    className={s.reviewSelection}
+                    role="group"
+                    aria-label="Selected review clips"
+                  >
+                    <Button
+                      disabled={!filtered.length}
+                      onClick={() => setChecked(filtered.map((clip) => clip.id))}
+                    >
+                      Select visible
+                    </Button>
+                    <strong>{selectedReviewIds.length} selected</strong>
+                    <Button
+                      primary
+                      disabled={!selectedReviewIds.length || workspace.blocking}
+                      onClick={() => setFolderIds(selectedReviewIds)}
+                    >
+                      <FolderOpen size={16} /> Change destination…
+                    </Button>
+                    {!!checked.length && (
+                      <Button onClick={() => setChecked([])}>Clear selection</Button>
+                    )}
+                  </div>
                   {[...new Set(filtered.map((c) => c.folder))].map((folder) => (
                     <section key={folder} className={s.folderGroup}>
                       <header>

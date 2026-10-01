@@ -296,6 +296,47 @@ assert.equal(await stat(cancelledRecord.output).catch(() => null), null);
 await edit((m) => (m.clips.find((c) => c.id === 'collision').held = true));
 await assert.rejects(() => service.job(id, cancelledRecord.plan.id, 'retry'), /held/);
 service.switching = false;
+// Individual cancellation leaves peer jobs alone: cancel one queued item and
+// the currently active writer, then let the remaining item finish normally.
+const individualIds = ['cancel-queued', 'cancel-active-a', 'cancel-active-b'];
+await edit((m) => {
+  for (const clipId of individualIds)
+    m.clips.push({
+      ...m.clips[0],
+      id: clipId,
+      name: clipId,
+      folder: 'Individual cancel',
+      accepted: false,
+      acceptedKey: undefined,
+    });
+});
+for (const clipId of individualIds) await service.acceptReview(id, clipId);
+const individualPlan = await service.filingPlan(id, batch);
+service.switching = true;
+await service.fileQueue(id, individualPlan.id, true);
+const individualRecords = () =>
+  service.store.exports().filter((e) => e.filing?.queueId === individualPlan.id);
+const queuedOne = individualRecords().find((e) => e.plan.clipId === 'cancel-queued');
+await service.job(id, queuedOne.plan.id, 'cancel');
+assert.equal(individualRecords().filter((e) => e.state === 'cancelled').length, 1);
+assert.equal(individualRecords().filter((e) => e.state === 'queued').length, 2);
+service.switching = false;
+service.pump();
+const activeId = service.active.id;
+await service.job(id, activeId, 'cancel');
+await wait();
+assert.equal(individualRecords().filter((e) => e.state === 'cancelled').length, 2);
+const survivor = individualRecords().find((e) => e.state === 'verified');
+assert(survivor, JSON.stringify(individualRecords()));
+await verifyPublished(survivor);
+for (const record of individualRecords().filter((e) => e.state === 'cancelled')) {
+  assert.equal(await stat(record.output).catch(() => null), null);
+  assert.equal(await stat(record.metadata).catch(() => null), null);
+}
+await edit((m) => {
+  for (const record of individualRecords().filter((e) => e.state === 'cancelled'))
+    m.clips.find((c) => c.id === record.plan.clipId).held = true;
+});
 // A folder replaced by a junction after preview must not receive any output.
 const trap = path.join(dest, 'Trap'),
   outside = path.join(dir, 'outside');

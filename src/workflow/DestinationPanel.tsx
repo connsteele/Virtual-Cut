@@ -62,6 +62,24 @@ export function DestinationPicker({
         The project destination is the root folder for your finished videos. Choose a subfolder
         below it, or use the root itself. New folders stay planned until filing.
       </p>
+      <details>
+        <summary>
+          {clips.length} selected clip{clips.length === 1 ? '' : 's'}
+        </summary>
+        <ul>
+          {model.clips
+            .filter((clip) => clips.includes(clip.id))
+            .map((clip) => (
+              <li key={clip.id}>
+                {clip.name} · {clip.folder || 'Destination root'}
+              </li>
+            ))}
+        </ul>
+      </details>
+      <p className={s.muted}>
+        Changing the destination updates the filing plan and requires acceptance again. Already
+        finished files stay in their current location.
+      </p>
       <div className={s.toolbar}>
         <Button
           onClick={() => {
