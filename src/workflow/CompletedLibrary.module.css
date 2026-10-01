@@ -73,6 +73,20 @@
   flex-direction: column;
   gap: 0.8rem;
 }
+.unavailable {
+  min-height: 18rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  background: #192523;
+  border-radius: 0.5rem;
+}
+.unavailable strong {
+  font-size: 1.2rem;
+}
 .viewer {
   display: flex;
   flex-direction: column;

@@ -17,6 +17,29 @@ export const videoExtensions = ['mp4', 'm4v', 'mov', 'mkv', 'webm'];
 
 /** Only trusted native code grants a selected video or a confined bundled asset. */
 export class VideoAccess {
+  private readings = {
+    readRequests: 0,
+    readFailures: 0,
+    readCancellations: 0,
+    readStatus: 0,
+    rangeStart: 0,
+    rangeEnd: 0,
+  };
+  constructor(private report?: (details: Record<string, unknown>) => void) {}
+  diagnostics() {
+    return { ...this.readings, mediaId: this.selected?.video.id };
+  }
+  private failure(readStatus: number, readReason: string, error?: unknown) {
+    this.readings.readStatus = readStatus;
+    this.readings.readFailures++;
+    const code = (error as NodeJS.ErrnoException)?.code;
+    this.report?.({
+      ...this.diagnostics(),
+      readReason,
+      errorCode:
+        typeof code === 'string' && /^E[A-Z0-9_]{2,35}$/.test(code) ? code : 'UNCLASSIFIED',
+    });
+  }
   private selected: { video: OpenedVideo; path: string; modified: number; type: string } | null =
     null;
 
@@ -46,6 +69,7 @@ export class VideoAccess {
     const selected = this.selected;
     if (!selected || request.url !== selected.video.url) return new Response(null, { status: 404 });
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 });
+    this.readings.readRequests++;
 
     // No path is taken from the renderer or URL. Re-open the selected file
     // read-only for bounded streaming; never buffer an entire recording.
@@ -59,6 +83,7 @@ export class VideoAccess {
         info.mtimeMs !== selected.modified
       ) {
         await handle.close();
+        this.failure(409, 'changed');
         return new Response(null, { status: 409 });
       }
       const size = info.size;
@@ -97,11 +122,15 @@ export class VideoAccess {
         ) {
           await handle.close();
           headers.set('Content-Range', `bytes */${size}`);
+          this.failure(416, 'range');
           return new Response(null, { status: 416, headers });
         }
         headers.set('Content-Range', `bytes ${start}-${end}/${size}`);
       }
       headers.set('Content-Length', String(end - start + 1));
+      this.readings.rangeStart = start;
+      this.readings.rangeEnd = end;
+      this.readings.readStatus = range ? 206 : 200;
       if (request.method === 'HEAD') {
         await handle.close();
         return new Response(null, { status: 200, headers });
@@ -112,12 +141,20 @@ export class VideoAccess {
         autoClose: true,
         signal: request.signal,
       });
+      stream.on('error', (error: NodeJS.ErrnoException) => {
+        // Seek/source replacement normally cancels the old response. Count it,
+        // but do not misreport expected aborts as disk-read failures.
+        if (request.signal.aborted || error.code === 'ABORT_ERR') this.readings.readCancellations++;
+        else this.failure(500, 'stream', error);
+      });
       // Response cancellation (seeking, replacing the clip, closing the window)
       // propagates through toWeb and closes this stream's file handle.
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
       return new Response(body, { status: range ? 206 : 200, headers });
-    } catch {
+    } catch (error) {
       await handle?.close().catch(() => {});
+      if (request.signal.aborted) this.readings.readCancellations++;
+      else this.failure(404, 'open', error);
       return new Response(null, { status: 404 });
     }
   }

@@ -183,6 +183,30 @@ assert(
 );
 
 const log = new Diagnostics(path.join(dir, 'logs-profile'), { bytes: 1000, files: 3 });
+const playbackLog = new Diagnostics(path.join(dir, 'playback-log'));
+playbackLog.record('media-error', {
+  fault: 'demuxer-seek',
+  clipCount: 0,
+  readyState: 1,
+  networkState: 1,
+  recent: Array.from({ length: 40 }, (_, atMs) => ({
+    action: 'seek',
+    atMs,
+    target: 1.431,
+    message: 'SECRET',
+    recent: [{ path: 'SECRET' }],
+  })),
+  path: 'SECRET',
+  message: 'SECRET',
+});
+await playbackLog.flush();
+const diagnosticReport = (await playbackLog.summary()).text;
+assert(!diagnosticReport.includes('SECRET'));
+const diagnosticEvent = JSON.parse(
+  diagnosticReport.split('\n').find((line) => line.startsWith('{')),
+);
+assert.equal(diagnosticEvent.recent.length, 24);
+assert.equal(diagnosticEvent.fault, 'demuxer-seek');
 log.record('tool-version', { tool: 'ffmpeg', version: '8.0.1-essentials_build-www.gyan.dev' });
 await log.flush();
 assert((await log.summary()).text.includes('8.0.1-essentials_build-www.gyan.dev'));

@@ -200,6 +200,82 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await go('Cut');
   await capture('marker-spacing-compact');
+  // Regression: deleting every edit must keep the source grant/player intact.
+  const sourceUrl = await video.evaluate((v) => v.currentSrc);
+  while (await page.locator('[data-cut-clip]').count()) {
+    await page
+      .locator('[data-cut-clip]')
+      .first()
+      .getByRole('button', { name: /^Delete clip:/ })
+      .click();
+    await page
+      .locator('[data-delete-confirm]')
+      .getByRole('button', { name: 'Delete clip', exact: true })
+      .click();
+  }
+  assert.equal(await video.evaluate((v) => v.currentSrc), sourceUrl);
+  await seek(1.431);
+  await key('l');
+  await expect(status).toHaveText('1× forward');
+  await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeGreaterThan(1.6);
+  await key('k');
+  // A focused player key is handled exactly once (not again by the workspace).
+  await video.click();
+  await page.keyboard.press('k');
+  await expect(status).toHaveText('1× forward');
+  await page.keyboard.press('k');
+  await expect(status).toHaveText('Paused');
+  await seek(1.431);
+  const stageBefore = await page.locator('[data-video-stage]').boundingBox();
+  // Deterministic terminal error exercises recovery; it does not reproduce the
+  // user's underlying demuxer failure or claim its cause has been fixed.
+  await video.evaluate((v) => {
+    Object.defineProperty(v, 'error', {
+      configurable: true,
+      value: {
+        code: 2,
+        message: 'PipelineStatus::PIPELINE_ERROR_READ: FFmpegDemuxer: demuxer seek failed',
+      },
+    });
+    v.dispatchEvent(new Event('error'));
+  });
+  const overlay = page.locator('[data-video-stage]').getByRole('alert');
+  await expect(overlay.getByRole('button', { name: 'Reload preview', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play · K / Space', exact: true })).toBeDisabled();
+  assert.deepEqual(await page.locator('[data-video-stage]').boundingBox(), stageBefore);
+  const diagnostic = await page.evaluate(() => window.virtualCut.diagnostics.summary());
+  const failure = diagnostic.text
+    .split('\n')
+    .filter((line) => line.startsWith('{'))
+    .map(JSON.parse)
+    .findLast((entry) => entry.event === 'media-error');
+  assert.equal(failure.fault, 'demuxer-seek');
+  assert.equal(failure.clipCount, 0);
+  assert(failure.previewId);
+  assert(failure.readRequests > 0);
+  assert(failure.recent.some((event) => event.action === 'clips-changed' && event.clipCount === 0));
+  assert(failure.recent.length <= 24);
+  await capture('playback-reload-compact');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
+  await capture('playback-reload-wide');
+  await video.evaluate((v) => {
+    delete v.error;
+  });
+  await overlay.getByRole('button', { name: 'Reload preview', exact: true }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect.poll(() => video.evaluate((v) => v.readyState)).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeCloseTo(1.431, 1);
+  await expect(video).toHaveJSProperty('paused', true);
+  await expect
+    .poll(async () =>
+      (await page.evaluate(() => window.virtualCut.diagnostics.summary())).text.includes(
+        'preview-recovered',
+      ),
+    )
+    .toBe(true);
+  await key('l');
+  await expect(status).toHaveText('1× forward');
+  await key('k');
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(checks, 'latest-playback-ui.json'),

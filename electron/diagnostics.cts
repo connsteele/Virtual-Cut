@@ -25,6 +25,8 @@ const events = new Set([
   'pause',
   'scan',
   'media-error',
+  'preview-recovered',
+  'media-read-failed',
   'destination-holds',
 ]);
 const words = new Set([
@@ -54,6 +56,11 @@ const words = new Set([
   'destinationFolders',
   'chooseDestination',
   'recover',
+  'retainedMedia',
+  'relinkExport',
+  'fileQueue',
+  'filingPlan',
+  'cancelFiling',
   'ffmpeg',
   'ffprobe',
   'completed',
@@ -78,17 +85,38 @@ export function errorCode(error: unknown) {
     : 'UNCLASSIFIED';
 }
 /** Strict fields: no raw paths, annotations, command arguments, messages or URLs. */
-function safeFields(data: Record<string, unknown>) {
-  const output: Record<string, string | number | boolean> = {};
+function safeFields(data: Record<string, unknown>, nested = false): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (
-      ['sourceId', 'jobId', 'projectId', 'operationId'].includes(key) &&
+      ['sourceId', 'jobId', 'projectId', 'operationId', 'previewId', 'mediaId'].includes(key) &&
       typeof value === 'string' &&
       /^[a-f\d-]{36}$/i.test(value)
     )
       output[key] = value;
     if (
-      ['rate', 'direction', 'position', 'code', 'elapsedMs', 'exitCode', 'count'].includes(key) &&
+      [
+        'rate',
+        'direction',
+        'position',
+        'code',
+        'elapsedMs',
+        'exitCode',
+        'count',
+        'readyState',
+        'networkState',
+        'clipCount',
+        'duration',
+        'offset',
+        'atMs',
+        'target',
+        'readStatus',
+        'rangeStart',
+        'rangeEnd',
+        'readRequests',
+        'readFailures',
+        'readCancellations',
+      ].includes(key) &&
       typeof value === 'number' &&
       Number.isFinite(value)
     )
@@ -112,7 +140,52 @@ function safeFields(data: Record<string, unknown>) {
       /^(UNCLASSIFIED|E[A-Z0-9_]{2,35}|SQLITE_[A-Z_]+)$/.test(value)
     )
       output[key] = value;
-    if (key === 'packaged' && typeof value === 'boolean') output[key] = value;
+    if (['packaged', 'paused', 'seeking'].includes(key) && typeof value === 'boolean')
+      output[key] = value;
+    if (
+      key === 'fault' &&
+      typeof value === 'string' &&
+      [
+        'demuxer-seek',
+        'media-read',
+        'media-decode',
+        'media-unsupported',
+        'play-rejected',
+        'unknown',
+      ].includes(value)
+    )
+      output[key] = value;
+    if (
+      key === 'readReason' &&
+      typeof value === 'string' &&
+      ['changed', 'range', 'open', 'stream'].includes(value)
+    )
+      output[key] = value;
+    if (
+      key === 'action' &&
+      typeof value === 'string' &&
+      [
+        'source-open',
+        'clips-changed',
+        'seek',
+        'seeked',
+        'waiting',
+        'stalled',
+        'loaded',
+        'reload',
+        'error',
+        'play',
+        'pause',
+        'scan',
+        'command',
+      ].includes(value)
+    )
+      output[key] = value;
+    if (key === 'recent' && !nested && Array.isArray(value))
+      output[key] = value
+        .slice(-24)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => safeFields(item, true));
   }
   return output;
 }

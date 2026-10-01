@@ -85,6 +85,7 @@ export interface ProjectApi {
   retainedMedia(id: string, exportId: string): Promise<RetainedClip>;
   relinkExport(id: string, exportId: string): Promise<ProjectSnapshot | null>;
   chooseDestination(id: string, folder: string): Promise<string | null>;
+  revealDestination(id: string, folder: string): Promise<void>;
   acceptReview(id: string, clipId: string): Promise<ProjectSnapshot>;
   destinationPlan(id: string): Promise<import('./review-plan.js').DestinationPlan>;
   destinationFolders(

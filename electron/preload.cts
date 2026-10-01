@@ -16,6 +16,8 @@ const api: VirtualCutApi = {
     recover: () => ipcRenderer.invoke('workspace:recover'),
     chooseDestination: (id, folder) =>
       ipcRenderer.invoke('workspace:chooseDestination', id, folder),
+    revealDestination: (id, folder) =>
+      ipcRenderer.invoke('workspace:revealDestination', id, folder),
     acceptReview: (id, clipId) => ipcRenderer.invoke('workspace:acceptReview', id, clipId),
     destinationPlan: (id) => ipcRenderer.invoke('workspace:destinationPlan', id),
     destinationFolders: (id, folder) =>

@@ -214,7 +214,12 @@ export class ProjectService {
   private async grant(file: string) {
     const cached = this.grants.get(file);
     if (cached) return cached.url;
-    const access = new VideoAccess();
+    const access = new VideoAccess((details) =>
+      this.diagnostics?.record('media-read-failed', {
+        projectId: this.store?.data.project.id,
+        ...details,
+      }),
+    );
     const video = await access.select(file);
     this.grants.set(file, { access, url: video.url });
     return video.url;
@@ -231,6 +236,12 @@ export class ProjectService {
     for (const grant of this.grants.values())
       if (grant.url === request.url) return grant.access.respond(request);
     return null;
+  }
+  playbackDetails(sourceId: string) {
+    const file =
+      this.store?.sources().find((source) => source.id === sourceId)?.file ||
+      this.store?.exports().find((entry) => entry.plan.id === sourceId)?.output;
+    return file ? this.grants.get(file)?.access.diagnostics() || {} : {};
   }
   async refreshAvailability() {
     const store = this.require();
@@ -1199,7 +1210,16 @@ export class ProjectService {
             exportId: e.plan.id,
             name: e.plan.name,
             output: e.output!,
-            folder: e.filing!.folder,
+            // The receipt's original folder remains provenance; Library displays
+            // the current output location, including a verified relink.
+            folder: (() => {
+              const relative = path.relative(s.data.project.destination, path.dirname(e.output!));
+              return relative === '..' ||
+                relative.startsWith('..' + path.sep) ||
+                path.isAbsolute(relative)
+                ? path.dirname(e.output!)
+                : relative.split(path.sep).join('/');
+            })(),
             source: e.input.sourceFile,
             completedAt: e.filing!.completedAt!,
             duration: e.verification!.actual.end - e.verification!.actual.start,

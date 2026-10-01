@@ -27,6 +27,7 @@ import { Button, Modal } from './ui';
 import { Timeline } from './Timeline';
 import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
+import type { PlaybackDiagnostic, PlaybackTrace } from '../../electron/diagnostic-contracts';
 import s from './Workflow.module.css';
 export interface Transport {
   seek: (time: number) => void;
@@ -100,6 +101,9 @@ export function Player({
     speed = useRef(1);
   const playRequest = useRef(0),
     retryPosition = useRef<number | null>(null);
+  const previewId = useRef(crypto.randomUUID()),
+    recent = useRef<PlaybackTrace[]>([]),
+    awaitingRecovery = useRef(false);
   const gestures = useRef({ scrub: false, trim: false });
   const [activity, setActivity] = useState(false);
   const reportActivity = useCallback(() => {
@@ -108,7 +112,7 @@ export function Player({
       gestures.current.scrub ||
       gestures.current.trim ||
       scan.current ||
-      (v && (!v.paused || v.seeking))
+      (v && !v.error && (!v.paused || v.seeking))
     );
     setActivity(active);
     onActivityChange?.(active);
@@ -160,6 +164,9 @@ export function Player({
     scan.current = null;
     playRequest.current++;
     retryPosition.current = null;
+    awaitingRecovery.current = false;
+    previewId.current = crypto.randomUUID();
+    recent.current = [];
     v.pause();
     speed.current = 1;
     v.playbackRate = 1;
@@ -178,6 +185,13 @@ export function Player({
   function revealFrame() {
     const v = video.current!;
     if (v.seeking || v.readyState < 2) return;
+    if (awaitingRecovery.current) {
+      awaitingRecovery.current = false;
+      window.virtualCut?.diagnostics?.playback({
+        ...playbackDetails(),
+        event: 'preview-recovered',
+      });
+    }
     if (frameCallback.current != null) v.cancelVideoFrameCallback(frameCallback.current);
     frameCallback.current = v.requestVideoFrameCallback(() => {
       setHoldFrame('');
@@ -206,17 +220,64 @@ export function Player({
   const reversePlaying = status.includes('reverse');
   const fastPlaying = status.includes('forward') && speed.current > 1;
   const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
+  const trace = useCallback(
+    (action: PlaybackTrace['action'], details: Partial<PlaybackTrace> = {}) => {
+      const entry = {
+        action,
+        atMs: Math.round(performance.now()),
+        position: Math.max(0, (video.current?.currentTime || 0) - clockOffset),
+        ...details,
+      };
+      // Coalesce pointer movement, and keep only bounded in-memory breadcrumbs.
+      // They are written with failures/reloads, never on every playback frame.
+      const last = recent.current.at(-1);
+      if (last?.action === action && entry.atMs - last.atMs < 150)
+        recent.current[recent.current.length - 1] = { ...last, ...entry };
+      else recent.current = [...recent.current.slice(-23), entry];
+    },
+    [clockOffset],
+  );
+  function playbackDetails(): Omit<PlaybackDiagnostic, 'event'> {
+    const v = video.current!;
+    return {
+      sourceId: r.id,
+      projectId,
+      previewId: previewId.current,
+      position: Math.max(0, v.currentTime - clockOffset),
+      rate: speed.current,
+      readyState: v.readyState,
+      networkState: v.networkState,
+      paused: v.paused,
+      seeking: v.seeking,
+      duration,
+      offset: clockOffset,
+      clipCount: clips.length,
+      recent: [...recent.current],
+    };
+  }
   useEffect(() => {
-    window.virtualCut?.diagnostics?.playback({ event: 'source-open', sourceId: r.id });
-  }, [r.id, r.url]);
+    trace('source-open');
+    window.virtualCut?.diagnostics?.playback({
+      event: 'source-open',
+      sourceId: r.id,
+      projectId,
+      previewId: previewId.current,
+    });
+  }, [r.id, r.url, projectId, trace]);
   useEffect(() => {
+    trace('clips-changed', { clipCount: clips.length });
+  }, [clips.length, trace, r.id]);
+  useEffect(() => {
+    trace(status === 'Paused' ? 'pause' : status.includes('scan') ? 'scan' : 'play', {
+      rate: speed.current,
+    });
     window.virtualCut?.diagnostics?.playback({
       event: status === 'Paused' ? 'pause' : status.includes('scan') ? 'scan' : 'play',
       sourceId: r.id,
       rate: speed.current,
       direction: status.includes('reverse') ? -1 : 1,
     });
-  }, [status, r.id]);
+  }, [status, r.id, trace]);
   const callbacks = useRef({ onPosition, onDuration, onEnded });
   useEffect(() => {
     onPlayable?.(ready);
@@ -318,8 +379,9 @@ export function Player({
   }, [seekAction]);
   const seek = (t: number) => {
     const v = video.current;
-    if (!v || !Number.isFinite(z) || z <= 0) return;
+    if (!v || v.error || !Number.isFinite(t) || !Number.isFinite(z) || z <= 0) return;
     const position = Math.max(a, Math.min(z - 0.001, t));
+    trace('seek', { target: position });
     v.currentTime = position + clockOffset;
     reportActivity();
     setCurrent(position);
@@ -354,7 +416,18 @@ export function Player({
       })
       .catch((e) => {
         if (request === playRequest.current && e.name !== 'AbortError') {
+          trace('error');
+          window.virtualCut?.diagnostics?.playback({
+            ...playbackDetails(),
+            event: 'media-error',
+            fault: 'play-rejected',
+            code: v.error?.code,
+          });
+          setErrorDetails(
+            JSON.stringify({ ...playbackDetails(), message: String(e.message || e) }, null, 2),
+          );
           stop();
+          setReady(false);
           setError('Playback could not start. Reload the preview to try again.');
         }
       });
@@ -416,6 +489,7 @@ export function Player({
   function command(key: string) {
     const v = video.current;
     if (!v || !ready) return;
+    trace('command', { rate: speed.current });
     if (key === 'pause') {
       stop();
       return;
@@ -535,6 +609,7 @@ export function Player({
           !(e.key === ' ' && (e.target as HTMLElement).closest('button'))
         ) {
           e.preventDefault();
+          e.stopPropagation();
           command(e.key.toLowerCase());
         }
       }}
@@ -572,6 +647,7 @@ export function Player({
           aria-label={`Video: ${r.title}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
+            trace('loaded');
             const d = r.sourcePath ? r.duration : Number.isFinite(v.duration) ? v.duration : 0;
             if (
               r.sourcePath &&
@@ -602,19 +678,35 @@ export function Player({
                 .catch(() => {});
           }}
           onLoadedData={revealFrame}
-          onSeeked={revealFrame}
+          onSeeking={() => trace('seek')}
+          onSeeked={() => {
+            trace('seeked');
+            revealFrame();
+          }}
+          onWaiting={() => trace('waiting')}
+          onStalled={() => trace('stalled')}
           onError={(e) => {
             const v = e.currentTarget;
+            gestures.current = { scrub: false, trim: false };
+            trace('error');
             window.virtualCut?.diagnostics?.playback({
+              ...playbackDetails(),
               event: 'media-error',
-              sourceId: r.id,
               code: v.error?.code,
-              rate: speed.current,
-              position: Math.max(0, v.currentTime - clockOffset),
+              fault: v.error?.message.includes('demuxer seek failed')
+                ? 'demuxer-seek'
+                : v.error?.code === 2
+                  ? 'media-read'
+                  : v.error?.code === 3
+                    ? 'media-decode'
+                    : v.error?.code === 4
+                      ? 'media-unsupported'
+                      : 'unknown',
             });
             setErrorDetails(
               JSON.stringify(
                 {
+                  ...playbackDetails(),
                   code: v.error?.code ?? null,
                   message: v.error?.message ?? 'Media error event',
                   sourceTime: Math.max(0, v.currentTime - clockOffset),
@@ -665,6 +757,53 @@ export function Player({
         {holdFrame && (
           <img className={s.transitionFrame} src={holdFrame} alt="" aria-hidden="true" />
         )}
+        {error && (
+          <div className={s.playbackFailure} role="alert">
+            <div className={s.playbackFailureCard}>
+              <strong>Preview stopped</strong>
+              <p>{error}</p>
+              {!r.sample && (
+                <Button
+                  primary
+                  className={s.reloadPreview}
+                  onClick={() => {
+                    const v = video.current!;
+                    stop();
+                    trace('reload');
+                    window.virtualCut?.diagnostics?.playback({
+                      ...playbackDetails(),
+                      event: 'reload',
+                      sourceId: r.id,
+                      position: Math.max(0, v.currentTime - clockOffset),
+                    });
+                    retryPosition.current = Math.max(
+                      a,
+                      Math.min(z - 0.001, v.currentTime - clockOffset),
+                    );
+                    speed.current = 1;
+                    v.playbackRate = 1;
+                    setError('');
+                    setErrorDetails('');
+                    setReady(false);
+                    awaitingRecovery.current = true;
+                    v.load();
+                  }}
+                >
+                  Reload preview
+                </Button>
+              )}
+              {errorDetails && (
+                <details>
+                  <summary>Error details</summary>
+                  <pre>{errorDetails}</pre>
+                </details>
+              )}
+              <p className={s.muted}>
+                For troubleshooting, use Diagnostics in the bottom bar → Copy diagnostics.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
       {r.sourcePath &&
         monitored
@@ -682,42 +821,6 @@ export function Player({
               crossOrigin="anonymous"
             />
           ))}
-      {error && (
-        <div className={s.error} role="alert">
-          {error}
-          {!r.sample && (
-            <Button
-              onClick={() => {
-                const v = video.current!;
-                stop();
-                window.virtualCut?.diagnostics?.playback({
-                  event: 'reload',
-                  sourceId: r.id,
-                  position: Math.max(0, v.currentTime - clockOffset),
-                });
-                retryPosition.current = Math.max(
-                  a,
-                  Math.min(z - 0.001, v.currentTime - clockOffset),
-                );
-                speed.current = 1;
-                v.playbackRate = 1;
-                setError('');
-                setErrorDetails('');
-                setReady(false);
-                v.load();
-              }}
-            >
-              Reload preview
-            </Button>
-          )}
-          {errorDetails && (
-            <details>
-              <summary>Error details</summary>
-              <pre>{errorDetails}</pre>
-            </details>
-          )}
-        </div>
-      )}
       <Timeline
         key={`${r.id}:${a}:${z}`}
         recording={r}

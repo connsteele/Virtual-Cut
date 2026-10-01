@@ -60,6 +60,10 @@ try {
   await expect
     .poll(() => library.locator('video').evaluate((v) => v.readyState))
     .toBeGreaterThanOrEqual(2);
+  await page.keyboard.press('l');
+  await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('1× forward');
+  await page.keyboard.press('k');
+  await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('Paused');
   await library
     .getByRole('button', { name: /Red marker/ })
     .last()
@@ -73,6 +77,25 @@ try {
   await nav.getByRole('button', { name: 'Review', exact: true }).click();
   const card = page.locator('[data-card="collision"]');
   await page.getByRole('button', { name: /^All \d/ }).click();
+  await page.getByLabel('Sort review').selectOption('name');
+  await expect(page.getByLabel('Sort review')).toHaveValue('name');
+  await page.getByLabel('Sort review').selectOption('folder');
+  await app.evaluate(({ shell }) => {
+    globalThis.revealedDestination = '';
+    shell.openPath = async (folder) => {
+      globalThis.revealedDestination = folder;
+      return '';
+    };
+  });
+  await card
+    .locator('xpath=..')
+    .getByTitle(/^Open destination in Explorer/)
+    .click();
+  assert.equal(
+    await app.evaluate(() => globalThis.revealedDestination),
+    path.join((await current()).project.destination, 'Recovery'),
+    'The folder header opens its current destination through the native bridge',
+  );
   await card.getByRole('button', { name: 'Release hold', exact: true }).click();
   await card.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: /^File queue ·/ }).click();
@@ -86,6 +109,12 @@ try {
   await expect(dialog().getByRole('table', { name: 'Filing progress' })).toContainText('Done', {
     timeout: 30000,
   });
+  await dialog().getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.getByRole('button', { name: /^File queue ·/ }).click();
+  await dialog()
+    .getByRole('button', { name: /^Progress ·/ })
+    .click();
+  await expect(dialog().getByRole('table', { name: 'Filing progress' })).toContainText('Done');
   await dialog().getByRole('button', { name: 'Open Library', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Preview completed clip: Collision', exact: true }),

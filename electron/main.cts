@@ -199,12 +199,23 @@ function registerDesktopApi(): void {
     if (!value || typeof value !== 'object') return;
     const record = value as Record<string, unknown>;
     if (
-      !['source-open', 'reload', 'play', 'pause', 'scan', 'media-error'].includes(
-        String(record.event),
-      )
+      ![
+        'source-open',
+        'reload',
+        'play',
+        'pause',
+        'scan',
+        'media-error',
+        'preview-recovered',
+      ].includes(String(record.event))
     )
       return;
-    diagnostics.record(String(record.event), record);
+    diagnostics.record(String(record.event), {
+      ...record,
+      ...(['media-error', 'reload', 'preview-recovered'].includes(String(record.event))
+        ? projects.playbackDetails(String(record.sourceId))
+        : {}),
+    });
   });
   // Preview work must not hold the serialized project-edit queue, especially
   // while a cancellation, Save or close request is waiting.
@@ -280,6 +291,10 @@ function registerDesktopApi(): void {
   workspace('acceptReview', (id, clipId) => projects.acceptReview(id, clipId));
   workspace('destinationPlan', (id) => projects.destinationPlan(id));
   workspace('destinationFolders', (id, folder) => projects.destinationFolders(id, folder));
+  workspace('revealDestination', async (id, folder) => {
+    const error = await shell.openPath(await projects.destinationLocation(id, folder));
+    if (error) throw new Error('Could not open this destination folder.');
+  });
   workspace('chooseDestination', async (id, folder) => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Choose finished-video folder',
@@ -338,6 +353,7 @@ function registerDesktopApi(): void {
     if (!record) throw new Error('Choose a completed Library clip.');
     const chosen = await dialog.showOpenDialog(mainWindow!, {
       title: 'Locate the completed video and its adjacent .vcut.json companion',
+      defaultPath: projects.require(id).data.project.destination,
       properties: ['openFile'],
       filters: [{ name: 'Completed video', extensions: [record.plan.container] }],
     });

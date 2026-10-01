@@ -1,12 +1,36 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, writeFile, stat, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { require, root } from './shared.mjs';
 
 const { VideoAccess } = require(path.join(root, 'dist-electron/media.cjs'));
 const { DemoMedia } = require(path.join(root, 'dist-electron/demo-media.cjs'));
+test('read failures report bounded context and normal reads do not write events', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'virtual-cut-read-test-'));
+  const file = path.join(directory, 'private-name.mp4');
+  await writeFile(file, '0123456789');
+  const events = [],
+    access = new VideoAccess((event) => events.push(event));
+  const video = await access.select(file);
+  assert.equal(await (await access.respond(new Request(video.url))).text(), '0123456789');
+  assert.equal(events.length, 0);
+  assert.equal(
+    (await access.respond(new Request(video.url, { headers: { Range: 'bytes=99-' } }))).status,
+    416,
+  );
+  assert.equal(events.at(-1).readReason, 'range');
+  await writeFile(file, 'changed');
+  assert.equal((await access.respond(new Request(video.url))).status, 409);
+  assert.equal(events.at(-1).readReason, 'changed');
+  await unlink(file);
+  assert.equal((await access.respond(new Request(video.url))).status, 404);
+  assert.equal(events.at(-1).errorCode, 'ENOENT');
+  assert.equal(access.diagnostics().readFailures, 3);
+  assert.equal(access.diagnostics().readRequests, 4);
+  assert(!JSON.stringify(events).includes('private-name'));
+});
 
 test('demo allowlist grants independent bounded streams and rejects unknown or escaping paths', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'virtual-cut-demo-test-'));

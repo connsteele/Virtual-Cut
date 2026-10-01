@@ -517,6 +517,49 @@
   object-fit: contain;
   pointer-events: none;
 }
+.playbackFailure {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow: auto;
+  background: rgb(35 42 41 / 72%);
+  backdrop-filter: grayscale(1);
+}
+.playbackFailureCard {
+  max-width: 620px;
+  width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #14201ff2;
+  text-align: center;
+}
+.playbackFailureCard > strong {
+  font-size: 20px;
+}
+.playbackFailureCard p {
+  margin: 10px 0;
+}
+.playbackFailureCard pre {
+  max-height: 9em;
+  overflow: auto;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.playbackFailureCard details {
+  margin-top: 12px;
+}
+.reloadPreview {
+  font-size: 18px;
+  padding: 12px 24px;
+}
 .audioControls {
   flex-shrink: 0;
   display: flex;
@@ -686,6 +729,21 @@
   background: #39251e;
   border-radius: 5px;
   font-size: 12px;
+}
+.dangerButton {
+  background: #6b292b;
+  border-color: #c67678;
+  color: #fff1ef;
+}
+.doneStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid #6db8b3;
+  border-radius: 5px;
+  color: #bdf5ec;
+  background: #164b47;
 }
 .error pre {
   max-height: 8em;

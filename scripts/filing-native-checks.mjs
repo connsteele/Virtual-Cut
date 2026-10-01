@@ -197,11 +197,21 @@ assert.equal(
 await assert.rejects(() => service.relinkExport(id, second.plan.id, first.output), /match/);
 await service.relinkExport(id, second.plan.id, nextFile);
 assert.equal((await service.retainedMedia(id, second.plan.id)).output, nextFile);
+assert.equal(
+  (await service.snapshot()).library.find((c) => c.exportId === second.plan.id).folder,
+  moved,
+  'Library groups a relinked outside-root output by its current folder',
+);
 await service.close();
 await service.open(file);
 assert.equal(
   (await service.snapshot()).library.find((c) => c.exportId === second.plan.id).output,
   nextFile,
+);
+assert.equal(
+  (await service.snapshot()).library.find((c) => c.exportId === second.plan.id).folder,
+  moved,
+  'Current output folder survives reopening',
 );
 await rename(source + '.offline', source);
 await service.snapshot();

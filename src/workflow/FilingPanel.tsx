@@ -7,7 +7,7 @@ import { JobTime } from './JobTime';
 import s from './Workflow.module.css';
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 const range = (r?: { start: number; end: number }) =>
-  r ? `${r.start.toFixed(3)} → ${r.end.toFixed(3)} s` : 'Unavailable';
+  r ? `In: ${r.start.toFixed(3)} · Out: ${r.end.toFixed(3)} s` : 'Unavailable';
 export function FilingPanel({
   workspace: w,
   onClose,
@@ -20,6 +20,9 @@ export function FilingPanel({
   const p = w.snapshot!,
     [plan, setPlan] = useState<FilingPlan>(),
     [queueId, setQueueId] = useState(''),
+    [showProgress, setShowProgress] = useState(() =>
+      p.exports.some((e) => e.filing && ['queued', 'running'].includes(e.state)),
+    ),
     [confirmed, setConfirmed] = useState(false),
     [error, setError] = useState(''),
     [checking, setChecking] = useState(true);
@@ -47,7 +50,7 @@ export function FilingPanel({
   const records = p.exports.filter(
     (e) =>
       e.filing &&
-      (queueId ? e.filing.queueId === queueId : e.filing.batchId === batchId) &&
+      (queueId ? e.filing.queueId === queueId : showProgress || e.filing.batchId === batchId) &&
       e.state !== 'planned',
   );
   const pending = records.some((e) => ['queued', 'running'].includes(e.state));
@@ -58,7 +61,15 @@ export function FilingPanel({
         keeps its original video and clean game audio. The requested cuts expand to usable
         keyframes; names, markers, notes and source details travel with the companion file.
       </p>
-      {!queueId && (
+      <div className={s.tools}>
+        <Button aria-pressed={!showProgress} onClick={() => setShowProgress(false)}>
+          Plan
+        </Button>
+        <Button aria-pressed={showProgress} onClick={() => setShowProgress(true)}>
+          Progress · {records.length}
+        </Button>
+      </div>
+      {!showProgress && (
         <>
           <p className={s.muted}>Destination: {plan?.root || p.project.destination}</p>
           {checking && <p role="status">Checking accepted clips and destinations…</p>}
@@ -67,8 +78,16 @@ export function FilingPanel({
               <table className={s.saveTable} aria-label="Filing plan">
                 <thead>
                   <tr>
-                    <th>Clip / destination</th>
-                    <th>Requested / outward cut</th>
+                    <th>
+                      Clip
+                      <br />
+                      Destination
+                    </th>
+                    <th>
+                      Requested
+                      <br />
+                      Outward cut
+                    </th>
                     <th>Checks</th>
                   </tr>
                 </thead>
@@ -126,7 +145,10 @@ export function FilingPanel({
               void w
                 .run(() => window.virtualCut!.project.fileQueue(id, plan!.id, confirmed), true)
                 .then((value) => {
-                  if (value) setQueueId(plan!.id);
+                  if (value) {
+                    setQueueId(plan!.id);
+                    setShowProgress(true);
+                  }
                 })
             }
           >
@@ -134,7 +156,8 @@ export function FilingPanel({
           </Button>
         </>
       )}
-      {!!records.length && (
+      {showProgress && !records.length && <p>No filing work in this project yet.</p>}
+      {showProgress && !!records.length && (
         <>
           <h3>{queueId ? 'This filing queue' : 'Recent filing work'}</h3>
           <div className={s.saveTableWrap}>
@@ -197,6 +220,7 @@ export function FilingPanel({
           </div>
           {pending && (
             <Button
+              className={s.dangerButton}
               disabled={w.busy}
               onClick={() =>
                 void w.run(async () => {

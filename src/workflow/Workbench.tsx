@@ -497,6 +497,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const [exportClipId, setExportClipId] = useState(''),
     [exportsOpen, setExportsOpen] = useState(false);
   const [filingOpen, setFilingOpen] = useState(false);
+  const [reviewSort, setReviewSort] = useState<'folder' | 'name'>('folder');
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1237,6 +1238,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     .filter((c) => recordings.some((r) => r.id === c.rid))
     .map((c) => (destinationIssues[c.id]?.length ? { ...c, held: true, accepted: false } : c));
   const readyQueue = batchClips.filter((c) => c.accepted && !c.held && !c.filed);
+  const filingPending =
+    project?.exports.filter((e) => e.filing && ['queued', 'running'].includes(e.state)).length || 0;
   const filtered = batchClips
     .filter(
       (c) =>
@@ -1248,6 +1251,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     )
     .filter(
       (c) => !folderFilter || c.folder === folderFilter || c.folder.startsWith(folderFilter + '/'),
+    )
+    .sort(
+      (a, b) =>
+        (reviewSort === 'folder'
+          ? a.folder.localeCompare(b.folder, undefined, { numeric: true })
+          : 0) ||
+        a.name.localeCompare(b.name, undefined, { numeric: true }) ||
+        a.id.localeCompare(b.id),
     );
   const effective = (e: Entry) => ({
     ...e,
@@ -1394,7 +1405,23 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </>
               )}
               <span className={s.spacer} />
-              {project && <Button onClick={() => setExportsOpen(true)}>Exports</Button>}
+              {project && (
+                <>
+                  <Button onClick={() => setFilingOpen(true)}>
+                    File queue · {readyQueue.length}
+                  </Button>
+                  {!!filingPending && (
+                    <Button
+                      className={s.doneStatus}
+                      onClick={() => setFilingOpen(true)}
+                      aria-label="Show filing progress"
+                    >
+                      Filing · {filingPending} remaining
+                    </Button>
+                  )}
+                  <Button onClick={() => setExportsOpen(true)}>Exports</Button>
+                </>
+              )}
               {page === 'cut' && (
                 <Button
                   primary
@@ -1778,6 +1805,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 <Button aria-pressed={reviewTree} onClick={() => setReviewTree(!reviewTree)}>
                   <FolderTree size={16} /> Tree
                 </Button>
+                <label className={s.tools}>
+                  Sort{' '}
+                  <select
+                    aria-label="Sort review"
+                    value={reviewSort}
+                    onChange={(event) => setReviewSort(event.target.value as 'folder' | 'name')}
+                  >
+                    <option value="folder">Folder name</option>
+                    <option value="name">Clip name</option>
+                  </select>
+                </label>
                 <span className={s.toolbarDivider} aria-hidden="true" />
                 <div className={s.tools}>
                   {['Remaining', 'Held', 'Queue', 'Done', 'All'].map((f) => (
@@ -1836,8 +1874,28 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   {[...new Set(filtered.map((c) => c.folder))].map((folder) => (
                     <section key={folder} className={s.folderGroup}>
                       <header>
-                        <FolderOpen size={16} />
-                        {folder}
+                        {project ? (
+                          <Button
+                            title="Open destination in Explorer (nearest existing parent for a planned folder)"
+                            onClick={() =>
+                              void workspace.run(
+                                () =>
+                                  window.virtualCut!.project.revealDestination(
+                                    project.project.id,
+                                    folder,
+                                  ),
+                                true,
+                              )
+                            }
+                          >
+                            <FolderOpen size={16} /> {folder || 'Destination root'}
+                          </Button>
+                        ) : (
+                          <>
+                            <FolderOpen size={16} />
+                            {folder}
+                          </>
+                        )}
                         <span className={s.spacer} />
                         {filtered.filter((c) => c.folder === folder).length} clips
                       </header>
@@ -1895,33 +1953,39 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                     <ChevronDown size={15} />
                                   )}
                                 </Button>
-                                <Button
-                                  className={clip.accepted ? s.acceptedButton : undefined}
-                                  aria-pressed={Boolean(clip.accepted)}
-                                  disabled={
-                                    workspace.blocking || !!destinationIssues[clip.id]?.length
-                                  }
-                                  title={destinationIssues[clip.id]?.join(' ')}
-                                  onClick={() =>
-                                    project && !clip.accepted
-                                      ? void workspace.run(
-                                          () =>
-                                            window.virtualCut!.project.acceptReview(
-                                              project.project.id,
-                                              clip.id,
-                                            ),
-                                          true,
-                                        )
-                                      : updateClip(
-                                          clip.id,
-                                          { accepted: !clip.accepted, held: false },
-                                          false,
-                                        )
-                                  }
-                                >
-                                  <Check size={15} />
-                                  {clip.accepted ? 'Accepted' : 'Accept'}
-                                </Button>
+                                {clip.filed ? (
+                                  <span className={s.doneStatus}>
+                                    <Check size={15} /> Done
+                                  </span>
+                                ) : (
+                                  <Button
+                                    className={clip.accepted ? s.acceptedButton : undefined}
+                                    aria-pressed={Boolean(clip.accepted)}
+                                    disabled={
+                                      workspace.blocking || !!destinationIssues[clip.id]?.length
+                                    }
+                                    title={destinationIssues[clip.id]?.join(' ')}
+                                    onClick={() =>
+                                      project && !clip.accepted
+                                        ? void workspace.run(
+                                            () =>
+                                              window.virtualCut!.project.acceptReview(
+                                                project.project.id,
+                                                clip.id,
+                                              ),
+                                            true,
+                                          )
+                                        : updateClip(
+                                            clip.id,
+                                            { accepted: !clip.accepted, held: false },
+                                            false,
+                                          )
+                                    }
+                                  >
+                                    <Check size={15} />
+                                    {clip.accepted ? 'Accepted' : 'Accept'}
+                                  </Button>
+                                )}
                                 <Button
                                   aria-pressed={Boolean(
                                     model.clips.find((c) => c.id === clip.id)?.held,
@@ -2049,13 +2113,15 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   {readyQueue.length} accepted and ready{!project && ' · preview plan'}
                 </span>
                 <span className={s.spacer} />
-                <Button
-                  primary
-                  disabled={workspace.busy}
-                  onClick={() => (project ? setFilingOpen(true) : setDialog('file'))}
-                >
-                  File queue · {readyQueue.length}
-                </Button>
+                {!project && (
+                  <Button
+                    primary
+                    disabled={workspace.busy}
+                    onClick={() => (project ? setFilingOpen(true) : setDialog('file'))}
+                  >
+                    File queue · {readyQueue.length}
+                  </Button>
+                )}
               </div>
             </>
           )}

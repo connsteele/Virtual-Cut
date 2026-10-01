@@ -11,6 +11,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
   const [query, setQuery] = useState(''),
     [folder, setFolder] = useState(''),
     [selected, setSelected] = useState<RetainedClip>(),
+    [attempted, setAttempted] = useState<RetainedClip>(),
     [error, setError] = useState(''),
     [loading, setLoading] = useState('');
   const request = useRef(0),
@@ -36,6 +37,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
   const open = async (clip: RetainedClip) => {
     const token = ++request.current;
     setError('');
+    setAttempted(clip);
     setLoading(clip.exportId);
     window.dispatchEvent(new Event('virtual-cut-pause-workspace'));
     try {
@@ -50,6 +52,15 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
       if (token === request.current) setLoading('');
     }
   };
+  const relink = (clip: RetainedClip) =>
+    void w
+      .run(() => window.virtualCut!.project.relinkExport(p.project.id, clip.exportId), true)
+      .then((value) => {
+        if (value) {
+          setFolder('');
+          void open(clip);
+        }
+      });
   const record: Recording | undefined = selected
     ? {
         id: selected.exportId,
@@ -71,7 +82,32 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
       }
     : undefined;
   return (
-    <section className={s.root} aria-label="Completed Library">
+    <section
+      className={s.root}
+      aria-label="Completed Library"
+      onKeyDown={(event) => {
+        if (
+          event.repeat ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.metaKey ||
+          event.defaultPrevented ||
+          !selected ||
+          (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]') ||
+          document.querySelector('dialog[open]')
+        )
+          return;
+        const key = event.key.toLowerCase();
+        if (
+          ['j', 'k', 'l', ' '].includes(key) &&
+          !(key === ' ' && (event.target as HTMLElement).closest('button'))
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          transport.current?.command(key);
+        }
+      }}
+    >
       <div className={s.toolbar}>
         <h2>Library</h2>
         <input
@@ -102,6 +138,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
               className={selected?.exportId === c.exportId ? s.selected : ''}
             >
               <button
+                data-navigate-item
                 className={s.pick}
                 aria-label={`Preview completed clip: ${c.name}`}
                 disabled={loading === c.exportId}
@@ -134,19 +171,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
                 >
                   <FolderOpen size={16} />
                 </Button>
-                <Button
-                  aria-label={`Relink completed clip: ${c.name}`}
-                  onClick={() =>
-                    void w
-                      .run(
-                        () => window.virtualCut!.project.relinkExport(p.project.id, c.exportId),
-                        true,
-                      )
-                      .then((value) => {
-                        if (value && selected?.exportId === c.exportId) void open(c);
-                      })
-                  }
-                >
+                <Button aria-label={`Relink completed clip: ${c.name}`} onClick={() => relink(c)}>
                   <Link2 size={16} />
                   Relink…
                 </Button>
@@ -162,7 +187,19 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
           )}
         </div>
         <div className={s.detail}>
-          {(error || w.error) && <p role="alert">{error || w.error}</p>}
+          {error ? (
+            <div className={s.unavailable} role="alert">
+              <strong>Completed preview unavailable</strong>
+              <p>{error}</p>
+              {attempted && (
+                <Button primary onClick={() => relink(attempted)}>
+                  Relink completed video…
+                </Button>
+              )}
+            </div>
+          ) : (
+            w.error && <p role="alert">{w.error}</p>
+          )}
           {loading && <p role="status">Verifying the completed file…</p>}
           {record && selected && (
             <>
@@ -216,7 +253,7 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
               </div>
             </>
           )}
-          {!record && !loading && (
+          {!record && !loading && !error && (
             <p>
               Choose a completed clip to preview its retained video and annotations. Originals can
               stay offline.
