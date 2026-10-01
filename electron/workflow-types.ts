@@ -62,6 +62,8 @@ export interface Clip {
   folder: string;
   include: boolean;
   accepted?: boolean;
+  /** Native signature of the exact accepted content. Never a filing receipt. */
+  acceptedKey?: string;
   held?: boolean;
   filed?: boolean;
   note?: string;

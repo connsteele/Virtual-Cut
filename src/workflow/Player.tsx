@@ -202,6 +202,17 @@ export function Player({
   const reversePlaying = status.includes('reverse');
   const fastPlaying = status.includes('forward') && speed.current > 1;
   const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
+  useEffect(() => {
+    window.virtualCut?.diagnostics?.playback({ event: 'source-open', sourceId: r.id });
+  }, [r.id, r.url]);
+  useEffect(() => {
+    window.virtualCut?.diagnostics?.playback({
+      event: status === 'Paused' ? 'pause' : status.includes('scan') ? 'scan' : 'play',
+      sourceId: r.id,
+      rate: speed.current,
+      direction: status.includes('reverse') ? -1 : 1,
+    });
+  }, [status, r.id]);
   const callbacks = useRef({ onPosition, onDuration, onEnded });
   useEffect(() => {
     onPlayable?.(ready);
@@ -580,6 +591,13 @@ export function Player({
           onSeeked={revealFrame}
           onError={(e) => {
             const v = e.currentTarget;
+            window.virtualCut?.diagnostics?.playback({
+              event: 'media-error',
+              sourceId: r.id,
+              code: v.error?.code,
+              rate: speed.current,
+              position: Math.max(0, v.currentTime - clockOffset),
+            });
             setErrorDetails(
               JSON.stringify(
                 {
@@ -658,6 +676,11 @@ export function Player({
               onClick={() => {
                 const v = video.current!;
                 stop();
+                window.virtualCut?.diagnostics?.playback({
+                  event: 'reload',
+                  sourceId: r.id,
+                  position: Math.max(0, v.currentTime - clockOffset),
+                });
                 retryPosition.current = Math.max(
                   a,
                   Math.min(z - 0.001, v.currentTime - clockOffset),

@@ -262,5 +262,5 @@ export function storedModel(model: Model): string {
   });
 }
 export function invalidate(c: Clip): Clip {
-  return { ...c, accepted: false, filed: false };
+  return { ...c, accepted: false, acceptedKey: undefined, filed: false };
 }

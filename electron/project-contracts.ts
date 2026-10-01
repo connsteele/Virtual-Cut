@@ -66,6 +66,12 @@ export interface RecentProject {
   file: string;
 }
 export interface ProjectApi {
+  acceptReview(id: string, clipId: string): Promise<ProjectSnapshot>;
+  destinationPlan(id: string): Promise<import('./review-plan.js').DestinationPlan>;
+  destinationFolders(
+    id: string,
+    folder: string,
+  ): Promise<import('./review-plan.js').DestinationFolders>;
   filmstrip(
     id: string,
     sourceId: string,

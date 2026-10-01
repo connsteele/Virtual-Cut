@@ -4,7 +4,18 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 // Sandboxed preloads cannot require arbitrary local modules. Keep runtime
 // imports confined to Electron; the shared contract is erased by TypeScript.
 const api: VirtualCutApi = {
+  diagnostics: {
+    summary: () => ipcRenderer.invoke('diagnostics:summary'),
+    copy: () => ipcRenderer.invoke('diagnostics:copy'),
+    openLogs: () => ipcRenderer.invoke('diagnostics:open'),
+    export: () => ipcRenderer.invoke('diagnostics:export'),
+    playback: (event) => ipcRenderer.send('diagnostics:playback', event),
+  },
   project: {
+    acceptReview: (id, clipId) => ipcRenderer.invoke('workspace:acceptReview', id, clipId),
+    destinationPlan: (id) => ipcRenderer.invoke('workspace:destinationPlan', id),
+    destinationFolders: (id, folder) =>
+      ipcRenderer.invoke('workspace:destinationFolders', id, folder),
     filmstrip: (id, sourceId, times, token) =>
       ipcRenderer.invoke('workspace:filmstrip', id, sourceId, times, token),
     cancelFilmstrip: (id, token, release) =>

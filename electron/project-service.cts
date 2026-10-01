@@ -21,7 +21,10 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
   'resolution-mode': 'import',
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
-import { editorial } from './project-edits.js';
+import { editorial, mergeEdits, validateEdits } from './project-edits.js';
+import { destinationPlan, destinationFolders } from './destination-plan.cjs';
+import { reconcileReview } from './review-state.cjs';
+import { Diagnostics, errorCode } from './diagnostics.cjs';
 import { exportClip as writeClip } from './clip-export.cjs';
 import type {
   ExportContainer,
@@ -94,7 +97,23 @@ export class ProjectService {
   constructor(
     private profile: string,
     private toolsDirectory: string,
+    private diagnostics?: Diagnostics,
   ) {}
+  async logToolVersions() {
+    for (const tool of ['ffmpeg', 'ffprobe'] as const) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const output = await launchTool(this.tool(tool), ['-version'], controller.signal);
+        const version = /version\s+((?:N-)?\d[\w.+-]*)/i.exec(output)?.[1];
+        this.diagnostics?.record('tool-version', { tool, version });
+      } catch (e) {
+        this.diagnostics?.record('operation-failed', { kind: tool, errorCode: errorCode(e) });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  }
   async recent(): Promise<RecentProject[]> {
     try {
       const p = JSON.parse(await readFile(path.join(this.profile, 'projects.json'), 'utf8'));
@@ -221,8 +240,11 @@ export class ProjectService {
   }
   async snapshot() {
     await this.refreshAvailability();
-    const store = this.require(),
-      snapshot = store.snapshot();
+    const store = this.require();
+    const priorReview = JSON.stringify(store.data.model.clips);
+    reconcileReview(store.data.model);
+    if (priorReview !== JSON.stringify(store.data.model.clips)) store.write();
+    const snapshot = store.snapshot();
     for (const item of snapshot.exports) {
       try {
         item.current = item.inputHash === this.exportInput(item.plan.clipId).hash;
@@ -261,6 +283,27 @@ export class ProjectService {
   async save(id: string, before: Model, after: Model) {
     const store = this.require(id),
       previous = store.data.model;
+    const accepting = after.clips.filter(
+      (c) => c.accepted && !before.clips.find((b) => b.id === c.id)?.accepted,
+    );
+    if (accepting.length) {
+      const revision = store.data.revision;
+      const candidate = validateEdits(mergeEdits(before, after, previous));
+      const plan = await destinationPlan(
+        store.data.project.destination,
+        candidate,
+        store.sources().map((s) => s.file),
+      );
+      const rejected = plan.rows.find(
+        (r) => accepting.some((c) => c.id === r.clipId) && r.issues.length,
+      );
+      if (rejected)
+        throw new Error('Review the destination plan before accepting: ' + rejected.issues[0]);
+      if (revision !== store.data.revision)
+        throw new Error(
+          'The project changed while checking destinations. Check again before accepting.',
+        );
+    }
     store.save(before, after);
     for (const r of store.data.model.recordings) {
       const old = previous.recordings.find((x) => x.id === r.id);
@@ -277,6 +320,31 @@ export class ProjectService {
     this.pump();
     if (editorial(previous) !== editorial(store.data.model)) await store.checkpoint('auto');
     return this.snapshot();
+  }
+  async destinationPlan(id: string) {
+    const s = this.require(id);
+    return destinationPlan(
+      s.data.project.destination,
+      s.data.model,
+      s.sources().map((source) => source.file),
+    );
+  }
+  async acceptReview(id: string, clipId: string) {
+    const s = this.require(id);
+    await this.refreshAvailability();
+    reconcileReview(s.data.model);
+    const before = structuredClone(s.data.model),
+      after = structuredClone(before);
+    const clip = after.clips.find((c) => c.id === clipId);
+    if (!clip) throw new Error('Choose a clip in this project.');
+    clip.accepted = true;
+    clip.held = false;
+    return this.save(id, before, after);
+  }
+  async destinationFolders(id: string, folder: string) {
+    const s = this.require(id);
+    if (typeof folder !== 'string') throw new Error('Choose a destination folder.');
+    return destinationFolders(s.data.project.destination, folder);
   }
   async checkpoint(id: string) {
     await this.require(id).checkpoint('manual');
@@ -722,7 +790,9 @@ export class ProjectService {
     // Review flags and playback position do not change the export payload.
     const clipPayload = { ...input.clip };
     delete clipPayload.accepted;
+    delete clipPayload.acceptedKey;
     delete clipPayload.held;
+    delete clipPayload.holdReason;
     delete clipPayload.filed;
     const payload = { ...clipPayload, include: undefined };
     const hash = createHash('sha256')
@@ -954,6 +1024,12 @@ export class ProjectService {
   }
   private async run(job: MediaJob, signal: AbortSignal) {
     const began = performance.now();
+    this.diagnostics?.record('job-start', {
+      jobId: job.id,
+      sourceId: job.sourceId,
+      projectId: this.store?.data.project.id,
+      kind: job.kind,
+    });
     job = { ...job, started: new Date().toISOString(), elapsedMs: 0 };
     const elapsedMs = () => Math.round(performance.now() - began);
     const s = this.require(),
@@ -977,6 +1053,7 @@ export class ProjectService {
     progress(0);
     let temp = '',
       pcm = '';
+    let failureCode: string | undefined;
     try {
       if (job.kind === 'export') {
         const record = s.exports().find((e) => e.plan.id === job.id);
@@ -1192,6 +1269,7 @@ export class ProjectService {
         updated: new Date().toISOString(),
       });
     } catch (e) {
+      failureCode = errorCode(e);
       if (job.kind === 'export') {
         const record = s.exports().find((e) => e.plan.id === job.id);
         if (record)
@@ -1225,6 +1303,21 @@ export class ProjectService {
         }
       }
     } finally {
+      const finalJob = s.jobs().find((j) => j.id === job.id);
+      this.diagnostics?.record(
+        finalJob?.state === 'succeeded'
+          ? 'job-end'
+          : signal.aborted
+            ? 'job-cancelled'
+            : 'job-failed',
+        {
+          jobId: job.id,
+          sourceId: job.sourceId,
+          kind: job.kind,
+          elapsedMs: elapsedMs(),
+          errorCode: failureCode,
+        },
+      );
       if (temp) await unlink(temp).catch(() => {});
       if (pcm) await unlink(pcm).catch(() => {});
     }

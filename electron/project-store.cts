@@ -14,6 +14,7 @@ import type {
   'resolution-mode': 'import',
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
+import { reconcileReview } from './review-state.cjs';
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 export interface NativeSource {
@@ -262,17 +263,7 @@ export class ProjectStore {
     return this.transaction(() => {
       const previous = this.data.model;
       const next = validateEdits(mergeEdits(before, after, previous));
-      // Source changes invalidate previously accepted reviews in native code too.
-      next.clips = next.clips.map((c) => {
-        const old = previous.clips.find((x) => x.id === c.id);
-        const changed =
-          !old ||
-          ['name', 'start', 'end', 'folder', 'note'].some(
-            (k) => old[k as keyof typeof old] !== c[k as keyof typeof c],
-          ) ||
-          JSON.stringify(previous.markers[c.rid]) !== JSON.stringify(next.markers[c.rid]);
-        return changed ? { ...c, accepted: false, filed: false } : c;
-      });
+      reconcileReview(next, previous);
       if (editorial(previous) !== editorial(next)) {
         this.db.prepare('DELETE FROM history WHERE applied=0').run();
         this.db
@@ -310,6 +301,7 @@ export class ProjectStore {
         r.position = positions.get(r.id) ?? r.position;
       });
       this.data.model.selectedRecordingId = selected;
+      reconcileReview(this.data.model);
       this.db
         .prepare('UPDATE history SET applied=? WHERE id=?')
         .run(direction === 'undo' ? 0 : 1, row.id!);

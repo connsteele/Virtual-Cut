@@ -57,6 +57,9 @@ import { inSourceFolder } from './sourceFolderTree';
 import { mediaSorts, sortMedia, type MediaSort } from './mediaOrder';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { DestinationPicker, DestinationPlanPanel } from './DestinationPanel';
+import { reviewContent, type DestinationPlan } from '../../electron/review-plan';
 import { clipColor } from './clipLayout';
 import type { MediaJob } from '../../electron/project-contracts';
 import { Button, Field, Modal, Thumbnail } from './ui';
@@ -444,6 +447,26 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const workspace = useProjectWorkspace();
   const { model, setModel, snapshot: project } = workspace;
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false),
+    [destinationPlan, setDestinationPlan] = useState<DestinationPlan | null>(null),
+    [planError, setPlanError] = useState(''),
+    [checkingPlan, setCheckingPlan] = useState(false);
+  async function checkDestinations() {
+    if (!project) return;
+    setPlanOpen(true);
+    setCheckingPlan(true);
+    setPlanError('');
+    setDestinationPlan(null);
+    try {
+      await workspace.flush();
+      setDestinationPlan(await window.virtualCut!.project.destinationPlan(project.project.id));
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCheckingPlan(false);
+    }
+  }
   const [exportClipId, setExportClipId] = useState(''),
     [exportsOpen, setExportsOpen] = useState(false);
   const [importing, setImporting] = useState(false),
@@ -607,10 +630,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const projectKey = project?.project.id || 'sample',
     batchKey = project?.activeBatchId || 'sample';
   const projectContext = useRef(projectKey + batchKey);
+  const destinationReviewTarget = useRef<{ context: string; clipId: string } | null>(null);
   useEffect(() => {
     if (projectContext.current === projectKey + batchKey) return;
     projectContext.current = projectKey + batchKey;
-    setExpanded('');
+    setExpanded(
+      destinationReviewTarget.current?.context === projectKey + batchKey
+        ? destinationReviewTarget.current.clipId
+        : '',
+    );
+    destinationReviewTarget.current = null;
     setChecked([]);
     setFolderFilter('');
     setSourceFolderFilter('');
@@ -656,10 +685,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setDeleteClipId('');
   }
   function updateRecording(id: string, patch: Partial<Recording>) {
-    setModel((m) => ({
-      ...m,
-      recordings: m.recordings.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    }));
+    setModel((m) => {
+      const next = {
+        ...m,
+        recordings: m.recordings.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      };
+      next.clips = m.clips.map((c) =>
+        reviewContent(m, c) !== reviewContent(next, c) ? invalidate(c) : c,
+      );
+      return next;
+    });
   }
   function updateClip(id: string, patch: Partial<Clip>, invalidateReview = true) {
     setModel((m) => ({
@@ -1690,6 +1725,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 <Button aria-pressed={reviewTree} onClick={() => setReviewTree(!reviewTree)}>
                   <FolderTree size={16} /> Tree
                 </Button>
+                {project && (
+                  <Button disabled={workspace.blocking} onClick={() => void checkDestinations()}>
+                    Check destinations
+                  </Button>
+                )}
                 {checked.length > 0 && (
                   <Button onClick={() => setFolderIds(checked)}>
                     Destination · {checked.length}
@@ -1743,7 +1783,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   onClick={() => setFolderIds([clip.id])}
                                 >
                                   <FolderOpen size={14} />
-                                  {clip.folder}
+                                  {clip.folder || 'Destination root'}
                                   <ChevronDown size={12} />
                                 </Button>
                               </div>
@@ -1772,12 +1812,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                 <Button
                                   className={clip.accepted ? s.acceptedButton : undefined}
                                   aria-pressed={Boolean(clip.accepted)}
+                                  disabled={workspace.blocking}
                                   onClick={() =>
-                                    updateClip(
-                                      clip.id,
-                                      { accepted: !clip.accepted, held: false },
-                                      false,
-                                    )
+                                    project && !clip.accepted
+                                      ? void workspace.run(
+                                          () =>
+                                            window.virtualCut!.project.acceptReview(
+                                              project.project.id,
+                                              clip.id,
+                                            ),
+                                          true,
+                                        )
+                                      : updateClip(
+                                          clip.id,
+                                          { accepted: !clip.accepted, held: false },
+                                          false,
+                                        )
                                   }
                                 >
                                   <Check size={15} />
@@ -2292,7 +2342,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       )}
       <footer className={s.footer}>
-        <span className={s.muted}>{project ? 'Project workspace' : 'Workflow preview'}</span>
+        <span className={s.muted}>
+          {project ? 'Project workspace' : 'Workflow preview'}{' '}
+          <Button onClick={() => setDiagnosticsOpen(true)}>Diagnostics</Button>
+        </span>
         <nav aria-label="Workspace pages">
           {pages.map((p) => (
             <button
@@ -2310,7 +2363,61 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           <span className={s.muted}>F11 · Fullscreen</span>
         </div>
       </footer>
-      {folderIds.length > 0 && (
+      {diagnosticsOpen && <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />}
+      {planOpen && (
+        <DestinationPlanPanel
+          plan={destinationPlan}
+          model={model}
+          error={planError}
+          checking={checkingPlan}
+          onRefresh={() => void checkDestinations()}
+          onClose={() => setPlanOpen(false)}
+          onEdit={async (id) => {
+            const clip = model.clips.find((c) => c.id === id);
+            if (!clip) return;
+            const batches = model.recordings.find((r) => r.id === clip.rid)?.batchIds || [];
+            if (project && !batches.includes(project.activeBatchId) && batches[0]) {
+              destinationReviewTarget.current = {
+                context: project.project.id + batches[0],
+                clipId: id,
+              };
+              const result = await workspace.run(
+                () => window.virtualCut!.project.selectBatch(project.project.id, batches[0]),
+                true,
+              );
+              if (!result) {
+                destinationReviewTarget.current = null;
+                return;
+              }
+            }
+            setPlanOpen(false);
+            setReviewFilter('All');
+            setFolderFilter('');
+            inspectReview(clip, 'name');
+          }}
+        />
+      )}
+      {folderIds.length > 0 && project && (
+        <DestinationPicker
+          projectId={project.project.id}
+          model={model}
+          clips={folderIds}
+          onClose={() => setFolderIds([])}
+          onApply={(folder) => {
+            setModel((m) => ({
+              ...m,
+              folders: [...new Set([...m.folders, folder])],
+              clips: m.clips.map((c) =>
+                folderIds.includes(c.id) && c.folder !== folder ? { ...invalidate(c), folder } : c,
+              ),
+            }));
+            setFolderIds([]);
+            setChecked([]);
+            setFolderFilter('');
+          }}
+        />
+      )}
+      {folderIds.length > 0 && !project && (
         <FolderPicker
           model={model}
           clips={folderIds}

@@ -51,6 +51,7 @@ try {
   assert.equal(boundary.requireType, 'undefined');
   assert.equal(boundary.processType, 'undefined');
   assert.deepEqual(boundary.apiKeys, [
+    'diagnostics',
     'getAppInfo',
     'openVideo',
     'project',

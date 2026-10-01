@@ -20,6 +20,8 @@ The local test setup uses six complete 4K AV1 recordings with original audio. Pr
 
 ## Run the app
 
+Version 0.3.9 adds persistent local diagnostics, review acceptance tied to the exact reviewed content, and a destination browser/plan with filename and collision checks. Plans can assign several clips to existing or proposed folders without creating directories or filing media. Existing accepted clips from older versions require one fresh acceptance. See [review planning and diagnostics](docs/review-planning.md) for behavior, verification and remaining M2 work.
+
 Version 0.3.8 retains recent filmstrip images across recording switches and keeps overlapping tiles aligned while panning. The bounded memory cache favors recent overviews, requests only missing visible slots, and releases images on eviction or project close. See [filmstrip reuse](docs/filmstrip-reuse.md) for behavior, limits and verification.
 
 Version 0.3.7 compacts thumbnail actions into the duration row and stacks list dates when the media pool is narrow. Playback and exports are unchanged. The [review follow-up](docs/review-0.3.6-followup.md) records the logging audit, confirmed Resolve note/color transfer gap, filmstrip reuse plans and preliminary 6× audio measurements.

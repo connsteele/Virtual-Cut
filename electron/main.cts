@@ -9,10 +9,13 @@ import {
   protocol,
   session,
   shell,
+  clipboard,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
-import { realpath, stat } from 'node:fs/promises';
+import { realpath, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { Diagnostics, errorCode } from './diagnostics.cjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
@@ -35,6 +38,7 @@ const demoMedia = new DemoMedia();
 const droppedImports = new DroppedImports();
 let projects: ProjectService;
 let closing = false;
+let diagnostics: Diagnostics;
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -81,7 +85,7 @@ function getRendererUrl(): string {
   return parsed.href;
 }
 
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
+function assertTrustedSender(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): void {
   if (
     !mainWindow ||
     event.sender !== mainWindow.webContents ||
@@ -161,6 +165,44 @@ async function registerAppProtocol(): Promise<void> {
 }
 
 function registerDesktopApi(): void {
+  ipcMain.handle('diagnostics:summary', (event) => {
+    assertTrustedSender(event);
+    return diagnostics.summary();
+  });
+  ipcMain.handle('diagnostics:copy', async (event) => {
+    assertTrustedSender(event);
+    clipboard.writeText((await diagnostics.summary()).text);
+  });
+  ipcMain.handle('diagnostics:open', async (event) => {
+    assertTrustedSender(event);
+    await diagnostics.flush();
+    const error = await shell.openPath(diagnostics.directory);
+    if (error) throw new Error('Logs could not be opened. Check local storage access.');
+  });
+  ipcMain.handle('diagnostics:export', async (event) => {
+    assertTrustedSender(event);
+    const summary = await diagnostics.summary();
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save diagnostic report',
+      defaultPath: `Virtual-Cut-diagnostics-${Date.now()}.txt`,
+      filters: [{ name: 'Diagnostic report', extensions: ['txt'] }],
+    });
+    if (result.canceled || !result.filePath) return false;
+    await writeFile(result.filePath, summary.text, { encoding: 'utf8', flag: 'wx' });
+    return true;
+  });
+  ipcMain.on('diagnostics:playback', (event, value: unknown) => {
+    assertTrustedSender(event);
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    if (
+      !['source-open', 'reload', 'play', 'pause', 'scan', 'media-error'].includes(
+        String(record.event),
+      )
+    )
+      return;
+    diagnostics.record(String(record.event), record);
+  });
   // Preview work must not hold the serialized project-edit queue, especially
   // while a cancellation, Save or close request is waiting.
   ipcMain.handle('workspace:filmstrip', (event, id, sourceId, times, token) => {
@@ -191,13 +233,50 @@ function registerDesktopApi(): void {
   ) => {
     ipcMain.handle('workspace:' + name, (event, ...args: unknown[]) => {
       assertTrustedSender(event);
-      const next = request.then(() => fn(...(args as Parameters<Calls[K]>)));
+      const next = request.then(async () => {
+        const tracked = ![
+          'current',
+          'recent',
+          'revealSave',
+          'revealSource',
+          'revealExport',
+          'save',
+        ].includes(name);
+        const operationId = randomUUID(),
+          started = performance.now();
+        if (tracked)
+          diagnostics.record('operation-start', {
+            operation: name,
+            operationId,
+            projectId: projects.store?.data.project.id,
+          });
+        try {
+          const value = await fn(...(args as Parameters<Calls[K]>));
+          if (tracked)
+            diagnostics.record('operation-end', {
+              operation: name,
+              operationId,
+              elapsedMs: performance.now() - started,
+            });
+          return value;
+        } catch (e) {
+          diagnostics.record('operation-failed', {
+            operation: name,
+            operationId,
+            errorCode: errorCode(e),
+          });
+          throw e;
+        }
+      });
       request = next.catch(() => {});
       return next;
     });
   };
   workspace('recent', () => projects.recent());
   workspace('current', () => (projects.store ? projects.snapshot() : null));
+  workspace('acceptReview', (id, clipId) => projects.acceptReview(id, clipId));
+  workspace('destinationPlan', (id) => projects.destinationPlan(id));
+  workspace('destinationFolders', (id, folder) => projects.destinationFolders(id, folder));
   workspace('save', (id, before, after) => projects.save(id, before, after));
   workspace('checkpoint', (id) => projects.checkpoint(id));
   workspace('restore', (id, saveId) => projects.restore(id, saveId));
@@ -419,6 +498,9 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+  window.webContents.on('render-process-gone', (_event, details) =>
+    diagnostics.record('renderer-gone', { reason: details.reason, exitCode: details.exitCode }),
+  );
   window.on('close', (event) => {
     if (!closing && projects.store) {
       event.preventDefault();
@@ -448,6 +530,21 @@ async function createWindow(): Promise<void> {
 app
   .whenReady()
   .then(async () => {
+    diagnostics = new Diagnostics(app.getPath('userData'));
+    diagnostics.record('session-start', {
+      app: app.getVersion(),
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+      packaged: app.isPackaged,
+    });
+    app.on('child-process-gone', (_event, details) =>
+      diagnostics.record('child-gone', { reason: details.reason, exitCode: details.exitCode }),
+    );
+    process.on('uncaughtExceptionMonitor', (e) => {
+      diagnostics.record('uncaught-error', { errorCode: errorCode(e) });
+      void diagnostics.flush();
+    });
     nativeTheme.themeSource = 'dark';
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) =>
@@ -458,7 +555,9 @@ app
     projects = new ProjectService(
       app.getPath('userData'),
       path.join(process.resourcesPath, 'tools'),
+      diagnostics,
     );
+    void projects.logToolVersions();
     await demoMedia
       .load(path.join(app.getAppPath(), 'demo-media.local.json'))
       .catch((error: unknown) => {
@@ -486,4 +585,17 @@ app
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+let logsFlushed = false;
+app.on('before-quit', (event) => {
+  if (!diagnostics || logsFlushed) return;
+  event.preventDefault();
+  diagnostics.record('session-end');
+  void Promise.race([
+    diagnostics.flush(),
+    new Promise((resolve) => setTimeout(resolve, 700)),
+  ]).finally(() => {
+    logsFlushed = true;
+    app.quit();
+  });
 });
