@@ -1,4 +1,4 @@
-import { DatabaseSync, backup } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -15,12 +15,14 @@ import type {
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
 import { reconcileReview } from './review-state.cjs';
+import { changes, applyChange, type Change } from './project-changes.js';
 import {
   PROJECT_APP_ID,
   PROJECT_VERSION,
   inspectProject,
   migrateProject,
   createSessionSchema,
+  compactSaveCopy,
 } from './project-recovery.cjs';
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
@@ -45,10 +47,15 @@ export class ProjectStore {
   readonly db!: DatabaseSync;
   private lock: string;
   data: Data;
-  private lastAuto = 0;
   private backedRevision = -1;
+  private observed?: Data;
+  private persisted?: Data;
+  private journal: { change: Change; bytes: number }[] = [];
+  private cursor = 0;
+  private savedAt = Date.now();
   private copies: SaveCopy[] = [];
   private recoveryNotice?: string;
+  private checkedCopies = false;
   constructor(
     readonly file: string,
     creation?: { name: string; destination: string; cache: string },
@@ -114,7 +121,9 @@ export class ProjectStore {
         const row = this.db.prepare('SELECT body FROM project WHERE id=1').get();
         if (!row || typeof row.body !== 'string') throw new Error('Project data is missing.');
         this.data = JSON.parse(row.body) as Data;
+        this.persisted = structuredClone(this.data);
         this.data.project.file = file;
+        this.observed = structuredClone(this.data);
         if (!this.data.project.id || !Array.isArray(this.data.model.recordings))
           throw new Error('Project data is invalid.');
         for (const job of this.jobs())
@@ -143,6 +152,7 @@ export class ProjectStore {
       this.db
         .prepare('UPDATE project_session SET clean=0, opened_at=?, closed_at=NULL WHERE id=1')
         .run(new Date().toISOString());
+      this.backedRevision = this.data.revision;
     } catch (e) {
       try {
         this.db!.close();
@@ -158,9 +168,25 @@ export class ProjectStore {
     }
   }
   write() {
+    // Native facts (inspection, batches, job results) remain durable. Apply only
+    // that operation's changes; staged editorial work must wait for a save.
+    const next =
+      this.observed && this.persisted
+        ? applyChange(this.persisted, changes(this.observed, this.data))
+        : structuredClone(this.data);
     this.db
       .prepare('INSERT OR REPLACE INTO project (id,body) VALUES (1,?)')
-      .run(JSON.stringify(this.data));
+      .run(JSON.stringify(next));
+    this.persisted = next;
+    this.observed = structuredClone(this.data);
+  }
+  persist() {
+    const body = JSON.stringify(this.data);
+    if (body !== JSON.stringify(this.persisted))
+      this.db.prepare('INSERT OR REPLACE INTO project (id,body) VALUES (1,?)').run(body);
+    this.persisted = structuredClone(this.data);
+    this.observed = structuredClone(this.data);
+    this.savedAt = Date.now();
   }
   async loadCopies() {
     const directory = this.file + '.saves';
@@ -180,14 +206,26 @@ export class ProjectStore {
           : [];
       })
       .sort((a, b) => b.created.localeCompare(a.created));
+    if (!this.checkedCopies) {
+      this.checkedCopies = true;
+      for (const copy of this.copies.filter((c) => c.kind !== 'migration')) {
+        try {
+          compactSaveCopy(path.join(directory, copy.id));
+        } catch {
+          this.recoveryNotice =
+            (this.recoveryNotice ? this.recoveryNotice + ' ' : '') +
+            'An older save copy could not be compacted. It was kept for recovery.';
+          break;
+        }
+      }
+    }
   }
   async checkpoint(kind: 'auto' | 'manual', force = false) {
-    if (
-      kind === 'auto' &&
-      ((!force && Date.now() - this.lastAuto < 120000) ||
-        this.backedRevision === this.data.revision)
-    )
-      return;
+    // force is retained for explicit close/maintenance callers; timed saves are
+    // already scheduled by the workspace and never need an additional throttle.
+    void force;
+    if (kind === 'auto' && this.backedRevision === this.data.revision && !this.dirty()) return;
+    this.persist();
     const directory = this.file + '.saves';
     await mkdir(directory, { recursive: true });
     const id = `${kind}-${Date.now()}-${randomUUID()}.vcut`,
@@ -195,7 +233,8 @@ export class ProjectStore {
       temporary = final + '.partial';
     try {
       const copiedRevision = this.data.revision;
-      await backup(this.db, temporary);
+      // Compact copies omit SQLite's reusable free pages. Undo lives only in RAM.
+      this.db.prepare('VACUUM INTO ?').run(temporary);
       const check = new DatabaseSync(temporary, { readOnly: true });
       try {
         if (check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
@@ -205,7 +244,6 @@ export class ProjectStore {
       }
       await rename(temporary, final);
       this.backedRevision = copiedRevision;
-      if (kind === 'auto') this.lastAuto = Date.now();
       await this.loadCopies();
       // Keep independent rolling histories for recovery and deliberate checkpoints.
       for (const category of ['auto', 'manual']) {
@@ -215,6 +253,7 @@ export class ProjectStore {
       await this.loadCopies();
     } finally {
       await unlink(temporary).catch(() => {});
+      for (const suffix of ['-wal', '-shm']) await unlink(temporary + suffix).catch(() => {});
     }
   }
   async restore(saveId: string) {
@@ -255,10 +294,16 @@ export class ProjectStore {
         ),
       );
     });
+    this.clearHistory();
+    this.persist();
     this.backedRevision = -1;
   }
   transaction<T>(fn: () => T): T {
     const before = structuredClone(this.data);
+    const persisted = this.persisted,
+      observed = this.observed;
+    const journal = this.journal,
+      cursor = this.cursor;
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const result = fn();
@@ -268,6 +313,10 @@ export class ProjectStore {
     } catch (e) {
       this.db.exec('ROLLBACK');
       this.data = before;
+      this.persisted = persisted;
+      this.observed = observed;
+      this.journal = journal;
+      this.cursor = cursor;
       throw e;
     }
   }
@@ -276,53 +325,34 @@ export class ProjectStore {
       throw new Error('The active project changed. Reopen your intended project.');
   }
   save(before: Model, after: Model) {
-    return this.transaction(() => {
-      const previous = this.data.model;
-      const next = validateEdits(mergeEdits(before, after, previous));
-      reconcileReview(next, previous);
-      if (editorial(previous) !== editorial(next)) {
-        this.db.prepare('DELETE FROM history WHERE applied=0').run();
-        this.db
-          .prepare('INSERT INTO history (before,after,applied) VALUES (?,?,1)')
-          .run(JSON.stringify(previous), JSON.stringify(next));
-        this.db.exec(
-          'DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT 100)',
-        );
-      }
-      this.data.model = next;
-      this.data.revision++;
-    });
+    const previous = this.data.model;
+    const next = validateEdits(mergeEdits(before, after, previous));
+    reconcileReview(next, previous);
+    if (editorial(previous) !== editorial(next)) {
+      const change = changes(JSON.parse(editorial(previous)), JSON.parse(editorial(next)))!;
+      this.journal.splice(this.cursor);
+      this.journal.push({ change, bytes: JSON.stringify(change).length * 2 });
+      while (
+        this.journal.length > 1 &&
+        (this.journal.length > 100 ||
+          this.journal.reduce((total, entry) => total + entry.bytes, 0) > 32 * 1024 * 1024)
+      )
+        this.journal.shift();
+      this.cursor = this.journal.length;
+    }
+    this.data.model = next;
+    this.data.revision++;
+    this.observed = structuredClone(this.data);
   }
   history(direction: 'undo' | 'redo') {
-    this.transaction(() => {
-      const row = this.db
-        .prepare(
-          direction === 'undo'
-            ? 'SELECT * FROM history WHERE applied=1 ORDER BY id DESC LIMIT 1'
-            : 'SELECT * FROM history WHERE applied=0 ORDER BY id LIMIT 1',
-        )
-        .get();
-      if (!row) return;
-      if (row.version !== 1) throw new Error('This undo entry uses an unsupported edit version.');
-      const before = JSON.parse(String(row.before)),
-        after = JSON.parse(String(row.after));
-      const positions = new Map(this.data.model.recordings.map((r) => [r.id, r.position]));
-      const selected = this.data.model.selectedRecordingId;
-      this.data.model = validateEdits(
-        direction === 'undo'
-          ? mergeEdits(after, before, this.data.model)
-          : mergeEdits(before, after, this.data.model),
-      );
-      this.data.model.recordings.forEach((r) => {
-        r.position = positions.get(r.id) ?? r.position;
-      });
-      this.data.model.selectedRecordingId = selected;
-      reconcileReview(this.data.model);
-      this.db
-        .prepare('UPDATE history SET applied=? WHERE id=?')
-        .run(direction === 'undo' ? 0 : 1, row.id!);
-      this.data.revision++;
-    });
+    const reverse = direction === 'undo';
+    const entry = this.journal[reverse ? this.cursor - 1 : this.cursor];
+    if (!entry) return;
+    this.data.model = validateEdits(applyChange(this.data.model, entry.change, reverse));
+    reconcileReview(this.data.model);
+    this.cursor += reverse ? -1 : 1;
+    this.data.revision++;
+    this.observed = structuredClone(this.data);
   }
   sources(): NativeSource[] {
     return this.db
@@ -340,6 +370,8 @@ export class ProjectStore {
     this.db.prepare('DELETE FROM sources WHERE id=?').run(id);
   }
   clearHistory() {
+    this.journal = [];
+    this.cursor = 0;
     this.db.exec('DELETE FROM history');
   }
   jobs(): MediaJob[] {
@@ -372,13 +404,20 @@ export class ProjectStore {
       ...structuredClone(this.data),
       jobs: this.jobs(),
       exports: this.exports(),
-      canUndo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=1 LIMIT 1').get()),
-      canRedo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=0 LIMIT 1').get()),
+      canUndo: this.cursor > 0,
+      canRedo: this.cursor < this.journal.length,
+      unsavedChanges: this.dirty(),
+      unsavedEdits: editorial(this.data.model) !== editorial(this.persisted!.model),
+      savedAt: this.savedAt,
       saves: structuredClone(this.copies),
       recoveryNotice: this.recoveryNotice,
     };
   }
+  private dirty() {
+    return JSON.stringify(this.data.model) !== JSON.stringify(this.persisted?.model);
+  }
   close() {
+    this.persist();
     this.db
       .prepare('UPDATE project_session SET clean=1, closed_at=? WHERE id=1')
       .run(new Date().toISOString());

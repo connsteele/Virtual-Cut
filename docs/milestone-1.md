@@ -4,6 +4,8 @@ Implemented September 29, 2026 for user testing; the current cleanup build is ve
 
 ## Storage and identity
 
+**Superseded save details:** Version 0.3.12 uses saved format 3, compact copies, session-only Undo and adjustable autosave (10-minute default). The original M1 journal/continuous-save details below are historical. Current policy and measured write reductions are in [save policy](save-policy.md).
+
 - A user-selected `.vcut` SQLite file owns one project. The native process owns all database and file access. The app profile stores only recent-project references and preferences. Disposable media caches are separate and configurable; development/test caches belong on G:.
 - Project, batch, source, clip, user-created marker, note, and job identities are UUIDs. Imported chapter IDs derive from their source UUID and intake chapter index. A source is referenced in place. Import never moves, remuxes, or modifies originals. Repeated imports of the same path and sampled content fingerprint reuse identity; changed footage creates a new source. Batches refer to sources explicitly.
 - Sample mode retains its existing local preview state. It is never silently converted into a real project or mixed into a new project.

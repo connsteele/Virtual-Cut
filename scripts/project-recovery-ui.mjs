@@ -64,17 +64,12 @@ try {
   assert.equal(snapshot.project.file, recovered);
   assert.equal(snapshot.model.scratchpad, 'Committed before interruption');
   assert.equal(snapshot.jobs[0].state, 'interrupted');
-  assert(snapshot.canUndo);
+  assert.equal(snapshot.canUndo, false);
   assert.equal(
     await app.evaluate(() => globalThis.recoveryPicker.defaultPath),
     fixture.corrupt + '.saves',
   );
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect
-    .poll(
-      async () => (await page.evaluate(() => window.virtualCut.project.current())).model.scratchpad,
-    )
-    .toBe('Before child');
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await app.evaluate(({ BrowserWindow, dialog }) => {
     BrowserWindow.getAllWindows()[0].setSize(1100, 720);

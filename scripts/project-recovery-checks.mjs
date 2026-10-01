@@ -30,6 +30,7 @@ if (process.argv[2] === '--crash') {
     updated: new Date().toISOString(),
   });
   await store.checkpoint('manual');
+  edit(store, 'Unflushed session edit — must disappear');
   store.db.exec('BEGIN IMMEDIATE');
   store.data.model.scratchpad = 'UNCOMMITTED — must disappear';
   store.write();
@@ -89,11 +90,7 @@ if (process.argv[2] === '--crash') {
   assert.equal(store.data.model.scratchpad, 'Committed before interruption');
   assert.match(store.snapshot().recoveryNotice, /unexpectedly/);
   assert.equal(store.jobs()[0].state, 'interrupted');
-  assert(store.snapshot().canUndo);
-  store.history('undo');
-  assert.equal(store.data.model.scratchpad, 'Before child');
-  store.history('redo');
-  assert.equal(store.data.model.scratchpad, 'Committed before interruption');
+  assert.equal(store.snapshot().canUndo, false, 'Reopen starts fresh Undo');
   await store.loadCopies();
   const checkpoint = path.join(file + '.saves', store.snapshot().saves[0].id);
   store.close();
@@ -110,6 +107,13 @@ if (process.argv[2] === '--crash') {
   await recoverProjectCopy(checkpoint, legacy);
   let db = new DatabaseSync(legacy);
   db.exec('DROP TABLE project_session; PRAGMA user_version=1');
+  const legacyModel = JSON.parse(
+    db.prepare('SELECT body FROM project WHERE id=1').get().body,
+  ).model;
+  db.prepare('INSERT INTO history (before, after, applied) VALUES (?, ?, 1)').run(
+    JSON.stringify({ ...legacyModel, scratchpad: 'Before child' }),
+    JSON.stringify(legacyModel),
+  );
   db.close();
   const beforeMigration = await readFile(legacy);
   await writeFile(legacy + '.saves', 'block backup creation');
@@ -120,7 +124,8 @@ if (process.argv[2] === '--crash') {
   await unlink(legacy + '.saves');
   store = new ProjectStore(legacy);
   assert.match(store.snapshot().recoveryNotice, /upgraded/);
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM history').get().n, 0);
   await store.loadCopies();
   const migration = store.snapshot().saves.find((s) => s.kind === 'migration');
   assert(migration);
@@ -167,7 +172,7 @@ if (process.argv[2] === '--crash') {
   assert.equal(await readFile(corrupt, 'utf8'), 'not a sqlite database');
   store = new ProjectStore(recovered);
   assert.equal(store.data.model.scratchpad, 'Committed before interruption');
-  assert(store.snapshot().canUndo, 'Recovery preserves the command journal');
+  assert.equal(store.snapshot().canUndo, false, 'Recovery starts fresh Undo');
   const originalId = store.data.project.id;
   store.close();
   db = new DatabaseSync(checkpoint, { readOnly: true });
@@ -209,8 +214,7 @@ if (process.argv[2] === '--crash') {
   }
   store = new ProjectStore(consistent);
   assert.equal(store.data.model.scratchpad, 'Committed while recovery started');
-  store.history('undo');
-  assert.equal(store.data.model.scratchpad, 'Committed before interruption');
+  assert.equal(store.snapshot().canUndo, false);
   store.close();
   assert(
     !(await readdir(dir)).some((f) => f.includes('.partial')),

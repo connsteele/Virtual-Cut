@@ -228,10 +228,43 @@ export function SaveHistory({
   return (
     <Modal title="Save history" onClose={onClose}>
       <p>
-        Your working project saves after playback and edits settle. Five autosave copies and five
-        manual checkpoints are kept beside the project file. Copies made before a saved-format
-        upgrade are retained separately. Restoring first makes a manual checkpoint of your current
-        work.
+        Save or Ctrl+S saves immediately. Autosave waits until playback, seeking and edits stop.
+        Closing normally also saves. Undo stays available after saving and resets when you reopen.
+      </p>
+      <fieldset className={s.autosaveSettings}>
+        <legend>Autosave</legend>
+        <Field label="Save every">
+          <select
+            aria-label="Autosave interval"
+            value={w.autosave.minutes}
+            onChange={(e) =>
+              w.configureAutosave({ ...w.autosave, minutes: Number(e.target.value) })
+            }
+          >
+            {[1, 2, 5, 10, 15, 30, 60, 120].map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} minutes{minutes === 10 ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <label>
+          <input
+            type="checkbox"
+            checked={w.autosave.afterEdits}
+            onChange={(e) => w.configureAutosave({ ...w.autosave, afterEdits: e.target.checked })}
+          />
+          Also save after edits
+        </label>
+        <p className={s.muted}>
+          Applies to all projects on this device. An unexpected exit can lose changes since the last
+          save; use Ctrl+S when you need a checkpoint. Moving the playhead alone does not trigger
+          saving after edits.
+        </p>
+      </fieldset>
+      <p>
+        Five autosave copies and five manual saves are kept beside the project. Copies from before a
+        format upgrade are kept separately. Restoring first saves your current work.
       </p>
       <div className={s.saveTableWrap}>
         <table className={s.saveTable} aria-label="Save history">
@@ -304,12 +337,7 @@ export function SaveHistory({
           </tbody>
         </table>
       </div>
-      {!p.saves?.length && (
-        <p>
-          A copy is kept after an edit, every two minutes of editing, and when closing. Use Save to
-          make a manual checkpoint now.
-        </p>
-      )}
+      {!p.saves?.length && <p>No save copies yet. Use Save to make a manual checkpoint now.</p>}
       {w.error && (
         <p role="alert" className={s.error}>
           {w.error}

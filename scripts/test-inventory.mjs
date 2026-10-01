@@ -1,4 +1,5 @@
 export const fast = [
+  'save-policy.test.mjs',
   'media.test.mjs',
   'source-folders.test.mjs',
   'timeline-viewport.test.mjs',
@@ -7,6 +8,7 @@ export const fast = [
   'marker-timing.test.mjs',
 ];
 export const native = [
+  'save-policy-native.mjs',
   'project-recovery-checks.mjs',
   'project-native-checks.mjs',
   'feedback-native-checks.mjs',
@@ -18,6 +20,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'save-policy-ui.mjs',
   'project-recovery-ui.mjs',
   'smoke.mjs',
   'project-ui-checks.mjs',
@@ -32,6 +35,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'save-policy-ui.mjs': ['feedback-native-checks.mjs'],
   'project-recovery-ui.mjs': ['project-recovery-checks.mjs'],
   'project-ui-checks.mjs': ['project-native-checks.mjs'],
   'timing-checks.mjs': ['project-native-checks.mjs'],

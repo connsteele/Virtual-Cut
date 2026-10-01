@@ -1731,3 +1731,22 @@
   color: #7cdbcd;
   font-weight: 500;
 }
+.autosaveSettings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin: 1rem 0;
+}
+.autosaveSettings p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.autosaveSettings label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

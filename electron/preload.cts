@@ -36,6 +36,7 @@ const api: VirtualCutApi = {
     close: () => ipcRenderer.invoke('workspace:close'),
     save: (id, before, after) => ipcRenderer.invoke('workspace:save', id, before, after),
     checkpoint: (id) => ipcRenderer.invoke('workspace:checkpoint', id),
+    autosave: (id) => ipcRenderer.invoke('workspace:autosave', id),
     restore: (id, saveId) => ipcRenderer.invoke('workspace:restore', id, saveId),
     revealSave: (id, saveId) => ipcRenderer.invoke('workspace:revealSave', id, saveId),
     revealSource: (id, sourceId) => ipcRenderer.invoke('workspace:revealSource', id, sourceId),

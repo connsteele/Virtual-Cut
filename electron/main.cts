@@ -291,6 +291,7 @@ function registerDesktopApi(): void {
   });
   workspace('save', (id, before, after) => projects.save(id, before, after));
   workspace('checkpoint', (id) => projects.checkpoint(id));
+  workspace('autosave', (id) => projects.autosave(id));
   workspace('restore', (id, saveId) => projects.restore(id, saveId));
   workspace('revealSave', async (id, saveId) =>
     shell.showItemInFolder(await projects.saveLocation(id, saveId)),

@@ -125,9 +125,8 @@ try {
   await page.locator('video').evaluate((v) => {
     v.currentTime = 2;
   });
-  await expect(saved).toHaveText('Saved');
-  await expect(saved).toHaveText('', { timeout: 6000 });
-  await page.waitForTimeout(1500);
+  // Navigation is staged in memory; the default timed policy must not flash Saved.
+  await page.waitForTimeout(3200);
   await expect(saved).toHaveText('');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(saved).toHaveText('Manual save made');

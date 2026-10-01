@@ -52,6 +52,9 @@ export interface ProjectSnapshot {
   exports: ExportRecord[];
   canUndo: boolean;
   canRedo: boolean;
+  unsavedChanges: boolean;
+  unsavedEdits: boolean;
+  savedAt: number;
   saves?: SaveCopy[];
   warning?: string;
   recoveryNotice?: string;
@@ -92,6 +95,7 @@ export interface ProjectApi {
   close(): Promise<void>;
   save(id: string, before: Model, after: Model): Promise<ProjectSnapshot>;
   checkpoint(id: string): Promise<ProjectSnapshot>;
+  autosave(id: string): Promise<ProjectSnapshot>;
   restore(id: string, saveId: string): Promise<ProjectSnapshot>;
   revealSave(id: string, saveId: string): Promise<void>;
   revealSource(id: string, sourceId: string): Promise<void>;

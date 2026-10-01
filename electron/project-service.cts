@@ -21,7 +21,7 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
   'resolution-mode': 'import',
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
-import { editorial, mergeEdits, validateEdits } from './project-edits.js';
+import { mergeEdits, validateEdits } from './project-edits.js';
 import {
   destinationPlan,
   destinationFolders,
@@ -336,7 +336,6 @@ export class ProjectService {
         this.queueAudio(r.id);
     }
     this.pump();
-    if (editorial(previous) !== editorial(store.data.model)) await store.checkpoint('auto');
     return this.snapshot();
   }
   private async checkedDestinations(force = false) {
@@ -396,6 +395,10 @@ export class ProjectService {
   }
   async checkpoint(id: string) {
     await this.require(id).checkpoint('manual');
+    return this.snapshot();
+  }
+  async autosave(id: string) {
+    await this.require(id).checkpoint('auto');
     return this.snapshot();
   }
   async sourceLocation(id: string, sourceId: string) {

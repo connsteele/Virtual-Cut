@@ -120,7 +120,8 @@ try {
     end: 7,
   });
   p = await service.save(id, p.model, next);
-  assert.equal(p.saves.filter((s) => s.kind === 'auto').length, 1);
+  assert.equal(p.saves.filter((s) => s.kind === 'auto').length, 0);
+  assert.equal(p.unsavedEdits, true);
   p = await service.checkpoint(id);
   const manual = p.saves.find((s) => s.kind === 'manual');
   next = structuredClone(p.model);

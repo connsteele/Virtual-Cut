@@ -47,6 +47,8 @@ Connor supplied detailed answers and reference folders after the initial enginee
 
 ## Keyboard preferences
 
+**Saving — September 30, 2026:** Connor approved compact saved state with session-only Undo, adjustable time-based autosave with a 10-minute default, and optional saving after edits. Manual Save remains immediate and preserves live Undo; reopen starts fresh Undo. Automatic saving waits for playback/seeking/manipulation to stop. Normal close saves. Crash recovery returns the last saved edit state, while source/job facts and export receipts remain independently durable. This supersedes prior continuous-edit saving and cross-session Undo. See `docs/save-policy.md`.
+
 Provide configurable bindings and use Connor's familiar bindings in the initial preset:
 
 | Action                                  | Preferred keys                                                            |

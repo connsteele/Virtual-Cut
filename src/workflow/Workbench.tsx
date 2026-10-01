@@ -2365,7 +2365,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         <div className={s.notice} role="alert">
           {workspace.error || project?.warning}
           {workspace.error && (
-            <Button onClick={() => void workspace.flush().catch(() => {})}>Retry saving</Button>
+            <Button onClick={() => void workspace.checkpoint()}>Retry saving</Button>
           )}
         </div>
       )}

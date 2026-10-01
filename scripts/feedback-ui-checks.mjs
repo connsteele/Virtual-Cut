@@ -30,7 +30,8 @@ async function state() {
   return page.evaluate(() => window.virtualCut.project.current());
 }
 async function saved() {
-  await expect(page.getByRole('banner').getByRole('status')).toHaveText('Saved');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('banner').getByRole('status')).toHaveText('Manual save made');
 }
 async function seek(at) {
   await page.locator('video').evaluate((v, at) => (v.currentTime = at), at);
@@ -343,7 +344,9 @@ try {
   p = await state();
   const manual = p.saves.find((s) => s.kind === 'manual');
   await page.getByLabel('Clip name', { exact: true }).first().fill('Changed after manual save');
-  await saved();
+  await expect
+    .poll(async () => (await state()).model.clips[0].name)
+    .toBe('Changed after manual save');
   await page.getByRole('button', { name: 'Save history', exact: true }).click();
   const saveTable = page.getByRole('table', { name: 'Save history', exact: true });
   await expect(saveTable.getByRole('columnheader')).toHaveText(['Type', 'Date', 'Time', 'Actions']);

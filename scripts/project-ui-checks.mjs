@@ -66,7 +66,8 @@ async function current() {
   return page.evaluate(() => window.virtualCut.project.current());
 }
 async function saved() {
-  await expect(page.getByRole('banner').getByRole('status')).toHaveText('Saved');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('banner').getByRole('status')).toHaveText('Manual save made');
 }
 async function seek(time) {
   await page.locator('video').evaluate((v, time) => {

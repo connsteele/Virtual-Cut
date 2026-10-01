@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { validateEdits } from './project-edits.js';
 
 export const PROJECT_APP_ID = 1447253332;
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
 const sessionSchema = `CREATE TABLE project_session (
   id INTEGER PRIMARY KEY CHECK(id=1), clean INTEGER NOT NULL,
   opened_at TEXT NOT NULL, closed_at TEXT);
@@ -19,7 +19,8 @@ export function inspectProject(db: DatabaseSync) {
   const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
   if (version > PROJECT_VERSION)
     throw new Error('This project needs a newer Virtual Cut version. Open it with that version.');
-  if (![1, 2].includes(version)) throw new Error('This project uses an unsupported saved version.');
+  if (![1, 2, 3].includes(version))
+    throw new Error('This project uses an unsupported saved version.');
   if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
     throw new Error('Project integrity check failed.');
   const data = JSON.parse(String(db.prepare('SELECT body FROM project WHERE id=1').get()?.body));
@@ -50,7 +51,7 @@ export function inspectProject(db: DatabaseSync) {
     for (const row of db.prepare('SELECT id, body FROM exports').all())
       if (JSON.parse(String(row.body)).plan?.id !== row.id)
         throw new Error('Invalid saved export receipt.');
-  if (version === 2) {
+  if (version >= 2) {
     const session = db.prepare('SELECT clean FROM project_session WHERE id=1').get();
     if (!session || ![0, 1].includes(Number(session.clean)))
       throw new Error('Project session data is invalid.');
@@ -62,13 +63,60 @@ export function createSessionSchema(db: DatabaseSync) {
   db.exec(sessionSchema);
 }
 
+/** Upgrade a closed rolling save in place only after its replacement verifies.
+ * The project-level pre-upgrade copy remains in its original format. */
+export function compactSaveCopy(file: string) {
+  const source = new DatabaseSync(file, { readOnly: true });
+  const temporary = file + `.${randomUUID()}.partial`;
+  try {
+    try {
+      const version = Number(source.prepare('PRAGMA user_version').get()?.user_version);
+      if (version === PROJECT_VERSION) return;
+      const { data } = inspectProject(source);
+      source.prepare('VACUUM INTO ?').run(temporary);
+      const copy = new DatabaseSync(temporary);
+      try {
+        copy.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE');
+        if (version === 1) createSessionSchema(copy);
+        copy.exec(`DELETE FROM history; PRAGMA user_version=${PROJECT_VERSION}; COMMIT; VACUUM`);
+        const checked = inspectProject(copy);
+        if (JSON.stringify(checked.data) !== JSON.stringify(data))
+          throw new Error('Compacted save did not retain its project state.');
+        for (const table of ['sources', 'jobs', 'exports']) {
+          if (!source.prepare('SELECT name FROM sqlite_master WHERE name=?').get(table)) continue;
+          if (
+            JSON.stringify(source.prepare(`SELECT * FROM ${table} ORDER BY id`).all()) !==
+            JSON.stringify(copy.prepare(`SELECT * FROM ${table} ORDER BY id`).all())
+          )
+            throw new Error('Compacted save did not retain its native records.');
+        }
+      } finally {
+        copy.close();
+      }
+    } finally {
+      source.close();
+    }
+    renameSync(temporary, file);
+  } finally {
+    for (const name of [temporary, temporary + '-wal', temporary + '-shm'])
+      try {
+        unlinkSync(name);
+      } catch {
+        /* No unpublished copy remains. */
+      }
+  }
+}
+
 /** A verified, version-labelled copy must exist before the atomic schema upgrade. */
 export function migrateProject(db: DatabaseSync, file: string) {
   const { version } = inspectProject(db);
   if (version === PROJECT_VERSION) return false;
   const directory = file + '.saves';
   mkdirSync(directory, { recursive: true });
-  const final = path.join(directory, `migration-v1-v2-${Date.now()}-${randomUUID()}.vcut`);
+  const final = path.join(
+    directory,
+    `migration-v${version}-v${PROJECT_VERSION}-${Date.now()}-${randomUUID()}.vcut`,
+  );
   const temporary = final + '.partial';
   try {
     // SQLite's snapshot includes committed WAL records. A plain file copy would not.
@@ -81,21 +129,26 @@ export function migrateProject(db: DatabaseSync, file: string) {
     }
     renameSync(temporary, final);
   } finally {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      /* No unpublished copy remains. */
-    }
+    for (const name of [temporary, temporary + '-wal', temporary + '-shm'])
+      try {
+        unlinkSync(name);
+      } catch {
+        /* No unpublished copy remains. */
+      }
   }
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.exec(sessionSchema);
+    if (version === 1) db.exec(sessionSchema);
     db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+    db.exec('DELETE FROM history');
     db.exec(`PRAGMA user_version=${PROJECT_VERSION}; COMMIT`);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
+  // One-time compaction removes old full-model Undo entries and free pages.
+  // The verified pre-upgrade copy retains the old format and its history.
+  db.exec('VACUUM; PRAGMA wal_checkpoint(TRUNCATE)');
   return true;
 }
 
@@ -116,7 +169,7 @@ export async function recoverProjectCopy(source: string, destination: string) {
       data.project.name += ' · recovered';
       data.project.file = destination;
       copy.prepare('UPDATE project SET body=? WHERE id=1').run(JSON.stringify(data));
-      if (version === 2) copy.exec('UPDATE project_session SET clean=1 WHERE id=1');
+      if (version >= 2) copy.exec('UPDATE project_session SET clean=1 WHERE id=1');
       copy.exec('COMMIT');
       inspectProject(copy);
     } finally {

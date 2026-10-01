@@ -33,6 +33,7 @@ const words = new Set([
   'export',
   'save',
   'checkpoint',
+  'autosave',
   'restore',
   'create',
   'open',
