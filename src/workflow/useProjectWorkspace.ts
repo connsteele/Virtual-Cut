@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import type { ProjectSnapshot, RecentProject } from '../../electron/project-contracts';
 import { mergeEdits, editorial } from '../../electron/project-edits';
+import { reviewContent } from '../../electron/review-plan';
 import { loadModel, storedModel, modelKey, type Model } from './model';
 import { filmstripMemory } from './filmstripMemory';
 import { autosaveKey, autosaveSettings, autosaveDue, type AutosaveSettings } from './autosave';
@@ -73,6 +74,17 @@ export function useProjectWorkspace() {
     }
     const next =
       replace || !same ? value.model : mergeEdits(ancestor, modelRef.current, value.model);
+    if (next !== value.model)
+      next.clips = next.clips.map((c) => {
+        const native = value.model.clips.find((n) => n.id === c.id);
+        return {
+          ...c,
+          filed:
+            !!native?.filed &&
+            !c.held &&
+            reviewContent(next, c) === reviewContent(value.model, native),
+        };
+      });
     base.current = value.model;
     session.current = value;
     filmstripMemory.sync(value.project.id, value.model.recordings);

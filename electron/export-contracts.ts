@@ -38,11 +38,24 @@ export interface ExportVerification {
   videoPackets: number;
   audioPackets: number;
   videoCodec: string;
+  /** Present only when original packet durations and presentation gaps are uniform. */
+  constantFrameDuration?: number;
   audioCodec: string;
   bytes: number;
   sha256: string;
 }
 export interface ExportRecord {
+  /** Native filing receipt, retained independently of editorial Undo and save restore. */
+  filing?: {
+    queueId: string;
+    batchId: string;
+    reviewKey: string;
+    root: string;
+    folder: string;
+    state: 'queued' | 'complete';
+    completedAt?: string;
+    media?: { width?: number; height?: number; fps?: number };
+  };
   annotationVersion?: 1 | 2;
   started?: string;
   elapsedMs?: number;
@@ -58,4 +71,37 @@ export interface ExportRecord {
   updated: string;
   /** Computed at read time; exporting an older snapshot never means current edits are done. */
   current?: boolean;
+}
+
+export interface FilingPlan {
+  id: string;
+  batchId: string;
+  root: string;
+  rows: {
+    clipId: string;
+    name: string;
+    path: string;
+    requested?: ExportPlan['requested'];
+    planned?: ExportPlan['planned'];
+    issues: string[];
+  }[];
+}
+export interface RetainedClip {
+  exportId: string;
+  name: string;
+  output: string;
+  folder: string;
+  source: string;
+  completedAt: string;
+  duration: number;
+  note: string;
+  context: string;
+  markers: (Marker & { time: number })[];
+  available: boolean;
+  metadataAvailable: boolean;
+  url?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  video?: string;
 }

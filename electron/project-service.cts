@@ -27,18 +27,21 @@ import {
   destinationFolders,
   destinationLocation,
   destinationSelection,
+  prepareDestination,
 } from './destination-plan.cjs';
 import { destinationSignature } from './review-plan.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
-import { reconcileReview } from './review-state.cjs';
+import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
-import { exportClip as writeClip } from './clip-export.cjs';
+import { exportClip as writeClip, verifyPublished, fileHash, annotation } from './clip-export.cjs';
 import type {
   ExportContainer,
   ExportContainerChoice,
   ExportInput,
   ExportPlan,
   ExportRecord,
+  FilingPlan,
+  RetainedClip,
 } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 async function waveform(file: string, sampleRate: number) {
@@ -66,6 +69,7 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  private filingPlans = new Map<string, { plan: FilingPlan; records: ExportRecord[] }>();
   private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
   private filmstripCache = new FilmstripCache();
   filmstrip(id: string, sourceId: string, times: number[], token: string) {
@@ -195,6 +199,7 @@ export class ProjectService {
       this.store?.close();
       this.store = null;
       this.grants.clear();
+      this.filingPlans.clear();
     } finally {
       this.switching = false;
     }
@@ -262,13 +267,29 @@ export class ProjectService {
     reconcileReview(store.data.model);
     if (priorReview !== JSON.stringify(store.data.model.clips)) store.write();
     const snapshot = store.snapshot();
-    snapshot.destinations = await this.checkedDestinations();
+    snapshot.destinations = structuredClone(await this.checkedDestinations());
     for (const item of snapshot.exports) {
       try {
-        item.current = item.inputHash === this.exportInput(item.plan.clipId).hash;
+        item.current = item.inputHash === this.exportInput(item.plan.clipId, false).hash;
       } catch {
         item.current = false;
       }
+    }
+    snapshot.library = await this.retainedClips();
+    for (const clip of snapshot.model.clips) {
+      clip.filed =
+        !clip.held &&
+        snapshot.exports.some(
+          (e) =>
+            e.plan.clipId === clip.id &&
+            e.current &&
+            e.filing?.state === 'complete' &&
+            e.state === 'verified' &&
+            snapshot.library!.some(
+              (c) => c.exportId === e.plan.id && c.available && c.metadataAvailable,
+            ),
+        );
+      if (clip.filed) snapshot.destinations.rows.find((row) => row.clipId === clip.id)!.issues = [];
     }
     for (const r of snapshot.model.recordings) {
       const source = store.sources().find((s) => s.id === r.id);
@@ -811,12 +832,12 @@ export class ProjectService {
     this.queueAudio(sourceId);
     return this.snapshot();
   }
-  private exportInput(clipId: string) {
+  private exportInput(clipId: string, requireAvailable = true) {
     const s = this.require(),
       clip = s.data.model.clips.find((c) => c.id === clipId),
       r = s.data.model.recordings.find((r) => r.id === clip?.rid),
       source = s.sources().find((x) => x.id === clip?.rid);
-    if (!clip || !r || !source || r.availability !== 'ready')
+    if (!clip || !r || !source || (requireAvailable && r.availability !== 'ready'))
       throw new Error('Select an available clip after inspection.');
     if (
       r.gameTrack == null ||
@@ -879,8 +900,8 @@ export class ProjectService {
         });
     }
   }
-  async exportPlan(id: string, clipId: string, choice: ExportContainerChoice): Promise<ExportPlan> {
-    const s = this.require(id);
+  private planClip(clipId: string, choice: ExportContainerChoice): ExportRecord {
+    const s = this.require();
     if (!['source', 'mp4', 'mkv'].includes(choice))
       throw new Error('Choose Same as source, MP4 or MKV.');
     const { input, hash, recording } = this.exportInput(clipId),
@@ -916,8 +937,7 @@ export class ProjectService {
       revision: s.data.revision,
       created: new Date().toISOString(),
     };
-    s.discardExportPlans();
-    s.putExport({
+    return {
       plan,
       annotationVersion: 2,
       input,
@@ -925,8 +945,14 @@ export class ProjectService {
       state: 'planned',
       message: 'Ready to choose an output file.',
       updated: plan.created,
-    });
-    return plan;
+    };
+  }
+  async exportPlan(id: string, clipId: string, choice: ExportContainerChoice): Promise<ExportPlan> {
+    const s = this.require(id),
+      record = this.planClip(clipId, choice);
+    s.discardExportPlans();
+    s.putExport(record);
+    return record.plan;
   }
   async startExport(id: string, planId: string, output: string, cleanGameConfirmed: boolean) {
     const s = this.require(id),
@@ -983,6 +1009,269 @@ export class ProjectService {
     if (!file || !existsSync(file)) throw new Error('The exported file is offline or has moved.');
     return file;
   }
+  async filingPlan(id: string, batchId: string): Promise<FilingPlan> {
+    const s = this.require(id);
+    if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Choose a batch first.');
+    this.destinationCache = null;
+    const snapshot = await this.snapshot();
+    const plan: FilingPlan = {
+      id: randomUUID(),
+      batchId,
+      root: s.data.project.destination,
+      rows: [],
+    };
+    const records: ExportRecord[] = [];
+    for (const clip of snapshot.model.clips.filter(
+      (c) =>
+        c.accepted &&
+        !c.held &&
+        !c.filed &&
+        snapshot.model.recordings.find((r) => r.id === c.rid)?.batchIds?.includes(batchId),
+    )) {
+      const row: FilingPlan['rows'][number] = {
+        clipId: clip.id,
+        name: clip.name,
+        path: snapshot.destinations!.rows.find((r) => r.clipId === clip.id)?.path || '',
+        issues: [...(snapshot.destinations!.rows.find((r) => r.clipId === clip.id)?.issues || [])],
+      };
+      plan.rows.push(row);
+      if (
+        s
+          .exports()
+          .some(
+            (e) => e.filing && e.plan.clipId === clip.id && ['queued', 'running'].includes(e.state),
+          )
+      )
+        row.issues.push('This clip is already being filed.');
+      try {
+        const record = this.planClip(clip.id, 'source');
+        const r = s.data.model.recordings.find((r) => r.id === clip.rid)!;
+        row.requested = record.plan.requested;
+        row.planned = record.plan.planned;
+        record.filing = {
+          queueId: plan.id,
+          batchId,
+          reviewKey: clip.acceptedKey!,
+          root: await realpath(plan.root),
+          folder: clip.folder,
+          state: 'queued',
+          media: { width: r.width, height: r.height, fps: r.fps },
+        };
+        record.output = row.path;
+        record.metadata = row.path + '.vcut.json';
+        records.push(record);
+      } catch (e) {
+        row.issues.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    this.filingPlans.clear();
+    this.filingPlans.set(plan.id, { plan, records });
+    return plan;
+  }
+  private assertFilingCurrent(record: ExportRecord) {
+    if (!record.filing) return;
+    const s = this.require(),
+      clip = s.data.model.clips.find((c) => c.id === record.plan.clipId);
+    if (
+      !clip?.accepted ||
+      clip.held ||
+      clip.acceptedKey !== record.filing.reviewKey ||
+      reviewKey(s.data.model, clip) !== record.filing.reviewKey ||
+      this.exportInput(clip.id).hash !== record.inputHash
+    )
+      throw new Error(
+        'This accepted clip changed or was held. Review and accept the current edits before filing.',
+      );
+  }
+  async fileQueue(id: string, planId: string, confirmed: boolean) {
+    const s = this.require(id),
+      saved = this.filingPlans.get(planId);
+    if (!saved || !saved.records.length || saved.plan.rows.some((r) => r.issues.length))
+      throw new Error('Check an eligible filing plan first.');
+    if (confirmed !== true)
+      throw new Error(
+        'Confirm that each selected game track is clean, with no microphone mixed in.',
+      );
+    // Consume before any await so two clicks cannot submit the same plan.
+    this.filingPlans.delete(planId);
+    for (const record of saved.records) this.assertFilingCurrent(record);
+    const checked = await this.checkedDestinations(true);
+    if (
+      saved.records.some((e) => checked.rows.find((r) => r.clipId === e.plan.clipId)?.issues.length)
+    )
+      throw new Error('A destination changed. Check the filing plan again.');
+    for (const record of saved.records) {
+      const destination = await prepareDestination(
+        s.data.project.destination,
+        record.filing!.folder,
+        record.filing!.root,
+      );
+      record.output = path.join(destination.directory, path.basename(record.output!));
+      record.metadata = record.output + '.vcut.json';
+      const cache = await realpath(s.data.project.cache);
+      if (record.output.toLowerCase().startsWith(cache.toLowerCase() + path.sep))
+        throw new Error('File finished clips outside the preview cache.');
+      this.assertFilingCurrent(record);
+    }
+    // Filing is a deliberate durable operation, with the accepted plan saved
+    // before any job starts. Ordinary transport and edits keep the timed policy.
+    await s.checkpoint('manual');
+    if (this.store !== s) throw new Error('The project changed. Check a new filing plan.');
+    for (const record of saved.records) {
+      this.assertFilingCurrent(record);
+      if (
+        s
+          .exports()
+          .some(
+            (e) =>
+              e.filing &&
+              e.plan.clipId === record.plan.clipId &&
+              ['queued', 'running'].includes(e.state),
+          )
+      )
+        throw new Error('This clip is already being filed. Check the filing plan again.');
+    }
+    s.transaction(() => {
+      for (const record of saved.records) {
+        record.cleanGameConfirmed = true;
+        record.state = 'queued';
+        record.message = 'Waiting to file';
+        s.putExport(record);
+        s.putJob({
+          id: record.plan.id,
+          sourceId: record.plan.sourceId,
+          kind: 'export',
+          state: 'queued',
+          progress: 0,
+          message: record.message,
+          updated: record.updated,
+        });
+      }
+    });
+    this.pump();
+    return this.snapshot();
+  }
+  async cancelFiling(id: string, queueId: string) {
+    const s = this.require(id),
+      records = s.exports().filter((e) => e.filing?.queueId === queueId);
+    if (!records.length) throw new Error('Choose a filing queue.');
+    s.transaction(() => {
+      for (const record of records.filter((e) => e.state === 'queued')) {
+        s.putExport({
+          ...record,
+          state: 'cancelled',
+          message: 'Filing cancelled',
+          updated: new Date().toISOString(),
+        });
+        const job = s.jobs().find((j) => j.id === record.plan.id)!;
+        s.putJob({
+          ...job,
+          state: 'cancelled',
+          message: 'Filing cancelled',
+          updated: new Date().toISOString(),
+        });
+      }
+    });
+    if (this.active && records.some((e) => e.plan.id === this.active!.id)) {
+      this.active.controller.abort();
+      await this.active.finished;
+    }
+    return this.snapshot();
+  }
+  private async retainedClips(): Promise<RetainedClip[]> {
+    const s = this.require();
+    return Promise.all(
+      s
+        .exports()
+        .filter(
+          (e) =>
+            e.state === 'verified' &&
+            e.filing?.state === 'complete' &&
+            e.output &&
+            e.metadata &&
+            e.verification,
+        )
+        .map(async (e) => {
+          const info = await lstat(e.output!).catch(() => null),
+            meta = await lstat(e.metadata!).catch(() => null);
+          const expectedDate = e.input.sourceModified + e.plan.requested.start * 1000;
+          return {
+            exportId: e.plan.id,
+            name: e.plan.name,
+            output: e.output!,
+            folder: e.filing!.folder,
+            source: e.input.sourceFile,
+            completedAt: e.filing!.completedAt!,
+            duration: e.verification!.actual.end - e.verification!.actual.start,
+            video: e.verification!.videoCodec,
+            note: e.input.clip.note || '',
+            context: e.input.context,
+            markers: e.input.markers
+              .filter(
+                (m) =>
+                  m.time >= e.verification!.actual.start - 0.000001 &&
+                  m.time < e.verification!.actual.end,
+              )
+              .map((m) => ({ ...m, time: Math.max(0, m.time - e.verification!.actual.start) })),
+            available:
+              !!info?.isFile() &&
+              !info.isSymbolicLink() &&
+              info.size === e.verification!.bytes &&
+              Math.abs(info.mtimeMs - expectedDate) <= 2,
+            metadataAvailable:
+              !!meta?.isFile() &&
+              !meta.isSymbolicLink() &&
+              meta.size === Buffer.byteLength(annotation(e, e.verification!)) &&
+              Math.abs(meta.mtimeMs - expectedDate) <= 2,
+            ...e.filing!.media,
+          };
+        }),
+    );
+  }
+  async retainedMedia(id: string, exportId: string) {
+    const s = this.require(id),
+      record = s
+        .exports()
+        .find(
+          (e) => e.plan.id === exportId && e.filing?.state === 'complete' && e.state === 'verified',
+        );
+    if (!record) throw new Error('Choose a completed Library clip.');
+    await verifyPublished(record);
+    const clip = (await this.retainedClips()).find((e) => e.exportId === exportId)!;
+    return { ...clip, url: await this.grant(record.output!) };
+  }
+  async relinkExport(id: string, exportId: string, file: string) {
+    const s = this.require(id),
+      record = s
+        .exports()
+        .find(
+          (e) => e.plan.id === exportId && e.filing?.state === 'complete' && e.state === 'verified',
+        );
+    if (!record?.verification) throw new Error('Choose a completed Library clip.');
+    if (
+      s
+        .sources()
+        .some(
+          (source) => path.resolve(source.file).toLowerCase() === path.resolve(file).toLowerCase(),
+        )
+    )
+      throw new Error('Choose the completed output, separate from an original recording.');
+    if (
+      path.extname(file).toLowerCase() !== '.' + record.plan.container ||
+      (await lstat(file)).isSymbolicLink() ||
+      (await fileHash(file)) !== record.verification.sha256
+    )
+      throw new Error('This video does not match the retained clip.');
+    const next = {
+      ...record,
+      output: await realpath(file),
+      metadata: (await realpath(file)) + '.vcut.json',
+    };
+    await verifyPublished(next);
+    this.grants.delete(record.output!);
+    s.putExport(next);
+    return this.snapshot();
+  }
   async job(id: string, jobId: string, action: 'cancel' | 'retry') {
     const s = this.require(id),
       job = s.jobs().find((j) => j.id === jobId);
@@ -1013,6 +1302,7 @@ export class ProjectService {
       if (job.kind === 'export') {
         const record = s.exports().find((e) => e.plan.id === jobId);
         if (!record) throw new Error('Make a new export plan.');
+        this.assertFilingCurrent(record);
         s.putExport({
           ...record,
           state: 'queued',
@@ -1109,6 +1399,19 @@ export class ProjectService {
       if (job.kind === 'export') {
         const record = s.exports().find((e) => e.plan.id === job.id);
         if (!record) throw new Error('Export plan is unavailable.');
+        const guard = async () => {
+          signal.throwIfAborted();
+          this.assertFilingCurrent(record);
+          if (record.filing) {
+            const target = await prepareDestination(
+              s.data.project.destination,
+              record.filing.folder,
+              record.filing.root,
+            );
+            if (path.dirname(record.output!).toLowerCase() !== target.directory.toLowerCase())
+              throw new Error('The filing destination changed. Review a new plan.');
+          }
+        };
         const done = await writeClip(
           record,
           { ffmpeg: this.tool('ffmpeg'), ffprobe: this.tool('ffprobe') },
@@ -1117,13 +1420,31 @@ export class ProjectService {
             s.putExport({ ...next, started: job.started, elapsedMs: elapsedMs() });
             progress(n, next.message);
           },
+          guard,
         );
-        s.putExport({ ...done, started: job.started, elapsedMs: elapsedMs() });
+        await guard();
+        await verifyPublished(done, signal);
+        const completed = {
+          ...done,
+          started: job.started,
+          elapsedMs: elapsedMs(),
+          ...(done.filing
+            ? {
+                filing: {
+                  ...done.filing,
+                  state: 'complete' as const,
+                  completedAt: new Date().toISOString(),
+                },
+                message: 'Filed · video, audio, metadata and Date modified verified.',
+              }
+            : {}),
+        };
+        s.putExport(completed);
         s.putJob({
           ...job,
           state: 'succeeded',
           progress: 1,
-          message: done.message,
+          message: completed.message,
           elapsedMs: elapsedMs(),
           updated: done.updated,
         });

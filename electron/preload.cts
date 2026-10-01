@@ -12,6 +12,7 @@ const api: VirtualCutApi = {
     playback: (event) => ipcRenderer.send('diagnostics:playback', event),
   },
   project: {
+    installResolveHelper: () => ipcRenderer.invoke('workspace:installResolveHelper'),
     recover: () => ipcRenderer.invoke('workspace:recover'),
     chooseDestination: (id, folder) =>
       ipcRenderer.invoke('workspace:chooseDestination', id, folder),
@@ -72,6 +73,12 @@ const api: VirtualCutApi = {
     job: (id, jobId, action) => ipcRenderer.invoke('workspace:job', id, jobId, action),
     exportPlan: (id, clipId, container) =>
       ipcRenderer.invoke('workspace:exportPlan', id, clipId, container),
+    filingPlan: (id, batchId) => ipcRenderer.invoke('workspace:filingPlan', id, batchId),
+    fileQueue: (id, planId, confirmed) =>
+      ipcRenderer.invoke('workspace:fileQueue', id, planId, confirmed),
+    cancelFiling: (id, queueId) => ipcRenderer.invoke('workspace:cancelFiling', id, queueId),
+    retainedMedia: (id, exportId) => ipcRenderer.invoke('workspace:retainedMedia', id, exportId),
+    relinkExport: (id, exportId) => ipcRenderer.invoke('workspace:relinkExport', id, exportId),
     exportClip: (id, planId, confirmed) =>
       ipcRenderer.invoke('workspace:exportClip', id, planId, confirmed),
     revealExport: (id, exportId, kind) =>

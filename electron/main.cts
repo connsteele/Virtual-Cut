@@ -26,6 +26,7 @@ import { DemoMedia } from './demo-media.cjs';
 import { ProjectService } from './project-service.cjs';
 import { recoverProjectCopy } from './project-recovery.cjs';
 import { DroppedImports } from './dropped-imports.cjs';
+import { installResolveHelper } from './resolve-helper.cjs';
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 
 const APP_URL = 'app://virtual-cut/';
@@ -311,6 +312,39 @@ function registerDesktopApi(): void {
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
   workspace('exportPlan', (id, clipId, container) => projects.exportPlan(id, clipId, container));
+  workspace('installResolveHelper', () =>
+    installResolveHelper(
+      path.join(app.getAppPath(), 'integrations', 'resolve', 'Virtual Cut metadata.py'),
+      path.join(
+        app.getPath('appData'),
+        'Blackmagic Design',
+        'DaVinci Resolve',
+        'Support',
+        'Fusion',
+        'Scripts',
+        'Utility',
+      ),
+    ),
+  );
+  workspace('filingPlan', (id, batchId) => projects.filingPlan(id, batchId));
+  workspace('fileQueue', (id, planId, confirmed) => projects.fileQueue(id, planId, confirmed));
+  workspace('cancelFiling', (id, queueId) => projects.cancelFiling(id, queueId));
+  workspace('retainedMedia', (id, exportId) => projects.retainedMedia(id, exportId));
+  workspace('relinkExport', async (id, exportId) => {
+    const record = projects
+      .require(id)
+      .exports()
+      .find((e) => e.plan.id === exportId && e.filing?.state === 'complete');
+    if (!record) throw new Error('Choose a completed Library clip.');
+    const chosen = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Locate the completed video and its adjacent .vcut.json companion',
+      properties: ['openFile'],
+      filters: [{ name: 'Completed video', extensions: [record.plan.container] }],
+    });
+    return chosen.canceled || !chosen.filePaths[0]
+      ? null
+      : projects.relinkExport(id, exportId, chosen.filePaths[0]);
+  });
   workspace('exportClip', async (id, planId, confirmed) => {
     const s = projects.require(id),
       item = s.exports().find((e) => e.plan.id === planId);

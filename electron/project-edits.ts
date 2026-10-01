@@ -56,6 +56,15 @@ function mergeItems<T>(before: T[], after: T[], current: T[], key: (x: T) => str
     : [...result.values()];
 }
 export function mergeEdits(before: Model, after: Model, current: Model): Model {
+  // Done is derived from native receipts. Never merge renderer presentation flags
+  // into draft edits, or treat a completed job as a concurrent editorial change.
+  const withoutDone = (m: Model): Model => ({
+    ...m,
+    clips: m.clips.map((c) => ({ ...c, filed: false })),
+  });
+  before = withoutDone(before);
+  after = withoutDone(after);
+  current = withoutDone(current);
   const result = structuredClone(current);
   const byId = (x: { id: string }) => x.id;
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
@@ -108,6 +117,7 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
 export function editorial(model: Model): string {
   return JSON.stringify({
     ...model,
+    clips: model.clips.map((c) => ({ ...c, filed: false })),
     selectedRecordingId: undefined,
     recordings: model.recordings.map((r) => ({
       id: r.id,

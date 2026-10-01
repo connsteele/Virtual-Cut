@@ -1,5 +1,11 @@
 import type { Model } from './workflow-types.js';
-import type { ExportContainerChoice, ExportPlan, ExportRecord } from './export-contracts.js';
+import type {
+  ExportContainerChoice,
+  ExportPlan,
+  ExportRecord,
+  FilingPlan,
+  RetainedClip,
+} from './export-contracts.js';
 
 export interface Batch {
   id: string;
@@ -50,6 +56,7 @@ export interface ProjectSnapshot {
   model: Model;
   jobs: MediaJob[];
   exports: ExportRecord[];
+  library?: RetainedClip[];
   canUndo: boolean;
   canRedo: boolean;
   unsavedChanges: boolean;
@@ -71,6 +78,12 @@ export interface RecentProject {
   file: string;
 }
 export interface ProjectApi {
+  installResolveHelper(): Promise<string>;
+  filingPlan(id: string, batchId: string): Promise<FilingPlan>;
+  fileQueue(id: string, planId: string, confirmed: boolean): Promise<ProjectSnapshot>;
+  cancelFiling(id: string, queueId: string): Promise<ProjectSnapshot>;
+  retainedMedia(id: string, exportId: string): Promise<RetainedClip>;
+  relinkExport(id: string, exportId: string): Promise<ProjectSnapshot | null>;
   chooseDestination(id: string, folder: string): Promise<string | null>;
   acceptReview(id: string, clipId: string): Promise<ProjectSnapshot>;
   destinationPlan(id: string): Promise<import('./review-plan.js').DestinationPlan>;

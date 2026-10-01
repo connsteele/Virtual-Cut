@@ -190,7 +190,10 @@ try {
   await page.getByLabel('Current batch').selectOption({ label: 'First batch' });
   await expect(page.locator('[data-recording]')).toHaveCount(1);
   await go('Review');
-  await expect(page.getByRole('button', { name: /File queue/ })).toBeDisabled();
+  await page.getByRole('button', { name: /File queue/ }).click();
+  await expect(page.getByRole('dialog').getByRole('table', { name: 'Filing plan' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('No accepted clips');
+  await page.getByRole('dialog').getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).first().click();
   await capture('03-review');
   await go('Library');

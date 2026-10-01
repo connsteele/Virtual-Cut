@@ -8,6 +8,8 @@ export const fast = [
   'marker-timing.test.mjs',
 ];
 export const native = [
+  'resolve-helper-checks.mjs',
+  'filing-native-checks.mjs',
   'save-policy-native.mjs',
   'project-recovery-checks.mjs',
   'project-native-checks.mjs',
@@ -20,6 +22,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'filing-ui-checks.mjs',
   'save-policy-ui.mjs',
   'project-recovery-ui.mjs',
   'smoke.mjs',
@@ -35,6 +38,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'filing-ui-checks.mjs': ['filing-native-checks.mjs'],
   'save-policy-ui.mjs': ['feedback-native-checks.mjs'],
   'project-recovery-ui.mjs': ['project-recovery-checks.mjs'],
   'project-ui-checks.mjs': ['project-native-checks.mjs'],
@@ -52,6 +56,8 @@ export const dependencies = {
 };
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
+  'resolve-live-fixture.mjs':
+    'Disposable media generator for live Resolve acceptance; no Resolve connection or user project edits.',
   'project-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',
   'feedback-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',
   'export-checks.mjs': 'Legacy wrapper; synthetic checks are maintained above.',

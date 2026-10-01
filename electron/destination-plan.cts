@@ -1,4 +1,4 @@
-import { lstat, readdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { destinationKey, folderProblem, nameProblem, plannedFilename } from './review-plan.js';
 import type { DestinationPlan, DestinationFolders } from './review-plan.js' with {
@@ -74,6 +74,7 @@ export async function destinationPlan(
   destination: string,
   model: Model,
   sourcePaths: string[],
+  ownedOutputs: Map<string, string> = new Map(),
 ): Promise<DestinationPlan> {
   let root = '',
     rootError = '';
@@ -113,7 +114,7 @@ export async function destinationPlan(
           if (e.code === 'ENOENT') return null;
           throw e;
         });
-        if (exists)
+        if (exists && ownedOutputs.get(clip.id)?.toLowerCase() !== target.toLowerCase())
           issues.push(
             candidate === target
               ? 'A file or folder already uses this filename. Rename the clip or choose another folder.'
@@ -132,4 +133,25 @@ export async function destinationPlan(
         ),
       );
   return { root: destination, rows };
+}
+
+/** Create and recheck each regular directory; a junction is never a filing target. */
+export async function prepareDestination(
+  destination: string,
+  folder: string,
+  expectedRoot?: string,
+) {
+  const root = await rootPath(destination);
+  if (expectedRoot && root.toLowerCase() !== expectedRoot.toLowerCase())
+    throw new Error('The destination root changed. Review the filing plan again.');
+  await inspectFolder(root, folder);
+  let current = root;
+  for (const part of folder ? folder.split('/') : []) {
+    current = path.join(current, part);
+    await mkdir(current).catch((e: NodeJS.ErrnoException) => {
+      if (e.code !== 'EEXIST') throw e;
+    });
+    await inspectFolder(root, folder);
+  }
+  return { root, directory: current };
 }

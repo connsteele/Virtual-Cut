@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
   link,
+  lstat,
   open,
   readFile,
   realpath,
@@ -220,6 +221,13 @@ function verify(
     actual.end < record.plan.requested.end - tolerance
   )
     throw new Error('Verified output would omit part of the requested clip.');
+  const presented = [...expected].sort((a, b) => a.pts - b.pts);
+  const frameDuration = presented[0].duration;
+  const uniform = presented.every(
+    (p, i) =>
+      Math.abs(p.duration - frameDuration) <= tick(video) + 0.000002 &&
+      (!i || Math.abs(p.pts - presented[i - 1].pts - frameDuration) <= tick(video) + 0.000002),
+  );
   return {
     actual,
     videoStart: av.reduce((n, p) => Math.min(n, p.pts), Infinity),
@@ -229,6 +237,7 @@ function verify(
     videoPackets: av.length,
     audioPackets: aa.length,
     videoCodec: video.codec_name,
+    ...(uniform ? { constantFrameDuration: frameDuration } : {}),
     audioCodec: audio.codec_name,
   };
 }
@@ -322,6 +331,7 @@ export async function exportClip(
   tools: Tools,
   signal: AbortSignal,
   update: (record: ExportRecord, progress: number) => void,
+  publicationGuard: () => Promise<void> = async () => {},
 ): Promise<ExportRecord> {
   const began = performance.now();
   record = {
@@ -343,7 +353,8 @@ export async function exportClip(
     directory = await realpath(path.dirname(output));
   if (path.resolve(output).toLowerCase() === path.resolve(record.input.sourceFile).toLowerCase())
     throw new Error('Choose a new output file, separate from the original.');
-  const suffix = `.vcut-${randomUUID()}`,
+  if (!/^[a-f\d-]{36}$/i.test(record.plan.id)) throw new Error('Invalid export identity.');
+  const suffix = `.vcut-${record.plan.id}`,
     raw = path.join(directory, suffix + '-raw.' + record.plan.container),
     final = path.join(directory, suffix + '.' + record.plan.container),
     metadata = path.join(directory, suffix + '.ffmeta'),
@@ -377,6 +388,13 @@ export async function exportClip(
     ownedLock = true;
     await handle.writeFile(JSON.stringify({ id: record.plan.id, pid: process.pid }));
     await handle.close();
+    // A dead process may have left only its private stages. The export identity
+    // names them deterministically; the acquired lock excludes another writer.
+    for (const file of [raw, final, metadata, json])
+      await unlink(file).catch((e: NodeJS.ErrnoException) => {
+        if (e.code !== 'ENOENT') throw e;
+      });
+    await publicationGuard();
     const sourceIdentity = await identify(record.input.sourceFile, record.plan.sourceId);
     if (
       sourceIdentity.fingerprint !== record.input.sourceFingerprint ||
@@ -403,6 +421,7 @@ export async function exportClip(
           );
       } else {
         await writeFile(json, content, { flag: 'wx' });
+        await publicationGuard();
         await publish(json, sidecar);
       }
       await setDate(output, record);
@@ -573,7 +592,10 @@ export async function exportClip(
     // an interruption between the two exclusive filesystem operations.
     report('Publishing verified video and metadata', 0.95);
     signal.throwIfAborted();
+    await publicationGuard();
     await publish(final, output);
+    signal.throwIfAborted();
+    await publicationGuard();
     await publish(json, sidecar);
     return {
       ...record,
@@ -595,7 +617,7 @@ async function setDate(file: string, record: ExportRecord) {
     new Date(record.input.sourceModified + record.plan.requested.start * 1000),
   );
 }
-function annotation(record: ExportRecord, v: ExportVerification) {
+export function annotation(record: ExportRecord, v: ExportVerification) {
   const { input, plan } = record;
   return (
     JSON.stringify(
@@ -646,4 +668,26 @@ function annotation(record: ExportRecord, v: ExportVerification) {
       2,
     ) + '\n'
   );
+}
+
+export async function verifyPublished(record: ExportRecord, signal?: AbortSignal) {
+  if (!record.output || !record.metadata || !record.verification)
+    throw new Error('This export has no verified output receipt.');
+  for (const file of [record.output, record.metadata]) {
+    const info = await lstat(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Choose a regular exported file.');
+    if (
+      Math.abs(info.mtimeMs - (record.input.sourceModified + record.plan.requested.start * 1000)) >
+      2
+    )
+      throw new Error('The exported Date modified did not match the source offset.');
+  }
+  if (
+    (await stat(record.output)).size !== record.verification.bytes ||
+    (await fileHash(record.output, signal)) !== record.verification.sha256
+  )
+    throw new Error('The finished video no longer matches its verified receipt.');
+  if ((await readFile(record.metadata, 'utf8')) !== annotation(record, record.verification))
+    throw new Error('The companion metadata no longer matches this export.');
+  signal?.throwIfAborted();
 }

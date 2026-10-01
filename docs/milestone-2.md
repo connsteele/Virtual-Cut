@@ -1,4 +1,8 @@
-# Milestone 2 — verified single-clip export (0.3.2)
+# Milestone 2 — verified exports and reviewed filing (0.3.13)
+
+## Current candidate — 0.3.13
+
+The manual path now includes accepted batch filing, verified Done receipts, a completed Library with offline-original preview and matching-output relink, and a user-invoked Resolve marker-notes/colors helper. Review-to-Cut also preserves the preview playhead. The [filing and Library guide](filing-and-library.md) describes current behavior, recovery tests, live Resolve evidence and the remaining human production/compatibility gates. The sections below retain historical slice-specific evidence and limitations; statements that filing/helper are future work describe those earlier versions.
 
 ## Delivered slice
 

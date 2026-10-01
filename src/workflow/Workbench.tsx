@@ -31,6 +31,8 @@ import {
   RecordingActions,
 } from './ProjectPanel';
 import { ExportPanel, ExportHistory } from './ExportPanel';
+import { FilingPanel } from './FilingPanel';
+import { CompletedLibrary } from './CompletedLibrary';
 import {
   colors,
   markerColors,
@@ -494,6 +496,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   }
   const [exportClipId, setExportClipId] = useState(''),
     [exportsOpen, setExportsOpen] = useState(false);
+  const [filingOpen, setFilingOpen] = useState(false);
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1966,10 +1969,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                     clip,
                                     false,
                                     () => {
+                                      const position = transport.current?.current() ?? clip.start;
                                       selectRecord(clip.rid);
                                       setCid(clip.id);
                                       setMid('');
-                                      updateRecording(clip.rid, { position: clip.start });
+                                      updateRecording(clip.rid, { position });
                                       go('cut');
                                     },
                                   )}
@@ -2047,9 +2051,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 <span className={s.spacer} />
                 <Button
                   primary
-                  disabled={!!project}
-                  title={project ? 'Filing arrives in Milestone 2' : undefined}
-                  onClick={() => setDialog('file')}
+                  disabled={workspace.busy}
+                  onClick={() => (project ? setFilingOpen(true) : setDialog('file'))}
                 >
                   File queue · {readyQueue.length}
                 </Button>
@@ -2057,21 +2060,25 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             </>
           )}
           <div className={s.library} style={{ display: page === 'library' ? 'flex' : 'none' }}>
-            <Library
-              sample={!project}
-              model={model}
-              setModel={setModel}
-              onOpen={(rid, time) => {
-                updateRecording(rid, { position: time });
-                selectRecord(rid);
-                const clip = model.clips.find(
-                  (c) => c.rid === rid && c.start <= time && c.end > time,
-                );
-                if (clip) setCid(clip.id);
-                go('cut');
-              }}
-              onSelect={addSelect}
-            />
+            {project ? (
+              <CompletedLibrary key={project.project.id} workspace={workspace} />
+            ) : (
+              <Library
+                sample={!project}
+                model={model}
+                setModel={setModel}
+                onOpen={(rid, time) => {
+                  updateRecording(rid, { position: time });
+                  selectRecord(rid);
+                  const clip = model.clips.find(
+                    (c) => c.rid === rid && c.start <= time && c.end > time,
+                  );
+                  if (clip) setCid(clip.id);
+                  go('cut');
+                }}
+                onSelect={addSelect}
+              />
+            )}
           </div>
           {page === 'selects' && (
             <>
@@ -2454,6 +2461,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       )}
       {project && exportsOpen && (
         <ExportHistory workspace={workspace} onClose={() => setExportsOpen(false)} />
+      )}
+      {project && filingOpen && (
+        <FilingPanel
+          workspace={workspace}
+          onClose={() => setFilingOpen(false)}
+          onLibrary={() => {
+            setFilingOpen(false);
+            go('library');
+          }}
+        />
       )}
       {notice && (
         <div className={s.notice} role="status">
