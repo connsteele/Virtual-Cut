@@ -1,6 +1,6 @@
-import { Clapperboard, Film, FolderOpen, GalleryVerticalEnd, ListVideo } from 'lucide-react';
+import { Clapperboard, Film, FolderOpen, GalleryVerticalEnd, ListVideo, Send } from 'lucide-react';
 
-export type PageId = 'media' | 'cut' | 'review' | 'library' | 'selects';
+export type PageId = 'media' | 'cut' | 'review' | 'library' | 'selects' | 'handoff';
 export type LayoutId = 'studio' | 'library' | 'focus';
 
 export const pages = [
@@ -40,6 +40,13 @@ export const pages = [
     icon: ListVideo,
     phase: 'Start with the moments that matter',
     future: 'Later, collect clip ranges into ordered selects and string-outs for Resolve.',
+  },
+  {
+    id: 'handoff',
+    label: 'Handoff',
+    icon: Send,
+    phase: 'Continue in Resolve',
+    future: 'Transfer finished videos and their marker metadata.',
   },
 ] as const;
 

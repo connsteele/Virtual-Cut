@@ -278,6 +278,15 @@ try {
       .evaluateAll((cards) => cards.map((c) => c.dataset.markerCard)),
     ['later-marker', 'move-marker'],
   );
+  await expect
+    .poll(() =>
+      page.locator('[data-marker-card="move-marker"]').evaluate((card) => {
+        const area = card.closest('aside').getBoundingClientRect(),
+          rect = card.getBoundingClientRect();
+        return rect.top >= area.top - 1 && rect.bottom <= area.bottom + 1;
+      }),
+    )
+    .toBe(true);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect
     .poll(async () => page.locator('[data-marker-card]').first().getAttribute('data-marker-card'))

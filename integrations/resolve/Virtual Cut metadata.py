@@ -41,7 +41,7 @@ def load_companion(media_path):
         raise ValueError('Companion metadata is too large.')
     with open(companion_path, encoding='utf-8') as handle:
         data = json.load(handle)
-    if data.get('schema') != 'virtual-cut-export' or data.get('version') not in (1, 2):
+    if data.get('schema') != 'virtual-cut-export' or data.get('version') not in (1, 2, 3):
         raise ValueError('Choose a Virtual Cut export companion.')
     if not re.fullmatch(r'[a-fA-F0-9-]{36}', data.get('exportId', '')):
         raise ValueError('Companion export identity is invalid.')
@@ -116,6 +116,13 @@ def plan_markers(data, fps, existing):
             continue
         changes.append({'frame': frame, 'before': copy.deepcopy(old), 'after': target,
                         'action': 'Enrich chapter' if old else 'Add marker'})
+    # Version 3 explicitly identifies the muxer's leading chapter. Never infer
+    # ownership from a title alone, or delete a genuine/user-edited marker.
+    generated = data.get('generatedChapters', []) if data.get('version') == 3 else []
+    if generated == [{'name': 'Clip start', 'containerTime': 0, 'purpose': 'quicktime-leading-anchor'}] and data['markers'] and all(m.get('containerTime', m.get('clipTime', 0)) * fps >= 1 for m in data['markers']):
+        anchor = existing.get(0)
+        if anchor and fields(anchor, 0) == {'frame': 0.0, 'name': 'Clip start', 'note': '', 'color': 'Blue', 'duration': 1} and not anchor.get('customData'):
+            changes.insert(0, {'frame': 0, 'before': copy.deepcopy(anchor), 'after': None, 'action': 'Remove generated Clip start'})
     # Never partially apply a same-frame conflict; callers block the entire clip.
     return changes, conflicts
 
@@ -155,6 +162,10 @@ def apply_clip(plan):
             touched.append(change)
             if change['before'] is not None and not item.DeleteMarkerAtFrame(frame):
                 raise RuntimeError('Resolve refused to replace a matching chapter.')
+            if change['after'] is None:
+                if frame in (item.GetMarkers() or {}):
+                    raise RuntimeError('Resolve refused to remove the generated chapter.')
+                continue
             if not add(item, frame, change['after']):
                 raise RuntimeError('Resolve refused a marker update.')
             actual = (item.GetMarkers() or {}).get(frame)
@@ -207,6 +218,8 @@ def show_window(resolve, bmd):
                 lines.append(item.GetName() + '\n' + plan['path'])
                 for change in plan['changes']:
                     target = change['after']
+                    if target is None:
+                        lines.append('  ' + change['action'] + ' at frame ' + str(change['frame'])); continue
                     lines.append('  ' + change['action'] + ' at frame ' + str(change['frame']) + ': ' + target['name'] + ' [' + target['color'] + ']\n    ' + target['note'].replace('\n', '\n    '))
                 for conflict in plan['conflicts']:
                     errors.append(conflict); lines.append('  CONFLICT: ' + conflict)

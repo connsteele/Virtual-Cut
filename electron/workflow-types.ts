@@ -72,6 +72,8 @@ export interface Clip {
   originalFolder?: string;
 }
 export interface Recording {
+  /** Read-only completed output; playback uses its embedded game audio. */
+  retained?: boolean;
   id: string;
   title: string;
   url: string;

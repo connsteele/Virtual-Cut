@@ -290,7 +290,7 @@ export function Player({
   );
   const audioKey = monitored.map((t) => `${t.index}:${t.previewUrl || ''}:${t.offset}`).join('|');
   useEffect(() => {
-    if (!r.sourcePath) return;
+    if (!r.sourcePath || r.retained) return;
     const v = video.current!,
       elements = audio.current;
     const lastCorrection = new Map<number, number>();
@@ -643,7 +643,7 @@ export function Player({
           ref={video}
           playsInline
           preload="metadata"
-          muted={!!r.sourcePath || (r.sample && !r.fullResolution)}
+          muted={(!!r.sourcePath && !r.retained) || (r.sample && !r.fullResolution)}
           aria-label={`Video: ${r.title}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
@@ -969,7 +969,7 @@ export function Player({
       </div>
       {(!r.sample || r.fullResolution) && (
         <div className={s.audioControls} role="group" aria-label="Preview audio controls">
-          {r.sourcePath && (
+          {r.sourcePath && !r.retained && (
             <>
               <span className={s.audioLabel}>Listen</span>
               <div className={s.listenChoices} role="group" aria-label="Listen to">
@@ -1001,6 +1001,15 @@ export function Player({
                         : 'No track selected')}
               </span>
             </>
+          )}
+          {r.retained && (
+            <span className={s.audioLabel} title={audioStatus}>
+              {(audioStatus
+                ? audioStatus.startsWith('Preview details unavailable')
+                  ? 'Preview details unavailable'
+                  : 'Preparing game audio…'
+                : '') || (r.gameTrack == null ? 'No audio in this file' : 'Game audio')}
+            </span>
           )}
           <label>
             <Volume2 size={14} />

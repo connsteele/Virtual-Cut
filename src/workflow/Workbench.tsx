@@ -511,7 +511,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const [filingOpen, setFilingOpen] = useState(false);
   const [reviewSort, setReviewSort] = useState<ReviewSort>('folder');
   const [reviewGrouping, setReviewGrouping] = useState<ReviewGrouping>('folders');
-  const [handoffOpen, setHandoffOpen] = useState(false);
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -614,9 +613,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     if (rect.top < area.top || rect.bottom > area.bottom)
       card.scrollIntoView({
         block: 'center',
-        behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'instant' : 'smooth',
+        behavior:
+          mid || matchMedia('(prefers-reduced-motion:reduce)').matches ? 'instant' : 'smooth',
       });
-  }, [cid, mid, page]);
+  }, [cid, mid, page, model.markers]);
   useEffect(() => {
     if (!deleteClipId && !deleteMarkerId) return;
     document
@@ -1821,13 +1821,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   Sort{' '}
                   <select
                     aria-label="Sort review"
+                    title="Clip date is the recording file's modified date plus the clip's start time. This is the date applied to the finished file."
                     value={reviewSort}
                     onChange={(event) => setReviewSort(event.target.value as ReviewSort)}
                   >
                     <option value="folder">Folder name</option>
                     <option value="name">Clip name</option>
-                    <option value="date-asc">Date modified · oldest first</option>
-                    <option value="date-desc">Date modified · newest first</option>
+                    <option value="date-asc">Clip date · oldest first</option>
+                    <option value="date-desc">Clip date · newest first</option>
                   </select>
                 </label>
                 <label className={s.tools}>
@@ -1837,8 +1838,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     value={reviewGrouping}
                     onChange={(event) => setReviewGrouping(event.target.value as ReviewGrouping)}
                   >
-                    <option value="folders">One group per folder</option>
-                    <option value="sequence">Follow sort order</option>
+                    <option value="folders">Group Folder Clips</option>
+                    <option value="sequence">Split Groups by Sort</option>
                   </select>
                 </label>
                 <span className={s.toolbarDivider} aria-hidden="true" />
@@ -1945,7 +1946,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </div>
                   {reviewSort.startsWith('date-') && (
                     <p className={s.muted}>
-                      Date modified uses the source date plus clip In, matching finished exports.
+                      Clip date uses the source Date modified plus clip In, matching finished
+                      exports.
                       {reviewGrouping === 'folders'
                         ? ' Clips sort within each folder.'
                         : ' Folders repeat when the sorted sequence returns to them.'}
@@ -2036,7 +2038,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   Filed · {clip.location.folder || 'Destination root'}
                                 </Button>
                                 <details className={s.filedPlan}>
-                                  <summary>Original plan</summary>
+                                  <summary>Original destination</summary>
                                   <span>{clip.folder || 'Destination root'}</span>
                                   <Button onClick={() => setFolderIds([clip.id])}>
                                     Plan another destination…
@@ -2054,7 +2056,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                               </Button>
                             )}
                             {reviewSort.startsWith('date-') && (
-                              <span className={s.reviewDate}>
+                              <span
+                                className={s.reviewDate}
+                                title="Finished-file Date modified: source Date modified plus requested clip start."
+                              >
                                 {clip.modified == null
                                   ? 'Date unavailable'
                                   : new Date(clip.modified).toLocaleString()}
@@ -2252,7 +2257,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           )}
           <div className={s.library} style={{ display: page === 'library' ? 'flex' : 'none' }}>
             {project ? (
-              <CompletedLibrary key={project.project.id} workspace={workspace} />
+              <CompletedLibrary
+                key={project.project.id}
+                workspace={workspace}
+                active={page === 'library'}
+              />
             ) : (
               <Library
                 sample={!project}
@@ -2271,6 +2280,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               />
             )}
           </div>
+          {page === 'handoff' && <HandoffPanel />}
           {page === 'selects' && (
             <>
               <div className={s.toolbar}>
@@ -2656,7 +2666,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           onClose={() => setExportsOpen(false)}
           onHandoff={() => {
             setExportsOpen(false);
-            setHandoffOpen(true);
+            go('handoff');
           }}
         />
       )}
@@ -2682,7 +2692,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         <span className={s.muted}>
           {project ? 'Project workspace' : 'Workflow preview'}{' '}
           <Button onClick={() => setDiagnosticsOpen(true)}>Diagnostics</Button>
-          {project && <Button onClick={() => setHandoffOpen(true)}>Handoff</Button>}
         </span>
         <nav aria-label="Workspace pages">
           {pages.map((p) => (
@@ -2702,7 +2711,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       </footer>
       {diagnosticsOpen && <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />}
-      {handoffOpen && <HandoffPanel onClose={() => setHandoffOpen(false)} />}
       {planOpen && (
         <DestinationPlanPanel
           plan={destinationPlan}

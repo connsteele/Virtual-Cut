@@ -338,7 +338,7 @@ export async function exportClip(
     ...record,
     started: new Date().toISOString(),
     elapsedMs: 0,
-    annotationVersion: record.annotationVersion ?? (record.verification ? 1 : 2),
+    annotationVersion: record.annotationVersion ?? (record.verification ? 1 : 3),
   };
   const elapsedMs = () => Math.round(performance.now() - began);
   if (
@@ -645,11 +645,22 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
           cleanGameConfirmed: true,
         },
         context: input.context,
+        ...((record.annotationVersion ?? 1) >= 3
+          ? {
+              generatedChapters:
+                chapters(record, v).length >
+                input.markers.filter(
+                  (m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
+                ).length
+                  ? [{ name: 'Clip start', containerTime: 0, purpose: 'quicktime-leading-anchor' }]
+                  : [],
+            }
+          : {}),
         markers: input.markers
           .filter((m) => m.time >= v.actual.start - 0.000001 && m.time < v.actual.end)
           .map((m) => ({
             ...m,
-            ...(record.annotationVersion === 2
+            ...((record.annotationVersion ?? 1) >= 2
               ? { colorName: markerColorName(m), color: markerColor(m) }
               : { color: colors[m.category] }),
             sourceTime: m.time,

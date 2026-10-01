@@ -1856,3 +1856,19 @@
   align-items: center;
   gap: 0.5rem;
 }
+
+.handoffPage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+.shell .handoffPage > * {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+}
+.handoffPage > h2,
+.handoffPage > h3 {
+  margin-block: 16px;
+}

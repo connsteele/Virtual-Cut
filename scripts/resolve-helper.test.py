@@ -51,6 +51,33 @@ class Tests(unittest.TestCase):
         self.assertEqual(helper.plan_clip(item)['changes'], [])
         item.markers[74]['note'] = 'User edited'
         self.assertTrue(helper.plan_clip(item)['conflicts'])
+    def test_explicit_generated_anchor(self):
+        self.data['version'] = 3
+        self.data['generatedChapters'] = [dict(name='Clip start', containerTime=0, purpose='quicktime-leading-anchor')]
+        self.save()
+        item = Item(self.file, self.old)
+        plan = helper.plan_clip(item)
+        self.assertIsNone(plan['changes'][0]['after'])
+        self.assertEqual(helper.apply_clip(plan), 3)
+        self.assertNotIn(0, item.markers)
+        self.assertEqual(helper.plan_clip(item)['changes'], [])
+        # Failure after removing the anchor must restore the entire snapshot.
+        item = Item(self.file, self.old); item.fail = True
+        with self.assertRaisesRegex(RuntimeError, 'restored'): helper.apply_clip(helper.plan_clip(item))
+        self.assertEqual(item.markers, self.old)
+        # User edits and genuine zero-time markers are never removed.
+        item = Item(self.file, self.old); item.markers[0]['note'] = 'Mine'
+        self.assertFalse(any(c['after'] is None for c in helper.plan_clip(item)['changes']))
+        self.data['markers'].insert(0, dict(id='real', name='Clip start', note='Genuine', colorName='Blue', containerTime=0))
+        self.save()
+        item = Item(self.file, self.old)
+        plan = helper.plan_clip(item)
+        self.assertFalse(any(c['after'] is None for c in plan['changes']))
+        helper.apply_clip(plan)
+        self.assertEqual(item.markers[0]['note'], 'Genuine')
+        self.data['markers'] = []; self.save()
+        self.assertEqual(helper.plan_clip(Item(self.file, self.old))['changes'], [])
+
     def test_conflicts_and_stale_plan(self):
         item = Item(self.file, self.old)
         item.markers[33]['note'] = 'User note'

@@ -86,6 +86,12 @@ export interface ProjectApi {
   fileQueue(id: string, planId: string, confirmed: boolean): Promise<ProjectSnapshot>;
   cancelFiling(id: string, queueId: string): Promise<ProjectSnapshot>;
   retainedMedia(id: string, exportId: string): Promise<RetainedClip>;
+  inspectRetained(
+    id: string,
+    exportId: string,
+    token: string,
+  ): Promise<import('./workflow-types.js').Recording>;
+  releaseRetained(id: string, token: string): Promise<void>;
   relinkExport(id: string, exportId: string): Promise<ProjectSnapshot | null>;
   chooseDestination(id: string, folder: string): Promise<string | null>;
   revealDestination(id: string, folder: string): Promise<void>;

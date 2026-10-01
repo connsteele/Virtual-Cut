@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, Link2 } from 'lucide-react';
 import type { RetainedClip } from '../../electron/export-contracts';
 import type { useProjectWorkspace } from './useProjectWorkspace';
@@ -7,18 +7,59 @@ import { Button } from './ui';
 import { markerColor, time, type Recording } from './model';
 import s from './CompletedLibrary.module.css';
 type Workspace = ReturnType<typeof useProjectWorkspace>;
-export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
+export function CompletedLibrary({
+  workspace: w,
+  active,
+}: {
+  workspace: Workspace;
+  active: boolean;
+}) {
   const [query, setQuery] = useState(''),
     [folder, setFolder] = useState(''),
     [selected, setSelected] = useState<RetainedClip>(),
     [attempted, setAttempted] = useState<RetainedClip>(),
     [error, setError] = useState(''),
     [loading, setLoading] = useState('');
+  const [preview, setPreview] = useState<Recording>();
+  const [previewStatus, setPreviewStatus] = useState('');
   const request = useRef(0),
     transport = useRef<Transport>(null);
   const p = w.snapshot!,
     clips = p.library || [],
     folders = [...new Set(clips.map((c) => c.folder))].sort();
+  useEffect(
+    () => () => {
+      request.current++;
+    },
+    [],
+  );
+  useEffect(() => {
+    setPreview(undefined);
+    setPreviewStatus('');
+    if (!active || !selected) return;
+    let alive = true;
+    const token = crypto.randomUUID();
+    const api = window.virtualCut!.project;
+    setPreviewStatus('Preparing filmstrip and game waveform…');
+    void api
+      .inspectRetained(p.project.id, selected.exportId, token)
+      .then((value) => {
+        if (alive) {
+          setPreview(value);
+          setPreviewStatus('');
+        }
+      })
+      .catch((e) => {
+        if (alive)
+          setPreviewStatus(
+            `Preview details unavailable: ${e instanceof Error ? e.message : String(e)}`,
+          );
+      });
+    return () => {
+      alive = false;
+      void api.releaseRetained(p.project.id, token).catch(() => {});
+    };
+  }, [active, selected, p.project.id]);
   const visible = clips.filter(
     (c) =>
       (!folder || c.folder === folder) &&
@@ -64,8 +105,6 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
   const record: Recording | undefined = selected
     ? {
         id: selected.exportId,
-        title: selected.name,
-        url: selected.url!,
         poster: '',
         frames: [],
         base: 0,
@@ -78,7 +117,14 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
         sample: false,
         fullResolution: true,
         context: selected.context,
-        availability: 'ready',
+        retained: true,
+        sourcePath: selected.output,
+        availability: 'pending',
+        ...(preview?.id === selected.exportId ? preview : {}),
+        // Inspection supplies transient timing and waveform data; verified media
+        // grants and the user's title always remain authoritative.
+        url: selected.url!,
+        title: selected.name,
       }
     : undefined;
   return (
@@ -213,6 +259,8 @@ export function CompletedLibrary({ workspace: w }: { workspace: Workspace }) {
                   key={selected.exportId}
                   ref={transport}
                   recording={record}
+                  projectId={p.project.id}
+                  audioStatus={previewStatus}
                   markers={selected.markers}
                   clips={[]}
                   showClips={false}

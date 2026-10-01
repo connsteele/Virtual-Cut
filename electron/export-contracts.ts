@@ -56,7 +56,7 @@ export interface ExportRecord {
     completedAt?: string;
     media?: { width?: number; height?: number; fps?: number };
   };
-  annotationVersion?: 1 | 2;
+  annotationVersion?: 1 | 2 | 3;
   started?: string;
   elapsedMs?: number;
   plan: ExportPlan;

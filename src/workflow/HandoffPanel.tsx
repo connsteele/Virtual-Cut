@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { ResolveHelperStatus } from '../../electron/project-contracts';
-import { Button, Modal } from './ui';
+import { Button } from './ui';
 import s from './Workflow.module.css';
 
 const labels = {
@@ -11,7 +11,7 @@ const labels = {
   unmanaged: 'Matching helper · not registered by this app',
   customized: 'Customized or unrecognized helper · preserved',
 };
-export function HandoffPanel({ onClose }: { onClose: () => void }) {
+export function HandoffPanel() {
   const [status, setStatus] = useState<ResolveHelperStatus>();
   const [busy, setBusy] = useState(true),
     [error, setError] = useState(''),
@@ -65,7 +65,8 @@ export function HandoffPanel({ onClose }: { onClose: () => void }) {
   }
   const owned = status && ['installed', 'outdated'].includes(status.state);
   return (
-    <Modal title="Handoff to Resolve" onClose={onClose}>
+    <section className={s.handoffPage} aria-label="Handoff to Resolve">
+      <h2>Handoff to Resolve</h2>
       <p>Bring finished videos, chapter markers, multiline marker notes and colors into Resolve.</p>
       <section className={s.handoffStatus} aria-label="Resolve helper">
         <h3>Metadata helper</h3>
@@ -135,6 +136,11 @@ export function HandoffPanel({ onClose }: { onClose: () => void }) {
           </p>
         )}
       </section>
+      <p className={s.muted}>
+        New exports identify the generated MP4 “Clip start” chapter. Check/Apply removes that
+        unchanged placeholder in Resolve while preserving real markers. It can still appear on
+        ordinary import before the helper runs. Older exports and edited placeholders are preserved.
+      </p>
       <h3>Transfer markers</h3>
       <ol className={s.handoffSteps}>
         <li>
@@ -165,6 +171,6 @@ export function HandoffPanel({ onClose }: { onClose: () => void }) {
         The helper needs Resolve's Utility scripting and Python support. Our current live validation
         used Resolve Studio 21.1; other installations still need a compatibility check.
       </p>
-    </Modal>
+    </section>
   );
 }

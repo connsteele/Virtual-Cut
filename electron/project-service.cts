@@ -17,6 +17,7 @@ import { ProjectStore, type NativeSource } from './project-store.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { FilmstripCache } from './filmstrip.cjs';
+import { inspectRetainedOutput } from './retained-preview.cjs';
 import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -72,10 +73,57 @@ export class ProjectService {
   private filingPlans = new Map<string, { plan: FilingPlan; records: ExportRecord[] }>();
   private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
   private filmstripCache = new FilmstripCache();
+  private retainedPreview?: {
+    token: string;
+    controller: AbortController;
+    value?: Awaited<ReturnType<typeof inspectRetainedOutput>>;
+  };
+  releaseRetained(id?: string, token?: string) {
+    if (id) this.require(id);
+    if (token && this.retainedPreview?.token !== token) return;
+    if (this.retainedPreview) this.filmstripCache.clear();
+    this.retainedPreview?.controller.abort();
+    this.retainedPreview = undefined;
+  }
+  async inspectRetained(id: string, exportId: string, token: string) {
+    const store = this.require(id);
+    if (typeof token !== 'string' || !/^[a-f\d-]{36}$/i.test(token))
+      throw new Error('Invalid preview request.');
+    const record = store
+      .exports()
+      .find(
+        (e) => e.plan.id === exportId && e.state === 'verified' && e.filing?.state === 'complete',
+      );
+    if (!record?.output) throw new Error('Choose a completed Library clip.');
+    this.releaseRetained();
+    const task = {
+      token,
+      controller: new AbortController(),
+      value: undefined as Awaited<ReturnType<typeof inspectRetainedOutput>> | undefined,
+    };
+    this.retainedPreview = task;
+    await verifyPublished(record, task.controller.signal);
+    if (task.controller.signal.aborted) throw new Error('Cancelled');
+    const value = await inspectRetainedOutput(
+      record.output,
+      exportId,
+      this.tool('ffprobe'),
+      this.tool('ffmpeg'),
+      task.controller.signal,
+    );
+    if (task.controller.signal.aborted || this.store !== store) throw new Error('Cancelled');
+    task.value = value;
+    return value.recording;
+  }
   filmstrip(id: string, sourceId: string, times: number[], token: string) {
     const store = this.require(id);
-    const source = store.sources().find((s) => s.id === sourceId);
-    const r = store.data.model.recordings.find((r) => r.id === sourceId);
+    const retained = this.retainedPreview?.value;
+    const source =
+      store.sources().find((s) => s.id === sourceId) ||
+      (retained?.source.id === sourceId ? retained.source : undefined);
+    const r =
+      store.data.model.recordings.find((r) => r.id === sourceId) ||
+      (retained?.recording.id === sourceId ? retained.recording : undefined);
     if (!source || !r || r.availability !== 'ready')
       throw new Error('Choose an available recording.');
     if (
@@ -192,6 +240,7 @@ export class ProjectService {
   async close() {
     this.switching = true;
     try {
+      this.releaseRetained();
       await this.filmstripCache.close();
       this.active?.controller.abort();
       await this.active?.finished;
@@ -265,6 +314,7 @@ export class ProjectService {
         r.availability = 'missing';
       }
       if (previous !== r.availability) {
+        this.releaseRetained();
         this.filmstripCache.clear();
         dirty = true;
         this.grants.delete(s.file);
@@ -453,6 +503,7 @@ export class ProjectService {
     return path.join(s.file + '.saves', saveId);
   }
   async restore(id: string, saveId: string) {
+    this.releaseRetained();
     this.filmstripCache.clear();
     const store = this.require(id);
     this.switching = true;
@@ -511,6 +562,7 @@ export class ProjectService {
     return this.snapshot();
   }
   async removeRecording(id: string, batchId: string, sourceId: string) {
+    this.releaseRetained();
     this.filmstripCache.clear();
     const s = this.require(id);
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
@@ -584,6 +636,7 @@ export class ProjectService {
     targetId?: string,
     mode: 'preserve' | 'remove' = 'preserve',
   ) {
+    this.releaseRetained();
     this.filmstripCache.clear();
     const s = this.require(id);
     if (!['preserve', 'remove'].includes(mode)) throw new Error('Choose how to remove this batch.');
@@ -951,7 +1004,7 @@ export class ProjectService {
     };
     return {
       plan,
-      annotationVersion: 2,
+      annotationVersion: 3,
       input,
       inputHash: hash,
       state: 'planned',
@@ -1347,6 +1400,7 @@ export class ProjectService {
     return this.snapshot();
   }
   async relink(id: string, sourceId: string, file: string) {
+    this.releaseRetained();
     this.filmstripCache.clear();
     const s = this.require(id),
       old = s.sources().find((x) => x.id === sourceId);

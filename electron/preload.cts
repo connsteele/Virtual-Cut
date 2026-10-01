@@ -83,6 +83,9 @@ const api: VirtualCutApi = {
       ipcRenderer.invoke('workspace:fileQueue', id, planId, confirmed),
     cancelFiling: (id, queueId) => ipcRenderer.invoke('workspace:cancelFiling', id, queueId),
     retainedMedia: (id, exportId) => ipcRenderer.invoke('workspace:retainedMedia', id, exportId),
+    inspectRetained: (id, exportId, token) =>
+      ipcRenderer.invoke('workspace:inspectRetained', id, exportId, token),
+    releaseRetained: (id, token) => ipcRenderer.invoke('workspace:releaseRetained', id, token),
     relinkExport: (id, exportId) => ipcRenderer.invoke('workspace:relinkExport', id, exportId),
     exportClip: (id, planId, confirmed) =>
       ipcRenderer.invoke('workspace:exportClip', id, planId, confirmed),

@@ -443,6 +443,74 @@ assert.equal(
   ).length,
   0,
 );
+// Library analysis uses only verified finished media, preserves bytes/dates and
+// exposes a session-only keyframe/waveform index. Cancellation cannot publish it.
+const retained = (await service.snapshot()).library.find((c) => c.exportId === recovered.plan.id);
+const { inspectRetainedOutput } = require('../dist-electron/retained-preview.cjs');
+for (const silent of [false, true]) {
+  const testFile = path.join(dir, silent ? 'silent.mkv' : 'no-audio.mkv');
+  await command('ffmpeg', [
+    '-v',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=size=64x64:duration=1',
+    ...(silent ? ['-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono'] : []),
+    '-t',
+    '1',
+    '-c:v',
+    'libx264',
+    ...(silent ? ['-c:a', 'aac'] : []),
+    testFile,
+  ]);
+  const checked = await inspectRetainedOutput(
+    testFile,
+    'fixture',
+    'ffprobe',
+    'ffmpeg',
+    new AbortController().signal,
+  );
+  assert.equal(checked.recording.audioTracks.length, silent ? 1 : 0);
+  if (silent) assert.ok(checked.recording.audioTracks[0].waveform.peaks.every((n) => n === 0));
+  else assert.equal(checked.recording.gameTrack, null);
+}
+const retainedBefore = {
+  hash: await fileHash(retained.output),
+  meta: await fileHash(retained.output + '.vcut.json'),
+  modified: (await stat(retained.output)).mtimeMs,
+};
+const previewToken = '11111111-1111-4111-8111-111111111111';
+const offlineOriginal = recovered.input.sourceFile + '.offline-preview-check';
+await rename(recovered.input.sourceFile, offlineOriginal);
+const preview = await service.inspectRetained(id, retained.exportId, previewToken);
+assert.ok(preview.keys.length > 0);
+assert.equal(preview.audioTracks.length, 1);
+assert.equal(preview.retained, true);
+assert.ok(preview.audioTracks[0].waveform.peaks.some((n) => n > 0));
+assert.ok(preview.audioTracks[0].waveform.peaks.length <= 2049);
+const tiles = await service.filmstrip(
+  id,
+  retained.exportId,
+  [0, preview.duration / 2],
+  previewToken,
+);
+assert.equal(tiles.length, 2);
+assert.ok(tiles.every((t) => t.data.startsWith('data:image/jpeg;')));
+service.releaseRetained(id, previewToken);
+assert.throws(() => service.filmstrip(id, retained.exportId, [0], previewToken), /available/);
+const cancelledPreview = service.inspectRetained(id, retained.exportId, previewToken);
+service.releaseRetained(id, previewToken);
+await assert.rejects(cancelledPreview, /Cancelled|abort/i);
+await rename(offlineOriginal, recovered.input.sourceFile);
+assert.deepEqual(
+  {
+    hash: await fileHash(retained.output),
+    meta: await fileHash(retained.output + '.vcut.json'),
+    modified: (await stat(retained.output)).mtimeMs,
+  },
+  retainedBefore,
+);
 await service.close();
 await writeFile(
   path.join(root, 'latest-native.json'),

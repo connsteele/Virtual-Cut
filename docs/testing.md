@@ -1,6 +1,6 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.16 has eight fast, twelve native and fourteen desktop scripts. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.17 has eight fast, twelve native and fourteen desktop scripts. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 | Command                                                       | Gate                                                                                                                                                          |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,3 +35,9 @@ The Resolve helper has Python reconciliation/rollback/ownership tests and a nati
 ## Version 0.3.16 additions
 
 The eighth fast script checks date/name sorting, both grouping modes, deterministic/missing dates, multiple completed revisions, current Done location selection and draft preservation. Review and Library desktop gates exercise global interleaved groups, unchanged saved edits, verified external relink and reopen, stable focused typing/viewer identity during regrouping, native Explorer paths and wide/compact Handoff controls. Native helper checks cover missing/unmanaged/current/outdated/customized states, update backups, confirmed owned removal, invalid ownership metadata and link/directory preservation; Python reconciliation tests remain included. Code coverage measurement stays separate under VC-50.
+
+## Version 0.3.17 additions
+
+Native Library checks inspect verified outputs with originals offline, exercise keyframe extraction, nonzero/silent/no-audio waveforms and cancellation, and compare output/companion hashes and dates. No additional script is added to the inventory. Library Electron checks cover first-load filmstrip, game waveform, embedded audio, zoom/reset, immediate J/K/L, relink, compact layout and full-page Handoff helper controls. Marker tests check that the retimed selected card remains inside the inspector. Six Python helper cases include explicit generated-anchor removal, genuine/edited/legacy preservation, idempotency and full rollback after anchor deletion. Export gates validate version 3 companions and retain legacy annotation compatibility.
+
+The generated MP4 experiment under `G:\GPT\Work\virtual-cut\review-0.3.17\chapter-check` confirms a delayed chapter at 1 second becomes zero without an anchor. Actual Resolve import/Check/Apply acceptance for the new cleanup is a manual review item; synthetic helper tests do not replace it. Code coverage remains unmeasured under VC-50.

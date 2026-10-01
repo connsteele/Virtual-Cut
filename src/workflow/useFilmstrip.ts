@@ -1,6 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Recording } from './model';
-import { filmstripMemory, filmstripSource, filmstripTiles } from './filmstripMemory';
+import {
+  filmstripMemory,
+  FilmstripMemory,
+  filmstripSource,
+  filmstripTiles,
+} from './filmstripMemory';
+
+const retainedMemory = new FilmstripMemory();
 
 export function useFilmstrip(
   recording: Recording,
@@ -12,20 +19,28 @@ export function useFilmstrip(
   hidden: boolean,
   overview: boolean,
 ) {
+  const memory = recording.retained ? retainedMemory : filmstripMemory;
   const source = filmstripSource(projectId || '', recording);
   const tiles = filmstripTiles(start, end, count, recording.duration);
   const timesKey = JSON.stringify(tiles.map((t) => t.requested));
   const identity = `${source}:${timesKey}`;
   const [error, setError] = useState('');
-  useSyncExternalStore(filmstripMemory.subscribe, filmstripMemory.snapshot);
+  useEffect(() => {
+    if (!recording.retained) return;
+    retainedMemory.sync(projectId || '', [recording]);
+    return () => retainedMemory.sync('', []);
+    // The source key includes all preview identity fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+  useSyncExternalStore(memory.subscribe, memory.snapshot);
   const native = !!projectId && !!recording.sourcePath;
   const ready = recording.availability === 'ready';
   useEffect(() => {
     const api = window.virtualCut?.project;
     if (!native || !ready || !api || hidden) return;
     const times: number[] = JSON.parse(timesKey);
-    filmstripMemory.touch(source, times, overview);
-    const missing = times.filter((at) => !filmstripMemory.get(source, at));
+    memory.touch(source, times, overview);
+    const missing = times.filter((at) => !memory.get(source, at));
     if (!missing.length || suspended) return;
     let alive = true;
     const request = crypto.randomUUID();
@@ -33,7 +48,7 @@ export function useFilmstrip(
       void api
         .filmstrip(projectId!, recording.id, missing, request)
         .then((frames) => {
-          if (alive) filmstripMemory.put(source, frames, overview, times);
+          if (alive) memory.put(source, frames, overview, times);
         })
         .catch(() => {
           if (alive) setError(identity);
@@ -45,6 +60,7 @@ export function useFilmstrip(
       void api.cancelFilmstrip(projectId!, request).catch(() => {});
     };
   }, [
+    memory,
     identity,
     source,
     timesKey,
@@ -56,9 +72,7 @@ export function useFilmstrip(
     hidden,
     overview,
   ]);
-  const frames = tiles.map((tile) =>
-    ready ? filmstripMemory.get(source, tile.requested) : undefined,
-  );
+  const frames = tiles.map((tile) => (ready ? memory.get(source, tile.requested) : undefined));
   const complete = frames.length > 0 && frames.every(Boolean);
   return {
     native,

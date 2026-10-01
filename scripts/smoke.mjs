@@ -132,7 +132,7 @@ try {
   await navigation.waitFor();
   const scratchpad = page.getByRole('textbox', { name: 'Workspace notes' });
   if (process.env.VIRTUAL_CUT_TEST_PLAYBACK_ONLY !== '1') {
-    for (const name of ['Media', 'Cut', 'Review', 'Library', 'Selects']) {
+    for (const name of ['Media', 'Cut', 'Review', 'Library', 'Selects', 'Handoff']) {
       const button = navigation.getByRole('button', { name, exact: true });
       await button.click();
       assert.equal(await button.getAttribute('aria-current'), 'page');
@@ -375,7 +375,7 @@ try {
   console.log(
     process.env.VIRTUAL_CUT_TEST_PLAYBACK_ONLY === '1'
       ? 'Focused Electron playback smoke passed.'
-      : 'Electron smoke passed: native launch, production assets, bridge isolation, five pages, three layouts, saved notes/preferences, folder IPC handling, and compact window.',
+      : 'Electron smoke passed: native launch, production assets, bridge isolation, six pages, three layouts, saved notes/preferences, folder IPC handling, and compact window.',
   );
 } finally {
   await application.close();

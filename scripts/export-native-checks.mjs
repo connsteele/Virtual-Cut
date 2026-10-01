@@ -217,7 +217,7 @@ async function attempt(rid, start, end, container, label) {
   assert.equal(receipt.audio.outputAudioTrack, 1);
   assert.equal(receipt.clip.note, clip.note);
   assert.equal(receipt.markers.find((m) => m.id === 'zero').note, 'Two lines\n日本語');
-  assert.equal(receipt.version, 2);
+  assert.equal(receipt.version, 3);
   assert.equal(receipt.markers.find((m) => m.id === 'offset').colorName, 'Yellow');
   assert.equal(receipt.markers.find((m) => m.id === 'offset').color, '#e7d746');
   assert(record.elapsedMs > 0 && record.started);

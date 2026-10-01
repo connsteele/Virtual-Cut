@@ -366,6 +366,10 @@ function registerDesktopApi(): void {
   workspace('fileQueue', (id, planId, confirmed) => projects.fileQueue(id, planId, confirmed));
   workspace('cancelFiling', (id, queueId) => projects.cancelFiling(id, queueId));
   workspace('retainedMedia', (id, exportId) => projects.retainedMedia(id, exportId));
+  workspace('inspectRetained', (id, exportId, token) =>
+    projects.inspectRetained(id, exportId, token),
+  );
+  workspace('releaseRetained', (id, token) => projects.releaseRetained(id, token));
   workspace('relinkExport', async (id, exportId) => {
     const record = projects
       .require(id)

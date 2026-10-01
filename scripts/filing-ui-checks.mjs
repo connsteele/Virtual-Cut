@@ -85,6 +85,15 @@ try {
   await page.getByLabel('Search completed clips').pressSequentially('jkl');
   await expect(library.getByLabel('Playback status', { exact: true })).toHaveText('Paused');
   await page.getByLabel('Search completed clips').fill('café');
+  await expect(library.locator('[data-frame-time]').first()).toBeVisible({ timeout: 30000 });
+  await library.getByLabel('Waveform display').selectOption('overlay');
+  await expect(library.getByLabel('Game waveform', { exact: true })).toBeVisible();
+  await expect(library.getByRole('button', { name: 'Mic', exact: true })).toHaveCount(0);
+  assert.equal(await library.locator('video').evaluate((v) => v.muted), false);
+  await library.getByRole('button', { name: 'Zoom in timeline', exact: true }).click();
+  await expect(library.getByLabel('Timeline zoom level')).toHaveText('2.0×');
+  await expect(library.locator('[data-frame-time]').first()).toBeVisible({ timeout: 30000 });
+  await library.getByRole('button', { name: 'Fit full recording', exact: true }).click();
   await capture('library-viewer-wide');
   const viewerHeight = await library
     .locator('video')
@@ -149,7 +158,7 @@ try {
   await expect(
     doneCard.getByRole('button', { name: 'Show filed video: Second', exact: true }),
   ).toHaveAttribute('title', relinkFile);
-  await doneCard.locator('summary', { hasText: 'Original plan' }).click();
+  await doneCard.locator('summary', { hasText: 'Original destination' }).click();
   await expect(doneCard.locator('details').first()).toContainText(
     beforeRelink.model.clips.find((c) => c.id === secondId).folder,
   );
@@ -272,8 +281,25 @@ try {
   // Collapse metadata to devote the compact window to playback.
   if (await library.locator('details[open] > summary').count())
     await library.locator('details[open] > summary').click();
-  assert(await library.locator('video').evaluate((v) => v.getBoundingClientRect().height > 180));
+  await expect(library.locator('[data-frame-time]').first()).toBeVisible({ timeout: 30000 });
   await capture('library-compact');
+  const compactLayout = await library.evaluate((root) => {
+    const video = root.querySelector('video').getBoundingClientRect();
+    const player = root.querySelector('[aria-label="Footage viewer"]').getBoundingClientRect();
+    const facts = root.querySelector('details').getBoundingClientRect();
+    return {
+      videoHeight: video.height,
+      playerBottom: player.bottom,
+      factsBottom: facts.bottom,
+      bottom: root.getBoundingClientRect().bottom,
+    };
+  });
+  assert(compactLayout.videoHeight >= 120, JSON.stringify(compactLayout));
+  assert(
+    compactLayout.playerBottom <= compactLayout.bottom + 1 &&
+      compactLayout.factsBottom <= compactLayout.bottom + 1,
+    'Video, timeline, transport and details fit the compact Library without page scrolling',
+  );
   await page.getByLabel('Search completed clips').focus();
   await expect(page.getByLabel('Search completed clips')).toBeFocused();
   assert.ok(await page.locator('body').evaluate((e) => e.scrollWidth <= e.clientWidth + 1));
@@ -299,11 +325,22 @@ try {
   await app.evaluate(({ app }, directory) => app.setPath('appData', directory), appData);
   await page.getByRole('button', { name: 'Exports', exact: true }).click();
   await dialog().getByRole('button', { name: 'Handoff to Resolve…', exact: true }).click();
-  await expect(dialog().getByRole('status').first()).toHaveText('Not installed');
-  await dialog()
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toHaveText('Not installed');
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
     .getByRole('button', { name: 'Install Resolve metadata helper…', exact: true })
     .click();
-  await expect(dialog().getByRole('status').first()).toContainText('Installed · current version');
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toContainText('Installed · current version');
   const helper = path.join(
     appData,
     'Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Utility/Virtual Cut metadata.py',
@@ -318,10 +355,15 @@ try {
       globalThis.helperRevealed = file;
     };
   });
-  await dialog().getByRole('button', { name: 'Open helper location', exact: true }).click();
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Open helper location', exact: true })
+    .click();
   assert.equal(await app.evaluate(() => globalThis.helperRevealed), helper);
   await expect(
-    dialog().getByRole('button', { name: 'Open helper location', exact: true }),
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('button', { name: 'Open helper location', exact: true }),
   ).toBeEnabled();
   await capture('handoff-compact');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
@@ -332,30 +374,71 @@ try {
     '# preserved personal script',
   );
   await writeFile(helper + '.previous-review', '# retained backup');
-  await dialog().getByRole('button', { name: 'Remove helper…', exact: true }).click();
-  await dialog().getByRole('button', { name: 'Keep helper', exact: true }).click();
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Remove helper…', exact: true })
+    .click();
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Keep helper', exact: true })
+    .click();
   assert.equal(await readFile(helper, 'utf8'), helperContent);
-  await dialog().getByRole('button', { name: 'Remove helper…', exact: true }).click();
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Remove helper…', exact: true })
+    .click();
   await writeFile(helper, '# customized after status check');
-  await dialog().getByRole('button', { name: 'Remove installed helper', exact: true }).click();
-  await expect(dialog().getByRole('alert')).toContainText('preserved');
-  await expect(dialog().getByRole('status').first()).toContainText('Customized');
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Remove installed helper', exact: true })
+    .click();
+  await expect(
+    page.getByRole('region', { name: 'Handoff to Resolve', exact: true }).getByRole('alert'),
+  ).toContainText('preserved');
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toContainText('Customized');
   assert.equal(await readFile(helper, 'utf8'), '# customized after status check');
   await writeFile(helper, helperContent);
-  await dialog().getByRole('button', { name: 'Refresh status', exact: true }).click();
-  await expect(dialog().getByRole('status').first()).toContainText('Installed');
-  await dialog().getByRole('button', { name: 'Remove installed helper', exact: true }).click();
-  await expect(dialog().getByRole('status').first()).toHaveText('Not installed');
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Refresh status', exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toContainText('Installed');
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+    .getByRole('button', { name: 'Remove installed helper', exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toHaveText('Not installed');
   assert.equal(
     await readFile(path.join(path.dirname(helper), 'Personal script.py'), 'utf8'),
     '# preserved personal script',
   );
   assert.equal(await readFile(helper + '.previous-review', 'utf8'), '# retained backup');
-  await dialog()
+  await page
+    .getByRole('region', { name: 'Handoff to Resolve', exact: true })
     .getByRole('button', { name: 'Install Resolve metadata helper…', exact: true })
     .click();
-  await expect(dialog().getByRole('status').first()).toContainText('Installed');
-  await dialog().getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await expect(
+    page
+      .getByRole('region', { name: 'Handoff to Resolve', exact: true })
+      .getByRole('status')
+      .first(),
+  ).toContainText('Installed');
+  await nav.getByRole('button', { name: 'Library', exact: true }).click();
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(dir, 'result.json'),
