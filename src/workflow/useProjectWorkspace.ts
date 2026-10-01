@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'r
 import type { ProjectSnapshot, RecentProject } from '../../electron/project-contracts';
 import { mergeEdits, editorial } from '../../electron/project-edits';
 import { loadModel, storedModel, modelKey, type Model } from './model';
+import { filmstripMemory } from './filmstripMemory';
 
 const changed = (a: Model, b: Model) =>
   a.selectedRecordingId !== b.selectedRecordingId ||
@@ -48,6 +49,7 @@ export function useProjectWorkspace() {
       replace || !same ? value.model : mergeEdits(ancestor, modelRef.current, value.model);
     base.current = value.model;
     session.current = value;
+    filmstripMemory.sync(value.project.id, value.model.recordings);
     setSnapshot(value);
     modelRef.current = next;
     rawSetModel(next);
@@ -164,6 +166,7 @@ export function useProjectWorkspace() {
       alive = false;
       clearInterval(timer);
       off();
+      filmstripMemory.sync('', []);
     };
   }, [apply, flush]);
   const run = useCallback(
@@ -195,6 +198,7 @@ export function useProjectWorkspace() {
     await run(async () => {
       await window.virtualCut!.project.close();
       session.current = null;
+      filmstripMemory.sync('', []);
       setSnapshot(null);
       const value = loadModel();
       base.current = value;

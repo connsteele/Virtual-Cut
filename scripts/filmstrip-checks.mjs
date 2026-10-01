@@ -115,6 +115,47 @@ try {
   const long = path.join(dir, 'long-4k-av1.mp4');
   await copyFile('G:/GPT/Work/virtual-cut/full-resolution-demo/videos/r1.mp4', long);
   const { native, info } = await exercise(long, '4kAV1');
+  const retained = await cache.request(
+    ffmpeg,
+    native,
+    info.sourceStart,
+    info.keys,
+    [1, 10, 20],
+    randomUUID(),
+  );
+  const alternate = await identify(source, randomUUID());
+  const alternateInfo = await inspectMedia(source, alternate.id, probe, signal, () => {});
+  await cache.request(
+    ffmpeg,
+    alternate,
+    alternateInfo.sourceStart,
+    alternateInfo.keys,
+    [1, 2],
+    randomUUID(),
+  );
+  assert.deepEqual(
+    await cache.request(
+      'nonexistent-decoder-must-not-run',
+      native,
+      info.sourceStart,
+      info.keys,
+      [1, 10, 20],
+      randomUUID(),
+    ),
+    retained,
+    'Cross-recording revisit uses completed native frames with no decoder',
+  );
+  const panHit = await cache.request(
+    'nonexistent-decoder-must-not-run',
+    native,
+    info.sourceStart,
+    info.keys,
+    [10, 20],
+    randomUUID(),
+  );
+  assert.equal(panHit.length, 2);
+  results.revisit =
+    'Cross-source and overlapping target requests used cached keyframes without a decoder';
   const zoom = Array.from({ length: 16 }, (_, i) => 50 + ((i + 0.5) * 50) / 16);
   const zoomStart = performance.now();
   const frames = await cache.request(
@@ -150,7 +191,17 @@ try {
       info.keys.slice(i, i + 32),
       randomUUID(),
     );
-  assert(cache.stats().entries <= 96 && cache.stats().bytes <= 8 * 1024 * 1024);
+  for (let i = 0; i < 8; i++) {
+    await cache.request(
+      ffmpeg,
+      { ...alternate, id: randomUUID() },
+      alternateInfo.sourceStart,
+      alternateInfo.keys,
+      alternateInfo.keys,
+      randomUUID(),
+    );
+  }
+  assert(cache.stats().entries <= 192 && cache.stats().bytes <= 8 * 1024 * 1024);
   results.cacheBounds = cache.stats();
   const oldStat = await stat(long);
   await utimes(long, new Date(), new Date(oldStat.mtimeMs + 10000));

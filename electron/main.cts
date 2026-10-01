@@ -26,7 +26,7 @@ import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: media://video; font-src 'self' data:; connect-src 'self'; media-src 'self' media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: media://video; font-src 'self' data:; connect-src 'self'; media-src 'self' media://video; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'";
 let mainWindow: BrowserWindow | null = null;
 let folderDialog: Promise<ProjectFolder | null> | null = null;
 let videoDialog: Promise<OpenedVideo | null> | null = null;

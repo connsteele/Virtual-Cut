@@ -169,7 +169,7 @@
   filter: drop-shadow(0 1px 1px #000);
 }
 .frames {
-  display: flex;
+  position: relative;
   /* Reserve the strip before its width and thumbnails are known. Otherwise the
      initial six tiles grow tall in a wide window and briefly squeeze the viewer. */
   height: 64px;
@@ -177,7 +177,7 @@
   background: #080e0c;
 }
 .frames > div {
-  flex: 1;
+  position: absolute;
   min-width: 0;
   height: 100%;
   border-right: 1px solid #101a16;

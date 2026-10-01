@@ -71,7 +71,7 @@ try {
   assert(
     await frames
       .locator('img')
-      .evaluateAll((els) => els.every((e) => e.src.startsWith('data:image/jpeg;base64,'))),
+      .evaluateAll((els) => els.every((e) => e.src.startsWith('blob:'))),
   );
   await capture('media-thumbnails-wide');
   await page.getByRole('button', { name: 'List', exact: true }).click();

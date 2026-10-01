@@ -135,8 +135,7 @@ function decode(
 }
 
 export class FilmstripCache {
-  private cache = new Map<number, { time: number; data: string }>();
-  private identity = '';
+  private cache = new Map<string, { time: number; data: string }>();
   private bytes = 0;
   private current: { token: string; controller: AbortController } | null = null;
   private tail: Promise<unknown> = Promise.resolve();
@@ -149,7 +148,6 @@ export class FilmstripCache {
     this.current?.controller.abort();
     this.current = null;
     this.cache.clear();
-    this.identity = '';
     this.bytes = 0;
   }
   async close() {
@@ -175,12 +173,17 @@ export class FilmstripCache {
       .then(async () => {
         const { signal } = job.controller;
         if (signal.aborted || this.current !== job) throw new Error('Cancelled');
-        const identity = `${source.id}:${source.fingerprint}:${source.modified}:${offset}`;
-        if (identity !== this.identity) {
-          this.cache.clear();
-          this.bytes = 0;
-          this.identity = identity;
-        }
+        // Project-scoped LRU: switching sources cancels work, not completed images.
+        // Include path/clock/render shape so a relink cannot reuse a different decode.
+        const identity = JSON.stringify([
+          source.id,
+          source.file,
+          source.fingerprint,
+          source.bytes,
+          source.modified,
+          offset,
+          '240x136-jpeg-v1',
+        ]);
         const check = async () => {
           const info = await stat(source.file);
           if (signal.aborted) throw new Error('Cancelled');
@@ -195,12 +198,13 @@ export class FilmstripCache {
           if (signal.aborted) throw new Error('Cancelled');
           const at = nearestKey(keys, requested);
           if (!Number.isFinite(at)) throw new Error('Keyframe index is unavailable.');
-          const frame = this.cache.get(at) || (await decode(tool, source, at, offset, signal));
+          const key = `${identity}:${at}`;
+          const frame = this.cache.get(key) || (await decode(tool, source, at, offset, signal));
           if (signal.aborted) throw new Error('Cancelled');
-          if (this.cache.delete(at)) this.bytes -= frame.data.length * 2;
-          this.cache.set(at, frame);
+          if (this.cache.delete(key)) this.bytes -= frame.data.length * 2;
+          this.cache.set(key, frame);
           this.bytes += frame.data.length * 2;
-          while (this.cache.size > 96 || this.bytes > 8 * 1024 * 1024) {
+          while (this.cache.size > 192 || this.bytes > 8 * 1024 * 1024) {
             const first = this.cache.keys().next().value!;
             this.bytes -= this.cache.get(first)!.data.length * 2;
             this.cache.delete(first);

@@ -108,7 +108,7 @@ export function Timeline({
       callbacks.current.onScrubActive?.(false);
     };
   }, [handleMode, recording.id, trimEnabled]);
-  const [width, setWidth] = useState(640);
+  const [width, setWidth] = useState(0);
   const [keys, setKeys] = useState(
     () => localStorage.getItem('virtual-cut.keyframe-ticks') !== 'false',
   );
@@ -186,7 +186,7 @@ export function Timeline({
   const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
   const percent = (t: number) => `${100 * Math.max(0, Math.min(1, (t - start) / span))}%`;
   // Fill the visible range with bounded tiles; native previews use its nearest keyframes.
-  const count = Math.max(1, Math.min(32, Math.ceil(width / 120)));
+  const count = Math.max(1, Math.min(31, Math.ceil(width / 120)));
   const filmstrip = useFilmstrip(
     recording,
     projectId,
@@ -194,11 +194,12 @@ export function Timeline({
     end,
     count,
     suspendFrames,
-    waveMode === 'replace',
+    waveMode === 'replace' || width <= 0,
+    !zoomed,
   );
-  const frames = Array.from({ length: count }, (_, i) => {
+  const frames = filmstrip.tiles.map((tile, i) => {
     if (filmstrip.native) return filmstrip.frames[i]?.data;
-    const at = start + ((i + 0.5) / count) * span;
+    const at = tile.requested;
     const index = Math.min(
       recording.frames.length - 1,
       Math.max(0, Math.floor((at / recording.duration) * recording.frames.length)),
@@ -421,7 +422,12 @@ export function Timeline({
           >
             {frames.map((src, i) => (
               <div
-                key={i}
+                key={filmstrip.tiles[i].requested}
+                data-tile-time={filmstrip.tiles[i].requested}
+                style={{
+                  left: `${(100 * (filmstrip.tiles[i].left - start)) / span}%`,
+                  width: `${(100 * (filmstrip.tiles[i].right - filmstrip.tiles[i].left)) / span}%`,
+                }}
                 data-frame-time={filmstrip.frames[i]?.time}
                 title={
                   filmstrip.frames[i]

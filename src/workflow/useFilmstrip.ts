@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import type { FilmstripFrame } from '../../electron/project-contracts';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Recording } from './model';
+import { filmstripMemory, filmstripSource, filmstripTiles } from './filmstripMemory';
 
 export function useFilmstrip(
   recording: Recording,
@@ -10,38 +10,33 @@ export function useFilmstrip(
   count: number,
   suspended: boolean,
   hidden: boolean,
+  overview: boolean,
 ) {
-  const identity = `${projectId}:${recording.id}:${recording.url}:${start}:${end}:${count}`;
-  const token = useRef('');
-  const [result, setResult] = useState<{
-    identity: string;
-    frames: FilmstripFrame[];
-    error?: string;
-  }>();
+  const source = filmstripSource(projectId || '', recording);
+  const tiles = filmstripTiles(start, end, count, recording.duration);
+  const timesKey = JSON.stringify(tiles.map((t) => t.requested));
+  const identity = `${source}:${timesKey}`;
+  const [error, setError] = useState('');
+  useSyncExternalStore(filmstripMemory.subscribe, filmstripMemory.snapshot);
   const native = !!projectId && !!recording.sourcePath;
+  const ready = recording.availability === 'ready';
   useEffect(() => {
     const api = window.virtualCut?.project;
-    if (!native || !api || suspended || hidden) return;
+    if (!native || !ready || !api || hidden) return;
+    const times: number[] = JSON.parse(timesKey);
+    filmstripMemory.touch(source, times, overview);
+    const missing = times.filter((at) => !filmstripMemory.get(source, at));
+    if (!missing.length || suspended) return;
     let alive = true;
     const request = crypto.randomUUID();
-    token.current = request;
     const timer = setTimeout(() => {
-      const times = Array.from(
-        { length: count },
-        (_, i) => start + ((i + 0.5) / count) * (end - start),
-      );
       void api
-        .filmstrip(projectId!, recording.id, times, request)
+        .filmstrip(projectId!, recording.id, missing, request)
         .then((frames) => {
-          if (alive) setResult({ identity, frames });
+          if (alive) filmstripMemory.put(source, frames, overview, times);
         })
         .catch(() => {
-          if (alive)
-            setResult({
-              identity,
-              frames: [],
-              error: 'Filmstrip unavailable. Try changing the zoom to retry.',
-            });
+          if (alive) setError(identity);
         });
     }, 250);
     return () => {
@@ -49,26 +44,32 @@ export function useFilmstrip(
       clearTimeout(timer);
       void api.cancelFilmstrip(projectId!, request).catch(() => {});
     };
-  }, [identity, native, projectId, recording.id, start, end, count, suspended, hidden]);
-  useEffect(
-    () => () => {
-      if (projectId && token.current)
-        void window.virtualCut?.project
-          .cancelFilmstrip(projectId, token.current, true)
-          .catch(() => {});
-    },
-    [projectId, recording.id],
+  }, [
+    identity,
+    source,
+    timesKey,
+    native,
+    ready,
+    projectId,
+    recording.id,
+    suspended,
+    hidden,
+    overview,
+  ]);
+  const frames = tiles.map((tile) =>
+    ready ? filmstripMemory.get(source, tile.requested) : undefined,
   );
+  const complete = frames.length > 0 && frames.every(Boolean);
   return {
     native,
-    frames: result?.identity === identity ? result.frames : [],
-    status:
-      result?.identity === identity && result.error
-        ? result.error
-        : result?.identity === identity && result.frames.length
-          ? ''
-          : suspended
-            ? 'Filmstrip updates when paused'
-            : 'Loading filmstrip…',
+    tiles,
+    frames,
+    status: complete
+      ? ''
+      : error === identity
+        ? 'Filmstrip unavailable. Try changing the zoom to retry.'
+        : suspended
+          ? 'Filmstrip updates when paused'
+          : 'Loading filmstrip…',
   };
 }
