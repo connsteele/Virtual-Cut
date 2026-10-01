@@ -42,7 +42,14 @@ export function ProjectPanel({
         <Button disabled={!api || w.busy} onClick={() => void open(() => api!.open())}>
           Open project file…
         </Button>
+        <Button disabled={!api || w.busy} onClick={() => void open(() => api!.recover())}>
+          Recover from save…
+        </Button>
       </div>
+      <p className={s.muted}>
+        Recovery opens a checkpoint from the project's .saves folder as a separate project. Choose a
+        new filename to keep the original project and its saves intact.
+      </p>
       {w.error && (
         <p role="alert" className={s.error}>
           {w.error}
@@ -221,8 +228,9 @@ export function SaveHistory({
   return (
     <Modal title="Save history" onClose={onClose}>
       <p>
-        Your working project saves continuously. Five autosave copies and five manual checkpoints
-        are kept beside the project file. Restoring first makes a manual checkpoint of your current
+        Your working project saves after playback and edits settle. Five autosave copies and five
+        manual checkpoints are kept beside the project file. Copies made before a saved-format
+        upgrade are retained separately. Restoring first makes a manual checkpoint of your current
         work.
       </p>
       <div className={s.saveTableWrap}>
@@ -240,7 +248,13 @@ export function SaveHistory({
               .sort((a, b) => b.created.localeCompare(a.created))
               .map((copy) => (
                 <tr key={copy.id}>
-                  <td>{copy.kind === 'auto' ? 'Autosave' : 'Manual save'}</td>
+                  <td>
+                    {copy.kind === 'auto'
+                      ? 'Autosave'
+                      : copy.kind === 'migration'
+                        ? 'Before upgrade'
+                        : 'Manual save'}
+                  </td>
                   <td>
                     <time dateTime={copy.created}>
                       {new Date(copy.created).toLocaleDateString()}

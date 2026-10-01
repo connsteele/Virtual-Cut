@@ -74,17 +74,25 @@ try {
   await expect(modal().getByRole('button', { name: 'Assign folder' })).toBeDisabled();
   await modal().getByLabel('New child folder (optional)').fill('Planned UI');
   await expect(modal()).toContainText('Existing\\Planned UI');
-  await app.evaluate(({ shell }) => {
-    shell.openPath = async (file) => {
-      globalThis.openedDestination = file;
-      return '';
+  await app.evaluate(({ dialog }) => {
+    dialog.showOpenDialog = async (_window, options) => {
+      globalThis.openedDestination = options.defaultPath;
+      return { canceled: true, filePaths: [] };
     };
   });
-  await modal().getByRole('button', { name: 'Open in Explorer', exact: true }).click();
+  await modal().getByRole('button', { name: 'Choose folder…', exact: true }).click();
   assert.equal(
     await app.evaluate(() => globalThis.openedDestination),
     path.join(fixture.dest, 'Existing'),
   );
+  await expect(modal()).toContainText('Existing\\Planned UI');
+  await app.evaluate(({ dialog }, dest) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dest] });
+  }, fixture.dest);
+  await modal().getByRole('button', { name: 'Choose folder…', exact: true }).click();
+  await expect(modal().getByLabel('New child folder (optional)')).toHaveValue('');
+  await modal().getByRole('button', { name: 'Existing', exact: true }).click();
+  await modal().getByLabel('New child folder (optional)').fill('Planned UI');
   await capture('folder-wide');
   await modal().getByRole('button', { name: 'Assign folder' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -111,8 +119,12 @@ try {
   await page.mouse.up();
   assert(Number(await separator.getAttribute('aria-valuenow')) > originalWidth + 60);
   await capture('tree-wide');
+  assert(
+    await tree.evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
+    'Folder rows fit inside the tree padding',
+  );
   await card(fixture.clipIds[0])
-    .getByRole('button', { name: /^Source: / })
+    .getByRole('button', { name: 'Review source', exact: true })
     .click();
   await expect(page.locator('main[data-page="cut"]')).toBeVisible();
   await expect(page.locator(`[data-cut-clip="${fixture.clipIds[0]}"]`)).toHaveAttribute(
@@ -134,6 +146,17 @@ try {
   );
   const oldTime = (await state()).model.markers[(await state()).model.recordings[0].id][0].time;
   assert.equal(oldTime, 1, 'Dragging previews without persisting intermediate times');
+  assert.equal(
+    await pin.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return document
+        .elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+        ?.closest('[data-marker]')
+        ?.getAttribute('data-marker');
+    }),
+    'move-marker',
+    'Dragged marker stays on top of a later overlapping marker',
+  );
   await page.mouse.up();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const marker = async () => {

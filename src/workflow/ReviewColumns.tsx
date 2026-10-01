@@ -6,7 +6,7 @@ export function ReviewColumns({ folders, children }: { folders?: ReactNode; chil
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const [available, setAvailable] = useState(1000);
-  const [preferred, setPreferred] = useState(() => Number(localStorage.getItem(key)) || 210);
+  const [preferred, setPreferred] = useState(() => Number(localStorage.getItem(key)) || 260);
   const maximum = Math.max(150, Math.min(520, available - 480));
   const width = Math.max(150, Math.min(maximum, preferred));
   const change = (value: number) => setPreferred(Math.max(150, Math.min(maximum, value)));
@@ -20,7 +20,7 @@ export function ReviewColumns({ folders, children }: { folders?: ReactNode; chil
     <div ref={root} className={s.reviewBody}>
       {folders && (
         <>
-          <aside className={s.rail} style={{ flex: `0 0 ${width}px` }}>
+          <aside className={`${s.rail} ${s.reviewFolders}`} style={{ flex: `0 0 ${width}px` }}>
             {folders}
           </aside>
           <div
@@ -56,8 +56,8 @@ export function ReviewColumns({ folders, children }: { folders?: ReactNode; chil
               drag.current = null;
             }}
             onDoubleClick={() => {
-              change(210);
-              localStorage.setItem(key, '210');
+              change(260);
+              localStorage.setItem(key, '260');
             }}
             onKeyDown={(e) => {
               if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;

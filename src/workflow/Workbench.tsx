@@ -518,6 +518,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [drawer, setDrawer] = useState(''),
     [agent, setAgent] = useState('Copilot'),
     [notice, setNotice] = useState(''),
+    [dismissedRecovery, setDismissedRecovery] = useState(''),
     [dialog, setDialog] = useState(''),
     [folderIds, setFolderIds] = useState<string[]>([]),
     [reviewFilter, setReviewFilter] = useState('Remaining'),
@@ -1066,10 +1067,27 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       setOpening(false);
     }
   }
-  const player = (record: Recording, bounds?: { start: number; end: number }, sequence = false) =>
+  const player = (
+    record: Recording,
+    bounds?: { start: number; end: number },
+    sequence = false,
+    onSourceOpen?: () => void,
+  ) =>
     project && record.availability !== 'ready' ? (
       <div className={s.empty}>
-        <h3>{record.title}</h3>
+        <h3>
+          {onSourceOpen ? (
+            <button
+              className={s.viewerSource}
+              title={`Open source in Cut: ${record.title}`}
+              onClick={onSourceOpen}
+            >
+              {record.title}
+            </button>
+          ) : (
+            record.title
+          )}
+        </h3>
         <p>
           {record.availability === 'pending'
             ? 'Inspecting this recording…'
@@ -1082,6 +1100,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         ref={transport}
         onActivityChange={workspace.setPlaybackActive}
         recording={record}
+        onSourceOpen={onSourceOpen}
         projectId={project?.project.id}
         bounds={bounds}
         selectedId={mid ? undefined : cid}
@@ -1753,6 +1772,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           {page === 'review' && (
             <>
               <div className={s.toolbar}>
+                <Button aria-pressed={reviewTree} onClick={() => setReviewTree(!reviewTree)}>
+                  <FolderTree size={16} /> Tree
+                </Button>
+                <span className={s.toolbarDivider} aria-hidden="true" />
                 <div className={s.tools}>
                   {['Remaining', 'Held', 'Queue', 'Done', 'All'].map((f) => (
                     <Button
@@ -1779,9 +1802,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   ))}
                 </div>
                 <span className={s.spacer} />
-                <Button aria-pressed={reviewTree} onClick={() => setReviewTree(!reviewTree)}>
-                  <FolderTree size={16} /> Tree
-                </Button>
                 {project && (
                   <Button disabled={workspace.blocking} onClick={() => void checkDestinations()}>
                     Destination plan
@@ -1944,6 +1964,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   {player(
                                     model.recordings.find((r) => r.id === clip.rid)!,
                                     clip,
+                                    false,
+                                    () => {
+                                      selectRecord(clip.rid);
+                                      setCid(clip.id);
+                                      setMid('');
+                                      updateRecording(clip.rid, { position: clip.start });
+                                      go('cut');
+                                    },
                                   )}
                                   <div
                                     onDoubleClick={(event) => {
@@ -1957,19 +1985,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                       transport.current?.seek(clip.start);
                                     }}
                                   >
-                                    <Button
-                                      className={s.sourceLink}
-                                      onClick={() => {
-                                        selectRecord(clip.rid);
-                                        setCid(clip.id);
-                                        setMid('');
-                                        updateRecording(clip.rid, { position: clip.start });
-                                        go('cut');
-                                      }}
-                                    >
-                                      Source:{' '}
-                                      {model.recordings.find((r) => r.id === clip.rid)?.title}
-                                    </Button>
                                     <div data-review-field="markers">
                                       {markerEditor(clip.rid, clip)}
                                     </div>
@@ -2354,6 +2369,19 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           )}
         </div>
       )}
+      {project?.recoveryNotice &&
+        dismissedRecovery !== project.project.id + project.recoveryNotice && (
+          <div className={s.notice} role="status">
+            {project.recoveryNotice}
+            <Button onClick={() => setSavesOpen(true)}>Save history</Button>
+            <Button
+              aria-label="Dismiss recovery message"
+              onClick={() => setDismissedRecovery(project.project.id + project.recoveryNotice)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
       {workspace.busy && !workspace.quiet && (
         <div className={s.busyOverlay} role="status">
           Working…

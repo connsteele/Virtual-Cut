@@ -160,6 +160,9 @@
   padding: 3px 4px;
   z-index: 5;
 }
+.marker[aria-pressed='true'] {
+  z-index: 8;
+}
 .marker span {
   display: block;
   height: 15px;

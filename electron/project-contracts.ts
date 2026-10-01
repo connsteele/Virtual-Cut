@@ -20,7 +20,7 @@ export interface DroppedImport {
 }
 export interface SaveCopy {
   id: string;
-  kind: 'auto' | 'manual';
+  kind: 'auto' | 'manual' | 'migration';
   created: string;
 }
 export interface ProjectInfo {
@@ -54,6 +54,7 @@ export interface ProjectSnapshot {
   canRedo: boolean;
   saves?: SaveCopy[];
   warning?: string;
+  recoveryNotice?: string;
   destinations?: import('./review-plan.js').DestinationPlan;
   cleanup?: {
     cacheFilesRemoved: number;
@@ -67,7 +68,7 @@ export interface RecentProject {
   file: string;
 }
 export interface ProjectApi {
-  revealDestination(id: string, folder: string): Promise<void>;
+  chooseDestination(id: string, folder: string): Promise<string | null>;
   acceptReview(id: string, clipId: string): Promise<ProjectSnapshot>;
   destinationPlan(id: string): Promise<import('./review-plan.js').DestinationPlan>;
   destinationFolders(
@@ -86,6 +87,7 @@ export interface ProjectApi {
   recent(): Promise<RecentProject[]>;
   create(name: string): Promise<ProjectSnapshot | null>;
   open(id?: string): Promise<ProjectSnapshot | null>;
+  recover(): Promise<ProjectSnapshot | null>;
   current(): Promise<ProjectSnapshot | null>;
   close(): Promise<void>;
   save(id: string, before: Model, after: Model): Promise<ProjectSnapshot>;

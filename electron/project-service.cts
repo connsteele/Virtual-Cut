@@ -22,7 +22,12 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
 import { editorial, mergeEdits, validateEdits } from './project-edits.js';
-import { destinationPlan, destinationFolders, destinationLocation } from './destination-plan.cjs';
+import {
+  destinationPlan,
+  destinationFolders,
+  destinationLocation,
+  destinationSelection,
+} from './destination-plan.cjs';
 import { destinationSignature } from './review-plan.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview } from './review-state.cjs';
@@ -158,7 +163,12 @@ export class ProjectService {
         'The preview cache is unavailable. Reconnect its drive before opening this project.',
       );
     }
-    await this.close();
+    try {
+      await this.close();
+    } catch (e) {
+      next.close();
+      throw e;
+    }
     this.store = next;
     await next.loadCopies();
     this.reconcileExports();
@@ -168,7 +178,11 @@ export class ProjectService {
     const selected =
       next.data.model.recordings.find((r) => r.id === next.data.model.selectedRecordingId) ||
       next.data.model.recordings[0];
-    if (selected?.availability === 'ready') this.queueAudio(selected.id);
+    if (
+      selected?.availability === 'ready' &&
+      !next.jobs().some((j) => j.sourceId === selected.id && j.state === 'interrupted')
+    )
+      this.queueAudio(selected.id);
     return this.snapshot();
   }
   async close() {
@@ -359,6 +373,9 @@ export class ProjectService {
     const s = this.require(id);
     if (typeof folder !== 'string') throw new Error('Choose a destination folder.');
     return destinationLocation(s.data.project.destination, folder);
+  }
+  async selectDestination(id: string, selected: string) {
+    return destinationSelection(this.require(id).data.project.destination, selected);
   }
   async acceptReview(id: string, clipId: string) {
     const s = this.require(id);

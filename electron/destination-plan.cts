@@ -60,6 +60,16 @@ export async function destinationLocation(destination: string, folder: string) {
   if (!within(root, current)) throw new Error('Folder leaves the project destination.');
   return current;
 }
+/** The native picker returns a path; edits only receive a validated root-relative folder. */
+export async function destinationSelection(destination: string, selected: string) {
+  const root = await rootPath(destination);
+  if (typeof selected !== 'string' || !path.isAbsolute(selected) || !within(root, selected))
+    throw new Error('Choose a folder inside the project destination.');
+  const relative = path.relative(root, selected).split(path.sep).join('/');
+  const { planned } = await inspectFolder(root, relative);
+  if (planned) throw new Error('That folder is no longer available. Choose another folder.');
+  return relative;
+}
 export async function destinationPlan(
   destination: string,
   model: Model,

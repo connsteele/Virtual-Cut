@@ -1,14 +1,18 @@
-# Review planning and diagnostics — 0.3.10
+# Review planning and diagnostics — 0.3.11
 
 ## M235/M236 follow-up
 
-The project destination is the root for finished videos; Review assigns subfolders beneath it. Review's tree has selectable folder rows and a separate expansion arrow. Selecting a parent includes its descendants. Drag its separator or use Left/Right to resize; double-click restores the default width. Review details have a Source link that opens the original recording and selected clip in Cut. Destination selection can open Windows Explorer; a planned child opens its nearest existing parent without creating anything.
+The project destination is the root for finished videos; Review assigns subfolders beneath it. Review's tree has selectable folder rows and a separate expansion arrow. Selecting a parent includes its descendants. Drag its separator or use Left/Right to resize; double-click restores the 260px default width. In Review, the recording title above the viewer opens the original recording and selected clip in Cut. Media and Cut titles remain plain text. The Tree toggle sits above the sidebar, separated from the queue filters.
+
+Following M238, **Choose folder…** opens the native Windows folder picker at the current destination, or the nearest existing parent for a planned child. Cancelling preserves the draft; choosing a folder updates it, and Assign folder commits it. Native validation rejects outside-root selections, links/junctions and disappearing folders. Planned folders remain uncreated. Folder rows have room around their expansion arrows and selected outlines without horizontal overflow.
 
 Destination conflicts automatically show Held and a reason on every affected review card, count in Held, and disable acceptance. Unsaved filename duplicates are checked immediately across all batches. Native path/source/existing-file checks follow settled saves; changed targets remain held while checking. Existing files are refreshed within roughly three seconds while the workspace is open and checked afresh before acceptance. The overview button is now Destination plan. Fixing an automatic issue releases only that issue; manual holds remain. Changing a peer's target into a collision invalidates prior acceptance. An unchanged accepted clip temporarily blocked by an external filesystem issue can return to Queue once that issue clears. No file operation is authorized by this derived state alone; VC-22 must check again before writing.
 
 Automatic destination state lives outside editorial history. Rechecking it creates no playhead saves or undo entries. Diagnostic logs record changes in destination-hold count with the project ID, without filenames or notes.
 
 ## Manipulate mode
+
+M237's stacking follow-up: the selected marker appears above unselected markers, including when dragged over a marker created later.
 
 H on Cut toggles Manipulate. Clip edges retain trim handles; point markers become circles with a horizontal drag cursor. Dragging previews a frame-snapped time, commits once on release and preserves the marker's name, note and color. Escape, pointer cancellation, leaving the source or disabling the mode cancel the move. A focused marker supports Left/Right for one frame and Shift+Left/Right for approximately one second. Edits invalidate acceptance for clips on that recording. Gesture previews suppress autosaving until released. Existing range-marker work remains separate.
 
@@ -37,6 +41,14 @@ Logs remain in the normal app profile's `diagnostics` directory. Production limi
 The broader crash/disk-exhaustion and production-batch gates remain in VC-51; the focused suite verifies storage failure handling rather than filling a real drive. Long high-speed overhead and real-machine review remain explicit review tasks.
 
 ## Verification and M2 test intake
+
+### 0.3.11 verification
+
+The broad packaged run (`run-ikR0Md`) passed all 27 maintained scripts, plus build/type checks and lint: six fast, nine native and twelve actual Electron scripts. Existing export packet timing/source preservation, playback/idle-only autosaves, undo, imports/removal, filmstrip accuracy/reuse and Review regressions passed. The final package follow-up (`run-stJaxR`) passed build/lint, both native recovery/review prerequisites, packaged recovery UI, shell/security/navigation and Review/marker workflows. It includes the final snapshot-consistency correction and unavailable-source title link. A focused native run (`run-O51XyJ`) separately verified the changing-source recovery case. Screenshots at wide and compact sizes were inspected; interaction checks reported no renderer errors.
+
+Final executable: `G:\GPT\Work\virtual-cut\review-planning\builds\Virtual-Cut-0.3.11-win-x64-2026-10-01T04-51-40-994Z\Virtual Cut.exe`. Reports, bounded logs and screenshots are retained under `G:\GPT\Work\virtual-cut\review-planning\release-0.3.11\reports`. These archives exclude link/junction fixtures and large generated media. An initial incomplete whole-fixture copy remains separately at `release-0.3.11\broad-regression`; automatic approval blocked its recursive cleanup. Use the `reports` directory for evidence.
+
+VC-5 is User testing through M242. M237/M239 were accepted; M240 covers marker stacking and M241 carries forward M238's folder/source-title callouts. VC-51's project recovery criterion is now covered, while filing/publication failure gates remain open. VC-50 still owns coverage measurement. Windows dialog responses were stubbed, and neither synthetic crash tests nor script counts establish physical power-loss guarantees or source coverage. See [project recovery](project-recovery.md) for format-2 compatibility and retention details.
 
 `npm run test:review-planning` builds the app, exercises native persistence/path/log boundaries, and runs the actual Electron workflow with disposable source media and a disposable profile. It checks exact acceptance, undo/redo, reopen, holds, stale edits, collisions, original-file preservation, no folder creation, bounded logs, malformed records, unavailable log storage, report redaction/export, cross-batch review navigation and wide/compact keyboard access.
 

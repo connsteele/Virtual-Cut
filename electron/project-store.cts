@@ -15,6 +15,13 @@ import type {
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
 import { reconcileReview } from './review-state.cjs';
+import {
+  PROJECT_APP_ID,
+  PROJECT_VERSION,
+  inspectProject,
+  migrateProject,
+  createSessionSchema,
+} from './project-recovery.cjs';
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 export interface NativeSource {
@@ -33,7 +40,7 @@ interface Data {
   model: Model;
   revision: number;
 }
-const APP_ID = 1447253332;
+const APP_ID = PROJECT_APP_ID;
 export class ProjectStore {
   readonly db!: DatabaseSync;
   private lock: string;
@@ -41,6 +48,7 @@ export class ProjectStore {
   private lastAuto = 0;
   private backedRevision = -1;
   private copies: SaveCopy[] = [];
+  private recoveryNotice?: string;
   constructor(
     readonly file: string,
     creation?: { name: string; destination: string; cache: string },
@@ -54,6 +62,7 @@ export class ProjectStore {
       let pid: number;
       try {
         pid = JSON.parse(readFileSync(this.lock, 'utf8')).pid;
+        if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid lock owner.');
       } catch {
         throw new Error(
           'The project lock is unreadable. Keep the project closed and check its lock file.',
@@ -75,11 +84,7 @@ export class ProjectStore {
       if (!creation) {
         const check = new DatabaseSync(file, { readOnly: true });
         try {
-          if (
-            check.prepare('PRAGMA application_id').get()?.application_id !== APP_ID ||
-            check.prepare('PRAGMA user_version').get()?.user_version !== 1
-          )
-            throw new Error('This is not a supported Virtual Cut project version.');
+          inspectProject(check);
         } finally {
           check.close();
         }
@@ -87,7 +92,7 @@ export class ProjectStore {
       this.db = new DatabaseSync(file, { timeout: 500 });
       this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;');
       if (creation) {
-        this.db.exec(`PRAGMA application_id=${APP_ID}; PRAGMA user_version=1;
+        this.db.exec(`PRAGMA application_id=${APP_ID}; PRAGMA user_version=${PROJECT_VERSION};
           CREATE TABLE project (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
           CREATE TABLE sources (id TEXT PRIMARY KEY, body TEXT NOT NULL);
           CREATE TABLE jobs (id TEXT PRIMARY KEY, body TEXT NOT NULL);
@@ -101,7 +106,11 @@ export class ProjectStore {
           revision: 0,
         };
         this.write();
+        createSessionSchema(this.db);
       } else {
+        if (migrateProject(this.db, file))
+          this.recoveryNotice =
+            'Project upgraded. A verified copy of the previous saved version is available in Save history.';
         const row = this.db.prepare('SELECT body FROM project WHERE id=1').get();
         if (!row || typeof row.body !== 'string') throw new Error('Project data is missing.');
         this.data = JSON.parse(row.body) as Data;
@@ -128,6 +137,12 @@ export class ProjectStore {
             message: 'Export interrupted. Retry from Jobs.',
             updated: new Date().toISOString(),
           });
+      const previousSession = this.db.prepare('SELECT clean FROM project_session WHERE id=1').get();
+      if (previousSession?.clean === 0)
+        this.recoveryNotice = `The previous session ended unexpectedly. Reopened committed revision ${this.data.revision}. Changes that had not finished saving may need to be repeated. Interrupted jobs can be retried from Jobs.`;
+      this.db
+        .prepare('UPDATE project_session SET clean=0, opened_at=?, closed_at=NULL WHERE id=1')
+        .run(new Date().toISOString());
     } catch (e) {
       try {
         this.db!.close();
@@ -135,7 +150,11 @@ export class ProjectStore {
         /* Failed before open. */
       }
       unlinkSync(this.lock);
-      throw e;
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `${message} If this file is damaged, use Projects → Recover from save to open a verified checkpoint as a separate project.`,
+        { cause: e },
+      );
     }
   }
   write() {
@@ -147,12 +166,14 @@ export class ProjectStore {
     const directory = this.file + '.saves';
     this.copies = (await readdir(directory).catch(() => []))
       .flatMap((id): SaveCopy[] => {
-        const match = /^(auto|manual)-(\d+)-[\da-f-]+\.vcut$/.exec(id);
+        const match = /^(auto|manual|migration-v\d+-v\d+)-(\d+)-[\da-f-]+\.vcut$/.exec(id);
         return match
           ? [
               {
                 id,
-                kind: match[1] as SaveCopy['kind'],
+                kind: match[1].startsWith('migration')
+                  ? 'migration'
+                  : (match[1] as SaveCopy['kind']),
                 created: new Date(Number(match[2])).toISOString(),
               },
             ]
@@ -160,7 +181,7 @@ export class ProjectStore {
       })
       .sort((a, b) => b.created.localeCompare(a.created));
   }
-  async checkpoint(kind: SaveCopy['kind'], force = false) {
+  async checkpoint(kind: 'auto' | 'manual', force = false) {
     if (
       kind === 'auto' &&
       ((!force && Date.now() - this.lastAuto < 120000) ||
@@ -203,12 +224,7 @@ export class ProjectStore {
     const check = new DatabaseSync(path.join(this.file + '.saves', saveId), { readOnly: true });
     let saved: Data, sources: NativeSource[], jobs: MediaJob[];
     try {
-      if (
-        check.prepare('PRAGMA application_id').get()?.application_id !== APP_ID ||
-        check.prepare('PRAGMA user_version').get()?.user_version !== 1 ||
-        check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok'
-      )
-        throw new Error('This save copy is not a valid project.');
+      inspectProject(check);
       saved = JSON.parse(String(check.prepare('SELECT body FROM project WHERE id=1').get()?.body));
       if (saved.project.id !== this.data.project.id)
         throw new Error('This save belongs to another project.');
@@ -359,9 +375,13 @@ export class ProjectStore {
       canUndo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=1 LIMIT 1').get()),
       canRedo: Boolean(this.db.prepare('SELECT id FROM history WHERE applied=0 LIMIT 1').get()),
       saves: structuredClone(this.copies),
+      recoveryNotice: this.recoveryNotice,
     };
   }
   close() {
+    this.db
+      .prepare('UPDATE project_session SET clean=1, closed_at=? WHERE id=1')
+      .run(new Date().toISOString());
     this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     this.db.close();
     unlinkSync(this.lock);

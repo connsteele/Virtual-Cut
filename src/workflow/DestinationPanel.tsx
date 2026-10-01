@@ -82,14 +82,21 @@ export function DestinationPicker({
         </Button>
         <Button
           disabled={!listing || !!problem}
-          title="Open this folder in Windows Explorer. For a planned folder, open its nearest existing parent."
+          title="Choose a folder in the Windows folder picker, starting at this destination."
           onClick={() =>
             void window
-              .virtualCut!.project.revealDestination(projectId, target)
+              .virtualCut!.project.chooseDestination(projectId, target)
+              .then((selected) => {
+                if (selected === null) return;
+                setFolder(selected);
+                setChild('');
+                setQuery('');
+                setError('');
+              })
               .catch((e) => setError(String(e)))
           }
         >
-          <FolderOpen size={16} /> Open in Explorer
+          <FolderOpen size={16} /> Choose folder…
         </Button>
       </div>
       <Field label="Find a child folder">

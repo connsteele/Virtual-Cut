@@ -24,6 +24,7 @@ import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { DemoMedia } from './demo-media.cjs';
 import { ProjectService } from './project-service.cjs';
+import { recoverProjectCopy } from './project-recovery.cjs';
 import { DroppedImports } from './dropped-imports.cjs';
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 
@@ -39,6 +40,7 @@ const droppedImports = new DroppedImports();
 let projects: ProjectService;
 let closing = false;
 let diagnostics: Diagnostics;
+let lastProjectFile: string | undefined;
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -277,9 +279,15 @@ function registerDesktopApi(): void {
   workspace('acceptReview', (id, clipId) => projects.acceptReview(id, clipId));
   workspace('destinationPlan', (id) => projects.destinationPlan(id));
   workspace('destinationFolders', (id, folder) => projects.destinationFolders(id, folder));
-  workspace('revealDestination', async (id, folder) => {
-    const error = await shell.openPath(await projects.destinationLocation(id, folder));
-    if (error) throw new Error('Windows could not open the destination folder.');
+  workspace('chooseDestination', async (id, folder) => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Choose finished-video folder',
+      defaultPath: await projects.destinationLocation(id, folder),
+      properties: ['openDirectory'],
+    });
+    return result.canceled || !result.filePaths[0]
+      ? null
+      : projects.selectDestination(id, result.filePaths[0]);
   });
   workspace('save', (id, before, after) => projects.save(id, before, after));
   workspace('checkpoint', (id) => projects.checkpoint(id));
@@ -374,7 +382,34 @@ function registerDesktopApi(): void {
       if (r.canceled) return null;
       file = r.filePaths[0];
     }
-    return file ? projects.open(file) : null;
+    if (!file) return null;
+    lastProjectFile = file;
+    return projects.open(file);
+  });
+  workspace('recover', async () => {
+    const previous = lastProjectFile || projects.store?.file;
+    const selected = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Choose a project checkpoint to recover',
+      defaultPath: previous ? previous + '.saves' : undefined,
+      properties: ['openFile'],
+      filters: [{ name: 'Virtual Cut checkpoint', extensions: ['vcut'] }],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    const saved = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save recovered project as a new file',
+      defaultPath: previous
+        ? path.join(path.dirname(previous), path.parse(previous).name + '-recovered.vcut')
+        : 'Recovered project.vcut',
+      filters: [{ name: 'Virtual Cut project', extensions: ['vcut'] }],
+    });
+    if (saved.canceled || !saved.filePath) return null;
+    if (existsSync(saved.filePath))
+      throw new Error(
+        'Recovery needs a new filename. Existing projects and saves are never overwritten.',
+      );
+    await recoverProjectCopy(selected.filePaths[0], saved.filePath);
+    lastProjectFile = saved.filePath;
+    return projects.open(saved.filePath);
   });
   workspace('import', async (id, batchId, kind, audio) => {
     projects.require(id);

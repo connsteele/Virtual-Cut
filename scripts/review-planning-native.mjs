@@ -361,6 +361,12 @@ assert.equal(
   path.join(dest, 'Existing'),
 );
 await assert.rejects(() => service.destinationLocation(pid, '../escape'));
+assert.equal(await service.selectDestination(pid, path.join(dest, 'Existing')), 'Existing');
+assert.equal(await service.selectDestination(pid, dest), '');
+await assert.rejects(() => service.selectDestination(pid, dir), /inside/);
+await assert.rejects(() => service.selectDestination(pid, path.join(dest, 'Missing')), /available/);
+await symlink(dir, path.join(dest, 'Linked'), 'junction');
+await assert.rejects(() => service.selectDestination(pid, path.join(dest, 'Linked')), /link/);
 const revision = service.store.data.revision;
 await service.snapshot();
 await service.snapshot();
@@ -381,6 +387,15 @@ after.markers[after.recordings[0].id] = [
     category: 'Context',
     topic: '',
     note: 'Retain\nnotes',
+  },
+  {
+    id: 'later-marker',
+    name: 'Later marker',
+    time: 2,
+    color: 'Red',
+    category: 'Context',
+    topic: '',
+    note: '',
   },
 ];
 p = await service.save(pid, before, after);

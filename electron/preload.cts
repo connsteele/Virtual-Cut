@@ -12,8 +12,9 @@ const api: VirtualCutApi = {
     playback: (event) => ipcRenderer.send('diagnostics:playback', event),
   },
   project: {
-    revealDestination: (id, folder) =>
-      ipcRenderer.invoke('workspace:revealDestination', id, folder),
+    recover: () => ipcRenderer.invoke('workspace:recover'),
+    chooseDestination: (id, folder) =>
+      ipcRenderer.invoke('workspace:chooseDestination', id, folder),
     acceptReview: (id, clipId) => ipcRenderer.invoke('workspace:acceptReview', id, clipId),
     destinationPlan: (id) => ipcRenderer.invoke('workspace:destinationPlan', id),
     destinationFolders: (id, folder) =>

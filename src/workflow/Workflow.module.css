@@ -461,12 +461,26 @@
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-.viewerHeading strong {
+.viewerHeading strong,
+.viewerSource {
   font-size: 12px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.viewerSource {
+  max-width: 100%;
+  text-align: left;
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.viewerSource:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 .viewerFacts {
   display: flex;
@@ -697,7 +711,38 @@
   min-height: 0;
 }
 .reviewBody > .rail {
-  flex: 0 0 210px;
+  flex: 0 0 260px;
+}
+.reviewFolders {
+  padding: 15px 18px;
+}
+.reviewFolders .sourceFolder > summary {
+  gap: 6px;
+  padding: 3px 0;
+}
+.reviewFolders .sourceFolder > summary > svg {
+  flex: 0 0 20px;
+  cursor: pointer;
+}
+.reviewFolders .sourceFolderButton {
+  margin: 3px 0;
+  padding-left: 36px;
+}
+.reviewFolders .sourceFolder > summary > .sourceFolderButton {
+  flex: 1;
+  width: auto;
+  padding-left: 10px;
+}
+.reviewFolders .sourceFolder > .branch {
+  padding-left: 18px;
+  margin: 0;
+}
+.toolbarDivider {
+  align-self: center;
+  flex: 0 0 1px;
+  height: 24px;
+  background: var(--line);
+  margin: 0 6px;
 }
 .reviewBody > .mediaDivider {
   flex: 0 0 6px;
@@ -710,12 +755,6 @@
 }
 .autoHold p {
   margin: 4px 0 0;
-}
-.sourceLink {
-  max-width: 100%;
-  white-space: normal;
-  text-align: left;
-  margin-bottom: 12px;
 }
 .scroll {
   flex: 1;

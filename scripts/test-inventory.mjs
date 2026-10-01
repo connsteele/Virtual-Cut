@@ -7,6 +7,7 @@ export const fast = [
   'marker-timing.test.mjs',
 ];
 export const native = [
+  'project-recovery-checks.mjs',
   'project-native-checks.mjs',
   'feedback-native-checks.mjs',
   'recording-removal-checks.mjs',
@@ -17,6 +18,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'project-recovery-ui.mjs',
   'smoke.mjs',
   'project-ui-checks.mjs',
   'timing-checks.mjs',
@@ -30,6 +32,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'project-recovery-ui.mjs': ['project-recovery-checks.mjs'],
   'project-ui-checks.mjs': ['project-native-checks.mjs'],
   'timing-checks.mjs': ['project-native-checks.mjs'],
   'recording-removal-checks.mjs': ['feedback-native-checks.mjs'],

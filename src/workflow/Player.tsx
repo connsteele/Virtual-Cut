@@ -60,6 +60,7 @@ export function Player({
   audioStatus,
   onFrame,
   onEnded,
+  onSourceOpen,
   autoPlay = false,
   ref,
 }: {
@@ -89,6 +90,7 @@ export function Player({
   audioStatus?: string;
   onFrame?: (url: string) => void;
   onEnded?: () => void;
+  onSourceOpen?: () => void;
   autoPlay?: boolean;
   ref?: Ref<Transport>;
 }) {
@@ -538,7 +540,17 @@ export function Player({
       }}
     >
       <div className={s.viewerHeading}>
-        <strong title={r.title}>{r.title}</strong>
+        {onSourceOpen ? (
+          <button
+            className={s.viewerSource}
+            title={`Open source in Cut: ${r.title}`}
+            onClick={onSourceOpen}
+          >
+            {r.title}
+          </button>
+        ) : (
+          <strong title={r.title}>{r.title}</strong>
+        )}
         <div className={s.viewerFacts}>
           <PlaybackMetrics key={r.url} video={video} scanning={reversePlaying || fastPlaying} />
           <span>
