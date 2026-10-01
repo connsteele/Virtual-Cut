@@ -79,6 +79,9 @@ export interface RecentProject {
 }
 export interface ProjectApi {
   installResolveHelper(): Promise<string>;
+  resolveHelperStatus(): Promise<ResolveHelperStatus>;
+  removeResolveHelper(): Promise<ResolveHelperStatus>;
+  revealResolveHelper(): Promise<void>;
   filingPlan(id: string, batchId: string): Promise<FilingPlan>;
   fileQueue(id: string, planId: string, confirmed: boolean): Promise<ProjectSnapshot>;
   cancelFiling(id: string, queueId: string): Promise<ProjectSnapshot>;
@@ -147,6 +150,10 @@ export interface ProjectApi {
     cleanGameConfirmed: boolean,
   ): Promise<ProjectSnapshot | null>;
   revealExport(id: string, exportId: string, kind: 'video' | 'metadata'): Promise<void>;
+}
+export interface ResolveHelperStatus {
+  state: 'missing' | 'installed' | 'outdated' | 'unmanaged' | 'customized';
+  file: string;
 }
 export interface FilmstripFrame {
   requested: number;

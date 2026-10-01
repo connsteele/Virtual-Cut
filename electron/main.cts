@@ -26,7 +26,11 @@ import { DemoMedia } from './demo-media.cjs';
 import { ProjectService } from './project-service.cjs';
 import { recoverProjectCopy } from './project-recovery.cjs';
 import { DroppedImports } from './dropped-imports.cjs';
-import { installResolveHelper } from './resolve-helper.cjs';
+import {
+  installResolveHelper,
+  resolveHelperStatus,
+  removeResolveHelper,
+} from './resolve-helper.cjs';
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 
 const APP_URL = 'app://virtual-cut/';
@@ -327,20 +331,37 @@ function registerDesktopApi(): void {
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
   workspace('exportPlan', (id, clipId, container) => projects.exportPlan(id, clipId, container));
-  workspace('installResolveHelper', () =>
-    installResolveHelper(
-      path.join(app.getAppPath(), 'integrations', 'resolve', 'Virtual Cut metadata.py'),
-      path.join(
-        app.getPath('appData'),
-        'Blackmagic Design',
-        'DaVinci Resolve',
-        'Support',
-        'Fusion',
-        'Scripts',
-        'Utility',
-      ),
+  const resolveHelperPaths = () => ({
+    bundled: path.join(app.getAppPath(), 'integrations', 'resolve', 'Virtual Cut metadata.py'),
+    directory: path.join(
+      app.getPath('appData'),
+      'Blackmagic Design',
+      'DaVinci Resolve',
+      'Support',
+      'Fusion',
+      'Scripts',
+      'Utility',
     ),
-  );
+  });
+  workspace('installResolveHelper', () => {
+    const { bundled, directory } = resolveHelperPaths();
+    return installResolveHelper(bundled, directory);
+  });
+  workspace('resolveHelperStatus', () => {
+    const { bundled, directory } = resolveHelperPaths();
+    return resolveHelperStatus(bundled, directory);
+  });
+  workspace('removeResolveHelper', () => {
+    const { bundled, directory } = resolveHelperPaths();
+    return removeResolveHelper(bundled, directory);
+  });
+  workspace('revealResolveHelper', async () => {
+    const { bundled, directory } = resolveHelperPaths();
+    const status = await resolveHelperStatus(bundled, directory);
+    if (status.state === 'missing')
+      throw new Error('Install the helper before opening its location.');
+    shell.showItemInFolder(status.file);
+  });
   workspace('filingPlan', (id, batchId) => projects.filingPlan(id, batchId));
   workspace('fileQueue', (id, planId, confirmed) => projects.fileQueue(id, planId, confirmed));
   workspace('cancelFiling', (id, queueId) => projects.cancelFiling(id, queueId));

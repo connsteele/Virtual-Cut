@@ -177,6 +177,48 @@ try {
     [...fixture.clipIds, createdId],
   );
   await capture('chronological-clips');
+  // Mixed folders must be allowed to repeat when following the global date order.
+  await nav.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByRole('button', { name: /^All \d/ }).click();
+  await card(createdId).getByRole('checkbox').check();
+  await selection.getByRole('button', { name: 'Change destination…', exact: true }).click();
+  await modal().getByRole('button', { name: 'Destination root', exact: true }).click();
+  await modal().getByLabel('New child folder (optional)').fill('Between');
+  await modal().getByRole('button', { name: 'Assign folder', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const beforeSorting = (await state()).model.clips;
+  const reviewOrder = () =>
+    page.locator('[data-card]').evaluateAll((cards) => cards.map((c) => c.dataset.card));
+  await page.getByLabel('Sort review').selectOption('date-asc');
+  await page.getByLabel('Group review').selectOption('sequence');
+  await expect.poll(reviewOrder).toEqual([fixture.clipIds[0], createdId, fixture.clipIds[1]]);
+  await expect(page.locator('[data-review-group]')).toHaveCount(3);
+  assert.deepEqual(
+    await page
+      .locator('[data-review-group]')
+      .evaluateAll((groups) => groups.map((g) => g.dataset.reviewGroup)),
+    ['Existing/Planned UI', 'Between', 'Existing/Planned UI'],
+  );
+  await expect(tree.getByRole('button', { name: 'Planned UI', exact: true })).toHaveCount(1);
+  await expect(tree.getByRole('button', { name: 'Between', exact: true })).toHaveCount(1);
+  await capture('review-date-sequence-wide');
+  await page.getByLabel('Group review').selectOption('folders');
+  await expect.poll(reviewOrder).toEqual([...fixture.clipIds, createdId]);
+  await expect(page.locator('[data-review-group]')).toHaveCount(2);
+  await page.getByLabel('Group review').selectOption('sequence');
+  await page.getByLabel('Sort review').selectOption('date-desc');
+  await expect.poll(reviewOrder).toEqual([fixture.clipIds[1], createdId, fixture.clipIds[0]]);
+  await page.getByLabel('Sort review').selectOption('name');
+  await expect.poll(reviewOrder).toEqual([createdId, ...fixture.clipIds]);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  assert.deepEqual(
+    (await state()).model.clips,
+    beforeSorting,
+    'Sorting leaves persisted edit order, destinations and acceptance unchanged',
+  );
+  await page.getByLabel('Sort review').selectOption('folder');
+  await page.getByLabel('Group review').selectOption('folders');
+  await nav.getByRole('button', { name: 'Cut', exact: true }).click();
   await page.getByRole('button', { name: 'Delete clip: Chronology', exact: true }).click();
   await page.getByRole('button', { name: 'Delete clip', exact: true }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();

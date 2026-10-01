@@ -13,6 +13,9 @@ const api: VirtualCutApi = {
   },
   project: {
     installResolveHelper: () => ipcRenderer.invoke('workspace:installResolveHelper'),
+    resolveHelperStatus: () => ipcRenderer.invoke('workspace:resolveHelperStatus'),
+    removeResolveHelper: () => ipcRenderer.invoke('workspace:removeResolveHelper'),
+    revealResolveHelper: () => ipcRenderer.invoke('workspace:revealResolveHelper'),
     recover: () => ipcRenderer.invoke('workspace:recover'),
     chooseDestination: (id, folder) =>
       ipcRenderer.invoke('workspace:chooseDestination', id, folder),

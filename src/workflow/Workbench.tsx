@@ -33,6 +33,16 @@ import {
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import { FilingPanel } from './FilingPanel';
 import { CompletedLibrary } from './CompletedLibrary';
+import { HandoffPanel } from './HandoffPanel';
+import {
+  reviewRows,
+  sortReview,
+  groupReview,
+  inReviewFolder,
+  reviewFolderKey,
+  type ReviewSort,
+  type ReviewGrouping,
+} from './reviewOrder';
 import {
   colors,
   markerColors,
@@ -499,7 +509,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const [exportClipId, setExportClipId] = useState(''),
     [exportsOpen, setExportsOpen] = useState(false);
   const [filingOpen, setFilingOpen] = useState(false);
-  const [reviewSort, setReviewSort] = useState<'folder' | 'name'>('folder');
+  const [reviewSort, setReviewSort] = useState<ReviewSort>('folder');
+  const [reviewGrouping, setReviewGrouping] = useState<ReviewGrouping>('folders');
+  const [handoffOpen, setHandoffOpen] = useState(false);
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1243,26 +1255,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const readyQueue = batchClips.filter((c) => c.accepted && !c.held && !c.filed);
   const filingPending =
     project?.exports.filter((e) => e.filing && ['queued', 'running'].includes(e.state)).length || 0;
-  const filtered = batchClips
-    .filter(
-      (c) =>
-        reviewFilter === 'All' ||
-        (reviewFilter === 'Held' && c.held) ||
-        (reviewFilter === 'Done' && c.filed) ||
-        (reviewFilter === 'Queue' && c.accepted && !c.held && !c.filed) ||
-        (reviewFilter === 'Remaining' && (!c.accepted || c.held) && !c.filed),
-    )
-    .filter(
-      (c) => !folderFilter || c.folder === folderFilter || c.folder.startsWith(folderFilter + '/'),
-    )
-    .sort(
-      (a, b) =>
-        (reviewSort === 'folder'
-          ? a.folder.localeCompare(b.folder, undefined, { numeric: true })
-          : 0) ||
-        a.name.localeCompare(b.name, undefined, { numeric: true }) ||
-        a.id.localeCompare(b.id),
-    );
+  const reviewItems = reviewRows(batchClips, model.recordings, project?.exports, project?.library);
+  const filtered = sortReview(
+    reviewItems
+      .filter(
+        (c) =>
+          reviewFilter === 'All' ||
+          (reviewFilter === 'Held' && c.held) ||
+          (reviewFilter === 'Done' && c.filed) ||
+          (reviewFilter === 'Queue' && c.accepted && !c.held && !c.filed) ||
+          (reviewFilter === 'Remaining' && (!c.accepted || c.held) && !c.filed),
+      )
+      .filter((c) => inReviewFolder(c, folderFilter)),
+    reviewSort,
+  );
+  const reviewGroups = groupReview(filtered, reviewGrouping);
   // Actions apply only to the selected cards currently visible in this batch/filter.
   const selectedReviewIds = filtered.filter((c) => checked.includes(c.id)).map((c) => c.id);
   const effective = (e: Entry) => ({
@@ -1815,10 +1822,23 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   <select
                     aria-label="Sort review"
                     value={reviewSort}
-                    onChange={(event) => setReviewSort(event.target.value as 'folder' | 'name')}
+                    onChange={(event) => setReviewSort(event.target.value as ReviewSort)}
                   >
                     <option value="folder">Folder name</option>
                     <option value="name">Clip name</option>
+                    <option value="date-asc">Date modified · oldest first</option>
+                    <option value="date-desc">Date modified · newest first</option>
+                  </select>
+                </label>
+                <label className={s.tools}>
+                  Group
+                  <select
+                    aria-label="Group review"
+                    value={reviewGrouping}
+                    onChange={(event) => setReviewGrouping(event.target.value as ReviewGrouping)}
+                  >
+                    <option value="folders">One group per folder</option>
+                    <option value="sequence">Follow sort order</option>
                   </select>
                 </label>
                 <span className={s.toolbarDivider} aria-hidden="true" />
@@ -1862,10 +1882,39 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         All destinations
                       </Button>
                       <FolderBranch
-                        paths={[...new Set(model.clips.map((c) => c.folder))]}
+                        paths={[
+                          ...new Set(
+                            reviewItems
+                              .filter((c) => !c.location.external)
+                              .map((c) => c.location.folder),
+                          ),
+                        ].sort()}
                         selected={folderFilter}
                         onChoose={setFolderFilter}
                       />
+                      {reviewItems.some((c) => c.location.external) && (
+                        <>
+                          <p className={s.muted}>Filed outside destination root</p>
+                          {[
+                            ...new Map(
+                              reviewItems
+                                .filter((c) => c.location.external)
+                                .map((c) => [reviewFolderKey(c.location), c.location.folder]),
+                            ).entries(),
+                          ].map(([key, folder]) => (
+                            <Button
+                              key={key}
+                              className={s.sourceFolderButton}
+                              title={folder}
+                              aria-pressed={folderFilter === key}
+                              onClick={() => setFolderFilter(key)}
+                            >
+                              <FolderOpen size={14} />
+                              <span>{folder}</span>
+                            </Button>
+                          ))}
+                        </>
+                      )}
                     </>
                   ) : undefined
                 }
@@ -1894,236 +1943,289 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       <Button onClick={() => setChecked([])}>Clear selection</Button>
                     )}
                   </div>
-                  {[...new Set(filtered.map((c) => c.folder))].map((folder) => (
-                    <section key={folder} className={s.folderGroup}>
-                      <header>
-                        {project ? (
-                          <Button
-                            title="Open destination in Explorer (nearest existing parent for a planned folder)"
-                            onClick={() =>
-                              void workspace.run(
-                                () =>
-                                  window.virtualCut!.project.revealDestination(
-                                    project.project.id,
-                                    folder,
-                                  ),
-                                true,
+                  {reviewSort.startsWith('date-') && (
+                    <p className={s.muted}>
+                      Date modified uses the source date plus clip In, matching finished exports.
+                      {reviewGrouping === 'folders'
+                        ? ' Clips sort within each folder.'
+                        : ' Folders repeat when the sorted sequence returns to them.'}
+                    </p>
+                  )}
+                  {reviewGroups.flatMap(({ key, location, rows }) => [
+                    <header
+                      key={`group-${key}`}
+                      className={s.reviewGroupHeading}
+                      data-review-group={reviewFolderKey(location)}
+                    >
+                      {project ? (
+                        <Button
+                          title={
+                            location.external
+                              ? 'Show filed video in Explorer'
+                              : 'Open destination in Explorer (nearest existing parent for a planned folder)'
+                          }
+                          onClick={() =>
+                            void workspace.run(
+                              () =>
+                                location.external
+                                  ? window.virtualCut!.project.revealExport(
+                                      project.project.id,
+                                      location.exportId!,
+                                      'video',
+                                    )
+                                  : window.virtualCut!.project.revealDestination(
+                                      project.project.id,
+                                      location.folder,
+                                    ),
+                              true,
+                            )
+                          }
+                        >
+                          <FolderOpen size={16} /> {location.folder || 'Destination root'}
+                        </Button>
+                      ) : (
+                        <>
+                          <FolderOpen size={16} />
+                          {location.folder}
+                        </>
+                      )}
+                      <span className={s.spacer} />
+                      {rows.length} clips
+                    </header>,
+                    ...rows.map((clip, index) => (
+                      <article
+                        key={clip.id}
+                        className={`${s.reviewCard} ${clip.held ? s.heldCard : ''}`}
+                        data-card={clip.id}
+                        data-group-end={index === rows.length - 1}
+                      >
+                        <div className={s.cardHeading}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${clip.name}`}
+                            checked={checked.includes(clip.id)}
+                            onChange={(e) =>
+                              setChecked(
+                                e.target.checked
+                                  ? [...checked, clip.id]
+                                  : checked.filter((x) => x !== clip.id),
                               )
                             }
-                          >
-                            <FolderOpen size={16} /> {folder || 'Destination root'}
-                          </Button>
-                        ) : (
-                          <>
-                            <FolderOpen size={16} />
-                            {folder}
-                          </>
-                        )}
-                        <span className={s.spacer} />
-                        {filtered.filter((c) => c.folder === folder).length} clips
-                      </header>
-                      {filtered
-                        .filter((c) => c.folder === folder)
-                        .map((clip) => (
-                          <article
-                            key={clip.id}
-                            className={`${s.reviewCard} ${clip.held ? s.heldCard : ''}`}
-                            data-card={clip.id}
-                          >
-                            <div className={s.cardHeading}>
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${clip.name}`}
-                                checked={checked.includes(clip.id)}
-                                onChange={(e) =>
-                                  setChecked(
-                                    e.target.checked
-                                      ? [...checked, clip.id]
-                                      : checked.filter((x) => x !== clip.id),
-                                  )
-                                }
-                              />
-                              <div>
-                                <strong>{clip.name}</strong>
+                          />
+                          <div>
+                            <strong>{clip.name}</strong>
+                            {clip.location.exportId ? (
+                              <>
                                 <Button
                                   className={s.destination}
-                                  onClick={() => setFolderIds([clip.id])}
-                                >
-                                  <FolderOpen size={14} />
-                                  {clip.folder || 'Destination root'}
-                                  <ChevronDown size={12} />
-                                </Button>
-                              </div>
-                              <ReviewSignals
-                                model={model}
-                                clip={clip}
-                                onInspect={(field) => inspectReview(clip, field)}
-                                onFolder={() => setFolderIds([clip.id])}
-                              />
-                              <div className={s.tools}>
-                                <span className={s.muted}>{time(clip.end - clip.start)}</span>
-                                <Button
-                                  aria-expanded={expanded === clip.id}
-                                  onClick={() => {
-                                    if (expanded === clip.id) setExpanded('');
-                                    else inspectReview(clip);
-                                  }}
-                                >
-                                  Details{' '}
-                                  {expanded === clip.id ? (
-                                    <ChevronUp size={15} />
-                                  ) : (
-                                    <ChevronDown size={15} />
-                                  )}
-                                </Button>
-                                {clip.filed ? (
-                                  <span className={s.doneStatus}>
-                                    <Check size={15} /> Done
-                                  </span>
-                                ) : (
-                                  <Button
-                                    className={clip.accepted ? s.acceptedButton : undefined}
-                                    aria-pressed={Boolean(clip.accepted)}
-                                    disabled={
-                                      workspace.blocking || !!destinationIssues[clip.id]?.length
-                                    }
-                                    title={destinationIssues[clip.id]?.join(' ')}
-                                    onClick={() =>
-                                      project && !clip.accepted
-                                        ? void workspace.run(
-                                            () =>
-                                              window.virtualCut!.project.acceptReview(
-                                                project.project.id,
-                                                clip.id,
-                                              ),
-                                            true,
-                                          )
-                                        : updateClip(
-                                            clip.id,
-                                            { accepted: !clip.accepted, held: false },
-                                            false,
-                                          )
-                                    }
-                                  >
-                                    <Check size={15} />
-                                    {clip.accepted ? 'Accepted' : 'Accept'}
-                                  </Button>
-                                )}
-                                <Button
-                                  aria-pressed={Boolean(
-                                    model.clips.find((c) => c.id === clip.id)?.held,
-                                  )}
+                                  title={clip.location.output}
+                                  aria-label={`Show filed video: ${clip.name}`}
                                   onClick={() =>
-                                    updateClip(
-                                      clip.id,
-                                      {
-                                        held: !model.clips.find((c) => c.id === clip.id)?.held,
-                                        accepted: false,
-                                        filed: false,
-                                        holdReason: clip.holdReason || 'Needs context',
-                                      },
-                                      false,
+                                    void workspace.run(
+                                      () =>
+                                        window.virtualCut!.project.revealExport(
+                                          project!.project.id,
+                                          clip.location.exportId!,
+                                          'video',
+                                        ),
+                                      true,
                                     )
                                   }
                                 >
-                                  {model.clips.find((c) => c.id === clip.id)?.held
-                                    ? 'Release hold'
-                                    : 'Hold'}
+                                  <FolderOpen size={14} />
+                                  Filed · {clip.location.folder || 'Destination root'}
                                 </Button>
-                              </div>
-                            </div>
-                            {!!destinationIssues[clip.id]?.length && (
-                              <div className={s.autoHold} role="status" data-destination-hold>
-                                <strong>Held · destination</strong>
-                                {destinationIssues[clip.id].map((issue) => (
-                                  <p key={issue}>{issue}</p>
-                                ))}
-                              </div>
+                                <details className={s.filedPlan}>
+                                  <summary>Original plan</summary>
+                                  <span>{clip.folder || 'Destination root'}</span>
+                                  <Button onClick={() => setFolderIds([clip.id])}>
+                                    Plan another destination…
+                                  </Button>
+                                </details>
+                              </>
+                            ) : (
+                              <Button
+                                className={s.destination}
+                                onClick={() => setFolderIds([clip.id])}
+                              >
+                                <FolderOpen size={14} />
+                                {clip.folder || 'Destination root'}
+                                <ChevronDown size={12} />
+                              </Button>
                             )}
-                            {model.clips.find((c) => c.id === clip.id)?.held && (
-                              <HoldReason
-                                value={clip.holdReason || 'Needs context'}
-                                onChange={(holdReason) =>
-                                  updateClip(clip.id, { holdReason }, false)
+                            {reviewSort.startsWith('date-') && (
+                              <span className={s.reviewDate}>
+                                {clip.modified == null
+                                  ? 'Date unavailable'
+                                  : new Date(clip.modified).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <ReviewSignals
+                            model={model}
+                            clip={clip}
+                            onInspect={(field) => inspectReview(clip, field)}
+                            onFolder={() => setFolderIds([clip.id])}
+                          />
+                          <div className={s.tools}>
+                            <span className={s.muted}>{time(clip.end - clip.start)}</span>
+                            <Button
+                              aria-expanded={expanded === clip.id}
+                              onClick={() => {
+                                if (expanded === clip.id) setExpanded('');
+                                else inspectReview(clip);
+                              }}
+                            >
+                              Details{' '}
+                              {expanded === clip.id ? (
+                                <ChevronUp size={15} />
+                              ) : (
+                                <ChevronDown size={15} />
+                              )}
+                            </Button>
+                            {clip.filed ? (
+                              <span className={s.doneStatus}>
+                                <Check size={15} /> Done
+                              </span>
+                            ) : (
+                              <Button
+                                className={clip.accepted ? s.acceptedButton : undefined}
+                                aria-pressed={Boolean(clip.accepted)}
+                                disabled={
+                                  workspace.blocking || !!destinationIssues[clip.id]?.length
                                 }
-                              />
-                            )}
-                            {expanded === clip.id && (
-                              <Expansion>
-                                <ReviewLayout held={clip.held}>
-                                  {player(
-                                    model.recordings.find((r) => r.id === clip.rid)!,
-                                    clip,
-                                    false,
-                                    () => {
-                                      const position = transport.current?.current() ?? clip.start;
-                                      selectRecord(clip.rid);
-                                      setCid(clip.id);
-                                      setMid('');
-                                      updateRecording(clip.rid, { position });
-                                      go('cut');
-                                    },
-                                  )}
-                                  <div
-                                    onDoubleClick={(event) => {
-                                      if (
-                                        (event.target as HTMLElement).closest(
-                                          'button,input,select,textarea,summary,[data-marker-card]',
-                                        )
+                                title={destinationIssues[clip.id]?.join(' ')}
+                                onClick={() =>
+                                  project && !clip.accepted
+                                    ? void workspace.run(
+                                        () =>
+                                          window.virtualCut!.project.acceptReview(
+                                            project.project.id,
+                                            clip.id,
+                                          ),
+                                        true,
                                       )
-                                        return;
-                                      transport.current?.command('pause');
-                                      transport.current?.seek(clip.start);
-                                    }}
-                                  >
-                                    <div data-review-field="markers">
-                                      {markerEditor(clip.rid, clip)}
-                                    </div>
-                                    <div
-                                      data-review-field="name"
-                                      title="Double-click to seek to the clip start"
-                                    >
-                                      <Field label="Clip name">
-                                        <input
-                                          value={clip.name}
-                                          onChange={(e) =>
-                                            updateClip(clip.id, { name: e.target.value })
-                                          }
-                                        />
-                                      </Field>
-                                    </div>
-                                    <div data-review-field="note">
-                                      <Field label="Your note">
-                                        <textarea
-                                          value={clip.note || ''}
-                                          onChange={(e) =>
-                                            updateClip(clip.id, { note: e.target.value })
-                                          }
-                                        />
-                                      </Field>
-                                    </div>
-                                    <Button onClick={() => addSelect(clip.id)}>
-                                      Add to selects
-                                    </Button>
-                                    {project && (
-                                      <Button onClick={() => setExportClipId(clip.id)}>
-                                        Export clip…
-                                      </Button>
-                                    )}
-                                    <details>
-                                      <summary>Source context</summary>
-                                      <p className={s.muted}>
-                                        {model.recordings.find((r) => r.id === clip.rid)?.context}
-                                      </p>
-                                    </details>
-                                  </div>
-                                </ReviewLayout>
-                              </Expansion>
+                                    : updateClip(
+                                        clip.id,
+                                        { accepted: !clip.accepted, held: false },
+                                        false,
+                                      )
+                                }
+                              >
+                                <Check size={15} />
+                                {clip.accepted ? 'Accepted' : 'Accept'}
+                              </Button>
                             )}
-                          </article>
-                        ))}
-                    </section>
-                  ))}
+                            <Button
+                              aria-pressed={Boolean(
+                                model.clips.find((c) => c.id === clip.id)?.held,
+                              )}
+                              onClick={() =>
+                                updateClip(
+                                  clip.id,
+                                  {
+                                    held: !model.clips.find((c) => c.id === clip.id)?.held,
+                                    accepted: false,
+                                    filed: false,
+                                    holdReason: clip.holdReason || 'Needs context',
+                                  },
+                                  false,
+                                )
+                              }
+                            >
+                              {model.clips.find((c) => c.id === clip.id)?.held
+                                ? 'Release hold'
+                                : 'Hold'}
+                            </Button>
+                          </div>
+                        </div>
+                        {!!destinationIssues[clip.id]?.length && (
+                          <div className={s.autoHold} role="status" data-destination-hold>
+                            <strong>Held · destination</strong>
+                            {destinationIssues[clip.id].map((issue) => (
+                              <p key={issue}>{issue}</p>
+                            ))}
+                          </div>
+                        )}
+                        {model.clips.find((c) => c.id === clip.id)?.held && (
+                          <HoldReason
+                            value={clip.holdReason || 'Needs context'}
+                            onChange={(holdReason) => updateClip(clip.id, { holdReason }, false)}
+                          />
+                        )}
+                        {expanded === clip.id && (
+                          <Expansion>
+                            <ReviewLayout held={clip.held}>
+                              {player(
+                                model.recordings.find((r) => r.id === clip.rid)!,
+                                clip,
+                                false,
+                                () => {
+                                  const position = transport.current?.current() ?? clip.start;
+                                  selectRecord(clip.rid);
+                                  setCid(clip.id);
+                                  setMid('');
+                                  updateRecording(clip.rid, { position });
+                                  go('cut');
+                                },
+                              )}
+                              <div
+                                onDoubleClick={(event) => {
+                                  if (
+                                    (event.target as HTMLElement).closest(
+                                      'button,input,select,textarea,summary,[data-marker-card]',
+                                    )
+                                  )
+                                    return;
+                                  transport.current?.command('pause');
+                                  transport.current?.seek(clip.start);
+                                }}
+                              >
+                                <div data-review-field="markers">
+                                  {markerEditor(clip.rid, clip)}
+                                </div>
+                                <div
+                                  data-review-field="name"
+                                  title="Double-click to seek to the clip start"
+                                >
+                                  <Field label="Clip name">
+                                    <input
+                                      value={clip.name}
+                                      onChange={(e) =>
+                                        updateClip(clip.id, { name: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                </div>
+                                <div data-review-field="note">
+                                  <Field label="Your note">
+                                    <textarea
+                                      value={clip.note || ''}
+                                      onChange={(e) =>
+                                        updateClip(clip.id, { note: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                </div>
+                                <Button onClick={() => addSelect(clip.id)}>Add to selects</Button>
+                                {project && (
+                                  <Button onClick={() => setExportClipId(clip.id)}>
+                                    Export clip…
+                                  </Button>
+                                )}
+                                <details>
+                                  <summary>Source context</summary>
+                                  <p className={s.muted}>
+                                    {model.recordings.find((r) => r.id === clip.rid)?.context}
+                                  </p>
+                                </details>
+                              </div>
+                            </ReviewLayout>
+                          </Expansion>
+                        )}
+                      </article>
+                    )),
+                  ])}
                   {!filtered.length && (
                     <p className={s.empty}>
                       No clips in this view. Choose All to return to the batch.
@@ -2549,7 +2651,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         />
       )}
       {project && exportsOpen && (
-        <ExportHistory workspace={workspace} onClose={() => setExportsOpen(false)} />
+        <ExportHistory
+          workspace={workspace}
+          onClose={() => setExportsOpen(false)}
+          onHandoff={() => {
+            setExportsOpen(false);
+            setHandoffOpen(true);
+          }}
+        />
       )}
       {project && filingOpen && (
         <FilingPanel
@@ -2573,6 +2682,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         <span className={s.muted}>
           {project ? 'Project workspace' : 'Workflow preview'}{' '}
           <Button onClick={() => setDiagnosticsOpen(true)}>Diagnostics</Button>
+          {project && <Button onClick={() => setHandoffOpen(true)}>Handoff</Button>}
         </span>
         <nav aria-label="Workspace pages">
           {pages.map((p) => (
@@ -2592,6 +2702,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </div>
       </footer>
       {diagnosticsOpen && <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />}
+      {handoffOpen && <HandoffPanel onClose={() => setHandoffOpen(false)} />}
       {planOpen && (
         <DestinationPlanPanel
           plan={destinationPlan}

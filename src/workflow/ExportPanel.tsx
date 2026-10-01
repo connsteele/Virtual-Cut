@@ -147,13 +147,14 @@ export function ExportPanel({
 export function ExportHistory({
   workspace: w,
   onClose,
+  onHandoff,
 }: {
   workspace: Workspace;
   onClose: () => void;
+  onHandoff: () => void;
 }) {
   const p = w.snapshot!,
     records = p.exports.filter((e) => e.state !== 'planned');
-  const [helperNotice, setHelperNotice] = useState('');
   useEffect(() => {
     window.dispatchEvent(new Event('virtual-cut-pause-workspace'));
   }, []);
@@ -163,34 +164,7 @@ export function ExportHistory({
         Verified exports remain in this history when you undo edits or restore a save. Use File
         queue in Review to complete accepted clips in their planned folders.
       </p>
-      <details>
-        <summary>Resolve marker notes and colors</summary>
-        <p>
-          Import the finished videos into Resolve with their .vcut.json companions beside them.
-          Select those videos in the Media Pool, then use Workspace → Scripts → Utility → Virtual
-          Cut metadata. Check the read-only plan before applying.
-        </p>
-        <p className={s.muted}>
-          The helper enriches matching chapters with marker notes and colors. It preserves user
-          edits and reports conflicts. Clip notes and recording context remain in the companion. It
-          does not create bins or timelines.
-        </p>
-        <Button
-          onClick={() =>
-            void window
-              .virtualCut!.project.installResolveHelper()
-              .then(() =>
-                setHelperNotice(
-                  'Installed. Open Workspace → Scripts → Utility → Virtual Cut metadata in Resolve. If the menu has not refreshed, restart Resolve after saving your work.',
-                ),
-              )
-              .catch((e) => setHelperNotice(e instanceof Error ? e.message : String(e)))
-          }
-        >
-          Install Resolve metadata helper…
-        </Button>
-        {helperNotice && <p role="status">{helperNotice}</p>}
-      </details>
+      <Button onClick={onHandoff}>Handoff to Resolve…</Button>
       <div className={s.saveTableWrap}>
         <table className={s.saveTable} aria-label="Export history">
           <thead>

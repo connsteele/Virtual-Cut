@@ -1,8 +1,10 @@
-# Milestone 2 — verified exports and reviewed filing (0.3.13)
+# Milestone 2 — verified exports and reviewed filing (0.3.16)
 
-## Current candidate — 0.3.13
+## Current candidate — 0.3.16
 
-The manual path now includes accepted batch filing, verified Done receipts, a completed Library with offline-original preview and matching-output relink, and a user-invoked Resolve marker-notes/colors helper. Review-to-Cut also preserves the preview playhead. The [filing and Library guide](filing-and-library.md) describes current behavior, recovery tests, live Resolve evidence and the remaining human production/compatibility gates. The sections below retain historical slice-specific evidence and limitations; statements that filing/helper are future work describe those earlier versions.
+The manual path includes accepted batch filing, verified Done receipts, a completed Library with offline-original preview and matching-output relink, and an explicit Resolve marker-notes/colors helper. Review now supports Date modified sorting, optional global-order folder runs and accurate current Done locations. Handoff groups helper status, installation/removal and transfer instructions in one panel. See [the latest additions](review-0.3.16.md) and [filing and Library](filing-and-library.md).
+
+Remaining implementation includes completed-Library navigation parity (VC-55), measured renderer/native coverage (VC-50) and the terminal media-read diagnosis (VC-41). Human acceptance includes the latest focused guide items, Resolve metadata/tail compatibility and a representative real production batch (VC-26); hosted CI also needs its first published run. The manual feature path is implemented, but M2 acceptance is still open. Earlier slice sections below retain historical evidence and limitations.
 
 ## Delivered slice
 
@@ -63,7 +65,7 @@ UI checks cover Cut and Review export entry points, audio confirmation, containe
 
 These automated results verify the implemented copy/timing contract. They do not tick Connor's hands-on review or establish Resolve color/note compatibility.
 
-## Remaining M2 work
+## Historical remaining scope — first export slice
 
 - Connor completed F01–F07 and M201–M206. Preserve these recipes, screenshots and callouts in collapsed Notion history. Retain M207 and O01–O05, plus the targeted 0.3.1 follow-up checks.
 - Complete M207: richer color/note transfer and MKV audio-tail duration presentation. Both older proof files contain exactly 542 video packets and 96 original audio packets. Resolve reports 542 frames for MP4 and 548 for MKV; the retained compressed audio tail ends around 9.127 s, beyond the 9.033 s video range. Container duration interpretation is the likely cause (inference from packets and screenshots), not additional encoded frames or changed A/V timing. Do not mark this gate done until the remaining behavior/metadata workflow is accepted.

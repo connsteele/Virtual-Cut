@@ -1,4 +1,4 @@
-# Reviewed filing and the completed Library — 0.3.13
+# Reviewed filing and the completed Library — 0.3.16
 
 This candidate completes the manual M2 feature path: import, cut/annotate, review destinations, accept, file, find completed clips, and explicitly enrich imported Resolve markers. Connor's representative production batch and remaining compatibility acceptance are still required.
 
@@ -12,9 +12,11 @@ The existing packet-copy verification remains intact: original video and selecte
 
 Receipts remain outside editorial Undo and save restoration. Later edits stop matching Done; the earlier completed output stays in Library. Finished files remain separate from originals and the preview cache.
 
+Review has Folder name, Clip name and Date modified sorts. One group per folder combines locations; Follow sort order repeats contiguous folder groups to retain the chosen global sequence. Date modified matches source Date modified plus requested In. Done cards show their current filed location, including verified relinks, with the Original plan retained separately. Later edits return to their intended draft destination. See [the 0.3.16 review additions](review-0.3.16.md).
+
 ## Cancellation and interruption
 
-Close the panel to continue background filing. **Cancel remaining filing** cancels pending items before aborting an active writer. Jobs and Exports retain failed/cancelled/interrupted entries for explicit retry; reopening never retries automatically.
+Close the panel to continue background filing. Progress offers Cancel on each queued/running row to cancel that item while peers continue. **Cancel remaining filing** cancels pending items before aborting an active writer. Jobs and Exports retain failed/cancelled/interrupted entries for explicit retry; reopening never retries automatically.
 
 Stages are created beside the destination, so source and destination may be on different volumes without requiring a cross-volume move. Publication uses exclusive hard links and requires a supporting filesystem, normally local NTFS. A persistent verified hash allows retry to recognize its own published video and finish a missing companion. It refuses a different file or metadata. The lock is recovered only for this export identity and a dead process; retry clears only this identity's known private stage files. An interrupted item is not Done.
 
@@ -30,7 +32,7 @@ The sample workspace keeps its glossary/graph prototype. Transcription, agents, 
 
 ## Resolve marker metadata
 
-Normal video import carries chapter names/times; it does not automatically read `.vcut.json`. In **Exports**, expand **Resolve marker notes and colors** and install the bundled helper. It installs one known script under the user's Resolve Utility scripts directory. Existing unrelated/customized scripts are preserved; app-owned updates retain a previous copy. The installer does not apply annotations.
+Normal video import carries chapter names/times; it does not automatically read `.vcut.json`. Open **Handoff** in the bottom bar, or **Handoff to Resolve…** in Exports. The panel shows helper status/location and provides install/update, refresh, Explorer and confirmed removal controls. Removal rechecks the ownership hash and preserves customized scripts, unrelated scripts and retained backups. Install the bundled helper there. It installs one known script under the user's Resolve Utility scripts directory. Existing unrelated/customized scripts are preserved; app-owned updates retain a previous copy. The installer does not apply annotations.
 
 After saving work in Resolve, select the imported media-pool videos. Run **Workspace → Scripts → Utility → Virtual Cut metadata** (restart Resolve if the new menu entry is not visible). **Check selected clips** builds a read-only plan. **Apply marker metadata** rechecks the project, selection, matching video hash, companion and marker snapshot before applying names, multiline notes and named colors. It saves the project after successful application.
 
@@ -46,4 +48,4 @@ Clip-level notes and recording context remain in the companion and Library; this
 - Live Resolve Studio 21.1 on generated 60 fps footage enriched frames 33 and 74 with multiline Unicode notes and Blue/Red colors. Save/reopen retained those fields; repeat application added nothing; a newly created timeline inherited them. The actual helper window opened and its read-only repeat check reported zero changes/conflicts. The original user project, timeline, playhead and media folder were restored. The earlier user export files were unavailable, so the chapter timings were reconstructed on generated footage.
 - Evidence is under `G:\GPT\Work\virtual-cut\m2-completion`: `full-reports/run-rnPnlb`, `focused-reports/run-0NL2Ts`, and `resolve-validation`. The broad run's two outdated UI expectations were corrected and passed in the focused run. Final packaged verification is recorded in `verification-summary.json` there.
 
-Connor passed M243–M245 save review and M246–M248 core workflows. The [0.3.14 follow-up](review-0.3.14.md) addresses their usability notes. M250 confirms source position; separate date and finished-file audio checks remain open, along with M249, M212's remaining Resolve/MKV-tail acceptance, M217 and O01–O05 deep checks. M230 remains conditional; the new media-read incident reopens VC-41 diagnosis. VC-50 code coverage is still unmeasured; scenario counts are not coverage. Hosted CI and a representative real production batch remain open gates. No milestone acceptance is inferred from synthetic tests.
+Connor passed M243–M245 save review and M246–M248 core workflows. The [0.3.14 follow-up](review-0.3.14.md) addresses their usability notes. M250 confirms source position; M256/M257 now confirm Explorer/Resolve Date modified ordering and finished-file A/V timing/boundaries, along with M249, M212's remaining Resolve/MKV-tail acceptance, M217 and O01–O05 deep checks. M230 remains conditional; the new media-read incident reopens VC-41 diagnosis. VC-50 code coverage is still unmeasured; scenario counts are not coverage. Hosted CI and a representative real production batch remain open gates. No milestone acceptance is inferred from synthetic tests.

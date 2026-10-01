@@ -823,12 +823,6 @@
   overscroll-behavior: contain;
   overflow-anchor: none;
 }
-.folderGroup {
-  margin-bottom: 18px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: clip;
-}
 .reviewSelection {
   position: sticky;
   top: -16px;
@@ -844,7 +838,7 @@
   background: var(--surface);
   box-shadow: 0 3px 8px #0003;
 }
-.folderGroup > header {
+.reviewGroupHeading {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -852,10 +846,19 @@
   background: #20362f;
   color: #bbd7bf;
   font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
 }
 .reviewCard {
   background: var(--surface);
   border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+.reviewCard[data-group-end='true'] {
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
 }
 .cardHeading {
   display: flex;
@@ -877,6 +880,36 @@
   color: var(--muted);
   font-size: 10px;
   white-space: normal;
+}
+.reviewDate {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.filedPlan {
+  font-size: 12px;
+  margin-top: 4px;
+}
+.filedPlan > span {
+  display: block;
+  margin: 6px 0;
+}
+.handoffStatus {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.handoffPath {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--muted);
+}
+.handoffSteps {
+  padding-left: 24px;
+}
+.handoffSteps li {
+  margin: 12px 0;
 }
 .expansion {
   overflow: hidden;
@@ -1809,7 +1842,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.8rem 1.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.8rem 1rem;
   margin: 1rem 0;

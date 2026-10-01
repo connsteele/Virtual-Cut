@@ -6,6 +6,7 @@ export const fast = [
   'scan-playback.test.mjs',
   'filmstrip-memory.test.mjs',
   'marker-timing.test.mjs',
+  'review-order.test.mjs',
 ];
 export const native = [
   'resolve-helper-checks.mjs',
