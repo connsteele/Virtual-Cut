@@ -27,8 +27,9 @@ export function ProjectPanel({
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
       </Field>
       <p className={s.muted}>
-        Choose a project file, a destination for finished clips, and a folder for disposable
-        previews. Recordings stay in their original locations.
+        Choose a project file, a root folder for finished videos, and a folder for disposable
+        previews. Review assigns subfolders beneath the finished-video root. Recordings stay in
+        their original locations.
       </p>
       <div className={s.tools}>
         <Button
@@ -53,7 +54,7 @@ export function ProjectPanel({
           <dl>
             <dt>Project</dt>
             <dd>{w.snapshot.project.file}</dd>
-            <dt>Clip destination</dt>
+            <dt>Finished videos root</dt>
             <dd>{w.snapshot.project.destination}</dd>
             <dt>Preview cache</dt>
             <dd>{w.snapshot.project.cache}</dd>

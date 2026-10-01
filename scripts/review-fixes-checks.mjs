@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -24,9 +25,7 @@ if (process.argv.includes('--reopen')) {
   }
 } else if (process.argv.includes('--fixture')) {
   const dir = process.argv.at(-1);
-  const old = JSON.parse(
-    await readFile('G:/GPT/Work/virtual-cut/m1-feedback/latest-native.json', 'utf8'),
-  );
+  const old = JSON.parse(await readFile(testPath('m1-feedback/latest-native.json'), 'utf8'));
   const { ProjectService } = require('../dist-electron/project-service.cjs');
   const service = new ProjectService(path.join(dir, 'native-profile'), path.join(dir, 'tools'));
   const file = path.join(dir, 'feedback.vcut');
@@ -77,7 +76,7 @@ if (process.argv.includes('--reopen')) {
     await service.close();
   }
 } else {
-  const checks = 'G:/GPT/Work/virtual-cut/playback-feedback';
+  const checks = testPath('playback-feedback');
   await mkdir(checks, { recursive: true });
   const dir = await mkdtemp(path.join(checks, 'checks-'));
   await new Promise((resolve, reject) => {
@@ -88,7 +87,12 @@ if (process.argv.includes('--reopen')) {
         cwd: root,
         windowsHide: true,
         stdio: 'inherit',
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          TEMP: process.env.TEMP || 'G:/GPT/Temp',
+          TMP: process.env.TEMP || 'G:/GPT/Temp',
+        },
       },
     );
     child.on('error', reject);
@@ -109,7 +113,10 @@ if (process.argv.includes('--reopen')) {
       '--background-test',
     ],
     cwd: root,
-    env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+    env: electronEnvironment({
+      TEMP: process.env.TEMP || 'G:/GPT/Temp',
+      TMP: process.env.TEMP || 'G:/GPT/Temp',
+    }),
   });
   const page = await app.firstWindow(),
     errors = [],

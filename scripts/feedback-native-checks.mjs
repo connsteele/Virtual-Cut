@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, readdir, copyFile, rename } from 'node:fs/promises';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
-const root = 'G:/GPT/Work/virtual-cut/m1-feedback';
+const root = testPath('m1-feedback');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-')),
   source = path.join(dir, 'audio-notes.mkv');
@@ -14,7 +15,11 @@ async function ffmpeg(args) {
   await new Promise((resolve, reject) => {
     const child = spawn('ffmpeg', ['-v', 'error', '-nostdin', ...args], {
       windowsHide: true,
-      env: { ...process.env, TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+      env: {
+        ...process.env,
+        TEMP: process.env.TEMP || 'G:/GPT/Temp',
+        TMP: process.env.TEMP || 'G:/GPT/Temp',
+      },
     });
     let stderr = '';
     child.stderr.on('data', (d) => (stderr += d));

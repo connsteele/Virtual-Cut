@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import {
   copyFile,
@@ -16,7 +17,7 @@ import { require } from './shared.mjs';
 const { FilmstripCache, nearestKey } = require('../dist-electron/filmstrip.cjs');
 const { identify, inspectMedia, launchTool } = require('../dist-electron/media-inspection.cjs');
 const { ProjectService } = require('../dist-electron/project-service.cjs');
-const root = 'G:/GPT/Work/virtual-cut/filmstrip';
+const root = testPath('filmstrip');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-'));
 const ffmpeg = process.env.VIRTUAL_CUT_FFMPEG || 'ffmpeg',
@@ -112,9 +113,13 @@ async function exercise(file, label, times) {
 try {
   await exercise(source, 'synthetic');
   await exercise(offsetFile, 'nonzeroStart', [0.2, 1.8, 4.3, 7.1]);
-  const long = path.join(dir, 'long-4k-av1.mp4');
-  await copyFile('G:/GPT/Work/virtual-cut/full-resolution-demo/videos/r1.mp4', long);
-  const { native, info } = await exercise(long, '4kAV1');
+  const long = path.join(dir, 'long-synthetic.mp4');
+  if (process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE) {
+    await copyFile(process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE, long);
+  } else {
+    await launchTool(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=4:duration=140', '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '4', '-y', long], signal);
+  }
+  const { native, info } = await exercise(long, process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE ? 'copiedRealFixture' : 'longSynthetic');
   const retained = await cache.request(
     ffmpeg,
     native,

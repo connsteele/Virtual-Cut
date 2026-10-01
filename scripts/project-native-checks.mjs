@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, rename, copyFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,7 @@ const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
 const { inspectMedia } = require('../dist-electron/media-inspection.cjs');
-const root = 'G:/GPT/Work/virtual-cut/milestone-1';
+const root = testPath('milestone-1');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-'));
 const fixtures = path.join(dir, 'sources');
@@ -23,7 +24,11 @@ const command = (exe, args) =>
   new Promise((resolve, reject) => {
     const p = spawn(exe, args, {
       windowsHide: true,
-      env: { ...process.env, TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+      env: {
+        ...process.env,
+        TEMP: process.env.TEMP || 'G:/GPT/Temp',
+        TMP: process.env.TEMP || 'G:/GPT/Temp',
+      },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let err = '';

@@ -1,9 +1,10 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment } from './shared.mjs';
-const checksRoot = 'G:/GPT/Work/virtual-cut/milestone-1';
+const checksRoot = testPath('milestone-1');
 const fixture = JSON.parse(await readFile(path.join(checksRoot, 'latest-native.json'), 'utf8'));
 await mkdir(checksRoot, { recursive: true });
 const dir = await mkdtemp(path.join(checksRoot, 'ui-'));
@@ -18,7 +19,10 @@ async function launch() {
     executablePath: executable || require('electron'),
     args: [...(executable ? [] : [root]), `--user-data-dir=${profile}`, '--background-test'],
     cwd: root,
-    env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+    env: electronEnvironment({
+      TEMP: process.env.TEMP || 'G:/GPT/Temp',
+      TMP: process.env.TEMP || 'G:/GPT/Temp',
+    }),
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(20000);

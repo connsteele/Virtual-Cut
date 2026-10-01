@@ -27,8 +27,43 @@ export function plannedFilename(clip: Clip, sourcePath: string): string {
   const ext = /\.(mp4|m4v|mov|mkv|webm)$/i.exec(sourcePath)?.[0].toLowerCase() || '.mp4';
   return clip.name.toLowerCase().endsWith(ext) ? clip.name : clip.name + ext;
 }
+export function destinationKey(model: Model, clip: Clip): string {
+  const r = model.recordings.find((r) => r.id === clip.rid);
+  return JSON.stringify([clip.id, clip.name, clip.folder, r?.sourcePath, r?.availability]);
+}
+export function destinationSignature(model: Model): string {
+  return JSON.stringify(model.clips.map((c) => destinationKey(model, c)));
+}
+/** Immediate checks also run on unsaved edits; filesystem checks belong to main. */
+export function localDestinationIssues(model: Model): Record<string, string[]> {
+  const issues: Record<string, string[]> = {};
+  const targets = new Map<string, string[]>();
+  const sources = new Map(model.recordings.map((r) => [r.id, r]));
+  for (const clip of model.clips) {
+    const problem = nameProblem(clip.name) || folderProblem(clip.folder);
+    issues[clip.id] = problem ? [problem] : [];
+    if (problem) continue;
+    const source = sources.get(clip.rid);
+    const target =
+      `${clip.folder}/${plannedFilename(clip, source?.sourcePath || '')}`.toLowerCase();
+    const peers = targets.get(target);
+    if (peers) peers.push(clip.id);
+    else targets.set(target, [clip.id]);
+  }
+  for (const ids of targets.values())
+    if (ids.length > 1)
+      for (const id of ids)
+        issues[id].push(
+          'Another clip in this project has the same planned filename. Rename it or choose another folder.',
+        );
+  return issues;
+}
 /** Navigation, playback settings and generated previews do not change acceptance. */
-export function reviewContent(model: Model, clip: Clip): string {
+export function reviewContent(
+  model: Model,
+  clip: Clip,
+  issues = localDestinationIssues(model),
+): string {
   const r = model.recordings.find((r) => r.id === clip.rid);
   return JSON.stringify([
     clip.id,
@@ -50,10 +85,13 @@ export function reviewContent(model: Model, clip: Clip): string {
       r.micTrack,
     ],
     model.markers[clip.rid] || [],
+    // Changing a peer's target can invalidate this clip's acceptance too.
+    ...(issues[clip.id] || []),
   ]);
 }
 export interface DestinationRow {
   clipId: string;
+  key: string;
   path: string;
   issues: string[];
 }

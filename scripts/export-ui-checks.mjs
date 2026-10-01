@@ -1,9 +1,10 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
-const checks = 'G:/GPT/Work/virtual-cut/m2',
+const checks = testPath('m2'),
   fixture = JSON.parse(await readFile(path.join(checks, 'latest-native.json'), 'utf8'));
 await mkdir(checks, { recursive: true });
 const dir = await mkdtemp(path.join(checks, 'ui-'));
@@ -16,7 +17,10 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({
+    TEMP: process.env.TEMP || 'G:/GPT/Temp',
+    TMP: process.env.TEMP || 'G:/GPT/Temp',
+  }),
 });
 const page = await app.firstWindow(),
   errors = [];

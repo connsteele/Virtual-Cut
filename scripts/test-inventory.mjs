@@ -1,0 +1,66 @@
+export const fast = [
+  'media.test.mjs',
+  'source-folders.test.mjs',
+  'timeline-viewport.test.mjs',
+  'scan-playback.test.mjs',
+  'filmstrip-memory.test.mjs',
+  'marker-timing.test.mjs',
+];
+export const native = [
+  'project-native-checks.mjs',
+  'feedback-native-checks.mjs',
+  'recording-removal-checks.mjs',
+  'intake-zoom-native-checks.mjs',
+  'export-native-checks.mjs',
+  'export-feedback-native.mjs',
+  'filmstrip-checks.mjs',
+  'review-planning-native.mjs',
+];
+export const desktop = [
+  'smoke.mjs',
+  'project-ui-checks.mjs',
+  'timing-checks.mjs',
+  'feedback-ui-checks.mjs',
+  'playback-ui-checks.mjs',
+  'intake-zoom-ui-checks.mjs',
+  'review-fixes-checks.mjs',
+  'export-ui-checks.mjs',
+  'filmstrip-ui-checks.mjs',
+  'filmstrip-reuse-checks.mjs',
+  'review-planning-ui.mjs',
+];
+export const dependencies = {
+  'project-ui-checks.mjs': ['project-native-checks.mjs'],
+  'timing-checks.mjs': ['project-native-checks.mjs'],
+  'recording-removal-checks.mjs': ['feedback-native-checks.mjs'],
+  'feedback-ui-checks.mjs': ['feedback-native-checks.mjs'],
+  'playback-ui-checks.mjs': ['feedback-native-checks.mjs'],
+  'review-fixes-checks.mjs': ['feedback-native-checks.mjs'],
+  'intake-zoom-ui-checks.mjs': ['intake-zoom-native-checks.mjs'],
+  'export-feedback-native.mjs': ['export-native-checks.mjs'],
+  'export-ui-checks.mjs': ['export-native-checks.mjs'],
+  'filmstrip-ui-checks.mjs': ['filmstrip-checks.mjs'],
+  'filmstrip-reuse-checks.mjs': ['filmstrip-checks.mjs'],
+  'review-planning-ui.mjs': ['review-planning-native.mjs'],
+};
+// Explicit inventory: a new test script must join a gate or receive a reason here.
+export const other = {
+  'project-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',
+  'feedback-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',
+  'export-checks.mjs': 'Legacy wrapper; synthetic checks are maintained above.',
+  'intake-zoom-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',
+  'review-planning-checks.mjs': 'Focused wrapper; constituent checks are maintained above.',
+  'filmstrip-native-run.mjs': 'Focused wrapper for maintained filmstrip native checks.',
+  'project-long-checks.mjs': 'Manual extended recording fixture; not a synthetic CI gate.',
+  'export-real-check.mjs': 'Manual copied real-footage export evidence; requires explicit fixture.',
+  'workflow-smoke.mjs': 'Historical prototype/sample-only UI walkthrough.',
+  'iteration-03-checks.mjs': 'Historical prototype/sample-only animation evidence.',
+  'overlap-checks.mjs':
+    'Historical sample-only layout study; clip trim checks remain in desktop gates.',
+  'transport-fixture.mjs': 'Manual copied 4K gameplay fixture for extended playback checks.',
+  'transport-regression-checks.mjs': 'Manual 4K fixture; retain for M230 hardware playback review.',
+  'media-card-review-checks.mjs': 'Manual 4K fixture for source switch/card-date review.',
+  'transport-delivery-checks.mjs': 'Exploratory Chromium playback delivery measurements.',
+  'transport-investigation.mjs': 'Exploratory Chromium versus app transport measurements.',
+  'audio-speed-study.mjs': 'Exploratory track-selection playback benchmark.',
+};

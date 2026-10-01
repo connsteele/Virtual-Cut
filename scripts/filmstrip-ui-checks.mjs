@@ -1,9 +1,10 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/filmstrip';
+const scratch = testPath('filmstrip');
 const f = JSON.parse(await readFile(path.join(scratch, 'latest-native.json'), 'utf8'));
 const dir = await mkdtemp(path.join(scratch, 'ui-'));
 const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -15,7 +16,10 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({
+    TEMP: process.env.TEMP || 'G:/GPT/Temp',
+    TMP: process.env.TEMP || 'G:/GPT/Temp',
+  }),
 });
 const page = await app.firstWindow(),
   errors = [];
@@ -69,18 +73,14 @@ try {
     );
   await expect.poll(() => frames.count()).toBeGreaterThan(0);
   assert(
-    await frames
-      .locator('img')
-      .evaluateAll((els) => els.every((e) => e.src.startsWith('blob:'))),
+    await frames.locator('img').evaluateAll((els) => els.every((e) => e.src.startsWith('blob:'))),
   );
   await capture('media-thumbnails-wide');
   await page.getByRole('button', { name: 'List', exact: true }).click();
-  const rects = await cards
-    .first()
-    .evaluate((el) => ({
-      title: el.querySelector('strong').getBoundingClientRect().toJSON(),
-      date: el.querySelector('time').getBoundingClientRect().toJSON(),
-    }));
+  const rects = await cards.first().evaluate((el) => ({
+    title: el.querySelector('strong').getBoundingClientRect().toJSON(),
+    date: el.querySelector('time').getBoundingClientRect().toJSON(),
+  }));
   assert(rects.date.x > rects.title.x, 'List date appears to the right at wide sizes');
   await capture('media-list-wide');
   await page.getByLabel('Sort media').selectOption('date-desc');

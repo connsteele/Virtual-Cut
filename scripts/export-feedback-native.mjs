@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -10,7 +11,7 @@ const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { markerColors, markerColorName } = require('../dist-electron/workflow-types.js');
 assert.equal(Object.keys(markerColors).length, 16);
 assert.equal(markerColorName({ category: 'Context', color: 'constructor' }), 'Blue');
-const root = 'G:/GPT/Work/virtual-cut/m2-feedback';
+const root = testPath('m2-feedback');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-'));
 const signal = new AbortController().signal;
@@ -47,7 +48,7 @@ await ffmpeg([
   '60',
   clock,
 ]);
-const fixture = JSON.parse(await readFile('G:/GPT/Work/virtual-cut/m2/latest-native.json', 'utf8'));
+const fixture = JSON.parse(await readFile(testPath('m2/latest-native.json'), 'utf8'));
 const mov = path.join(dir, 'same-source.mov'),
   m4v = path.join(dir, 'same-source.m4v'),
   webm = path.join(dir, 'same-source.webm');

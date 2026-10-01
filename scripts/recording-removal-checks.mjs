@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -5,10 +6,8 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
-const fixture = JSON.parse(
-  await readFile('G:/GPT/Work/virtual-cut/m1-feedback/latest-native.json', 'utf8'),
-);
-const root = 'G:/GPT/Work/virtual-cut/m2-followup';
+const fixture = JSON.parse(await readFile(testPath('m1-feedback/latest-native.json'), 'utf8'));
+const root = testPath('m2-followup');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'removal-'));
 const first = path.join(dir, 'shared.mkv'),

@@ -54,6 +54,7 @@ export interface ProjectSnapshot {
   canRedo: boolean;
   saves?: SaveCopy[];
   warning?: string;
+  destinations?: import('./review-plan.js').DestinationPlan;
   cleanup?: {
     cacheFilesRemoved: number;
     cacheFilesRetained: number;
@@ -66,6 +67,7 @@ export interface RecentProject {
   file: string;
 }
 export interface ProjectApi {
+  revealDestination(id: string, folder: string): Promise<void>;
   acceptReview(id: string, clipId: string): Promise<ProjectSnapshot>;
   destinationPlan(id: string): Promise<import('./review-plan.js').DestinationPlan>;
   destinationFolders(

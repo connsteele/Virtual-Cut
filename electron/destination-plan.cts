@@ -1,6 +1,6 @@
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { folderProblem, nameProblem, plannedFilename } from './review-plan.js';
+import { destinationKey, folderProblem, nameProblem, plannedFilename } from './review-plan.js';
 import type { DestinationPlan, DestinationFolders } from './review-plan.js' with {
   'resolution-mode': 'import',
 };
@@ -52,6 +52,14 @@ export async function destinationFolders(
     throw new Error('This folder has too many children to list. Choose a smaller destination.');
   return { root: destination, children, planned };
 }
+/** Resolve only a validated folder (or its nearest existing parent) for Explorer. */
+export async function destinationLocation(destination: string, folder: string) {
+  const root = await rootPath(destination);
+  let { current } = await inspectFolder(root, folder);
+  while (!(await lstat(current).catch(() => null))) current = path.dirname(current);
+  if (!within(root, current)) throw new Error('Folder leaves the project destination.');
+  return current;
+}
 export async function destinationPlan(
   destination: string,
   model: Model,
@@ -70,7 +78,7 @@ export async function destinationPlan(
   for (const clip of model.clips) {
     const recording = model.recordings.find((r) => r.id === clip.rid);
     const issues: string[] = [];
-    const row = { clipId: clip.id, path: '', issues };
+    const row = { clipId: clip.id, key: destinationKey(model, clip), path: '', issues };
     rows.push(row);
     const invalid = nameProblem(clip.name) || folderProblem(clip.folder);
     if (invalid) {

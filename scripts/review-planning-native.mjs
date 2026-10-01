@@ -1,5 +1,15 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile, readdir, symlink, stat } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  writeFile,
+  readdir,
+  symlink,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -9,7 +19,7 @@ const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { destinationPlan, destinationFolders } = require('../dist-electron/destination-plan.cjs');
 const { nameProblem } = require('../dist-electron/review-plan.js');
 const { Diagnostics } = require('../dist-electron/diagnostics.cjs');
-const scratch = 'G:/GPT/Work/virtual-cut/review-planning';
+const scratch = testPath('review-planning');
 await mkdir(scratch, { recursive: true });
 const dir = await mkdtemp(path.join(scratch, 'native-'));
 const dest = path.join(dir, 'Finished clips'),
@@ -317,6 +327,63 @@ after = structuredClone(before);
 after.clips[0].name = 'First';
 p = await service.save(pid, before, after);
 const firstBatch = p.activeBatchId;
+// Automatic snapshots refresh on target changes and filesystem checks without editorial saves.
+assert(p.destinations.rows.every((r) => !r.issues.length));
+p = await service.acceptReview(pid, p.model.clips[1].id);
+before = p.model;
+after = structuredClone(before);
+after.clips[0].name = 'SECOND.mp4';
+p = await service.save(pid, before, after);
+assert(p.destinations.rows.every((r) => r.issues.some((i) => i.includes('Another clip'))));
+assert(!p.model.clips[1].accepted, 'A peer target change invalidates acceptance');
+p = await service.history(pid, 'undo');
+assert(p.model.clips[1].accepted, 'Undo restores the exact accepted peer and unique target');
+assert(p.destinations.rows.every((r) => !r.issues.length));
+p = await service.history(pid, 'redo');
+assert(!p.model.clips[1].accepted, 'Redo restores the peer conflict without stale acceptance');
+before = p.model;
+after = structuredClone(before);
+after.clips[0].name = 'First';
+after.clips[0].held = true;
+after.clips[0].holdReason = 'Keep this manual hold';
+p = await service.save(pid, before, after);
+assert(p.destinations.rows.every((r) => !r.issues.length));
+assert(p.model.clips[0].held && !p.model.clips[1].accepted);
+const collision = path.join(dest, 'Existing', 'Second.mp4');
+await writeFile(collision, 'existing file remains untouched');
+assert((await service.destinationPlan(pid)).rows[1].issues.some((i) => i.includes('already uses')));
+await assert.rejects(() => service.acceptReview(pid, p.model.clips[1].id), /already uses/);
+assert.equal(await readFile(collision, 'utf8'), 'existing file remains untouched');
+await unlink(collision);
+assert((await service.destinationPlan(pid)).rows.every((r) => !r.issues.length));
+assert.equal(
+  await service.destinationLocation(pid, 'Existing/Planned'),
+  path.join(dest, 'Existing'),
+);
+await assert.rejects(() => service.destinationLocation(pid, '../escape'));
+const revision = service.store.data.revision;
+await service.snapshot();
+await service.snapshot();
+assert.equal(
+  service.store.data.revision,
+  revision,
+  'Destination polling creates no edit or save history',
+);
+before = p.model;
+after = structuredClone(before);
+after.clips[0].held = false;
+after.markers[after.recordings[0].id] = [
+  {
+    id: 'move-marker',
+    name: 'Move me',
+    time: 1,
+    color: 'Blue',
+    category: 'Context',
+    topic: '',
+    note: 'Retain\nnotes',
+  },
+];
+p = await service.save(pid, before, after);
 p = await service.batch(pid, 'Other batch');
 p = await service.selectBatch(pid, firstBatch);
 await service.close();

@@ -16,6 +16,7 @@ import { fitViewport, zoomViewport, type TimelineViewport } from './timelineView
 import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-react';
 import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
+import { markerTime } from './markerTiming';
 
 export function Timeline({
   recording,
@@ -35,6 +36,7 @@ export function Timeline({
   selectedMarkerId,
   onMarkerSelect,
   onMarkerDeselect,
+  onMarkerMove,
   waveMode = 'off',
   audioTracks = [],
   handleMode = false,
@@ -60,6 +62,7 @@ export function Timeline({
   selectedMarkerId?: string;
   onMarkerSelect?: (id: string) => void;
   onMarkerDeselect?: () => void;
+  onMarkerMove?: (id: string, time: number) => void;
   waveMode?: 'off' | 'overlay' | 'replace';
   audioTracks?: AudioTrack[];
   handleMode?: boolean;
@@ -70,6 +73,15 @@ export function Timeline({
 }) {
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
+  const markerDrag = useRef<{
+    marker: Marker;
+    x: number;
+    value: number;
+    pointer: number;
+    recording: string;
+    moved: boolean;
+  } | null>(null);
+  const [markerPreview, setMarkerPreview] = useState<{ id: string; time: number } | null>(null);
   const drag = useRef<{
     id: string;
     edge: 'start' | 'end';
@@ -90,10 +102,12 @@ export function Timeline({
   }, [onTrimActive, onScrubActive]);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !drag.current) return;
+      if (e.key !== 'Escape' || (!drag.current && !markerDrag.current)) return;
       e.preventDefault();
       drag.current = null;
       setPreview(null);
+      markerDrag.current = null;
+      setMarkerPreview(null);
       callbacks.current.onTrimActive?.(false);
       pointer.current = null;
       callbacks.current.onScrubActive?.(false);
@@ -102,6 +116,8 @@ export function Timeline({
     return () => {
       document.removeEventListener('keydown', cancel);
       drag.current = null;
+      markerDrag.current = null;
+      setMarkerPreview(null);
       pointer.current = null;
       setPreview(null);
       callbacks.current.onTrimActive?.(false);
@@ -136,7 +152,7 @@ export function Timeline({
     factor: number,
     anchor = current >= start && current <= end ? current : start + span / 2,
   ) => {
-    if (!drag.current && pointer.current == null)
+    if (!drag.current && !markerDrag.current && pointer.current == null)
       changeView(zoomViewport(view, factor, anchor, fullStart, fullEnd, minimum));
   };
   const wheelState = useRef({ view, fullStart, fullEnd, minimum, identity });
@@ -148,7 +164,7 @@ export function Timeline({
     const wheel = (e: WheelEvent) => {
       if (!e.altKey && !e.ctrlKey) return;
       e.preventDefault();
-      if (drag.current || pointer.current != null) return;
+      if (drag.current || markerDrag.current || pointer.current != null) return;
       const state = wheelState.current,
         rect = el.getBoundingClientRect();
       const delta = e.deltaY || e.deltaX;
@@ -209,6 +225,27 @@ export function Timeline({
   function scrub(x: number) {
     const rect = track.current!.getBoundingClientRect();
     onSeek(start + Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * span);
+  }
+  function moveMarker(x: number) {
+    const d = markerDrag.current;
+    if (!d || (!d.moved && Math.abs(x - d.x) < 3)) return;
+    d.moved = true;
+    const width = track.current!.getBoundingClientRect().width;
+    d.value = markerTime(
+      recording,
+      Math.max(fullStart, Math.min(fullEnd, d.marker.time + ((x - d.x) / width) * span)),
+    );
+    setMarkerPreview({ id: d.marker.id, time: d.value });
+    onSeek(d.value);
+  }
+  function finishMarker(commit: boolean) {
+    const d = markerDrag.current;
+    if (!d) return;
+    markerDrag.current = null;
+    setMarkerPreview(null);
+    if (commit && d.moved && d.recording === recording.id && d.value !== d.marker.time)
+      onMarkerMove?.(d.marker.id, d.value);
+    onTrimActive?.(false);
   }
   function trimTime(c: Clip, edge: 'start' | 'end', value: number, step?: number) {
     const frame = 1 / (recording.fps || 30),
@@ -339,6 +376,10 @@ export function Timeline({
           if (clip?.dataset.clip) onSelect?.(clip.dataset.clip);
         }}
         onPointerMove={(e) => {
+          if (markerDrag.current?.pointer === e.pointerId) {
+            moveMarker(e.clientX);
+            return;
+          }
           if (drag.current?.pointer === e.pointerId) {
             moveHandle(e.clientX);
             return;
@@ -346,6 +387,13 @@ export function Timeline({
           if (pointer.current === e.pointerId) scrub(e.clientX);
         }}
         onPointerUp={(e) => {
+          if (markerDrag.current?.pointer === e.pointerId) {
+            moveMarker(e.clientX);
+            finishMarker(true);
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            return;
+          }
           if (drag.current?.pointer === e.pointerId) {
             moveHandle(e.clientX);
             finishHandle(true);
@@ -361,11 +409,13 @@ export function Timeline({
             e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         onPointerCancel={() => {
+          finishMarker(false);
           finishHandle(false);
           pointer.current = null;
           onScrubActive?.(false);
         }}
         onLostPointerCapture={() => {
+          finishMarker(false);
           finishHandle(false);
           pointer.current = null;
           onScrubActive?.(false);
@@ -391,16 +441,60 @@ export function Timeline({
         </div>
         <div className={s.markerLane} aria-label="Timeline markers">
           {markers
+            .map((m) => (markerPreview?.id === m.id ? { ...m, time: markerPreview.time } : m))
             .filter((m) => m.time >= start && m.time < end)
             .map((m) => (
               <button
                 key={m.id}
                 data-marker={m.id}
+                data-manipulate={handleMode}
                 className={s.marker}
                 style={{ left: percent(m.time), color: markerColor(m) }}
-                title={`${m.category}: ${m.name} · ${time(m.time)}`}
+                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag or use Left/Right to move' : ''}`}
                 aria-label={`Seek to marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}
+                aria-disabled={handleMode && !trimEnabled}
+                onPointerDown={(e) => {
+                  if (!handleMode || !trimEnabled || !onMarkerMove || e.button !== 0) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.focus({ preventScroll: true });
+                  onTrimActive?.(true);
+                  onMarkerSelect?.(m.id);
+                  onSeek(m.time);
+                  markerDrag.current = {
+                    marker: m,
+                    x: e.clientX,
+                    value: m.time,
+                    pointer: e.pointerId,
+                    recording: recording.id,
+                    moved: false,
+                  };
+                  track.current!.setPointerCapture(e.pointerId);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    !handleMode ||
+                    !trimEnabled ||
+                    !onMarkerMove ||
+                    e.ctrlKey ||
+                    e.metaKey ||
+                    e.altKey ||
+                    !['ArrowLeft', 'ArrowRight'].includes(e.key)
+                  )
+                    return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const direction = e.key === 'ArrowRight' ? 1 : -1;
+                  const value = markerTime(
+                    recording,
+                    e.shiftKey ? m.time + direction : m.time,
+                    e.shiftKey ? 0 : direction,
+                  );
+                  onMarkerSelect?.(m.id);
+                  onSeek(value);
+                  onMarkerMove(m.id, value);
+                }}
                 onClick={() => {
                   onMarkerSelect?.(m.id);
                   onSeek(m.time);

@@ -699,6 +699,24 @@
 .reviewBody > .rail {
   flex: 0 0 210px;
 }
+.reviewBody > .mediaDivider {
+  flex: 0 0 6px;
+  touch-action: none;
+}
+.autoHold {
+  padding: 10px 14px;
+  color: #efd6a0;
+  background: #302a20;
+}
+.autoHold p {
+  margin: 4px 0 0;
+}
+.sourceLink {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  margin-bottom: 12px;
+}
 .scroll {
   flex: 1;
   padding: 16px;

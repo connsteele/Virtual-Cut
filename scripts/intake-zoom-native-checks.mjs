@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { spawn } from 'node:child_process';
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { DroppedImports } = require('../dist-electron/dropped-imports.cjs');
-const root = 'G:/GPT/Work/virtual-cut/standalone-tools';
+const root = testPath('standalone-tools');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-'));
 const first = path.join(dir, 'original.mkv'),
@@ -51,7 +52,14 @@ await new Promise((resolve, reject) => {
       '-y',
       first,
     ],
-    { windowsHide: true, env: { ...process.env, TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' } },
+    {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        TEMP: process.env.TEMP || 'G:/GPT/Temp',
+        TMP: process.env.TEMP || 'G:/GPT/Temp',
+      },
+    },
   );
   let error = '';
   child.stderr.on('data', (data) => {

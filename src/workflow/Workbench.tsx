@@ -57,9 +57,15 @@ import { inSourceFolder } from './sourceFolderTree';
 import { mediaSorts, sortMedia, type MediaSort } from './mediaOrder';
 import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
+import { ReviewColumns } from './ReviewColumns';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { DestinationPicker, DestinationPlanPanel } from './DestinationPanel';
-import { reviewContent, type DestinationPlan } from '../../electron/review-plan';
+import {
+  reviewContent,
+  localDestinationIssues,
+  destinationKey,
+  type DestinationPlan,
+} from '../../electron/review-plan';
 import { clipColor } from './clipLayout';
 import type { MediaJob } from '../../electron/project-contracts';
 import { Button, Field, Modal, Thumbnail } from './ui';
@@ -235,10 +241,12 @@ function MarkerEditor({
 function FolderBranch({
   paths,
   parent = '',
+  selected,
   onChoose,
 }: {
   paths: string[];
   parent?: string;
+  selected?: string;
   onChoose: (path: string) => void;
 }) {
   const names = [
@@ -253,17 +261,34 @@ function FolderBranch({
       {names.map((name) => {
         const path = parent ? parent + '/' + name : name;
         return paths.some((p) => p.startsWith(path + '/')) ? (
-          <details key={path} open>
-            <summary>{name}</summary>
-            <Button onClick={() => onChoose(path)}>Use {name}</Button>
+          <details key={path} open className={s.sourceFolder}>
+            <summary>
+              <ChevronDown size={14} />
+              <Button
+                className={s.sourceFolderButton}
+                aria-pressed={selected === path}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onChoose(path);
+                }}
+              >
+                <FolderOpen size={14} />
+                <span>{name}</span>
+              </Button>
+            </summary>
             <div className={s.branch}>
-              <FolderBranch paths={paths} parent={path} onChoose={onChoose} />
+              <FolderBranch paths={paths} parent={path} selected={selected} onChoose={onChoose} />
             </div>
           </details>
         ) : (
-          <Button key={path} onClick={() => onChoose(path)}>
+          <Button
+            key={path}
+            className={s.sourceFolderButton}
+            aria-pressed={selected === path}
+            onClick={() => onChoose(path)}
+          >
             <FolderOpen size={14} />
-            {name}
+            <span>{name || 'Destination root'}</span>
           </Button>
         );
       })}
@@ -690,19 +715,33 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         ...m,
         recordings: m.recordings.map((r) => (r.id === id ? { ...r, ...patch } : r)),
       };
+      const beforeIssues = localDestinationIssues(m);
+      const afterIssues = localDestinationIssues(next);
       next.clips = m.clips.map((c) =>
-        reviewContent(m, c) !== reviewContent(next, c) ? invalidate(c) : c,
+        reviewContent(m, c, beforeIssues) !== reviewContent(next, c, afterIssues)
+          ? invalidate(c)
+          : c,
       );
       return next;
     });
   }
   function updateClip(id: string, patch: Partial<Clip>, invalidateReview = true) {
-    setModel((m) => ({
-      ...m,
-      clips: m.clips.map((c) =>
-        c.id === id ? { ...(invalidateReview ? invalidate(c) : c), ...patch } : c,
-      ),
-    }));
+    setModel((m) => {
+      const next = {
+        ...m,
+        clips: m.clips.map((c) =>
+          c.id === id ? { ...(invalidateReview ? invalidate(c) : c), ...patch } : c,
+        ),
+      };
+      const beforeIssues = localDestinationIssues(m);
+      const afterIssues = localDestinationIssues(next);
+      next.clips = next.clips.map((c) =>
+        c.id !== id && reviewContent(m, c, beforeIssues) !== reviewContent(next, c, afterIssues)
+          ? invalidate(c)
+          : c,
+      );
+      return next;
+    });
   }
   function editMarker(id: string, patch: Partial<Marker>, recordId = r.id) {
     setModel((m) => ({
@@ -1048,6 +1087,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         selectedId={mid ? undefined : cid}
         selectedMarkerId={mid}
         onMarkerSelect={(id) => selectMarker(id, record.id)}
+        onMarkerMove={(id, time) => {
+          markerSeek.current = time;
+          editMarker(id, { time }, record.id);
+        }}
         onMarkerDeselect={() => {
           setMid('');
           setDeleteMarkerId('');
@@ -1156,7 +1199,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       onAdd={() => addMarker(recordId)}
     />
   );
-  const batchClips = model.clips.filter((c) => recordings.some((r) => r.id === c.rid));
+  const destinationIssues = project ? localDestinationIssues(model) : {};
+  if (project)
+    for (const clip of model.clips) {
+      const row = project.destinations?.rows.find((r) => r.clipId === clip.id);
+      const nativeIssues =
+        row?.key === destinationKey(model, clip)
+          ? row.issues.filter((issue) => !issue.startsWith('Another clip in this project'))
+          : ['Checking destination…'];
+      destinationIssues[clip.id] = [
+        ...new Set([...(destinationIssues[clip.id] || []), ...nativeIssues]),
+      ];
+    }
+  const batchClips = model.clips
+    .filter((c) => recordings.some((r) => r.id === c.rid))
+    .map((c) => (destinationIssues[c.id]?.length ? { ...c, held: true, accepted: false } : c));
   const readyQueue = batchClips.filter((c) => c.accepted && !c.held && !c.filed);
   const filtered = batchClips
     .filter(
@@ -1432,10 +1489,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   <Button
                     aria-pressed={handleMode}
                     disabled={!canEdit}
-                    title="Drag clip edges to adjust their in and out points (H)"
+                    title="Manipulate: drag clip edges to trim or circular markers to move (H)"
                     onClick={() => setHandleMode(!handleMode)}
                   >
-                    H · Handles
+                    H · Manipulate
                   </Button>
                   <label className={s.followToggle}>
                     <input
@@ -1727,7 +1784,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </Button>
                 {project && (
                   <Button disabled={workspace.blocking} onClick={() => void checkDestinations()}>
-                    Check destinations
+                    Destination plan
                   </Button>
                 )}
                 {checked.length > 0 && (
@@ -1736,16 +1793,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </Button>
                 )}
               </div>
-              <div className={s.reviewBody}>
-                {reviewTree && (
-                  <aside className={s.rail}>
-                    <Button onClick={() => setFolderFilter('')}>All destinations</Button>
-                    <FolderBranch
-                      paths={[...new Set(model.clips.map((c) => c.folder))]}
-                      onChoose={setFolderFilter}
-                    />
-                  </aside>
-                )}
+              <ReviewColumns
+                folders={
+                  reviewTree ? (
+                    <>
+                      <Button aria-pressed={!folderFilter} onClick={() => setFolderFilter('')}>
+                        All destinations
+                      </Button>
+                      <FolderBranch
+                        paths={[...new Set(model.clips.map((c) => c.folder))]}
+                        selected={folderFilter}
+                        onChoose={setFolderFilter}
+                      />
+                    </>
+                  ) : undefined
+                }
+              >
                 <div className={s.scroll} data-scroll>
                   {[...new Set(filtered.map((c) => c.folder))].map((folder) => (
                     <section key={folder} className={s.folderGroup}>
@@ -1812,7 +1875,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                 <Button
                                   className={clip.accepted ? s.acceptedButton : undefined}
                                   aria-pressed={Boolean(clip.accepted)}
-                                  disabled={workspace.blocking}
+                                  disabled={
+                                    workspace.blocking || !!destinationIssues[clip.id]?.length
+                                  }
+                                  title={destinationIssues[clip.id]?.join(' ')}
                                   onClick={() =>
                                     project && !clip.accepted
                                       ? void workspace.run(
@@ -1834,12 +1900,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   {clip.accepted ? 'Accepted' : 'Accept'}
                                 </Button>
                                 <Button
-                                  aria-pressed={Boolean(clip.held)}
+                                  aria-pressed={Boolean(
+                                    model.clips.find((c) => c.id === clip.id)?.held,
+                                  )}
                                   onClick={() =>
                                     updateClip(
                                       clip.id,
                                       {
-                                        held: !clip.held,
+                                        held: !model.clips.find((c) => c.id === clip.id)?.held,
                                         accepted: false,
                                         filed: false,
                                         holdReason: clip.holdReason || 'Needs context',
@@ -1848,11 +1916,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                     )
                                   }
                                 >
-                                  {clip.held ? 'Held' : 'Hold'}
+                                  {model.clips.find((c) => c.id === clip.id)?.held
+                                    ? 'Release hold'
+                                    : 'Hold'}
                                 </Button>
                               </div>
                             </div>
-                            {clip.held && (
+                            {!!destinationIssues[clip.id]?.length && (
+                              <div className={s.autoHold} role="status" data-destination-hold>
+                                <strong>Held · destination</strong>
+                                {destinationIssues[clip.id].map((issue) => (
+                                  <p key={issue}>{issue}</p>
+                                ))}
+                              </div>
+                            )}
+                            {model.clips.find((c) => c.id === clip.id)?.held && (
                               <HoldReason
                                 value={clip.holdReason || 'Needs context'}
                                 onChange={(holdReason) =>
@@ -1879,6 +1957,19 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                       transport.current?.seek(clip.start);
                                     }}
                                   >
+                                    <Button
+                                      className={s.sourceLink}
+                                      onClick={() => {
+                                        selectRecord(clip.rid);
+                                        setCid(clip.id);
+                                        setMid('');
+                                        updateRecording(clip.rid, { position: clip.start });
+                                        go('cut');
+                                      }}
+                                    >
+                                      Source:{' '}
+                                      {model.recordings.find((r) => r.id === clip.rid)?.title}
+                                    </Button>
                                     <div data-review-field="markers">
                                       {markerEditor(clip.rid, clip)}
                                     </div>
@@ -1933,7 +2024,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </p>
                   )}
                 </div>
-              </div>
+              </ReviewColumns>
               <div className={s.toolbar}>
                 <span className={s.muted}>
                   {readyQueue.length} accepted and ready{!project && ' · preview plan'}
@@ -2289,7 +2380,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],
-                ['H', 'Toggle clip handles on the Cut page; drag an edge to trim'],
+                [
+                  'H',
+                  'Manipulate on Cut: drag clip edges to trim or circular markers to move; Left/Right nudges a focused marker',
+                ],
                 ['M', 'Create a Blue marker and name it'],
                 ['R', 'Rename selected clip or marker (selects its name)'],
                 ['Backspace', 'Request deletion of selected clip or marker'],

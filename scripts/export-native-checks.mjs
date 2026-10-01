@@ -1,3 +1,4 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, stat, writeFile, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -6,14 +7,18 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { exportClip, fileHash } = require('../dist-electron/clip-export.cjs');
-const root = 'G:/GPT/Work/virtual-cut/m2';
+const root = testPath('m2');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-'));
 const command = (tool, args) =>
   new Promise((resolve, reject) => {
     const p = spawn(tool, args, {
       windowsHide: true,
-      env: { ...process.env, TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+      env: {
+        ...process.env,
+        TEMP: process.env.TEMP || 'G:/GPT/Temp',
+        TMP: process.env.TEMP || 'G:/GPT/Temp',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '',

@@ -1,9 +1,10 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/review-planning';
+const scratch = testPath('review-planning');
 const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-native.json'), 'utf8'));
 const dir = await mkdtemp(path.join(scratch, 'ui-'));
 const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -15,7 +16,10 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({
+    TEMP: process.env.TEMP || 'G:/GPT/Temp',
+    TMP: process.env.TEMP || 'G:/GPT/Temp',
+  }),
 });
 const page = await app.firstWindow(),
   errors = [];
@@ -45,13 +49,13 @@ try {
   await page.getByRole('button', { name: 'Open project file…', exact: true }).click();
   await nav.getByRole('button', { name: 'Review', exact: true }).click();
   await expect(card(fixture.clipIds[0])).toBeVisible();
-  await page.getByRole('button', { name: 'Check destinations', exact: true }).click();
+  await page.getByRole('button', { name: 'Destination plan', exact: true }).click();
   await expect(modal().getByRole('table')).toContainText('Ready to review');
   await expect(modal()).toContainText(fixture.dest);
   await capture('plan-wide');
   await modal().getByRole('button', { name: 'Close dialog' }).click();
   await page.getByLabel('Current batch', { exact: true }).selectOption({ label: 'Other batch' });
-  await page.getByRole('button', { name: 'Check destinations', exact: true }).click();
+  await page.getByRole('button', { name: 'Destination plan', exact: true }).click();
   await modal()
     .getByRole('row')
     .filter({ hasText: 'First' })
@@ -70,6 +74,17 @@ try {
   await expect(modal().getByRole('button', { name: 'Assign folder' })).toBeDisabled();
   await modal().getByLabel('New child folder (optional)').fill('Planned UI');
   await expect(modal()).toContainText('Existing\\Planned UI');
+  await app.evaluate(({ shell }) => {
+    shell.openPath = async (file) => {
+      globalThis.openedDestination = file;
+      return '';
+    };
+  });
+  await modal().getByRole('button', { name: 'Open in Explorer', exact: true }).click();
+  assert.equal(
+    await app.evaluate(() => globalThis.openedDestination),
+    path.join(fixture.dest, 'Existing'),
+  );
   await capture('folder-wide');
   await modal().getByRole('button', { name: 'Assign folder' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -77,6 +92,80 @@ try {
     .poll(async () => (await state()).model.clips.every((c) => c.folder === 'Existing/Planned UI'))
     .toBe(true);
   assert.equal(await stat(path.join(fixture.dest, 'Existing/Planned UI')).catch(() => null), null);
+  await page.getByRole('button', { name: 'Tree', exact: true }).click();
+  const tree = page
+    .locator('aside')
+    .filter({ has: page.getByRole('button', { name: 'All destinations', exact: true }) });
+  await tree.getByRole('button', { name: 'Existing', exact: true }).click();
+  await expect(page.locator('[data-card]')).toHaveCount(2);
+  await expect(tree.getByRole('button', { name: /^Use / })).toHaveCount(0);
+  const separator = page.getByRole('separator', { name: 'Resize destination folders' });
+  const originalWidth = Number(await separator.getAttribute('aria-valuenow'));
+  await separator.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(Number(await separator.getAttribute('aria-valuenow')), originalWidth + 20);
+  const separatorBox = await separator.boundingBox();
+  await page.mouse.move(separatorBox.x + 2, separatorBox.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(separatorBox.x + 72, separatorBox.y + 100);
+  await page.mouse.up();
+  assert(Number(await separator.getAttribute('aria-valuenow')) > originalWidth + 60);
+  await capture('tree-wide');
+  await card(fixture.clipIds[0])
+    .getByRole('button', { name: /^Source: / })
+    .click();
+  await expect(page.locator('main[data-page="cut"]')).toBeVisible();
+  await expect(page.locator(`[data-cut-clip="${fixture.clipIds[0]}"]`)).toHaveAttribute(
+    'data-selected',
+    'true',
+  );
+  await expect(page.getByRole('button', { name: 'Play · K / Space', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'H · Manipulate', exact: true }).click();
+  const pin = page.locator('[data-marker="move-marker"]');
+  await expect(pin).toHaveAttribute('data-manipulate', 'true');
+  const pinBox = await pin.boundingBox(),
+    surface = await page.getByTestId('scrub-surface').boundingBox();
+  await page.mouse.move(pinBox.x + pinBox.width / 2, pinBox.y + pinBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    pinBox.x + pinBox.width / 2 + surface.width / 6,
+    pinBox.y + pinBox.height / 2,
+    { steps: 10 },
+  );
+  const oldTime = (await state()).model.markers[(await state()).model.recordings[0].id][0].time;
+  assert.equal(oldTime, 1, 'Dragging previews without persisting intermediate times');
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const marker = async () => {
+    const p = await state();
+    return p.model.markers[p.model.recordings[0].id][0];
+  };
+  assert(Math.abs((await marker()).time - 2) < 0.04);
+  assert.equal((await marker()).note, 'Retain\nnotes');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => (await marker()).time).toBe(1);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => (await marker()).time).toBe(2);
+  const movedBox = await pin.boundingBox();
+  await page.mouse.move(movedBox.x + 12, movedBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(movedBox.x + 150, movedBox.y + 10, { steps: 5 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  assert.equal((await marker()).time, 2);
+  await expect(pin).toHaveAttribute('aria-disabled', 'false');
+  await pin.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => (await marker()).time).toBeGreaterThan(2);
+  assert(
+    Math.abs((await marker()).time - (2 + 1 / 30)) < 0.0001,
+    `Nudged marker: ${JSON.stringify(await marker())}`,
+  );
+  await capture('manipulate-wide');
+  await nav.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByRole('button', { name: 'All 2', exact: true }).click();
   await card(fixture.clipIds[0]).getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: 'Queue 1', exact: true }).click();
   await expect(
@@ -87,10 +176,14 @@ try {
     await card(fixture.clipIds[0]).getByRole('button', { name: 'Details', exact: true }).click();
   await nameInput.fill('Second');
   await page.getByRole('button', { name: 'Remaining 2', exact: true }).click();
-  await card(fixture.clipIds[0]).getByRole('button', { name: 'Accept', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Another clip' })).toBeVisible();
-  assert(!(await state()).model.clips[0].accepted);
-  await page.getByRole('button', { name: 'Check destinations', exact: true }).click();
+  await expect(
+    card(fixture.clipIds[0]).getByRole('button', { name: 'Accept', exact: true }),
+  ).toBeDisabled();
+  await expect(card(fixture.clipIds[1]).locator('[data-destination-hold]')).toContainText(
+    'Another clip',
+  );
+  await expect(page.getByRole('button', { name: 'Held 2', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Destination plan', exact: true }).click();
   await expect(modal()).toContainText('Another clip');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
   await capture('plan-compact');

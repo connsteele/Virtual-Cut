@@ -22,7 +22,9 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
 import { editorial, mergeEdits, validateEdits } from './project-edits.js';
-import { destinationPlan, destinationFolders } from './destination-plan.cjs';
+import { destinationPlan, destinationFolders, destinationLocation } from './destination-plan.cjs';
+import { destinationSignature } from './review-plan.js';
+import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
 import { exportClip as writeClip } from './clip-export.cjs';
@@ -59,6 +61,7 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
   private filmstripCache = new FilmstripCache();
   filmstrip(id: string, sourceId: string, times: number[], token: string) {
     const store = this.require(id);
@@ -245,6 +248,7 @@ export class ProjectService {
     reconcileReview(store.data.model);
     if (priorReview !== JSON.stringify(store.data.model.clips)) store.write();
     const snapshot = store.snapshot();
+    snapshot.destinations = await this.checkedDestinations();
     for (const item of snapshot.exports) {
       try {
         item.current = item.inputHash === this.exportInput(item.plan.clipId).hash;
@@ -321,13 +325,40 @@ export class ProjectService {
     if (editorial(previous) !== editorial(store.data.model)) await store.checkpoint('auto');
     return this.snapshot();
   }
-  async destinationPlan(id: string) {
-    const s = this.require(id);
-    return destinationPlan(
+  private async checkedDestinations(force = false) {
+    const s = this.require();
+    const key = s.data.project.id + s.data.project.destination + destinationSignature(s.data.model);
+    if (
+      !force &&
+      this.destinationCache?.key === key &&
+      Date.now() - this.destinationCache.at < 3000
+    )
+      return this.destinationCache.plan;
+    const plan = await destinationPlan(
       s.data.project.destination,
       s.data.model,
       s.sources().map((source) => source.file),
     );
+    const held = plan.rows.filter((r) => r.issues.length).map((r) => [r.clipId, r.issues]);
+    const priorHeld = this.destinationCache?.plan.rows
+      .filter((r) => r.issues.length)
+      .map((r) => [r.clipId, r.issues]);
+    if (JSON.stringify(held) !== JSON.stringify(priorHeld))
+      this.diagnostics?.record('destination-holds', {
+        projectId: s.data.project.id,
+        count: held.length,
+      });
+    this.destinationCache = { key, plan, at: Date.now() };
+    return plan;
+  }
+  async destinationPlan(id: string) {
+    this.require(id);
+    return this.checkedDestinations(true);
+  }
+  async destinationLocation(id: string, folder: string) {
+    const s = this.require(id);
+    if (typeof folder !== 'string') throw new Error('Choose a destination folder.');
+    return destinationLocation(s.data.project.destination, folder);
   }
   async acceptReview(id: string, clipId: string) {
     const s = this.require(id);

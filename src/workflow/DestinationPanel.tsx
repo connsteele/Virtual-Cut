@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FolderOpen } from 'lucide-react';
 import type { DestinationPlan, DestinationFolders } from '../../electron/review-plan';
 import { nameProblem } from '../../electron/review-plan';
 import type { Model } from './model';
@@ -58,7 +59,8 @@ export function DestinationPicker({
       onClose={onClose}
     >
       <p className={s.muted}>
-        Choose within the project destination. New folders stay planned until filing.
+        The project destination is the root folder for your finished videos. Choose a subfolder
+        below it, or use the root itself. New folders stay planned until filing.
       </p>
       <div className={s.toolbar}>
         <Button
@@ -78,6 +80,17 @@ export function DestinationPicker({
         >
           Up one folder
         </Button>
+        <Button
+          disabled={!listing || !!problem}
+          title="Open this folder in Windows Explorer. For a planned folder, open its nearest existing parent."
+          onClick={() =>
+            void window
+              .virtualCut!.project.revealDestination(projectId, target)
+              .catch((e) => setError(String(e)))
+          }
+        >
+          <FolderOpen size={16} /> Open in Explorer
+        </Button>
       </div>
       <Field label="Find a child folder">
         <input value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -93,6 +106,7 @@ export function DestinationPicker({
                 setChild('');
               }}
             >
+              <FolderOpen size={15} />
               {p.split('/').at(-1)}
               {!listing?.children.includes(p) && ' · planned'}
             </Button>
@@ -138,8 +152,8 @@ export function DestinationPlanPanel({
   return (
     <Modal title="Destination plan" onClose={onClose}>
       <p>
-        Check proposed filenames and folders before accepting. This check creates no folders and
-        moves no files. Targets will be checked again when filing is implemented.
+        Conflicts automatically hold affected clips until resolved. This overview shows proposed
+        filenames and folders across the project. Targets are checked again before acceptance.
       </p>
       <Button disabled={checking} onClick={onRefresh}>
         {checking ? 'Checking…' : 'Check again'}

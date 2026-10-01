@@ -277,6 +277,10 @@ function registerDesktopApi(): void {
   workspace('acceptReview', (id, clipId) => projects.acceptReview(id, clipId));
   workspace('destinationPlan', (id) => projects.destinationPlan(id));
   workspace('destinationFolders', (id, folder) => projects.destinationFolders(id, folder));
+  workspace('revealDestination', async (id, folder) => {
+    const error = await shell.openPath(await projects.destinationLocation(id, folder));
+    if (error) throw new Error('Windows could not open the destination folder.');
+  });
   workspace('save', (id, before, after) => projects.save(id, before, after));
   workspace('checkpoint', (id) => projects.checkpoint(id));
   workspace('restore', (id, saveId) => projects.restore(id, saveId));
@@ -337,7 +341,7 @@ function registerDesktopApi(): void {
     });
     if (chosen.canceled || !chosen.filePath) return null;
     const root = await dialog.showOpenDialog(mainWindow!, {
-      title: 'Choose the destination footage folder',
+      title: 'Choose the root folder for finished videos (Review assigns subfolders)',
       properties: ['openDirectory'],
     });
     if (root.canceled || !root.filePaths[0]) return null;

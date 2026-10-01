@@ -1,9 +1,10 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
-const checksRoot = 'G:/GPT/Work/virtual-cut/m1-feedback';
+const checksRoot = testPath('m1-feedback');
 const fixture = JSON.parse(await readFile(path.join(checksRoot, 'latest-native.json'), 'utf8'));
 await mkdir(checksRoot, { recursive: true });
 const dir = await mkdtemp(path.join(checksRoot, 'ui-'));
@@ -16,7 +17,10 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({
+    TEMP: process.env.TEMP || 'G:/GPT/Temp',
+    TMP: process.env.TEMP || 'G:/GPT/Temp',
+  }),
 });
 const page = await app.firstWindow(),
   errors = [];
@@ -215,7 +219,7 @@ try {
   );
   await unfocus();
   await page.keyboard.press('h');
-  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'H · Manipulate', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -263,7 +267,7 @@ try {
   await unfocus();
   await page.keyboard.press('h');
   await expect(page.locator('[data-clip-handle]')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'H · Manipulate', exact: true })).toHaveAttribute(
     'aria-pressed',
     'false',
   );
@@ -275,7 +279,7 @@ try {
   );
   await page.keyboard.type('Renamed by keyboard');
   await page.keyboard.press('h');
-  await expect(page.getByRole('button', { name: 'H · Handles', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'H · Manipulate', exact: true })).toHaveAttribute(
     'aria-pressed',
     'false',
   );

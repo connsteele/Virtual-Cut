@@ -25,6 +25,7 @@ const events = new Set([
   'pause',
   'scan',
   'media-error',
+  'destination-holds',
 ]);
 const words = new Set([
   'inspect',
@@ -50,6 +51,7 @@ const words = new Set([
   'acceptReview',
   'destinationPlan',
   'destinationFolders',
+  'revealDestination',
   'ffmpeg',
   'ffprobe',
   'completed',
@@ -84,7 +86,7 @@ function safeFields(data: Record<string, unknown>) {
     )
       output[key] = value;
     if (
-      ['rate', 'direction', 'position', 'code', 'elapsedMs', 'exitCode'].includes(key) &&
+      ['rate', 'direction', 'position', 'code', 'elapsedMs', 'exitCode', 'count'].includes(key) &&
       typeof value === 'number' &&
       Number.isFinite(value)
     )

@@ -1,10 +1,11 @@
+import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { _electron as electron, expect } from 'playwright/test';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { root, require, electronEnvironment } from './shared.mjs';
-const base = 'G:/GPT/Work/virtual-cut/milestone-1';
+const base = testPath('milestone-1');
 const fixture = JSON.parse(await readFile(path.join(base, 'latest-native.json'), 'utf8'));
 const dir = await mkdtemp(base + '/timing-');
 for (const ext of ['mp4', 'mkv'])
@@ -32,7 +33,10 @@ const app = await electron.launch({
   executablePath: require('electron'),
   args: [root, `--user-data-dir=${dir}/profile`, '--background-test'],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({
+    TEMP: process.env.TEMP || 'G:/GPT/Temp',
+    TMP: process.env.TEMP || 'G:/GPT/Temp',
+  }),
 });
 try {
   const page = await app.firstWindow();

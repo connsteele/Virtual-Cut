@@ -168,6 +168,18 @@
   clip-path: polygon(0 0, 100% 0, 100% 68%, 50% 100%, 0 68%);
   filter: drop-shadow(0 1px 1px #000);
 }
+.marker[data-manipulate='true'] {
+  cursor: ew-resize;
+  touch-action: none;
+  width: 24px;
+}
+.marker[data-manipulate='true'] span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  clip-path: none;
+  outline: 1px solid #f4f1e6;
+}
 .frames {
   position: relative;
   /* Reserve the strip before its width and thumbnails are known. Otherwise the
