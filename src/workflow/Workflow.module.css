@@ -345,6 +345,17 @@
 .cutCenter > .tools {
   flex-shrink: 0;
 }
+@media (max-width: 1200px) {
+  .toolbar {
+    gap: 4px;
+    padding: 6px 10px;
+  }
+  .toolbar .button,
+  .toolbar select {
+    font-size: 11px;
+    padding: 5px 6px;
+  }
+}
 @media (max-height: 800px) {
   .cutCenter {
     padding-block: 6px !important;

@@ -57,6 +57,7 @@ try {
     'project',
     'selectProjectFolder',
     'toggleFullscreen',
+    'transcript',
   ]);
   assert.equal(boundary.info.name, 'Virtual Cut');
   assert.equal(boundary.info.platform, process.platform);

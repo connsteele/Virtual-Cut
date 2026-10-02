@@ -25,6 +25,9 @@ const app = await electron.launch({
 const page = await app.firstWindow(),
   errors = [];
 page.setDefaultTimeout(20000);
+// Hidden Windows test windows can suspend CSS transitions between paint frames.
+// Test the actual selected colors with motion disabled, keeping the color assertions.
+await page.emulateMedia({ reducedMotion: 'reduce' });
 page.on('pageerror', (e) => errors.push(e.message));
 async function state() {
   return page.evaluate(() => window.virtualCut.project.current());
