@@ -17,6 +17,7 @@ export interface TranscriptSegment {
   /** Derived only when reading a cue; original recognized text/timing stay unchanged. */
   cueText?: string;
   cueSegmentIds?: number[];
+  cueKind?: 'mark' | 'note' | 'cut';
   id: number;
   start: number;
   end: number;
@@ -26,6 +27,7 @@ export interface TranscriptSegment {
   averageLogProbability: number;
 }
 export interface TranscriptSummary {
+  pipeline?: string;
   contextId?: string;
   engineVersion?: string;
   runtimeVersion?: string;
@@ -59,6 +61,10 @@ export interface TranscriptEdit {
 }
 export interface CueDecision {
   id: string;
+  sourceId?: string;
+  track?: number;
+  kind?: 'mark' | 'note' | 'cut';
+  time?: number;
   status: 'accepted' | 'rejected';
   markerId?: string;
   noteId?: string;

@@ -142,13 +142,19 @@ export function registerTranscriptWindow(
           e.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
       )
       .map((e) => e.segmentId);
-    return s.transcripts.page(transcriptId, page, search, matches);
+    return s.transcripts.page(transcriptId, page, search, matches, s.data.model);
   });
   handle('runtime', async () => ({
     configured: projects.transcription.configured,
     settings: projects.transcription.settings,
   }));
   handle('configure', async (part, device) => {
+    if (
+      projects.store
+        ?.jobs()
+        .some((j) => j.kind === 'transcribe' && ['queued', 'running'].includes(j.state))
+    )
+      throw new Error('Pause or finish transcription before changing its local runtime.');
     if (!['python', 'libraries', 'model', 'device'].includes(part))
       throw new Error('Unknown speech setting.');
     if (part === 'device') projects.transcription.configure('device', device || 'cpu');
@@ -212,7 +218,7 @@ export function registerTranscriptWindow(
         s = projects.require(c.projectId),
         transcript = s.transcripts.get(c.transcriptId);
       const segment = c.action.endsWith('cue')
-        ? s.transcripts.cueSegment(c.transcriptId, c.segmentId)
+        ? s.transcripts.cueSegment(c.transcriptId, c.segmentId, s.data.model)
         : s.transcripts.segment(c.transcriptId, c.segmentId);
       const next = applyTranscriptCommand(s.data.model, transcript, segment, c, randomUUID);
       s.save(s.data.model, next);

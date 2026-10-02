@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { cueCandidate } from './transcript-edits.js';
+import { cueCandidate, correctedText } from './transcript-edits.js';
+import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
 import type {
   TranscriptSummary,
   TranscriptSegment,
@@ -71,10 +72,14 @@ export class TranscriptStore {
     if (!row) throw new Error('Transcript phrase is unavailable.');
     return JSON.parse(String(row.body));
   }
-  cueSegment(id: string, ordinal: number): TranscriptSegment {
+  cueSegment(
+    id: string,
+    ordinal: number,
+    model: Pick<Model, 'transcriptEdits'> = {},
+  ): TranscriptSegment {
     const first = this.segment(id, ordinal),
       transcript = this.get(id),
-      cue = cueCandidate(transcript, first);
+      cue = cueCandidate(transcript, { ...first, text: correctedText(model, id, first) });
     if (!cue) return first;
     const texts = [cue.text],
       ids = [first.id];
@@ -84,13 +89,29 @@ export class TranscriptStore {
       )
       .iterate(id, ordinal)) {
       const next = JSON.parse(String(row.body)) as TranscriptSegment;
-      if (cueCandidate(transcript, next) || texts.join(' ').length + next.text.length > 9000) break;
-      texts.push(next.text.trim());
+      const text = correctedText(model, id, next);
+      if (
+        cueCandidate(transcript, { ...next, text }) ||
+        texts.join(' ').length + text.length > 9000
+      )
+        break;
+      texts.push(text.trim());
       ids.push(next.id);
     }
-    return { ...first, cueText: texts.filter(Boolean).join(' '), cueSegmentIds: ids };
+    return {
+      ...first,
+      cueKind: cue.kind,
+      cueText: texts.filter(Boolean).join(' '),
+      cueSegmentIds: ids,
+    };
   }
-  page(id: string, page: number, search: string, editedMatches: number[] = []): TranscriptPage {
+  page(
+    id: string,
+    page: number,
+    search: string,
+    editedMatches: number[] = [],
+    model: Pick<Model, 'transcriptEdits'> = {},
+  ): TranscriptPage {
     if (
       !Number.isInteger(page) ||
       page < 0 ||
@@ -115,7 +136,9 @@ export class TranscriptStore {
       .all(id, search, matches, page * 60)
       .map((r) => {
         const segment = JSON.parse(String(r.body));
-        return cueCandidate(transcript, segment) ? this.cueSegment(id, segment.id) : segment;
+        return cueCandidate(transcript, { ...segment, text: correctedText(model, id, segment) })
+          ? this.cueSegment(id, segment.id, model)
+          : segment;
       });
     return { transcript, segments, total };
   }

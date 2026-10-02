@@ -15,7 +15,11 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
-import { TranscriptionRuntime, validateTranscriptionOptions } from './transcription-runtime.cjs';
+import {
+  TranscriptionRuntime,
+  validateTranscriptionOptions,
+  TRANSCRIPTION_PIPELINE,
+} from './transcription-runtime.cjs';
 import { effectiveContext } from './project-context.js';
 import type {
   TranscriptionOptions,
@@ -154,7 +158,10 @@ export class ProjectService {
       brief: effective.brief,
     };
     const contextId = s.transcripts.registerContext(context);
-    const runtimeSignature = JSON.stringify(this.transcription.settings);
+    const runtimeSignature = JSON.stringify({
+      ...this.transcription.settings,
+      pipeline: TRANSCRIPTION_PIPELINE,
+    });
     for (const role of options.roles) {
       const track = role === 'game' ? r.gameTrack : r.micTrack;
       if (track == null || !r.audioTracks?.some((t) => t.index === track))
@@ -1793,6 +1800,7 @@ export class ProjectService {
           offset: track.offset,
           state: 'running',
           model: path.basename(this.transcription.settings.model),
+          pipeline: TRANSCRIPTION_PIPELINE,
           device: this.transcription.settings.device,
           created: new Date().toISOString(),
           context: request.contextId

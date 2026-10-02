@@ -12,6 +12,9 @@ const samples = JSON.parse(process.env.VIRTUAL_CUT_ASR_STUDY_SAMPLES || '[]');
 if (!samples.length)
   throw Error('Supply copied speech samples as VIRTUAL_CUT_ASR_STUDY_SAMPLES JSON.');
 const report = [];
+const vocabulary =
+  process.env.VIRTUAL_CUT_ASR_STUDY_VOCABULARY ||
+  'Cai, Castor, Bertrand, Dagsion, Blaze Arts, Leda, Anna, Vandahl';
 for (const sample of samples) {
   const source = path.join(dir, `${sample.name}.wav`);
   await copyFile(sample.file, source);
@@ -26,7 +29,7 @@ for (const sample of samples) {
         track: 0,
         offset: 0,
         language: 'en',
-        vocabulary: hinted ? 'Cai, Castor, Bertrand, Dagsion, Blaze Arts, Lita, Anna, Vandale' : '',
+        vocabulary: hinted ? vocabulary : '',
         ffmpeg: process.env.VIRTUAL_CUT_FFMPEG || 'ffmpeg',
         wav: path.join(dir, 'recognition.partial.wav'),
         tempDirectory: dir,
@@ -42,6 +45,7 @@ for (const sample of samples) {
     const result = {
       name,
       role: sample.role,
+      vocabulary: hinted ? vocabulary : '',
       info,
       elapsedMs: Date.now() - started,
       peakMemoryBytes,

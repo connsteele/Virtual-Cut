@@ -10,6 +10,8 @@ Recognition runs in a disposable Python process using faster-whisper. A separate
 
 The current validated runtime is faster-whisper 1.2.1 / CTranslate2 4.8.2, Whisper large-v3, CPU int8, four threads. CUDA is optional and requires compatible libraries; CPU measurements do not establish GPU performance. Runtime locations are native settings, never supplied by an arbitrary renderer path. The packaged application supports a separately installed local runtime.
 
+The `utterance-v1` pipeline scans 60-second PCM windows with speech detection and recognizes bounded speech spans independently, preserving each span's source offset. This avoids the severe early word anchors observed when sparse speech was concatenated across silence. Vocabulary hints are opt-in and can improve names or introduce incorrect expected words. They are not an agent correction pass. Pause retains partial recognition for inspection and exits; Resume restarts that track, replacing only its incomplete run. Completed originals are immutable.
+
 ## Persistence and editing
 
 Schema 4 adds transcript metadata, immutable segments and context revisions. Original recognition stays outside Model, renderer workspace polling and Undo. Manual corrections and cue decisions are small editorial records. A word correction preserves its anchor; changing word count requires a phrase correction with phrase timing explicitly shown. Old recognition remains available. Before upgrading an older project, the existing migration mechanism makes a verified pre-upgrade copy. Older apps reject schema 4.
@@ -17,6 +19,10 @@ Schema 4 adds transcript metadata, immutable segments and context revisions. Ori
 The transcript window is a separate sandboxed Electron window. It has a narrow IPC interface; broad project/file access remains restricted to the main editor. Word seeking controls the existing viewer. Editorial commands go through the main editor's flush/merge/Undo path and reject stale correction values. Closing the transcript window does not end a requested recognition job or discard edits.
 
 Cue extraction is conservative and microphone-only. Mark, Note and Cut at the beginning of a phrase are tentative candidates; ordinary grammatical uses such as “Mark is…” are excluded. Continuations remain with a candidate across pauses until the next cue, with reviewable text. Mark creates a point marker, Note creates a local timed note, and Cut splits exactly one intersecting clip. All require acceptance and use ordinary Undo. This is not semantic agent understanding.
+
+Manual corrections also feed candidate detection without replacing the original recognition. A reviewed cue is matched across reruns by source, stream, type and a 0.5-second timing tolerance to avoid duplicate actions; larger ASR shifts still require review. A Cut splits at its spoken anchor. Relative instructions such as “before the transition” require choosing the intended cut manually; interpreting those instructions belongs to agent integration.
+
+The local review package can explicitly reference an existing workstation runtime through `VIRTUAL_CUT_ASR_REVIEW_CONFIG`. These paths are not embedded in normal public packages. No model is loaded by opening the app or searching a saved transcript. This review build is not a self-contained Python/model installer.
 
 ## Boundaries
 

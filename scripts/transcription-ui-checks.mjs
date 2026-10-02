@@ -63,6 +63,22 @@ try {
   await expect.poll(() => page.locator('video').evaluate((v) => v.currentTime)).toBeGreaterThan(0);
   const position = await page.locator('video').evaluate((v) => v.currentTime);
   assert.ok(position > 0, `Word click must seek the main viewer (${expectedTime})`);
+  const anchor = await transcript.evaluate(async () => {
+    const api = window.virtualCut.transcript,
+      session = await api.session();
+    return (
+      await api.page(
+        session.projectId,
+        session.transcripts.find((t) => t.state === 'complete').id,
+        0,
+        '',
+      )
+    ).segments[0].words[3].start;
+  });
+  assert.ok(
+    Math.abs(position - anchor) < 0.04,
+    `Word seek error ${Math.abs(position - anchor)} seconds`,
+  );
   await transcript.getByLabel('Corrected transcript text').fill('Cai');
   await transcript.getByRole('button', { name: 'Save correction', exact: true }).click();
   await expect(words.nth(3)).toHaveText('Cai');
@@ -88,7 +104,39 @@ try {
   await expect(transcript.getByText('No matching phrases.')).toBeVisible();
   await transcript.getByLabel('Search transcript').fill('');
   await expect(phrases.locator('article')).not.toHaveCount(0);
+  await transcript.getByLabel('Search transcript').fill('Cai');
+  await expect(phrases.locator('article').first()).toContainText('Cai');
+  await transcript.getByLabel('Search transcript').fill('');
   // An isolated floating renderer cannot use broad workspace/file access.
+  const notesBefore = await page.evaluate(
+    async () => (await window.virtualCut.project.current()).model.notes.length,
+  );
+  await transcript.getByRole('button', { name: 'Accept timed note', exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),
+    )
+    .toBe(notesBefore + 1);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(
+    transcript.getByRole('button', { name: 'Accept timed note', exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),
+    )
+    .toBe(notesBefore);
+  const exported = path.join(dir, 'transcript.json');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, exported);
+  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  await expect.poll(async () => !!(await readFile(exported, 'utf8').catch(() => ''))).toBe(true);
+  const exportedText = await readFile(exported, 'utf8');
+  assert(
+    exportedText.includes('Cai') && exportedText.includes('several'),
+    'Export preserves correction and recognition original',
+  );
   assert.match(
     await transcript.evaluate(() =>
       window.virtualCut.project
@@ -127,15 +175,49 @@ try {
     );
   }
   await transcript.close();
+  await writeFile(
+    path.join(dir, 'profile', 'transcript-window.json'),
+    JSON.stringify({ x: 999999, y: 999999, width: 760, height: 850 }),
+  );
   const reopenedPromise = app.waitForEvent('window');
   await page.getByRole('button', { name: 'Transcript', exact: true }).click();
   const reopened = await reopenedPromise;
+  assert.equal(
+    await app.evaluate(({ BrowserWindow, screen }) => {
+      const w = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().endsWith('#transcript'),
+        ),
+        b = w.getBounds();
+      return screen
+        .getAllDisplays()
+        .some(
+          (d) =>
+            b.x >= d.workArea.x &&
+            b.x < d.workArea.x + d.workArea.width &&
+            b.y >= d.workArea.y &&
+            b.y < d.workArea.y + d.workArea.height,
+        );
+    }),
+    true,
+    'A disconnected monitor must not hide the reopened transcript window',
+  );
   await expect(reopened.getByLabel('Transcript phrases')).toContainText('Cai');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(dir, 'result.json'),
-    JSON.stringify({ fixture, wordSeek: position, passed: true, errors }, null, 2),
+    JSON.stringify(
+      {
+        fixture,
+        wordSeek: position,
+        anchor,
+        seekErrorSeconds: Math.abs(position - anchor),
+        passed: true,
+        errors,
+      },
+      null,
+      2,
+    ),
   );
   console.log(
     `Floating transcript, seeking, corrections, Undo, phrase timing, reopen and IPC isolation passed: ${dir}`,

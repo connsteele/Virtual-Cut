@@ -66,6 +66,7 @@ try {
   let snap = await service.open(file, { name: 'Synthetic transcript QA', destination: dir, cache });
   const id = snap.project.id,
     batch = snap.activeBatchId;
+  assert.equal(service.transcriptSession().sourceId, '');
   await service.importFiles(id, batch, [source], { game: 1, mic: 2 });
   snap = await wait();
   assert.equal(
@@ -74,6 +75,15 @@ try {
     'Import without opt-in never starts ASR.',
   );
   const rid = snap.model.recordings[0].id;
+  assert.throws(
+    () =>
+      service.requestTranscription(id, rid, batch, {
+        roles: ['mic'],
+        language: 'en',
+        vocabulary: false,
+      }),
+    /runtime/,
+  );
   // Deterministic worker boundary for persistence/lifecycle tests; real recognition is measured separately.
   const libraries = path.join(dir, 'libraries'),
     model = path.join(dir, 'model');
@@ -114,14 +124,12 @@ try {
         start: 1,
         end: 8,
         text: 'This sample has several timed words for review.',
-        words: 'This sample has several timed words for review.'
-          .split(' ')
-          .map((text, i) => ({
-            text: (i ? ' ' : '') + text,
-            start: 1 + i * 0.8,
-            end: 1.7 + i * 0.8,
-            probability: 0.9,
-          })),
+        words: 'This sample has several timed words for review.'.split(' ').map((text, i) => ({
+          text: (i ? ' ' : '') + text,
+          start: 1 + i * 0.8,
+          end: 1.7 + i * 0.8,
+          probability: 0.9,
+        })),
         noSpeechProbability: 0,
         averageLogProbability: -0.1,
       },
@@ -180,9 +188,74 @@ try {
   await service.store.restore(save.id);
   assert.equal(service.store.transcripts.get(job.id).wordCount, 11);
   assert.equal(service.store.transcripts.segment(job.id, 1).text, 'Note remember this.');
+  await service.store.restore(save.id);
+  assert.equal(
+    [...service.store.transcripts.segments(job.id)].length,
+    2,
+    'Restoring an existing transcript never duplicates segments',
+  );
+  const exportPlan = await service.exportPlan(id, service.store.data.model.clips[0].id, 'mp4');
+  await service.startExport(id, exportPlan.id, path.join(dir, 'completed.mp4'), true);
+  await wait();
+  const completed = service.transcriptSession(rid).outputs[0];
+  assert.equal(
+    completed.id,
+    exportPlan.id,
+    'Transcript scope exposes only verified completed outputs',
+  );
+  assert(completed.end > completed.start);
+  const beforeContext = service.store.data.model;
+  service.store.save(beforeContext, {
+    ...beforeContext,
+    contexts: [
+      {
+        id: 'project',
+        gameMode: 'set',
+        briefMode: 'replace',
+        game: { id: 'game-one', name: 'First game', vocabulary: 'Cai' },
+        brief: 'First brief',
+      },
+    ],
+  });
+  service.requestTranscription(id, rid, batch, { ...opts, vocabulary: true });
+  const frozenJob = service.store.jobs().find((j) => j.kind === 'transcribe' && j.id !== job.id);
+  const beforeSwitch = service.store.data.model;
+  service.store.save(beforeSwitch, {
+    ...beforeSwitch,
+    contexts: [
+      {
+        ...beforeSwitch.contexts[0],
+        game: { id: 'game-two', name: 'Second game', vocabulary: 'Different name' },
+      },
+    ],
+  });
+  await wait();
+  assert.equal(service.store.transcripts.get(frozenJob.id).context.gameId, 'game-one');
+  assert.equal(frozenVocabulary, 'Cai', 'Queued jobs retain the context approved when requested');
+  assert.throws(() => service.requestTranscription(id, rid, 'other-batch', opts), /batch/);
+  const currentRecord = service.store.data.model.recordings[0];
+  const micTrack = currentRecord.micTrack;
+  currentRecord.micTrack = undefined;
+  assert.throws(() => service.requestTranscription(id, rid, batch, opts), /microphone/);
+  currentRecord.micTrack = micTrack;
+  currentRecord.gameTrack = undefined;
+  assert.throws(
+    () => service.requestTranscription(id, rid, batch, { ...opts, roles: ['game'] }),
+    /game audio/,
+  );
+  currentRecord.gameTrack = 1;
+  await assert.rejects(service.pauseTranscription(id, job.id), /active transcription/);
+  service.transcription.run = async () => {
+    throw Error('Injected decoder failure');
+  };
+  service.requestTranscription(id, rid, batch, { ...opts, language: 'fr' });
+  await wait();
+  assert(service.store.jobs().some((j) => j.kind === 'transcribe' && j.state === 'failed'));
+  assert(service.store.transcripts.list().some((t) => t.state === 'failed'));
   const native = service.store.sources()[0],
     interruptedId = crypto.randomUUID();
   service.store.putJob({ ...job, id: interruptedId, state: 'running' });
+  service.store.transcripts.put({ ...transcript, id: interruptedId, state: 'running' });
   const owned = path.join(
     service.store.data.project.cache,
     `${native.id}-${native.fingerprint}-asr-${interruptedId}.partial.wav`,
@@ -193,11 +266,13 @@ try {
   await service.close();
   snap = await service.open(file);
   assert.equal(service.store.jobs().find((j) => j.id === interruptedId).state, 'interrupted');
+  assert.equal(service.store.transcripts.get(interruptedId).state, 'interrupted');
   await assert.rejects(stat(owned), { code: 'ENOENT' });
   assert.equal(await readFile(unrelated, 'utf8'), 'user data');
   assert.equal(service.store.transcripts.get(job.id).wordCount, 11);
   assert.equal(snap.canUndo, false);
   await service.close();
+  assert.equal(service.transcriptSession(), null);
   await writeFile(
     path.join(base, 'latest.json'),
     JSON.stringify({ dir, file, source, id, rid, transcriptId: job.id, synthetic: true }, null, 2),

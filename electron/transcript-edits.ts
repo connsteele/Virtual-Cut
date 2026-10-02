@@ -3,6 +3,7 @@ import type {
   TranscriptCommand,
   TranscriptSegment,
   TranscriptSummary,
+  CueDecision,
 } from './transcript-contracts.js';
 
 export const correctionId = (transcriptId: string, segmentId: number, wordIndex?: number) =>
@@ -10,7 +11,9 @@ export const correctionId = (transcriptId: string, segmentId: number, wordIndex?
 /** Deliberate cues are candidates, never commands. Use only microphone recognition. */
 export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptSegment) {
   if (transcript.role !== 'mic') return null;
-  const match = /^\s*(mark|note|cut)\b[\s,:.!-]*(.*)$/is.exec(segment.text);
+  const match = /^\s*(mark|note|cut)\b[\s,:.!-]*(.*)$/is.exec(
+    segment.cueKind ? `${segment.cueKind} ${segment.cueText || ''}` : segment.text,
+  );
   if (!match || /^(?:is|was|has|had|will|would|could|can|the|that)\b/i.test(match[2])) return null;
   return {
     kind: match[1].toLowerCase() as 'mark' | 'note' | 'cut',
@@ -21,8 +24,25 @@ export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptS
 }
 export function cueId(transcript: TranscriptSummary, segment: TranscriptSegment) {
   const cue = cueCandidate(transcript, segment);
-  // Stable across reruns/alternate language hints. A quarter-second bucket tolerates small ASR shifts.
+  // The ID is stable for identical timings; reviewedCue also handles nearby rerun anchors.
   return `${transcript.sourceId}:${transcript.track}:${cue?.kind}:${Math.round((cue?.time || segment.start) * 4)}`;
+}
+export function reviewedCue(
+  decisions: CueDecision[],
+  transcript: TranscriptSummary,
+  segment: TranscriptSegment,
+) {
+  const cue = cueCandidate(transcript, segment);
+  if (!cue) return undefined;
+  return decisions.find(
+    (d) =>
+      d.id === cueId(transcript, segment) ||
+      (d.sourceId === transcript.sourceId &&
+        d.track === transcript.track &&
+        d.kind === cue.kind &&
+        d.time != null &&
+        Math.abs(d.time - cue.time) <= 0.5),
+  );
 }
 export function correctedText(
   model: Pick<Model, 'transcriptEdits'>,
@@ -94,13 +114,17 @@ export function applyTranscriptCommand(
   const cue = cueCandidate(transcript, segment);
   if (!cue) throw new Error('This phrase does not contain a microphone cue candidate.');
   const id = cueId(transcript, segment),
-    current = model.cueDecisions?.find((c) => c.id === id);
+    current = reviewedCue(model.cueDecisions || [], transcript, segment);
   if (JSON.stringify(current || null) !== command.expected || current)
     throw new Error('This cue was already reviewed. Undo its decision before changing it.');
   if (!['accept-cue', 'reject-cue'].includes(command.action))
     throw new Error('Unknown transcript action.');
   const decision = {
     id,
+    sourceId: transcript.sourceId,
+    track: transcript.track,
+    kind: cue.kind,
+    time: cue.time,
     status: command.action === 'accept-cue' ? ('accepted' as const) : ('rejected' as const),
     markerId: undefined as string | undefined,
     noteId: undefined as string | undefined,

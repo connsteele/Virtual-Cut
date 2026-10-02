@@ -2,12 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createRequire } from 'node:module';
-import { emptyModel, mergeEdits, editorial } from '../dist-electron/project-edits.js';
+import {
+  emptyModel,
+  mergeEdits,
+  editorial,
+  validateEdits,
+} from '../dist-electron/project-edits.js';
 import {
   applyTranscriptCommand,
   correctedText,
   correctionId,
   cueCandidate,
+  reviewedCue,
 } from '../dist-electron/transcript-edits.js';
 import {
   transcriptHandoff,
@@ -33,14 +39,12 @@ const phrase = (id = 0, text = 'This is Kai speaking.') => ({
   start: 10,
   end: 14,
   text,
-  words: text
-    .split(' ')
-    .map((text, i) => ({
-      text: (i ? ' ' : '') + text,
-      start: 10 + i,
-      end: 11 + i,
-      probability: 0.9,
-    })),
+  words: text.split(' ').map((text, i) => ({
+    text: (i ? ' ' : '') + text,
+    start: 10 + i,
+    end: 11 + i,
+    probability: 0.9,
+  })),
 });
 const command = (action = 'correct', extra = {}) => ({
   projectId: 'project',
@@ -50,6 +54,69 @@ const command = (action = 'correct', extra = {}) => ({
   action,
   expected: 'null',
   ...extra,
+});
+test('project edits reject malformed transcript records before persistence', () => {
+  const edit = { id: 'x', transcriptId: 'speech', segmentId: 0, text: 'Cai' };
+  for (const bad of [
+    { id: null },
+    { transcriptId: null },
+    { segmentId: 1.5 },
+    { segmentId: -1 },
+    { wordIndex: -1 },
+    { wordIndex: NaN },
+    { text: 'x'.repeat(10001) },
+  ])
+    assert.throws(
+      () => validateEdits({ ...emptyModel(), transcriptEdits: [{ ...edit, ...bad }] }),
+      /transcript correction/,
+    );
+  const decision = {
+    id: 'cue',
+    status: 'accepted',
+    sourceId: 'source',
+    track: 2,
+    kind: 'note',
+    time: 2,
+    noteId: 'note',
+  };
+  for (const bad of [
+    { id: null },
+    { status: 'automatic' },
+    { markerId: 1 },
+    { noteId: 1 },
+    { sourceId: 1 },
+    { track: -1 },
+    { track: 1.5 },
+    { kind: 'delete' },
+    { time: NaN },
+    { time: -1 },
+  ])
+    assert.throws(
+      () => validateEdits({ ...emptyModel(), cueDecisions: [{ ...decision, ...bad }] }),
+      /cue decision/,
+    );
+  assert.equal(
+    validateEdits({
+      ...emptyModel(),
+      transcriptEdits: [{ ...edit, wordIndex: 0 }],
+      cueDecisions: [decision],
+    }).cueDecisions.length,
+    1,
+  );
+  for (const field of ['transcriptEdits', 'cueDecisions'])
+    assert.throws(
+      () => validateEdits({ ...emptyModel(), [field]: Array(100001).fill({}) }),
+      /Too many transcript/,
+    );
+  for (const bad of [{ time: -1 }, { time: NaN }, { sourceId: 1 }])
+    assert.throws(
+      () =>
+        validateEdits({
+          ...emptyModel(),
+          notes: [{ id: 'note', title: 'Timed note', text: 'Text', url: '', ...bad }],
+        }),
+      /project note/,
+    );
 });
 test('word corrections preserve spaces and originals; stale edits and invented word alignment fail', () => {
   const original = phrase(),
@@ -125,6 +192,25 @@ test('mic cues require review, distinguish Mark/Note/Cut, and reject ambiguous c
   assert.equal(next.markers.source[0].name, 'remember Cai');
   assert.equal(next.notes[0].text, 'longer thought');
   assert.equal(next.notes[0].time, 10);
+  const rerun = {
+    ...phrase(99, 'Mark remember Cai'),
+    words: [{ text: 'Mark', start: 10.2, end: 10.5 }],
+  };
+  assert.equal(
+    reviewedCue(next.cueDecisions, { ...transcript, id: 'rerun' }, rerun)?.status,
+    'accepted',
+  );
+  assert.throws(
+    () =>
+      applyTranscriptCommand(
+        next,
+        { ...transcript, id: 'rerun' },
+        rerun,
+        command('accept-cue', { transcriptId: 'rerun', segmentId: 99 }),
+        () => 'duplicate',
+      ),
+    /already reviewed/,
+  );
   assert.deepEqual(
     next.clips.map((c) => [c.start, c.end]),
     [
@@ -166,6 +252,31 @@ test('paged literal search, corrected matches, shared context and continuation a
     assert.equal(store.page('speech', 1, '').segments.length, 5);
     assert.equal(store.page('speech', 0, '%').total, 0);
     assert.equal(store.page('speech', 0, 'Cai', [3]).total, 1);
+    const corrected = {
+      transcriptEdits: [
+        {
+          id: correctionId('speech', 3),
+          transcriptId: 'speech',
+          segmentId: 3,
+          text: 'Note restored after checking the audio',
+        },
+      ],
+    };
+    const candidate = store.page('speech', 0, '', [], corrected).segments.find((s) => s.id === 3);
+    assert.equal(cueCandidate(transcript, candidate).kind, 'note');
+    const accepted = applyTranscriptCommand(
+      { ...model(), ...corrected },
+      transcript,
+      candidate,
+      command('accept-cue', { segmentId: 3 }),
+      () => 'recovered-note',
+    );
+    assert.match(accepted.notes[0].text, /restored after checking/);
+    assert.equal(
+      store.segment('speech', 3).text,
+      phrase(3).text,
+      'A manually recovered cue keeps its recognition original.',
+    );
     store.removeSource('source');
     assert.equal(db.prepare('SELECT count(*) AS n FROM transcript_segments').get().n, 0);
   } finally {

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+export const TRANSCRIPTION_PIPELINE = 'utterance-v1';
 import type {
   AsrRuntime,
   TranscriptSegment,

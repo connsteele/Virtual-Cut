@@ -7,7 +7,7 @@ import type {
   TranscriptSegment,
   TranscriptSession,
 } from '../../electron/transcript-contracts';
-import { correctionId, cueCandidate, cueId } from '../../electron/transcript-edits';
+import { correctionId, cueCandidate, reviewedCue } from '../../electron/transcript-edits';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
@@ -159,7 +159,7 @@ export function TranscriptWindow() {
   ) {
     if (!session || !selected) return Promise.resolve();
     const expected = type.endsWith('cue')
-      ? session.decisions.find((d) => d.id === cueId(selected, segment))
+      ? reviewedCue(session.decisions, selected, segment)
       : session.edits.find((e) => e.id === correctionId(selected.id, segment.id, wordIndex));
     return api.command({
       projectId: session.projectId,
@@ -434,9 +434,7 @@ export function TranscriptWindow() {
                 (e) => e.id === correctionId(currentId, segment.id),
               );
               const cue = cueCandidate(selected, segment),
-                decision = cue
-                  ? session.decisions.find((d) => d.id === cueId(selected, segment))
-                  : undefined;
+                decision = cue ? reviewedCue(session.decisions, selected, segment) : undefined;
               const active =
                 position.projectId === projectId && position.sourceId === session.sourceId;
               return (
@@ -499,7 +497,11 @@ export function TranscriptWindow() {
                       · {decision?.status || 'Needs review'}
                       {!decision && (
                         <>
-                          <p>Check the audio and timing. This cue is tentative.</p>
+                          <p>
+                            Check the audio and timing. This cue is tentative.
+                            {cue.kind === 'cut' &&
+                              ` Accepting splits at ${time(cue.time)}. For instructions such as “before the transition,” choose the intended cut in the main editor.`}
+                          </p>
                           <input
                             aria-label={`Cue text ${segment.id}`}
                             value={cueEdit?.segment === segment.id ? cueEdit.text : cue.text}

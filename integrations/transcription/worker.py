@@ -98,22 +98,54 @@ def worker():
                              cpu_threads=request["threads"], local_files_only=True)
         emit({"type": "stage", "message": "Recognizing speech", "progress": 0.05,
               "engine": faster_whisper.__version__, "runtime": ctranslate2.__version__})
-        segments, info = model.transcribe(
-            wav, language=request["language"] or None, beam_size=5, word_timestamps=True,
-            vad_filter=True, vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 350},
-            condition_on_previous_text=False, hallucination_silence_threshold=2,
-            hotwords=request.get("vocabulary") or None)
-        emit({"type": "info", "language": info.language, "languageProbability": info.language_probability,
-              "duration": info.duration})
-        offset = request["offset"]
-        for ordinal, segment in enumerate(segments):
-            emit({"type": "segment", "segment": {
-                "id": ordinal, "start": max(0, segment.start + offset), "end": max(0, segment.end + offset),
-                "text": segment.text, "noSpeechProbability": segment.no_speech_prob,
-                "averageLogProbability": segment.avg_logprob,
-                "words": [{"start": max(0, w.start + offset), "end": max(0, w.end + offset),
-                           "text": w.word, "probability": w.probability} for w in segment.words or []]},
-                  "progress": min(0.99, 0.05 + 0.94 * segment.end / max(info.duration, 0.001))})
+        # Keep real utterance boundaries. Concatenating sparse speech through VAD can
+        # align a cue to the preceding utterance, tens of seconds before it was spoken.
+        # Scan bounded PCM windows; only a <=30-second recognition span is held at once.
+        import wave
+        import numpy as np
+        from faster_whisper.vad import get_speech_timestamps, VadOptions
+        options = VadOptions(threshold=0.35, min_speech_duration_ms=100,
+                             min_silence_duration_ms=700, speech_pad_ms=450,
+                             max_speech_duration_s=25)
+        with wave.open(wav, "rb") as audio:
+            frames = audio.getnframes()
+            duration = frames / 16000
+            ranges = []
+            position = 0
+            while position < frames:
+                raw = audio.readframes(60 * 16000)
+                block = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+                for span in get_speech_timestamps(block, options):
+                    start, end = position + span["start"], position + span["end"]
+                    if ranges and start - ranges[-1][1] <= 12800 and end - ranges[-1][0] <= 480000:
+                        ranges[-1][1] = end
+                    else:
+                        ranges.append([start, end])
+                position += len(block)
+                emit({"type": "stage", "message": "Finding speech intervals", "progress": 0.05 + 0.05 * position / max(frames, 1)})
+            ordinal = 0
+            language = request["language"] or None
+            emit({"type": "info", "language": language or "", "duration": duration})
+            for start, end in ranges:
+                audio.setpos(start)
+                chunk = np.frombuffer(audio.readframes(end - start), dtype="<i2").astype(np.float32) / 32768.0
+                segments, info = model.transcribe(chunk, language=language, beam_size=5,
+                    word_timestamps=True, vad_filter=False, condition_on_previous_text=False,
+                    temperature=0, hallucination_silence_threshold=2,
+                    hotwords=request.get("vocabulary") or None)
+                if language is None:
+                    language = info.language
+                    emit({"type": "info", "language": language, "languageProbability": info.language_probability, "duration": duration})
+                offset = request["offset"] + start / 16000
+                for segment in segments:
+                    emit({"type": "segment", "segment": {
+                        "id": ordinal, "start": max(0, segment.start + offset), "end": max(0, segment.end + offset),
+                        "text": segment.text, "noSpeechProbability": segment.no_speech_prob,
+                        "averageLogProbability": segment.avg_logprob,
+                        "words": [{"start": max(0, w.start + offset), "end": max(0, w.end + offset),
+                                   "text": w.word, "probability": w.probability} for w in segment.words or []]},
+                          "progress": min(0.99, 0.10 + 0.89 * end / max(frames, 1))})
+                    ordinal += 1
         from ctypes import wintypes as w
         class Memory(ctypes.Structure):
             _fields_ = [("cb", w.DWORD), ("faults", w.DWORD)] + [(name, ctypes.c_size_t) for name in

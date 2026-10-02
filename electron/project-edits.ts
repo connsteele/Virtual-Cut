@@ -172,7 +172,12 @@ export function validateEdits(model: Model): Model {
     if (
       !text(decision.id, 300) ||
       !['accepted', 'rejected'].includes(decision.status) ||
-      (decision.markerId != null && !text(decision.markerId, 200))
+      (decision.markerId != null && !text(decision.markerId, 200)) ||
+      (decision.noteId != null && !text(decision.noteId, 200)) ||
+      (decision.sourceId != null && !text(decision.sourceId, 200)) ||
+      (decision.track != null && (!Number.isInteger(decision.track) || decision.track < 0)) ||
+      (decision.kind != null && !['mark', 'note', 'cut'].includes(decision.kind)) ||
+      (decision.time != null && (!Number.isFinite(decision.time) || decision.time < 0))
     )
       throw new Error('Invalid cue decision.');
   if (!text(model.scratchpad || '') || model.clips.length > 50000)
