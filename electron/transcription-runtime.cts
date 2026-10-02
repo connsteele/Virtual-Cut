@@ -18,13 +18,15 @@ export function validateTranscriptionOptions(value: TranscriptionOptions) {
     value.roles.some((r) => r !== 'game' && r !== 'mic') ||
     typeof value.language !== 'string' ||
     !/^(?:[a-z]{2,3})?$/.test(value.language) ||
-    typeof value.vocabulary !== 'boolean'
+    typeof value.vocabulary !== 'boolean' ||
+    (value.device != null && !['auto', 'cpu', 'cuda'].includes(value.device))
   )
     throw new Error('Choose Game, Mic or both, and a supported language.');
 }
 export class TranscriptionRuntime {
   settings: AsrRuntime;
   private file: string;
+  private gpuStatus?: Promise<{ available: boolean; message: string }>;
   constructor(
     profile: string,
     private toolsDirectory = '',
@@ -61,7 +63,9 @@ export class TranscriptionRuntime {
         saved.model ||
         packaged.model ||
         path.join(bundled, 'model'),
-      device: saved.device === 'cuda' ? 'cuda' : 'cpu',
+      gpuLibraries:
+        process.env.VIRTUAL_CUT_ASR_GPU_LIBRARIES || saved.gpuLibraries || packaged.gpuLibraries,
+      device: saved.device === 'cuda' || saved.device === 'cpu' ? saved.device : 'auto',
       threads: 4,
     };
   }
@@ -75,13 +79,34 @@ export class TranscriptionRuntime {
   }
   configure(part: keyof AsrRuntime, value: string) {
     if (part === 'threads') throw new Error('Invalid runtime setting.');
-    if (part === 'device' && !['cpu', 'cuda'].includes(value))
-      throw new Error('Choose CPU or CUDA.');
+    if (part === 'device' && !['auto', 'cpu', 'cuda'].includes(value))
+      throw new Error('Choose Automatic, CPU or NVIDIA GPU.');
     if (part !== 'device' && (!path.isAbsolute(value) || !existsSync(value)))
       throw new Error('Choose an existing runtime location.');
     Object.assign(this.settings, { [part]: value });
+    this.gpuStatus = undefined;
     mkdirSync(path.dirname(this.file), { recursive: true });
     writeFileSync(this.file, JSON.stringify(this.settings));
+  }
+  inspectGpu() {
+    return (this.gpuStatus ??= (async () => {
+      if (!this.configured)
+        return { available: false, message: 'Set up local speech recognition first.' };
+      let result = { available: false, message: 'GPU check did not finish.' };
+      try {
+        await this.execute(
+          { ...this.settings, mode: 'probe' },
+          AbortSignal.timeout(15000),
+          (event) => {
+            if (event.type === 'gpu')
+              result = { available: !!event.available, message: event.message || '' };
+          },
+        );
+      } catch (e) {
+        result.message = String(e);
+      }
+      return result;
+    })());
   }
   async run(
     request: {
@@ -93,6 +118,8 @@ export class TranscriptionRuntime {
       ffmpeg: string;
       wav: string;
       tempDirectory: string;
+      device?: 'auto' | 'cpu' | 'cuda';
+      batchSize?: number;
     },
     signal: AbortSignal,
     receive: (event: WorkerEvent) => void,
@@ -101,21 +128,32 @@ export class TranscriptionRuntime {
       throw new Error(
         'Set up local transcription in the Transcript window: choose Python, its speech libraries, and a downloaded faster-whisper model.',
       );
+    return this.execute({ ...this.settings, ...request }, signal, receive);
+  }
+  private async execute(
+    config: Record<string, unknown>,
+    signal: AbortSignal,
+    receive: (event: WorkerEvent) => void,
+  ) {
     signal.throwIfAborted();
     const script = path.resolve(__dirname, '..', 'integrations', 'transcription', 'worker.py');
-    const config = { ...this.settings, ...request };
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(config.python, ['-u', script, '--guard', String(process.pid)], {
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          TEMP: config.tempDirectory,
-          TMP: config.tempDirectory,
-          PYTHONUTF8: '1',
-          PYTHONDONTWRITEBYTECODE: '1',
+      const child = spawn(
+        String(config.python),
+        ['-B', '-u', script, '--guard', String(process.pid)],
+        {
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            ...(config.tempDirectory
+              ? { TEMP: String(config.tempDirectory), TMP: String(config.tempDirectory) }
+              : {}),
+            PYTHONUTF8: '1',
+            PYTHONDONTWRITEBYTECODE: '1',
+          },
         },
-      });
+      );
       let pending = '',
         error = '',
         complete = false,
@@ -162,10 +200,12 @@ export class TranscriptionRuntime {
   }
 }
 export interface WorkerEvent {
+  device?: 'cpu' | 'cuda';
+  available?: boolean;
   peakMemoryBytes?: number;
   engine?: string;
   runtime?: string;
-  type: 'worker' | 'stage' | 'info' | 'segment' | 'complete' | 'error';
+  type: 'worker' | 'stage' | 'info' | 'segment' | 'complete' | 'error' | 'gpu';
   pid?: number;
   guardPid?: number;
   message?: string;

@@ -77,8 +77,32 @@ def guard(parent_pid):
 def worker():
     request = json.loads(sys.stdin.buffer.readline(1024 * 1024))
     sys.path.insert(0, request["libraries"])
+    # DLL search is scoped to this disposable process; never change machine PATH.
+    handles = []
+    gpu_root = request.get("gpuLibraries")
+    if gpu_root:
+        for folder in [gpu_root, os.path.join(gpu_root, "nvidia", "cublas", "bin"),
+                       os.path.join(gpu_root, "nvidia", "cudnn", "bin")]:
+            if os.path.isdir(folder):
+                handles.append(os.add_dll_directory(folder))
+                os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["OMP_NUM_THREADS"] = str(request["threads"])
+    import ctranslate2
+    def gpu_ready():
+        try:
+            if not ctranslate2.get_cuda_device_count():
+                return False, "No compatible NVIDIA GPU detected. Automatic will use CPU."
+            for name in ["cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll"]:
+                ctypes.WinDLL(name)
+            return True, "NVIDIA GPU libraries ready. Recognition verifies the model when it starts."
+        except Exception as error:
+            return False, "NVIDIA runtime unavailable: " + str(error)
+    if request.get("mode") == "probe":
+        available, message = gpu_ready()
+        emit({"type": "gpu", "available": available, "message": message})
+        emit({"type": "complete"})
+        return
     os.environ["TEMP"] = os.environ["TMP"] = request["tempDirectory"]
     began = time.monotonic()
     emit({"type": "stage", "message": "Preparing speech audio", "progress": 0.01})
@@ -91,18 +115,36 @@ def worker():
         emit({"type": "stage", "message": "Loading local speech model", "progress": 0.03})
         from faster_whisper import WhisperModel
         import faster_whisper
-        import ctranslate2
-        device = request["device"]
-        model = WhisperModel(request["model"], device=device,
-                             compute_type="float16" if device == "cuda" else "int8",
-                             cpu_threads=request["threads"], local_files_only=True)
+        import numpy as np
+        requested = request.get("device", "auto")
+        available, reason = gpu_ready() if requested != "cpu" else (False, "CPU selected")
+        if requested == "cuda" and not available:
+            raise RuntimeError(reason + ". Choose Automatic or CPU, or configure the GPU runtime folder.")
+        device = "cuda" if requested != "cpu" and available else "cpu"
+        def load_model(device):
+            model = WhisperModel(request["model"], device=device,
+                                 compute_type="float16" if device == "cuda" else "int8",
+                                 cpu_threads=request["threads"], local_files_only=True)
+            if device == "cuda":
+                model.encode(model.feature_extractor(np.zeros(30 * 16000, dtype=np.float32))[:, :3000])
+            return model
+        try:
+            model = load_model(device)
+        except Exception as error:
+            if requested != "auto" or device != "cuda":
+                raise
+            import gc
+            gc.collect()
+            reason = "GPU check failed; using CPU: " + str(error)
+            device = "cpu"
+            model = load_model(device)
+        emit({"type": "info", "device": device, "message": reason if device == "cpu" and requested == "auto" else ""})
         emit({"type": "stage", "message": "Recognizing speech", "progress": 0.05,
               "engine": faster_whisper.__version__, "runtime": ctranslate2.__version__})
         # Keep real utterance boundaries. Concatenating sparse speech through VAD can
         # align a cue to the preceding utterance, tens of seconds before it was spoken.
         # Scan bounded PCM windows; only a <=30-second recognition span is held at once.
         import wave
-        import numpy as np
         from faster_whisper.vad import get_speech_timestamps, VadOptions
         options = VadOptions(threshold=0.35, min_speech_duration_ms=100,
                              min_silence_duration_ms=700, speech_pad_ms=450,

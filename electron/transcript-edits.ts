@@ -4,6 +4,7 @@ import type {
   TranscriptSegment,
   TranscriptSummary,
   CueDecision,
+  CueKind,
 } from './transcript-contracts.js';
 
 export const correctionId = (transcriptId: string, segmentId: number, wordIndex?: number) =>
@@ -11,12 +12,18 @@ export const correctionId = (transcriptId: string, segmentId: number, wordIndex?
 /** Deliberate cues are candidates, never commands. Use only microphone recognition. */
 export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptSegment) {
   if (transcript.role !== 'mic') return null;
-  const match = /^\s*(mark|note|cut)\b[\s,:.!-]*(.*)$/is.exec(
+  const match = /^\s*(mark|note|cut|split|clip[\s-]+(?:start|in|end|out))\b[\s,:.!-]*(.*)$/is.exec(
     segment.cueKind ? `${segment.cueKind} ${segment.cueText || ''}` : segment.text,
   );
   if (!match || /^(?:is|was|has|had|will|would|could|can|the|that)\b/i.test(match[2])) return null;
   return {
-    kind: match[1].toLowerCase() as 'mark' | 'note' | 'cut',
+    kind: (match[1].toLowerCase() === 'split'
+      ? 'cut'
+      : /^clip[\s-]+(?:start|in)$/i.test(match[1])
+        ? 'clip-start'
+        : /^clip[\s-]+(?:end|out)$/i.test(match[1])
+          ? 'clip-end'
+          : match[1].toLowerCase()) as CueKind,
     text: segment.cueText ?? match[2].trim(),
     time: segment.words[0]?.start ?? segment.start,
     uncertain: true,
@@ -67,6 +74,7 @@ export function applyTranscriptCommand(
   segment: TranscriptSegment,
   command: TranscriptCommand,
   newId: () => string,
+  partner?: TranscriptSegment,
 ): Model {
   if (
     transcript.state !== 'complete' ||
@@ -119,7 +127,7 @@ export function applyTranscriptCommand(
     throw new Error('This cue was already reviewed. Undo its decision before changing it.');
   if (!['accept-cue', 'reject-cue'].includes(command.action))
     throw new Error('Unknown transcript action.');
-  const decision = {
+  const decision: CueDecision = {
     id,
     sourceId: transcript.sourceId,
     track: transcript.track,
@@ -130,28 +138,83 @@ export function applyTranscriptCommand(
     noteId: undefined as string | undefined,
   };
   if (decision.status === 'accepted') {
+    const target = command.time ?? cue.time;
+    if (!Number.isFinite(target) || target < 0 || target > record.duration)
+      throw new Error('Choose a cue position inside this recording.');
+    decision.appliedTime = target;
     const text = (command.text ?? cue.text).trim();
     if (text.length > 10000) throw new Error('Cue note is too long.');
     if (cue.kind === 'cut') {
       const intersecting = next.clips.filter(
-        (c) => c.rid === record.id && cue.time > c.start + 0.001 && cue.time < c.end - 0.001,
+        (c) =>
+          c.rid === record.id &&
+          target > c.start + 0.001 &&
+          target < c.end - 0.001 &&
+          (!command.clipId || c.id === command.clipId),
       );
       if (intersecting.length !== 1)
         throw new Error(
-          'Cut needs exactly one clip at this time. Resolve overlapping clips in Cut first.',
+          'Split needs exactly one clip containing this position. Select a target for overlapping clips.',
         );
       const clip = intersecting[0],
         end = clip.end;
-      clip.end = cue.time;
+      clip.end = target;
       clip.accepted = false;
       next.clips.push({
         ...clip,
         id: newId(),
         name: `${clip.name} · 2`,
-        start: cue.time,
+        start: target,
         end,
         accepted: false,
       });
+    } else if (cue.kind === 'clip-start' || cue.kind === 'clip-end') {
+      const other = partner && cueCandidate(transcript, partner);
+      if (
+        !partner ||
+        !other ||
+        partner.id !== command.partnerSegmentId ||
+        other.kind !== (cue.kind === 'clip-start' ? 'clip-end' : 'clip-start') ||
+        reviewedCue(model.cueDecisions || [], transcript, partner)
+      )
+        throw new Error(
+          'Review an unpaired Clip start and Clip end together. The other cue may have changed.',
+        );
+      const start = command.time ?? (cue.kind === 'clip-start' ? cue.time : other.time);
+      const end = command.endTime ?? (cue.kind === 'clip-end' ? cue.time : other.time);
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        start < 0 ||
+        end > record.duration ||
+        end - start < 0.001
+      )
+        throw new Error('Clip end must follow its start within this recording.');
+      decision.clipId = newId();
+      next.clips.push({
+        id: decision.clipId,
+        rid: record.id,
+        name: text.slice(0, 200) || 'Spoken clip',
+        start,
+        end,
+        folder: '_Review',
+        include: true,
+        accepted: false,
+      });
+      next.cueDecisions = [
+        ...(next.cueDecisions || []),
+        {
+          id: cueId(transcript, partner),
+          sourceId: transcript.sourceId,
+          track: transcript.track,
+          kind: other.kind,
+          time: other.time,
+          status: 'accepted',
+          clipId: decision.clipId,
+          appliedTime: other.kind === 'clip-start' ? start : end,
+        },
+      ];
+      decision.appliedTime = cue.kind === 'clip-start' ? start : end;
     } else if (cue.kind === 'note') {
       decision.noteId = newId();
       next.notes.push({
@@ -160,7 +223,7 @@ export function applyTranscriptCommand(
         text,
         url: '',
         sourceId: record.id,
-        time: cue.time,
+        time: target,
         transcriptId: transcript.id,
         segmentIds: segment.cueSegmentIds || [segment.id],
       });
@@ -170,7 +233,7 @@ export function applyTranscriptCommand(
         ...(next.markers[record.id] || []),
         {
           id: decision.markerId,
-          time: cue.time,
+          time: target,
           name: text.slice(0, 100) || 'Spoken marker',
           note: text,
           category: 'Context',

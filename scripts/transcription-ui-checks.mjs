@@ -57,9 +57,9 @@ try {
   const phrases = transcript.getByLabel('Transcript phrases');
   const words = phrases.locator('article').first().locator('[class*="words"] button');
   await words.nth(3).click();
-  await expect(transcript.getByLabel('Transcript correction')).toBeVisible();
+  await expect(transcript.getByLabel('Transcript correction')).toHaveCount(0);
   const expectedTime = await transcript.evaluate(() =>
-    document.querySelector('[class*="words"] .selected')?.getAttribute('title'),
+    document.querySelector('[class*="words"] [class*="selected"]')?.getAttribute('title'),
   );
   await expect.poll(() => page.locator('video').evaluate((v) => v.currentTime)).toBeGreaterThan(0);
   const position = await page.locator('video').evaluate((v) => v.currentTime);
@@ -80,6 +80,11 @@ try {
     Math.abs(position - anchor) < 0.04,
     `Word seek error ${Math.abs(position - anchor)} seconds`,
   );
+  await words.nth(3).dblclick();
+  await expect(transcript.getByLabel('Transcript correction')).toBeVisible();
+  await transcript.keyboard.press('Escape');
+  await expect(transcript.getByLabel('Transcript correction')).toHaveCount(0);
+  await words.nth(3).dblclick();
   await transcript.getByLabel('Corrected transcript text').fill('Cai');
   await transcript.getByRole('button', { name: 'Save correction', exact: true }).click();
   await expect(words.nth(3)).toHaveText('Cai');
@@ -109,6 +114,8 @@ try {
   await expect(phrases.locator('article').first()).toContainText('Cai');
   await transcript.getByLabel('Search transcript').fill('');
   // An isolated floating renderer cannot use broad workspace/file access.
+  await transcript.getByLabel('Transcript filter').selectOption('pending');
+  await expect(phrases.locator('article')).toHaveCount(1);
   const notesBefore = await page.evaluate(
     async () => (await window.virtualCut.project.current()).model.notes.length,
   );
@@ -118,6 +125,10 @@ try {
       page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),
     )
     .toBe(notesBefore + 1);
+  await expect(transcript.getByText('No matching cues.')).toBeVisible();
+  await transcript.getByLabel('Transcript filter').selectOption('accepted');
+  await expect(phrases.locator('article')).toHaveCount(1);
+  await transcript.getByLabel('Transcript filter').selectOption('pending');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(
     transcript.getByRole('button', { name: 'Accept timed note', exact: true }),
@@ -127,6 +138,7 @@ try {
       page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),
     )
     .toBe(notesBefore);
+  await transcript.getByLabel('Transcript filter').selectOption('all');
   const exported = path.join(dir, 'transcript.json');
   await app.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
@@ -232,6 +244,8 @@ try {
     const consent = page.getByLabel('Transcribe this import locally');
     await expect(consent).not.toBeChecked();
     await consent.check();
+    await expect(page.getByLabel('Transcribe audio')).toHaveValue('both');
+    await expect(page.getByLabel('Processing device')).toHaveValue('auto');
     await page.getByLabel('Transcribe audio').selectOption('mic');
     await page.getByLabel('Speech language').selectOption('en');
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();

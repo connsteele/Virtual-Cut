@@ -29,6 +29,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'transcription-review-ui.mjs',
   'transcription-ui-checks.mjs',
   'project-deletion-ui.mjs',
   'range-markers-ui.mjs',
@@ -48,6 +49,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
@@ -69,6 +71,8 @@ export const dependencies = {
 };
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
+  'transcription-device-study.mjs':
+    'Real CPU/GPU and bounded speech-batch comparison on explicitly supplied disposable samples; requires local runtime.',
   'transcription-sample-study.mjs':
     'Real copied-audio comparison with and without vocabulary hints; requires explicit samples and local runtime.',
   'transcription-native-checks.mjs':

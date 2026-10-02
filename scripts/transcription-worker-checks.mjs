@@ -51,6 +51,29 @@ assert.ok(
   'Both workers must exit after success.',
 );
 assert.ok(!existsSync(request.wav), 'Worker must clean extracted audio.');
+// This workstation's GPU dependencies are isolated. If CUDA is unavailable without
+// that companion, verify both user-facing policies against the real missing dependency.
+const unconfiguredGpu = new TranscriptionRuntime(path.join(dir, 'without-gpu'), '');
+unconfiguredGpu.settings = { ...runtime.settings, gpuLibraries: undefined, device: 'auto' };
+const gpuWithoutCompanion = await unconfiguredGpu.inspectGpu();
+let missingGpuFallback = 'Not applicable: GPU runtime is also available globally.';
+if (!gpuWithoutCompanion.available) {
+  const fallbackEvents = [];
+  await unconfiguredGpu.run(request, new AbortController().signal, (e) => fallbackEvents.push(e));
+  assert(
+    fallbackEvents.some((e) => e.type === 'info' && e.device === 'cpu' && e.message),
+    'Automatic explains its CPU fallback.',
+  );
+  assert(
+    fallbackEvents.some((e) => e.type === 'segment'),
+    'Fallback still produces a transcript.',
+  );
+  await assert.rejects(
+    unconfiguredGpu.run({ ...request, device: 'cuda' }, new AbortController().signal, () => {}),
+    /NVIDIA runtime unavailable/,
+  );
+  missingGpuFallback = 'Automatic CPU fallback and explicit GPU failure verified.';
+}
 const controller = new AbortController();
 await assert.rejects(
   runtime.run(request, controller.signal, (e) => {
@@ -122,6 +145,7 @@ await writeFile(
         .filter((e) => e.type === 'segment')
         .reduce((n, e) => n + e.segment.words.length, 0),
       processesExited: true,
+      missingGpuFallback,
       failureCleanup: true,
       loadedWorkerParentCrashCleanup: true,
       peakMemoryBytes: events.find((e) => e.type === 'complete')?.peakMemoryBytes,

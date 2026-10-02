@@ -23,6 +23,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
+import { RecordingTranscription } from './RecordingJobs';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import {
@@ -916,6 +917,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         '',
     );
   }
+  const pendingTranscriptTransport = useRef<{ sourceId: string; key: string } | null>(null);
+  useEffect(() => {
+    const pending = pendingTranscriptTransport.current;
+    if (pending && page === 'cut' && r.id === pending.sourceId && transport.current) {
+      pendingTranscriptTransport.current = null;
+      transport.current.command(pending.key);
+    }
+  });
   useEffect(() => {
     const api = window.virtualCut?.transcript;
     if (!api) return;
@@ -941,9 +950,24 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           ),
         );
     });
+    const stopTransport = api.onTransport((event) => {
+      if (
+        project?.project.id !== event.projectId ||
+        workspace.blocking ||
+        document.querySelector('dialog[open]')
+      )
+        return;
+      if (page === 'cut' && r.id === event.sourceId) transport.current?.command(event.key);
+      else {
+        pendingTranscriptTransport.current = event;
+        selectRecord(event.sourceId);
+        setPage('cut');
+      }
+    });
     return () => {
       stopSeek();
       stopCommand();
+      stopTransport();
     };
   });
   const transcriptPositionSent = useRef(0);
@@ -1633,6 +1657,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       {short(x.duration)} · {model.clips.filter((c) => c.rid === x.id).length} clips
                       · {(model.markers[x.id] || []).length} markers
                     </span>
+                    <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
                     <RecordingActions recording={x} workspace={workspace} />
                   </div>
                 ))}
@@ -1921,8 +1946,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         </time>
                         <span>
                           {short(x.duration)} ·{' '}
-                          {x.sample ? 'Sample' : x.availability || 'Session video'}
+                          {x.sample
+                            ? 'Sample'
+                            : x.availability === 'ready'
+                              ? 'Media ready'
+                              : x.availability || 'Session video'}
                         </span>
+                        <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
                         <RecordingActions recording={x} workspace={workspace} />
                       </div>
                     ))}
@@ -2681,7 +2711,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                           if (page === 'cut' && r.id === n.sourceId)
                             transport.current?.seek(n.time!);
                           setPage('cut');
-                          setDrawer('');
                         }}
                       >
                         Go to spoken note · {n.time.toFixed(3)} s

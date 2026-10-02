@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, screen } from 'electron';
+import { BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
@@ -131,7 +131,18 @@ export function registerTranscriptWindow(
     true,
   );
   handle('session', async (sourceId) => projects.transcriptSession(sourceId || preferredSource));
-  handle('page', async (id, transcriptId, page, search) => {
+  handle('pageAt', async (id, transcriptId, time) =>
+    projects.require(id).transcripts.pageAt(transcriptId, time),
+  );
+  handle('transport', async (id, sourceId, key) => {
+    if (
+      !['j', 'k', 'l'].includes(key) ||
+      !projects.require(id).data.model.recordings.some((r) => r.id === sourceId)
+    )
+      throw new Error('This transcript recording is unavailable.');
+    main()?.webContents.send('transcript:transport-event', { projectId: id, sourceId, key });
+  });
+  handle('page', async (id, transcriptId, page, search, filter = 'all') => {
     const s = projects.require(id);
     if (typeof search !== 'string' || search.length > 300)
       throw new Error('Invalid transcript search.');
@@ -142,12 +153,24 @@ export function registerTranscriptWindow(
           e.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
       )
       .map((e) => e.segmentId);
-    return s.transcripts.page(transcriptId, page, search, matches, s.data.model);
+    return s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
   });
   handle('runtime', async () => ({
     configured: projects.transcription.configured,
     settings: projects.transcription.settings,
+    gpu: await projects.transcription.inspectGpu(),
   }));
+  handle('setupHelp', async (topic) => {
+    const links: Record<string, string> = {
+      engine: 'https://github.com/SYSTRAN/faster-whisper#installation',
+      gpu: 'https://github.com/SYSTRAN/faster-whisper#gpu',
+      python: 'https://www.python.org/downloads/windows/',
+      model: 'https://huggingface.co/Systran/faster-whisper-large-v3',
+    };
+    if (typeof topic !== 'string' || !Object.hasOwn(links, topic))
+      throw new Error('Unknown setup guide.');
+    await shell.openExternal(links[topic]);
+  });
   handle('configure', async (part, device) => {
     if (
       projects.store
@@ -155,7 +178,7 @@ export function registerTranscriptWindow(
         .some((j) => j.kind === 'transcribe' && ['queued', 'running'].includes(j.state))
     )
       throw new Error('Pause or finish transcription before changing its local runtime.');
-    if (!['python', 'libraries', 'model', 'device'].includes(part))
+    if (!['python', 'libraries', 'model', 'gpuLibraries', 'device'].includes(part))
       throw new Error('Unknown speech setting.');
     if (part === 'device') projects.transcription.configure('device', device || 'cpu');
     else {
@@ -164,6 +187,7 @@ export function registerTranscriptWindow(
           python: 'Choose Python 3.12 executable',
           libraries: 'Choose the folder containing faster_whisper',
           model: 'Choose the model folder containing model.bin',
+          gpuLibraries: 'Choose the NVIDIA runtime folder',
         }[part],
         properties: [part === 'python' ? 'openFile' : 'openDirectory'],
         ...(part === 'python'
@@ -220,7 +244,26 @@ export function registerTranscriptWindow(
       const segment = c.action.endsWith('cue')
         ? s.transcripts.cueSegment(c.transcriptId, c.segmentId, s.data.model)
         : s.transcripts.segment(c.transcriptId, c.segmentId);
-      const next = applyTranscriptCommand(s.data.model, transcript, segment, c, randomUUID);
+      const partner =
+        c.partnerSegmentId == null
+          ? undefined
+          : s.transcripts.cueSegment(c.transcriptId, c.partnerSegmentId, s.data.model);
+      if (
+        c.action === 'accept-cue' &&
+        partner &&
+        (segment.cuePartner?.id !== partner.id || partner.cuePartner?.id !== segment.id)
+      )
+        throw new Error(
+          'These clip boundaries are ambiguous. Correct the cue wording or create the clip in Cut.',
+        );
+      const next = applyTranscriptCommand(
+        s.data.model,
+        transcript,
+        segment,
+        c,
+        randomUUID,
+        partner,
+      );
       s.save(s.data.model, next);
       item.applied = true;
       return projects.snapshot();

@@ -1,4 +1,5 @@
 export interface TranscriptionOptions {
+  device?: 'auto' | 'cpu' | 'cuda';
   roles: ('game' | 'mic')[];
   language: string;
   vocabulary: boolean;
@@ -13,11 +14,13 @@ export interface TranscriptWord {
   text: string;
   probability: number;
 }
+export type CueKind = 'mark' | 'note' | 'cut' | 'clip-start' | 'clip-end';
 export interface TranscriptSegment {
+  cuePartner?: { id: number; time: number };
   /** Derived only when reading a cue; original recognized text/timing stay unchanged. */
   cueText?: string;
   cueSegmentIds?: number[];
-  cueKind?: 'mark' | 'note' | 'cut';
+  cueKind?: CueKind;
   id: number;
   start: number;
   end: number;
@@ -27,6 +30,7 @@ export interface TranscriptSegment {
   averageLogProbability: number;
 }
 export interface TranscriptSummary {
+  deviceMessage?: string;
   pipeline?: string;
   contextId?: string;
   engineVersion?: string;
@@ -63,13 +67,17 @@ export interface CueDecision {
   id: string;
   sourceId?: string;
   track?: number;
-  kind?: 'mark' | 'note' | 'cut';
+  kind?: CueKind;
   time?: number;
   status: 'accepted' | 'rejected';
   markerId?: string;
   noteId?: string;
+  clipId?: string;
+  appliedTime?: number;
 }
 export interface TranscriptPage {
+  followStart?: number;
+  followEnd?: number;
   transcript: TranscriptSummary;
   segments: TranscriptSegment[];
   total: number;
@@ -78,7 +86,8 @@ export interface AsrRuntime {
   python: string;
   libraries: string;
   model: string;
-  device: 'cpu' | 'cuda';
+  gpuLibraries?: string;
+  device: 'auto' | 'cpu' | 'cuda';
   threads: number;
 }
 export interface TranscriptSession {
@@ -105,6 +114,10 @@ export interface TranscriptSession {
   }[];
 }
 export interface TranscriptCommand {
+  time?: number;
+  endTime?: number;
+  partnerSegmentId?: number;
+  clipId?: string;
   projectId: string;
   sourceId: string;
   transcriptId: string;
@@ -116,6 +129,12 @@ export interface TranscriptCommand {
   expected: string;
 }
 export interface TranscriptApi {
+  setupHelp(topic: 'engine' | 'gpu' | 'python' | 'model'): Promise<void>;
+  transport(projectId: string, sourceId: string, key: 'j' | 'k' | 'l'): Promise<void>;
+  onTransport(
+    callback: (event: { projectId: string; sourceId: string; key: 'j' | 'k' | 'l' }) => void,
+  ): () => void;
+  pageAt(projectId: string, transcriptId: string, time: number): Promise<number>;
   apply(token: string): Promise<import('./project-contracts.js').ProjectSnapshot>;
   open(sourceId?: string): Promise<void>;
   onSource(callback: (sourceId: string) => void): () => void;
@@ -125,6 +144,7 @@ export interface TranscriptApi {
     transcriptId: string,
     page: number,
     search: string,
+    filter?: 'all' | 'cues' | 'pending' | 'accepted' | 'rejected',
   ): Promise<TranscriptPage>;
   start(
     projectId: string,
@@ -135,10 +155,14 @@ export interface TranscriptApi {
   job(projectId: string, id: string, action: 'cancel' | 'retry' | 'pause'): Promise<void>;
   command(command: TranscriptCommand): Promise<void>;
   seek(projectId: string, sourceId: string, time: number): Promise<void>;
-  runtime(): Promise<{ configured: boolean; settings: AsrRuntime }>;
+  runtime(): Promise<{
+    configured: boolean;
+    settings: AsrRuntime;
+    gpu?: { available: boolean; message: string };
+  }>;
   configure(
-    part: 'python' | 'libraries' | 'model' | 'device',
-    device?: 'cpu' | 'cuda',
+    part: 'python' | 'libraries' | 'model' | 'gpuLibraries' | 'device',
+    device?: 'auto' | 'cpu' | 'cuda',
   ): Promise<void>;
   onSeek(
     callback: (event: { projectId: string; sourceId: string; time: number }) => void,

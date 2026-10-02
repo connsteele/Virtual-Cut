@@ -11,6 +11,7 @@ import { correctionId, cueCandidate, reviewedCue } from '../../electron/transcri
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
+import { TranscriptCue } from './TranscriptCue';
 
 const time = (seconds: number) => {
   const total = Math.floor(seconds),
@@ -25,6 +26,9 @@ export function TranscriptWindow() {
   const [page, setPage] = useState<TranscriptPage>(),
     [pageIndex, setPageIndex] = useState(0),
     [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | 'cues' | 'pending' | 'accepted' | 'rejected'>('all');
+  const [follow, setFollow] = useState(true);
+  const [focusedWord, setFocusedWord] = useState<{ segment: number; word?: number }>();
   const [options, setOptions] = useState(initialTranscriptionOptions);
   const [exportId, setExportId] = useState('');
   const [runtime, setRuntime] = useState<Awaited<ReturnType<TranscriptApi['runtime']>>>();
@@ -41,7 +45,6 @@ export function TranscriptWindow() {
     wordIndex?: number;
     text: string;
   }>();
-  const [cueEdit, setCueEdit] = useState<{ segment: number; text: string }>();
   const identity = useRef('');
   const acceptSession = useCallback((value: TranscriptSession | null) => {
     const nextIdentity = `${value?.projectId || ''}:${value?.sourceId || ''}`;
@@ -50,9 +53,11 @@ export function TranscriptWindow() {
       setTranscriptId('');
       setPageIndex(0);
       setSearch('');
+      setFilter('all');
+      setFollow(true);
+      setFocusedWord(undefined);
       setExportId('');
       setSelection(undefined);
-      setCueEdit(undefined);
       setError('');
       setNotice('');
     }
@@ -107,7 +112,7 @@ export function TranscriptWindow() {
     const timer = setTimeout(
       () => {
         void api
-          .page(projectId, currentId, pageIndex, search)
+          .page(projectId, currentId, pageIndex, search, filter)
           .then((value) => {
             if (alive) setPage(value);
           })
@@ -121,7 +126,86 @@ export function TranscriptWindow() {
       alive = false;
       clearTimeout(timer);
     };
-  }, [api, projectId, currentId, pageIndex, search, selected?.state, editRevision]);
+  }, [
+    api,
+    projectId,
+    currentId,
+    pageIndex,
+    search,
+    filter,
+    selected?.state,
+    editRevision,
+    session?.revision,
+  ]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelection(undefined);
+        return;
+      }
+      if (
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.defaultPrevented ||
+        (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]')
+      )
+        return;
+      const value = event.key.toLowerCase();
+      if (session && ['j', 'k', 'l'].includes(value)) {
+        event.preventDefault();
+        void api
+          .transport(session.projectId, session.sourceId, value as 'j' | 'k' | 'l')
+          .catch((e) => setError(String(e)));
+      }
+    };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [api, session]);
+  useEffect(() => {
+    if (
+      !follow ||
+      search ||
+      filter !== 'all' ||
+      selection ||
+      !page ||
+      page.transcript.id !== currentId ||
+      position.projectId !== projectId ||
+      position.sourceId !== session?.sourceId
+    )
+      return;
+    if (position.time >= (page.followStart ?? 0) && position.time < (page.followEnd ?? Infinity)) {
+      const current = document.querySelector('[data-active-word="true"]');
+      const rect = current?.getBoundingClientRect();
+      if (rect && (rect.top < 100 || rect.bottom > window.innerHeight - 100))
+        current?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    let alive = true;
+    void api
+      .pageAt(projectId, currentId, position.time)
+      .then((index) => {
+        if (alive) setPageIndex(index);
+      })
+      .catch((e) => {
+        if (alive) setError(String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [
+    api,
+    currentId,
+    projectId,
+    position,
+    session?.sourceId,
+    follow,
+    search,
+    filter,
+    selection,
+    page,
+  ]);
   async function action(fn: () => Promise<unknown>) {
     setBusy(true);
     setError('');
@@ -135,18 +219,22 @@ export function TranscriptWindow() {
       setBusy(false);
     }
   }
-  function seek(segment: TranscriptSegment, wordIndex?: number) {
+  function seek(segment: TranscriptSegment, wordIndex?: number, edit = false) {
     if (!session || !selected) return;
     const word = wordIndex == null ? undefined : segment.words[wordIndex];
     const correction = session.edits.find(
       (e) => e.id === correctionId(selected.id, segment.id, wordIndex),
     );
-    setSelection({
-      transcriptId: selected.id,
-      segment,
-      wordIndex,
-      text: correction?.text ?? word?.text ?? segment.text,
-    });
+    setFocusedWord({ segment: segment.id, word: wordIndex });
+    if (edit) {
+      setFollow(false);
+      setSelection({
+        transcriptId: selected.id,
+        segment,
+        wordIndex,
+        text: correction?.text ?? word?.text ?? segment.text,
+      });
+    }
     const target = word?.start ?? segment.start;
     setPosition({ projectId: session.projectId, sourceId: session.sourceId, time: target });
     void api.seek(session.projectId, session.sourceId, target).catch((e) => setError(String(e)));
@@ -156,12 +244,14 @@ export function TranscriptWindow() {
     type: TranscriptCommand['action'],
     text?: string,
     wordIndex?: number,
+    values: Partial<TranscriptCommand> = {},
   ) {
     if (!session || !selected) return Promise.resolve();
     const expected = type.endsWith('cue')
       ? reviewedCue(session.decisions, selected, segment)
       : session.edits.find((e) => e.id === correctionId(selected.id, segment.id, wordIndex));
     return api.command({
+      ...values,
       projectId: session.projectId,
       sourceId: session.sourceId,
       transcriptId: selected.id,
@@ -254,7 +344,30 @@ export function TranscriptWindow() {
               : 'Choose an installed Python runtime, faster-whisper libraries and a downloaded model.'}{' '}
             No audio is uploaded.
           </p>
-          {(['python', 'libraries', 'model'] as const).map((part) => (
+          <p role="status">{runtime?.gpu?.message}</p>
+          <details>
+            <summary>Install or update speech recognition</summary>
+            <p>
+              This review build uses a separate local installation. It does not download speech
+              software automatically. Install Python 3.12, faster-whisper 1.2.1 with CTranslate2
+              4.8.2, and a faster-whisper model, then choose their locations below.
+            </p>
+            <p>
+              NVIDIA acceleration also needs CUDA 12 cuBLAS and cuDNN 9. Automatic uses the GPU when
+              ready and falls back to CPU if its startup check fails. An explicit NVIDIA selection
+              reports a failure instead.
+            </p>
+            <div className={s.toolbar}>
+              {(['python', 'engine', 'gpu', 'model'] as const).map((topic) => (
+                <Button key={topic} onClick={() => void action(() => api.setupHelp(topic))}>
+                  {topic === 'gpu'
+                    ? 'GPU installation guide'
+                    : `${topic[0].toUpperCase()}${topic.slice(1)} download / instructions`}
+                </Button>
+              ))}
+            </div>
+          </details>
+          {(['python', 'libraries', 'model', 'gpuLibraries'] as const).map((part) => (
             <div className={s.setupRow} key={part}>
               <Button
                 disabled={busy}
@@ -265,22 +378,23 @@ export function TranscriptWindow() {
                   })
                 }
               >
-                Choose {part}…
+                Choose {part === 'gpuLibraries' ? 'GPU runtime' : part}…
               </Button>
               <span>{runtime?.settings[part]}</span>
             </div>
           ))}
           <Field label="Recognition device">
             <select
-              value={runtime?.settings.device || 'cpu'}
+              value={runtime?.settings.device || 'auto'}
               disabled={busy}
               onChange={(e) =>
                 void action(async () => {
-                  await api.configure('device', e.target.value as 'cpu' | 'cuda');
+                  await api.configure('device', e.target.value as 'auto' | 'cpu' | 'cuda');
                   setRuntime(await api.runtime());
                 })
               }
             >
+              <option value="auto">Automatic · prefer NVIDIA GPU</option>
               <option value="cpu">CPU · lower memory use</option>
               <option value="cuda">NVIDIA CUDA · requires compatible CUDA libraries</option>
             </select>
@@ -337,8 +451,41 @@ export function TranscriptWindow() {
       {selected && session && (
         <>
           <div className={s.toolbar}>
+            <Field label="Show">
+              <select
+                aria-label="Transcript filter"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value as typeof filter);
+                  setPageIndex(0);
+                  setFollow(false);
+                }}
+              >
+                <option value="all">Full transcript</option>
+                <option value="pending">Cues · needs review</option>
+                <option value="cues">All cues</option>
+                <option value="accepted">Accepted cues</option>
+                <option value="rejected">Rejected cues</option>
+              </select>
+            </Field>
+            <Button
+              aria-pressed={follow}
+              onClick={() => {
+                setFollow(!follow);
+                if (!follow) {
+                  setFilter('all');
+                  setSearch('');
+                  setSelection(undefined);
+                }
+              }}
+            >
+              Follow playback
+            </Button>
+          </div>
+          <div className={s.toolbar}>
             <Field label="Recognition">
               <select
+                aria-label="Recognition"
                 value={currentId}
                 onChange={(e) => {
                   setTranscriptId(e.target.value);
@@ -405,6 +552,7 @@ export function TranscriptWindow() {
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPageIndex(0);
+                setFollow(false);
               }}
             />
             <label>
@@ -420,21 +568,26 @@ export function TranscriptWindow() {
             {selected.wordCount} words · {selected.model} · {selected.device} ·{' '}
             {selected.context.gameName || 'No game specified'}
             {selected.context.vocabulary ? ' · vocabulary hints used' : ''}. Click a word to seek.
-            Dotted words have low recognition confidence.
+            Double-click to correct; Escape closes the editor. J/K/L controls playback when you are
+            not typing. Dotted words have low recognition confidence.
           </p>
+          {selected.deviceMessage && <p className={s.muted}>{selected.deviceMessage}</p>}
           {selected.state !== 'complete' && (
             <p>
               Recognition is incomplete. Corrections and cue decisions become available when it
               finishes.
             </p>
           )}
-          <div className={s.segments} aria-label="Transcript phrases">
+          <div
+            className={s.segments}
+            aria-label="Transcript phrases"
+            onWheel={() => setFollow(false)}
+          >
             {usablePage?.segments.map((segment) => {
               const phraseEdit = session.edits.find(
                 (e) => e.id === correctionId(currentId, segment.id),
               );
-              const cue = cueCandidate(selected, segment),
-                decision = cue ? reviewedCue(session.decisions, selected, segment) : undefined;
+              const cue = cueCandidate(selected, segment);
               const active =
                 position.projectId === projectId && position.sourceId === session.sourceId;
               return (
@@ -443,20 +596,25 @@ export function TranscriptWindow() {
                     <button onClick={() => seek(segment)}>{time(segment.start)}</button>
                     <Button
                       disabled={busy || selected.state !== 'complete'}
-                      onClick={() =>
+                      onClick={() => (
+                        setFollow(false),
                         setSelection({
                           transcriptId: currentId,
                           segment,
                           text: phraseEdit?.text ?? segment.text,
                         })
-                      }
+                      )}
                     >
                       Edit phrase
                     </Button>
                   </div>
                   <div className={s.words}>
                     {phraseEdit && !original ? (
-                      <button className={s.phrase} onClick={() => seek(segment)}>
+                      <button
+                        className={s.phrase}
+                        onClick={() => seek(segment)}
+                        onDoubleClick={() => seek(segment, undefined, true)}
+                      >
                         {phraseEdit.text}
                         <small> · phrase timing</small>
                       </button>
@@ -466,15 +624,19 @@ export function TranscriptWindow() {
                           (e) => e.id === correctionId(currentId, segment.id, index),
                         );
                         const focused =
-                          hasSelection &&
-                          selection.segment.id === segment.id &&
-                          selection.wordIndex === index;
+                          focusedWord?.segment === segment.id && focusedWord.word === index;
                         return (
                           <button
                             key={index}
                             className={`${active && position.time >= word.start && position.time < word.end ? s.active : ''} ${focused ? s.selected : ''} ${word.probability < 0.5 ? s.uncertain : ''}`}
+                            data-active-word={
+                              active && position.time >= word.start && position.time < word.end
+                                ? 'true'
+                                : undefined
+                            }
                             title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
                             onClick={() => seek(segment, index)}
+                            onDoubleClick={() => seek(segment, index, true)}
                           >
                             {!original && correction ? correction.text : word.text}
                           </button>
@@ -485,71 +647,39 @@ export function TranscriptWindow() {
                     )}
                   </div>
                   {cue && (
-                    <div className={s.cue}>
-                      <strong>
-                        {cue.kind === 'cut'
-                          ? 'Split'
-                          : cue.kind === 'note'
-                            ? 'Timed note'
-                            : 'Point marker'}{' '}
-                        candidate
-                      </strong>{' '}
-                      · {decision?.status || 'Needs review'}
-                      {!decision && (
-                        <>
-                          <p>
-                            Check the audio and timing. This cue is tentative.
-                            {cue.kind === 'cut' &&
-                              ` Accepting splits at ${time(cue.time)}. For instructions such as “before the transition,” choose the intended cut in the main editor.`}
-                          </p>
-                          <input
-                            aria-label={`Cue text ${segment.id}`}
-                            value={cueEdit?.segment === segment.id ? cueEdit.text : cue.text}
-                            onChange={(e) =>
-                              setCueEdit({ segment: segment.id, text: e.target.value })
-                            }
-                          />
-                          <Button
-                            disabled={busy || selected.state !== 'complete'}
-                            onClick={() =>
-                              void action(() =>
-                                command(
-                                  segment,
-                                  'accept-cue',
-                                  cueEdit?.segment === segment.id ? cueEdit.text : cue.text,
-                                ),
-                              )
-                            }
-                          >
-                            Accept{' '}
-                            {cue.kind === 'cut'
-                              ? 'split'
-                              : cue.kind === 'note'
-                                ? 'timed note'
-                                : 'marker'}
-                          </Button>
-                          <Button
-                            disabled={busy || selected.state !== 'complete'}
-                            onClick={() => void action(() => command(segment, 'reject-cue'))}
-                          >
-                            Reject
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    <TranscriptCue
+                      key={`${currentId}:${segment.id}:${JSON.stringify(session.edits)}`}
+                      segment={segment}
+                      transcript={selected}
+                      session={session}
+                      busy={busy}
+                      onCommand={(type, values) => {
+                        setFollow(false);
+                        void action(() => command(segment, type, values.text, undefined, values));
+                      }}
+                    />
                   )}
                 </article>
               );
             })}
             {usablePage && !usablePage.segments.length && (
-              <p>{search ? 'No matching phrases.' : 'No speech recognized in this track.'}</p>
+              <p>
+                {filter !== 'all'
+                  ? 'No matching cues.'
+                  : search
+                    ? 'No matching phrases.'
+                    : 'No speech recognized in this track.'}
+              </p>
             )}
           </div>
           <nav className={s.pagination} aria-label="Transcript pages">
             <Button
               aria-label="Previous transcript page"
               disabled={pageIndex === 0}
-              onClick={() => setPageIndex(pageIndex - 1)}
+              onClick={() => {
+                setFollow(false);
+                setPageIndex(pageIndex - 1);
+              }}
             >
               <ChevronLeft size={18} />
             </Button>
@@ -559,7 +689,10 @@ export function TranscriptWindow() {
             <Button
               aria-label="Next transcript page"
               disabled={!usablePage || (pageIndex + 1) * 60 >= usablePage.total}
-              onClick={() => setPageIndex(pageIndex + 1)}
+              onClick={() => {
+                setFollow(false);
+                setPageIndex(pageIndex + 1);
+              }}
             >
               <ChevronRight size={18} />
             </Button>

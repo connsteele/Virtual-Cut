@@ -174,9 +174,13 @@ export function validateEdits(model: Model): Model {
       !['accepted', 'rejected'].includes(decision.status) ||
       (decision.markerId != null && !text(decision.markerId, 200)) ||
       (decision.noteId != null && !text(decision.noteId, 200)) ||
+      (decision.clipId != null && !text(decision.clipId, 200)) ||
+      (decision.appliedTime != null &&
+        (!Number.isFinite(decision.appliedTime) || decision.appliedTime < 0)) ||
       (decision.sourceId != null && !text(decision.sourceId, 200)) ||
       (decision.track != null && (!Number.isInteger(decision.track) || decision.track < 0)) ||
-      (decision.kind != null && !['mark', 'note', 'cut'].includes(decision.kind)) ||
+      (decision.kind != null &&
+        !['mark', 'note', 'cut', 'clip-start', 'clip-end'].includes(decision.kind)) ||
       (decision.time != null && (!Number.isFinite(decision.time) || decision.time < 0))
     )
       throw new Error('Invalid cue decision.');

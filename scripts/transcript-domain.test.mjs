@@ -338,3 +338,159 @@ test('overlapping exported clips use source offsets, boundary words, corrections
     'phrase',
   );
 });
+
+test('Split aliases, editable cue timing and explicit overlap selection preserve cue provenance', () => {
+  const before = model();
+  before.clips.push({ ...before.clips[0], id: 'other' });
+  const original = phrase(0, 'Split');
+  assert.equal(cueCandidate(transcript, original).kind, 'cut');
+  const after = applyTranscriptCommand(
+    before,
+    transcript,
+    original,
+    command('accept-cue', { time: 20, clipId: 'other' }),
+    () => 'new',
+  );
+  assert.equal(after.clips.find((c) => c.id === 'clip').end, 100);
+  assert.equal(after.clips.find((c) => c.id === 'other').end, 20);
+  assert.equal(after.cueDecisions[0].time, 10);
+  assert.equal(after.cueDecisions[0].appliedTime, 20);
+  assert.equal(reviewedCue(after.cueDecisions, transcript, original)?.status, 'accepted');
+  for (const time of [-1, 101, NaN])
+    assert.throws(
+      () =>
+        applyTranscriptCommand(
+          before,
+          transcript,
+          original,
+          command('accept-cue', { time, clipId: 'other' }),
+          () => 'new',
+        ),
+      /inside this recording/,
+    );
+});
+
+test('paired Clip in/out cues create one range atomically, reject stale partners and preserve originals', () => {
+  const start = phrase(0, 'Clip in opening scene');
+  const end = {
+    ...phrase(1, 'Clip out'),
+    start: 40,
+    end: 42,
+    words: [{ text: 'Clip', start: 40, end: 41 }],
+  };
+  const before = model();
+  const after = applyTranscriptCommand(
+    before,
+    transcript,
+    start,
+    command('accept-cue', { partnerSegmentId: 1, time: 9, endTime: 41 }),
+    () => 'range',
+    end,
+  );
+  assert.equal(after.clips.length, before.clips.length + 1);
+  assert.deepEqual([after.clips.at(-1).start, after.clips.at(-1).end], [9, 41]);
+  assert.equal(after.cueDecisions.length, 2);
+  assert.equal(
+    after.cueDecisions.every((d) => d.clipId === 'range' && d.status === 'accepted'),
+    true,
+  );
+  assert.equal(before.cueDecisions, undefined);
+  assert.throws(
+    () =>
+      applyTranscriptCommand(
+        after,
+        transcript,
+        end,
+        command('accept-cue', { segmentId: 1, partnerSegmentId: 0 }),
+        () => 'duplicate',
+        start,
+      ),
+    /already reviewed/,
+  );
+  assert.throws(
+    () =>
+      applyTranscriptCommand(
+        before,
+        transcript,
+        start,
+        command('accept-cue', { partnerSegmentId: 1, time: 50, endTime: 40 }),
+        () => 'invalid',
+        end,
+      ),
+    /must follow/,
+  );
+  const endFirst = applyTranscriptCommand(
+    before,
+    transcript,
+    end,
+    command('accept-cue', { segmentId: 1, partnerSegmentId: 0 }),
+    () => 'range',
+    start,
+  );
+  assert.deepEqual([endFirst.clips.at(-1).start, endFirst.clips.at(-1).end], [10, 40]);
+});
+
+test('cue filters cover every page, corrections and review state; playback pages follow both directions', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const store = new TranscriptStore(db);
+    store.put({ ...transcript, duration: 200 });
+    for (let i = 0; i < 125; i++) {
+      const segment = phrase(
+        i,
+        i === 63 ? 'Clip start opening' : i === 90 ? 'Clip end' : 'ordinary speech',
+      );
+      store.append('speech', {
+        ...segment,
+        start: i,
+        end: i + 0.5,
+        words: segment.words.map((w, n) => ({ ...w, start: i + n * 0.1, end: i + (n + 1) * 0.1 })),
+      });
+    }
+    const cues = store.page('speech', 0, '', [], {}, 'pending');
+    assert.deepEqual(
+      cues.segments.map((s) => s.id),
+      [63, 90],
+    );
+    assert.equal(cues.segments[0].cuePartner.id, 90);
+    assert.equal(cues.segments[1].cuePartner.id, 63);
+    const decision = {
+      id: 'cue',
+      sourceId: 'source',
+      track: 2,
+      kind: 'clip-start',
+      time: 63,
+      status: 'rejected',
+    };
+    assert.deepEqual(
+      store
+        .page('speech', 0, '', [], { cueDecisions: [decision] }, 'pending')
+        .segments.map((s) => s.id),
+      [90],
+    );
+    assert.equal(
+      store.page('speech', 0, '', [], { cueDecisions: [decision] }, 'rejected').total,
+      1,
+    );
+    assert.equal(store.pageAt('speech', 124), 2);
+    assert.equal(store.pageAt('speech', 61), 1);
+    assert.equal(store.pageAt('speech', 0), 0);
+    assert.equal(store.page('speech', 1, '').followEnd, 120);
+    const correction = {
+      transcriptEdits: [
+        {
+          id: correctionId('speech', 70),
+          transcriptId: 'speech',
+          segmentId: 70,
+          text: 'Clip start repeated',
+        },
+      ],
+    };
+    assert.equal(store.cueSegment('speech', 63, correction).cuePartner, undefined);
+    assert.equal(store.cueSegment('speech', 90, correction).cuePartner.id, 70);
+    assert.throws(() => store.pageAt('speech', NaN), /Invalid transcript time/);
+    assert.throws(() => store.page('speech', 0, '', [], {}, 'unknown'), /Invalid cue filter/);
+  } finally {
+    db.close();
+  }
+});

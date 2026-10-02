@@ -1,0 +1,3 @@
+# Optional Windows GPU companion; this tested CTranslate2 wheel supplies cuDNN 9.
+# Readiness verifies cuBLAS + cuBLASLt + cuDNN load, followed by real model startup.
+nvidia-cublas-cu12==12.4.5.8

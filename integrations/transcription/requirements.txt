@@ -1,0 +1,3 @@
+# Tested recognition engine; install into a dedicated runtime, not the app or system site-packages.
+faster-whisper==1.2.1
+ctranslate2==4.8.2

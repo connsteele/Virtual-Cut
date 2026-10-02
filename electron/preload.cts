@@ -5,6 +5,16 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 // imports confined to Electron; the shared contract is erased by TypeScript.
 const api: VirtualCutApi = {
   transcript: {
+    setupHelp: (topic) => ipcRenderer.invoke('transcript:setupHelp', topic),
+    transport: (id, source, key) => ipcRenderer.invoke('transcript:transport', id, source, key),
+    onTransport: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
+        callback(value);
+      ipcRenderer.on('transcript:transport-event', f);
+      return () => ipcRenderer.removeListener('transcript:transport-event', f);
+    },
+    pageAt: (id, transcriptId, time) =>
+      ipcRenderer.invoke('transcript:pageAt', id, transcriptId, time),
     open: (source) => ipcRenderer.invoke('transcript:open', source),
     onSource: (callback) => {
       const f = (_event: Electron.IpcRendererEvent, source: string) => callback(source);
@@ -12,8 +22,8 @@ const api: VirtualCutApi = {
       return () => ipcRenderer.removeListener('transcript:source-event', f);
     },
     session: (source) => ipcRenderer.invoke('transcript:session', source),
-    page: (id, transcriptId, page, search) =>
-      ipcRenderer.invoke('transcript:page', id, transcriptId, page, search),
+    page: (id, transcriptId, page, search, filter) =>
+      ipcRenderer.invoke('transcript:page', id, transcriptId, page, search, filter),
     runtime: () => ipcRenderer.invoke('transcript:runtime'),
     configure: (part, device) => ipcRenderer.invoke('transcript:configure', part, device),
     start: (id, source, batch, options) =>

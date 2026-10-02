@@ -2,7 +2,8 @@ import type { TranscriptionOptions as Options } from '../../electron/transcript-
 import { Field } from './ui';
 import s from './Workflow.module.css';
 export const initialTranscriptionOptions: Options = {
-  roles: ['game'],
+  roles: ['game', 'mic'],
+  device: 'auto',
   language: 'en',
   vocabulary: false,
 };
@@ -46,6 +47,18 @@ export function TranscriptionOptions({
           <option value="zh">Chinese</option>
         </select>
       </Field>
+      <label>
+        Processing device
+        <select
+          aria-label="Processing device"
+          value={value.device || 'auto'}
+          onChange={(e) => onChange({ ...value, device: e.target.value as Options['device'] })}
+        >
+          <option value="auto">Automatic · prefer NVIDIA GPU</option>
+          <option value="cuda">NVIDIA GPU</option>
+          <option value="cpu">CPU</option>
+        </select>
+      </label>
       <label>
         <input
           type="checkbox"

@@ -160,6 +160,7 @@ export class ProjectService {
     const contextId = s.transcripts.registerContext(context);
     const runtimeSignature = JSON.stringify({
       ...this.transcription.settings,
+      device: options.device || this.transcription.settings.device,
       pipeline: TRANSCRIPTION_PIPELINE,
     });
     for (const role of options.roles) {
@@ -193,7 +194,12 @@ export class ProjectService {
         role,
         runtimeSignature,
         track,
-        transcription: { ...options, batchId, contextId },
+        transcription: {
+          ...options,
+          device: options.device || this.transcription.settings.device,
+          batchId,
+          contextId,
+        },
         state: 'queued',
         progress: 0,
         message: 'Waiting for local speech recognition',
@@ -1799,7 +1805,11 @@ export class ProjectService {
           duration: record.duration,
           offset: track.offset,
           state: 'running',
-          model: path.basename(this.transcription.settings.model),
+          model:
+            this.transcription.settings.model
+              .replaceAll('\\', '/')
+              .match(/models--[^/]+--([^/]+)/)?.[1] ||
+            path.basename(this.transcription.settings.model),
           pipeline: TRANSCRIPTION_PIPELINE,
           device: this.transcription.settings.device,
           created: new Date().toISOString(),
@@ -1829,9 +1839,19 @@ export class ProjectService {
             ffmpeg: this.tool('ffmpeg'),
             wav: pcm,
             tempDirectory: s.data.project.cache,
+            device: request.device || this.transcription.settings.device,
           },
           signal,
           (event) => {
+            if (event.device) transcript.device = event.device;
+            if (event.type === 'info' && event.message) {
+              transcript.deviceMessage = event.message;
+              this.diagnostics?.record('transcription-device', {
+                jobId: job.id,
+                device: event.device,
+                message: event.message,
+              });
+            }
             if (event.type === 'stage') progress(event.progress || 0, event.message);
             if (event.engine) transcript.engineVersion = event.engine;
             if (event.runtime) transcript.runtimeVersion = event.runtime;
@@ -1839,8 +1859,8 @@ export class ProjectService {
             if (event.type === 'info') {
               transcript = {
                 ...transcript,
-                language: event.language || '',
-                languageProbability: event.languageProbability,
+                language: event.language ?? transcript.language,
+                languageProbability: event.languageProbability ?? transcript.languageProbability,
               };
               s.transcripts.put(transcript);
             }
