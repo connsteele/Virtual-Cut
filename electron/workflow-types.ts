@@ -108,7 +108,7 @@ export interface Recording {
   gameTrack?: number | null;
   micTrack?: number | null;
   monitor?: 'game' | 'mic' | 'both';
-  importAudio?: { game: number | null; mic: number | null };
+  importAudio?: import('./project-contracts.js').ImportAudio;
   audioWarning?: string;
 }
 export interface AudioTrack {
@@ -138,6 +138,10 @@ export interface Link {
   label: string;
 }
 export interface Note {
+  sourceId?: string;
+  time?: number;
+  transcriptId?: string;
+  segmentIds?: number[];
   id: string;
   title: string;
   text: string;
@@ -158,6 +162,8 @@ export interface Target {
   items: Entry[];
 }
 export interface Model {
+  transcriptEdits?: import('./transcript-contracts.js').TranscriptEdit[];
+  cueDecisions?: import('./transcript-contracts.js').CueDecision[];
   contexts?: import('./project-context.js').CreativeContext[];
   selectedRecordingId?: string;
   recordings: Recording[];

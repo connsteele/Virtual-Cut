@@ -15,6 +15,7 @@ export interface Batch {
 }
 /** One-based audio stream order, independent of video/subtitle stream indices. */
 export interface ImportAudio {
+  transcription?: import('./transcript-contracts.js').TranscriptionOptions;
   game: number | null;
   mic: number | null;
 }
@@ -41,7 +42,10 @@ export interface MediaJob {
   elapsedMs?: number;
   id: string;
   sourceId: string;
-  kind: 'inspect' | 'audio' | 'export';
+  kind: 'inspect' | 'audio' | 'export' | 'transcribe';
+  transcription?: import('./transcript-contracts.js').TranscriptRequest;
+  role?: 'game' | 'mic';
+  runtimeSignature?: string;
   track?: number;
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   progress: number;

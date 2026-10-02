@@ -124,7 +124,7 @@ if (process.argv[2] === '--crash') {
   await unlink(legacy + '.saves');
   store = new ProjectStore(legacy);
   assert.match(store.snapshot().recoveryNotice, /upgraded/);
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 4);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM history').get().n, 0);
   await store.loadCopies();
   const migration = store.snapshot().saves.find((s) => s.kind === 'migration');

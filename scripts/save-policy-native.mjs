@@ -109,7 +109,7 @@ compactSaveCopy(legacy);
 assert((await stat(legacy)).size < oldBytes / 2);
 const upgraded = new DatabaseSync(legacy, { readOnly: true });
 assert.equal(upgraded.prepare('SELECT body FROM project WHERE id=1').get().body, oldBody);
-assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, 3);
+assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, 4);
 assert.equal(upgraded.prepare('SELECT COUNT(*) AS n FROM history').get().n, 0);
 upgraded.close();
 const damaged = path.join(dir, 'damaged.vcut');

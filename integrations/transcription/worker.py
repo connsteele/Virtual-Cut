@@ -1,0 +1,141 @@
+"""One local recognition job. JSON lines are the only stdout protocol.
+
+The guard owns a Windows kill-on-close Job Object and watches the Electron
+parent handle. The recognition process cannot read its request until assigned
+to that job. Killing the guard, closing the app, or a parent crash ends the
+recognizer and ffmpeg descendants. No model remains resident between jobs.
+"""
+import ctypes
+import json
+import os
+import subprocess
+import sys
+import time
+
+
+def emit(value):
+    print(json.dumps(value, ensure_ascii=False, allow_nan=False), flush=True)
+
+
+def guard(parent_pid):
+    if os.name != "nt":
+        raise RuntimeError("This transcription worker currently requires Windows.")
+    from ctypes import wintypes as w
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateJobObjectW.argtypes = [ctypes.c_void_p, w.LPCWSTR]
+    k.CreateJobObjectW.restype = w.HANDLE
+    k.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+    k.OpenProcess.restype = w.HANDLE
+    k.SetInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD]
+    k.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
+    k.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+    k.CloseHandle.argtypes = [w.HANDLE]
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("process_time", ctypes.c_int64), ("job_time", ctypes.c_int64),
+                    ("flags", w.DWORD), ("min_ws", ctypes.c_size_t), ("max_ws", ctypes.c_size_t),
+                    ("active", w.DWORD), ("affinity", ctypes.c_size_t), ("priority", w.DWORD), ("scheduling", w.DWORD)]
+    class IO(ctypes.Structure):
+        _fields_ = [(str(i), ctypes.c_uint64) for i in range(6)]
+    class Limits(ctypes.Structure):
+        _fields_ = [("basic", Basic), ("io", IO), ("process_memory", ctypes.c_size_t),
+                    ("job_memory", ctypes.c_size_t), ("peak_process", ctypes.c_size_t), ("peak_job", ctypes.c_size_t)]
+
+    parent = k.OpenProcess(0x100000, False, parent_pid)  # SYNCHRONIZE, no write access
+    if not parent or k.WaitForSingleObject(parent, 0) != 258:
+        raise RuntimeError("The app is no longer running.")
+    job = k.CreateJobObjectW(None, None)
+    child = None
+    try:
+        limits = Limits()
+        limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not job or not k.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        request = sys.stdin.buffer.readline(1024 * 1024)
+        if not request.endswith(b"\n"):
+            raise RuntimeError("Missing transcription request.")
+        child = subprocess.Popen([sys.executable, "-u", __file__, "--worker"], stdin=subprocess.PIPE,
+                                 creationflags=subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+        if not k.AssignProcessToJobObject(job, int(child._handle)):
+            child.kill()
+            raise ctypes.WinError(ctypes.get_last_error())
+        emit({"type": "worker", "pid": child.pid, "guardPid": os.getpid()})
+        child.stdin.write(request)
+        child.stdin.close()
+        while child.poll() is None:
+            if k.WaitForSingleObject(parent, 250) != 258:
+                return 2
+        return child.returncode
+    finally:
+        if job:
+            k.CloseHandle(job)
+        if child is not None:
+            child.wait(timeout=10)
+        k.CloseHandle(parent)
+
+
+def worker():
+    request = json.loads(sys.stdin.buffer.readline(1024 * 1024))
+    sys.path.insert(0, request["libraries"])
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["OMP_NUM_THREADS"] = str(request["threads"])
+    os.environ["TEMP"] = os.environ["TMP"] = request["tempDirectory"]
+    began = time.monotonic()
+    emit({"type": "stage", "message": "Preparing speech audio", "progress": 0.01})
+    wav = request["wav"]
+    try:
+        subprocess.run([request["ffmpeg"], "-v", "error", "-nostdin", "-i", request["source"],
+                        "-map", "0:" + str(request["track"]), "-vn", "-ac", "1", "-ar", "16000",
+                        "-c:a", "pcm_s16le", "-y", wav], check=True, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+        emit({"type": "stage", "message": "Loading local speech model", "progress": 0.03})
+        from faster_whisper import WhisperModel
+        import faster_whisper
+        import ctranslate2
+        device = request["device"]
+        model = WhisperModel(request["model"], device=device,
+                             compute_type="float16" if device == "cuda" else "int8",
+                             cpu_threads=request["threads"], local_files_only=True)
+        emit({"type": "stage", "message": "Recognizing speech", "progress": 0.05,
+              "engine": faster_whisper.__version__, "runtime": ctranslate2.__version__})
+        segments, info = model.transcribe(
+            wav, language=request["language"] or None, beam_size=5, word_timestamps=True,
+            vad_filter=True, vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 350},
+            condition_on_previous_text=False, hallucination_silence_threshold=2,
+            hotwords=request.get("vocabulary") or None)
+        emit({"type": "info", "language": info.language, "languageProbability": info.language_probability,
+              "duration": info.duration})
+        offset = request["offset"]
+        for ordinal, segment in enumerate(segments):
+            emit({"type": "segment", "segment": {
+                "id": ordinal, "start": max(0, segment.start + offset), "end": max(0, segment.end + offset),
+                "text": segment.text, "noSpeechProbability": segment.no_speech_prob,
+                "averageLogProbability": segment.avg_logprob,
+                "words": [{"start": max(0, w.start + offset), "end": max(0, w.end + offset),
+                           "text": w.word, "probability": w.probability} for w in segment.words or []]},
+                  "progress": min(0.99, 0.05 + 0.94 * segment.end / max(info.duration, 0.001))})
+        from ctypes import wintypes as w
+        class Memory(ctypes.Structure):
+            _fields_ = [("cb", w.DWORD), ("faults", w.DWORD)] + [(name, ctypes.c_size_t) for name in
+                ["peak", "working", "peak_pool", "pool", "peak_nonpaged", "nonpaged", "pagefile", "peak_pagefile"]]
+        memory = Memory(); memory.cb = ctypes.sizeof(memory)
+        kernel = ctypes.WinDLL("kernel32"); kernel.GetCurrentProcess.restype = w.HANDLE
+        psapi = ctypes.WinDLL("psapi"); psapi.GetProcessMemoryInfo.argtypes = [w.HANDLE, ctypes.c_void_p, w.DWORD]
+        measured = psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(memory), memory.cb)
+        emit({"type": "complete", "elapsedMs": round((time.monotonic() - began) * 1000), "peakMemoryBytes": memory.peak if measured else None})
+    finally:
+        if os.path.isfile(wav):
+            os.unlink(wav)
+
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1] == "--guard":
+            sys.exit(guard(int(sys.argv[2])))
+        elif sys.argv[1] == "--worker":
+            worker()
+        else:
+            raise RuntimeError("Unknown worker mode.")
+    except Exception as error:
+        emit({"type": "error", "message": str(error)[:3000]})
+        sys.exit(1)

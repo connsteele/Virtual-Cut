@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { TranscriptStore } from './transcript-store.cjs';
 import { mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -45,6 +46,7 @@ interface Data {
 }
 const APP_ID = PROJECT_APP_ID;
 export class ProjectStore {
+  transcripts!: TranscriptStore;
   readonly db!: DatabaseSync;
   private lock: string;
   data: Data;
@@ -139,6 +141,10 @@ export class ProjectStore {
       // Additive native receipts are kept outside the edit journal. Old M1
       // projects open without changing annotation or timing identities.
       this.db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+      this.transcripts = new TranscriptStore(this.db);
+      for (const transcript of this.transcripts.list())
+        if (transcript.state === 'running')
+          this.transcripts.put({ ...transcript, state: 'interrupted' });
       for (const record of this.exports())
         if (['running', 'queued'].includes(record.state))
           this.putExport({
@@ -263,6 +269,10 @@ export class ProjectStore {
       throw new Error('Choose an available save copy.');
     const check = openProjectReadOnly(path.join(this.file + '.saves', saveId));
     let saved: Data, sources: NativeSource[], jobs: MediaJob[];
+    const transcripts: {
+      summary: import('./transcript-contracts.js').TranscriptSummary;
+      segments: import('./transcript-contracts.js').TranscriptSegment[];
+    }[] = [];
     try {
       inspectProject(check);
       saved = JSON.parse(String(check.prepare('SELECT body FROM project WHERE id=1').get()?.body));
@@ -277,6 +287,29 @@ export class ProjectStore {
         .prepare('SELECT body FROM jobs')
         .all()
         .map((row) => JSON.parse(String(row.body)));
+      if (check.prepare("SELECT name FROM sqlite_master WHERE name='transcripts'").get()) {
+        for (const row of check.prepare('SELECT body FROM transcripts').all()) {
+          const summary = JSON.parse(String(row.body));
+          if (!summary.context && summary.contextId)
+            summary.context = JSON.parse(
+              String(
+                check
+                  .prepare('SELECT body FROM transcript_contexts WHERE id=?')
+                  .get(summary.contextId)?.body,
+              ),
+            );
+          if (!this.transcripts.list().some((t) => t.id === summary.id))
+            transcripts.push({
+              summary,
+              segments: check
+                .prepare(
+                  'SELECT body FROM transcript_segments WHERE transcript_id=? ORDER BY ordinal',
+                )
+                .all(summary.id)
+                .map((r) => JSON.parse(String(r.body))),
+            });
+        }
+      }
     } finally {
       check.close();
     }
@@ -287,6 +320,11 @@ export class ProjectStore {
       this.data = saved;
       this.db.exec('DELETE FROM sources; DELETE FROM jobs; DELETE FROM history;');
       sources.forEach((source) => this.putSource(source));
+      for (const transcript of transcripts) {
+        this.transcripts.put(transcript.summary);
+        for (const segment of transcript.segments)
+          this.transcripts.append(transcript.summary.id, segment);
+      }
       jobs.forEach((job) =>
         this.putJob(
           ['queued', 'running'].includes(job.state)
@@ -367,6 +405,7 @@ export class ProjectStore {
       .run(s.id, JSON.stringify(s));
   }
   removeSource(id: string) {
+    this.transcripts.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);
     this.db.prepare('DELETE FROM sources WHERE id=?').run(id);
   }

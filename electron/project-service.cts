@@ -15,6 +15,13 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
+import { TranscriptionRuntime, validateTranscriptionOptions } from './transcription-runtime.cjs';
+import { effectiveContext } from './project-context.js';
+import type {
+  TranscriptionOptions,
+  TranscriptSummary,
+  TranscriptSession,
+} from './transcript-contracts.js' with { 'resolution-mode': 'import' };
 import { projectStorageUsage } from './project-storage.cjs';
 import {
   planProjectDeletion,
@@ -77,6 +84,134 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  readonly transcription: TranscriptionRuntime;
+  transcriptSession(sourceId?: string): TranscriptSession | null {
+    const s = this.store;
+    if (!s) return null;
+    const source =
+      s.data.model.recordings.find((r) => r.id === sourceId) ||
+      s.data.model.recordings.find((r) => r.id === s.data.model.selectedRecordingId) ||
+      s.data.model.recordings[0];
+    const transcripts = source ? s.transcripts.list(source.id) : [];
+    const transcriptIds = new Set(transcripts.map((t) => t.id));
+    return {
+      clips: s.data.model.clips
+        .filter((c) => c.rid === source?.id)
+        .map((c) => ({ id: c.id, name: c.name, start: c.start, end: c.end })),
+      outputs: s
+        .exports()
+        .filter((e) => e.state === 'verified' && e.plan.sourceId === source?.id && e.verification)
+        .map((e) => ({
+          id: e.plan.id,
+          name: e.plan.name,
+          start: e.verification!.actual.start,
+          end: e.verification!.actual.end,
+        })),
+      projectId: s.data.project.id,
+      revision: s.data.revision,
+      sourceId: source?.id || '',
+      title: source?.title || '',
+      position: source?.position || 0,
+      recordings: s.data.model.recordings.map((r) => ({ id: r.id, title: r.title })),
+      batches: s.data.batches.map((b) => ({ id: b.id, name: b.name })),
+      batchId: source?.batchIds?.includes(s.data.activeBatchId)
+        ? s.data.activeBatchId
+        : source?.batchIds?.[0] || s.data.activeBatchId,
+      transcripts,
+      edits: (s.data.model.transcriptEdits || []).filter((e) => transcriptIds.has(e.transcriptId)),
+      decisions: s.data.model.cueDecisions || [],
+      jobs: s
+        .jobs()
+        .filter((j) => j.kind === 'transcribe' && (!source || j.sourceId === source.id))
+        .map((j) => ({
+          id: j.id,
+          sourceId: j.sourceId,
+          state: j.state,
+          progress: j.progress,
+          message: j.message,
+          elapsedMs: j.elapsedMs,
+        })),
+    };
+  }
+  requestTranscription(
+    id: string,
+    sourceId: string,
+    batchId: string,
+    options: TranscriptionOptions,
+  ) {
+    const s = this.require(id);
+    validateTranscriptionOptions(options);
+    const r = s.data.model.recordings.find((r) => r.id === sourceId);
+    if (!r || !r.batchIds?.includes(batchId) || r.availability !== 'ready')
+      throw new Error('Choose an inspected recording in this batch.');
+    if (!this.transcription.configured)
+      throw new Error('Set up the local speech runtime in the Transcript window first.');
+    const effective = effectiveContext(s.data.model.contexts, batchId);
+    const context = {
+      gameId: effective.game?.id,
+      gameName: effective.game?.name,
+      vocabulary: options.vocabulary ? effective.game?.vocabulary || '' : '',
+      brief: effective.brief,
+    };
+    const contextId = s.transcripts.registerContext(context);
+    const runtimeSignature = JSON.stringify(this.transcription.settings);
+    for (const role of options.roles) {
+      const track = role === 'game' ? r.gameTrack : r.micTrack;
+      if (track == null || !r.audioTracks?.some((t) => t.index === track))
+        throw new Error(
+          `Choose this recording’s ${role === 'mic' ? 'microphone' : 'game'} audio track before transcribing.`,
+        );
+    }
+    for (const role of options.roles) {
+      const track = (role === 'game' ? r.gameTrack : r.micTrack)!;
+      const previous = s
+        .jobs()
+        .find(
+          (j) =>
+            j.kind === 'transcribe' &&
+            j.sourceId === sourceId &&
+            j.track === track &&
+            j.role === role &&
+            j.runtimeSignature === runtimeSignature &&
+            j.transcription?.contextId === contextId &&
+            j.transcription?.language === options.language &&
+            j.transcription?.vocabulary === options.vocabulary &&
+            ['queued', 'running', 'succeeded'].includes(j.state),
+        );
+      if (previous) continue;
+      s.putJob({
+        id: randomUUID(),
+        sourceId,
+        kind: 'transcribe',
+        role,
+        runtimeSignature,
+        track,
+        transcription: { ...options, batchId, contextId },
+        state: 'queued',
+        progress: 0,
+        message: 'Waiting for local speech recognition',
+        updated: new Date().toISOString(),
+      });
+    }
+    this.pump();
+  }
+  async pauseTranscription(id: string, jobId: string) {
+    const before = this.require(id)
+      .jobs()
+      .find((j) => j.id === jobId);
+    if (!before || before.kind !== 'transcribe' || !['queued', 'running'].includes(before.state))
+      throw new Error('Choose an active transcription job.');
+    await this.job(id, jobId, 'cancel');
+    const s = this.require(id),
+      job = s.jobs().find((j) => j.id === jobId)!;
+    if (job.state === 'cancelled')
+      s.putJob({
+        ...job,
+        state: 'interrupted',
+        message: 'Paused · worker stopped. Resume restarts this track.',
+        updated: new Date().toISOString(),
+      });
+  }
   async storageUsage(id: string) {
     const store = this.require(id);
     return projectStorageUsage(store.data.project, store.sources(), store.exports());
@@ -222,9 +357,11 @@ export class ProjectService {
   private switching = false;
   constructor(
     private profile: string,
-    private toolsDirectory: string,
+    private toolsDirectory = '',
     private diagnostics?: Diagnostics,
-  ) {}
+  ) {
+    this.transcription = new TranscriptionRuntime(profile, toolsDirectory);
+  }
   async logToolVersions() {
     for (const tool of ['ffmpeg', 'ffprobe'] as const) {
       const controller = new AbortController();
@@ -288,6 +425,25 @@ export class ProjectService {
       throw e;
     }
     this.store = next;
+    for (const job of next
+      .jobs()
+      .filter((j) => j.kind === 'transcribe' && !['queued', 'running'].includes(j.state))) {
+      const source = next.sources().find((s) => s.id === job.sourceId);
+      if (
+        !source ||
+        !/^[a-f\d-]{36}$/i.test(job.id) ||
+        !/^[a-f\d-]{36}$/i.test(source.id) ||
+        !/^[a-f\d]+$/i.test(source.fingerprint)
+      )
+        continue;
+      const wav = path.join(
+        next.data.project.cache,
+        `${source.id}-${source.fingerprint}-asr-${job.id}.partial.wav`,
+      );
+      const info = await lstat(wav).catch(() => null);
+      if (info?.isFile() && !info.isSymbolicLink() && info.nlink === 1)
+        await unlink(wav).catch(() => {});
+    }
     await next.loadCopies();
     this.reconcileExports();
     process.env.VIRTUAL_CUT_MEDIA_TEMP = next.data.project.cache;
@@ -791,7 +947,7 @@ export class ProjectService {
             )
             .map((source) => `${source.id}-${source.fingerprint}`);
           const suffix =
-            /^-(?:frame-[0-7](?:\.partial)?\.jpg|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32))$/i;
+            /^-(?:frame-[0-7](?:\.partial)?\.jpg|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
           for (const entry of await readdir(cache, { withFileTypes: true })) {
             if (!entry.isFile() || entry.isSymbolicLink()) continue;
             const prefix = prefixes.find(
@@ -849,6 +1005,13 @@ export class ProjectService {
     const batch = s.data.batches.find((b) => b.id === batchId);
     if (!batch) throw new Error('Choose a batch first.');
     const defaults = audio || batch.audioDefaults || { game: 1, mic: null };
+    if (defaults.transcription) {
+      validateTranscriptionOptions(defaults.transcription);
+      if (!this.transcription.configured)
+        throw new Error(
+          'Set up local transcription in the Transcript window, or import now and transcribe later.',
+        );
+    }
     for (const value of [defaults.game, defaults.mic])
       if (value != null && (!Number.isInteger(value) || value < 1 || value > 64))
         throw new Error('Choose an audio track number from 1 to 64.');
@@ -882,6 +1045,8 @@ export class ProjectService {
             this.grants.delete(existing.file);
           }
           s.write();
+          if (defaults.transcription && r.availability === 'ready')
+            this.requestTranscription(id, r.id, batchId, defaults.transcription);
           continue;
         }
         s.transaction(() => {
@@ -1607,7 +1772,118 @@ export class ProjectService {
       const free = await import('node:fs/promises').then((fs) => fs.statfs(s.data.project.cache));
       if (free.bavail * free.bsize < 256 * 1024 * 1024)
         throw new Error('Not enough free space in the preview cache.');
-      if (job.kind === 'inspect') {
+      if (job.kind === 'transcribe') {
+        const record = s.data.model.recordings.find((r) => r.id === source.id)!;
+        const request = job.transcription;
+        if (!request || !job.role || job.track == null)
+          throw new Error('This job has no transcription settings. Start a new transcription.');
+        const track = record.audioTracks?.find((t) => t.index === job.track);
+        if (!track) throw new Error('The selected audio track is no longer available.');
+        if (free.bavail * free.bsize < 256 * 1024 * 1024 + record.duration * 32000)
+          throw new Error('Free more preview-cache space before transcribing.');
+        const context = effectiveContext(s.data.model.contexts, request.batchId);
+        let transcript: TranscriptSummary = {
+          id: job.id,
+          sourceId: source.id,
+          fingerprint: source.fingerprint,
+          role: job.role,
+          track: job.track,
+          language: request.language,
+          duration: record.duration,
+          offset: track.offset,
+          state: 'running',
+          model: path.basename(this.transcription.settings.model),
+          device: this.transcription.settings.device,
+          created: new Date().toISOString(),
+          context: request.contextId
+            ? s.transcripts.context(request.contextId)
+            : {
+                gameId: context.game?.id,
+                gameName: context.game?.name,
+                vocabulary: request.vocabulary ? context.game?.vocabulary || '' : '',
+                brief: context.brief,
+              },
+          segmentCount: 0,
+          wordCount: 0,
+        };
+        s.transcripts.begin(transcript);
+        const wav = `${prefix}-asr-${job.id}.partial.wav`;
+        const claim = await open(wav, 'wx');
+        await claim.close();
+        pcm = wav;
+        await this.transcription.run(
+          {
+            source: source.file,
+            track: job.track,
+            offset: track.offset,
+            language: request.language,
+            vocabulary: transcript.context.vocabulary,
+            ffmpeg: this.tool('ffmpeg'),
+            wav: pcm,
+            tempDirectory: s.data.project.cache,
+          },
+          signal,
+          (event) => {
+            if (event.type === 'stage') progress(event.progress || 0, event.message);
+            if (event.engine) transcript.engineVersion = event.engine;
+            if (event.runtime) transcript.runtimeVersion = event.runtime;
+            if (event.peakMemoryBytes) transcript.peakMemoryBytes = event.peakMemoryBytes;
+            if (event.type === 'info') {
+              transcript = {
+                ...transcript,
+                language: event.language || '',
+                languageProbability: event.languageProbability,
+              };
+              s.transcripts.put(transcript);
+            }
+            if (event.type === 'segment' && event.segment) {
+              const segment = event.segment;
+              if (
+                !Number.isSafeInteger(segment.id) ||
+                segment.id !== transcript.segmentCount ||
+                !Number.isFinite(segment.start) ||
+                !Number.isFinite(segment.end) ||
+                segment.start < 0 ||
+                segment.end < segment.start ||
+                segment.end > record.duration + 1 ||
+                typeof segment.text !== 'string' ||
+                segment.text.length > 10000 ||
+                !Array.isArray(segment.words) ||
+                segment.words.length > 10000 ||
+                segment.words.some(
+                  (w) =>
+                    !Number.isFinite(w.start) ||
+                    !Number.isFinite(w.end) ||
+                    w.start < 0 ||
+                    w.end < w.start ||
+                    w.end > record.duration + 1 ||
+                    typeof w.text !== 'string',
+                )
+              )
+                throw new Error(
+                  'The speech model returned invalid timing. Original recording is unchanged.',
+                );
+              s.transcripts.append(job.id, segment);
+              transcript.segmentCount++;
+              transcript.wordCount += segment.words.length;
+              progress(
+                event.progress || 0,
+                `Recognizing ${job.role} speech · ${transcript.wordCount} words`,
+              );
+            }
+          },
+        );
+        signal.throwIfAborted();
+        const final = await stat(source.file);
+        if (final.size !== source.bytes || final.mtimeMs !== source.modified)
+          throw new Error('Recording changed during transcription.');
+        s.transcripts.put({
+          ...transcript,
+          state: 'complete',
+          completed: new Date().toISOString(),
+          elapsedMs: elapsedMs(),
+        });
+      } else if (job.kind === 'inspect') {
         const info = await inspectMedia(source.file, source.id, this.tool('ffprobe'), signal, (n) =>
           progress(n),
         );
@@ -1685,6 +1961,28 @@ export class ProjectService {
           s.data.revision++;
         });
         this.queueAudio(source.id);
+        const transcription = s.data.model.recordings.find((r) => r.id === source.id)?.importAudio
+          ?.transcription;
+        if (transcription) {
+          try {
+            this.requestTranscription(
+              s.data.project.id,
+              source.id,
+              s.data.model.recordings.find((r) => r.id === source.id)!.batchIds![0],
+              transcription,
+            );
+          } catch (e) {
+            s.putJob({
+              id: randomUUID(),
+              sourceId: source.id,
+              kind: 'transcribe',
+              state: 'failed',
+              progress: 0,
+              message: e instanceof Error ? e.message : String(e),
+              updated: new Date().toISOString(),
+            });
+          }
+        }
       } else {
         // Publish a fresh generation. Windows may lock a preview currently playing;
         // replacing that file breaks waveform upgrades and retry preparation.
@@ -1789,6 +2087,15 @@ export class ProjectService {
       });
     } catch (e) {
       failureCode = errorCode(e);
+      if (job.kind === 'transcribe') {
+        const transcript = s.transcripts.list(job.sourceId).find((t) => t.id === job.id);
+        if (transcript)
+          s.transcripts.put({
+            ...transcript,
+            state: signal.aborted ? (this.switching ? 'interrupted' : 'cancelled') : 'failed',
+            elapsedMs: elapsedMs(),
+          });
+      }
       if (job.kind === 'export') {
         const record = s.exports().find((e) => e.plan.id === job.id);
         if (record)

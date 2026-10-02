@@ -68,12 +68,27 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
   current = withoutDone(current);
   const result = structuredClone(current);
   const byId = (x: { id: string }) => x.id;
+  result.transcriptEdits = mergeItems(
+    before.transcriptEdits || [],
+    after.transcriptEdits || [],
+    current.transcriptEdits || [],
+    byId,
+  );
+  result.cueDecisions = mergeItems(
+    before.cueDecisions || [],
+    after.cueDecisions || [],
+    current.cueDecisions || [],
+    byId,
+  );
   result.contexts = mergeItems(
     before.contexts || [],
     after.contexts || [],
     current.contexts || [],
     byId,
   );
+  // Merely opening or seeking an older project must not create editorial changes.
+  for (const field of ['contexts', 'transcriptEdits', 'cueDecisions'] as const)
+    if (!before[field] && !after[field] && !current[field]) delete result[field];
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
     // Each collection is homogeneous; the shared identity operation preserves its type.
     Object.assign(result, {
@@ -138,8 +153,36 @@ export function validateEdits(model: Model): Model {
     throw new Error('Project edit is too large. Use a smaller pinned preview.');
   const sources = new Map(model.recordings.map((r) => [r.id, r]));
   const text = (s: unknown, max = 100000): s is string => typeof s === 'string' && s.length <= max;
+  if ((model.transcriptEdits?.length || 0) > 100000 || (model.cueDecisions?.length || 0) > 100000)
+    throw new Error('Too many transcript edits.');
+  for (const edit of model.transcriptEdits || [])
+    if (
+      !text(edit.id, 300) ||
+      !text(edit.transcriptId, 200) ||
+      !Number.isSafeInteger(edit.segmentId) ||
+      edit.segmentId < 0 ||
+      (edit.wordIndex != null && (!Number.isSafeInteger(edit.wordIndex) || edit.wordIndex < 0)) ||
+      !text(edit.text, 10000)
+    )
+      throw new Error('Invalid transcript correction.');
+  for (const decision of model.cueDecisions || [])
+    if (
+      !text(decision.id, 300) ||
+      !['accepted', 'rejected'].includes(decision.status) ||
+      (decision.markerId != null && !text(decision.markerId, 200))
+    )
+      throw new Error('Invalid cue decision.');
   if (!text(model.scratchpad || '') || model.clips.length > 50000)
     throw new Error('Invalid project edit.');
+  for (const note of model.notes)
+    if (
+      !text(note.id, 200) ||
+      !text(note.title, 10000) ||
+      !text(note.text) ||
+      (note.time != null && (!Number.isFinite(note.time) || note.time < 0)) ||
+      (note.sourceId != null && !text(note.sourceId, 200))
+    )
+      throw new Error('Invalid project note.');
   const validTime = (n: number, r: Recording) =>
     Number.isFinite(n) && n >= 0 && n <= r.duration + 0.000001;
   model.clips = model.clips.map((c: Clip) => {

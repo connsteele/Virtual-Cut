@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { validateEdits } from './project-edits.js';
 
 export const PROJECT_APP_ID = 1447253332;
-export const PROJECT_VERSION = 3;
+export const PROJECT_VERSION = 4;
 /** Closed copies need no journal files. Active/pending databases must still read their WAL. */
 export function openProjectReadOnly(file: string) {
   const pending = ['.lock', '-wal', '-shm'].some((suffix) => existsSync(file + suffix));
@@ -27,7 +27,7 @@ export function inspectProject(db: DatabaseSync) {
   const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
   if (version > PROJECT_VERSION)
     throw new Error('This project needs a newer Virtual Cut version. Open it with that version.');
-  if (![1, 2, 3].includes(version))
+  if (![1, 2, 3, 4].includes(version))
     throw new Error('This project uses an unsupported saved version.');
   if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
     throw new Error('Project integrity check failed.');
@@ -88,6 +88,7 @@ export function compactSaveCopy(file: string) {
       try {
         copy.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE');
         if (version === 1) createSessionSchema(copy);
+        createTranscriptSchema(copy);
         copy.exec(`DELETE FROM history; PRAGMA user_version=${PROJECT_VERSION}; COMMIT; VACUUM`);
         const checked = inspectProject(copy);
         if (JSON.stringify(checked.data) !== JSON.stringify(data))
@@ -150,6 +151,7 @@ export function migrateProject(db: DatabaseSync, file: string) {
   try {
     if (version === 1) db.exec(sessionSchema);
     db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+    createTranscriptSchema(db);
     db.exec('DELETE FROM history');
     db.exec(`PRAGMA user_version=${PROJECT_VERSION}; COMMIT`);
   } catch (e) {
@@ -198,3 +200,4 @@ export async function recoverProjectCopy(source: string, destination: string) {
     await unlink(temporary).catch(() => {});
   }
 }
+import { createTranscriptSchema } from './transcript-store.cjs';

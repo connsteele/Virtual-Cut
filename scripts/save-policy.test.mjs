@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { autosaveSettings, autosaveDue } from '../src/workflow/autosave.ts';
 import { changes, applyChange } from '../electron/project-changes.ts';
-import { emptyModel, mergeEdits, validateEdits } from '../electron/project-edits.ts';
+import { emptyModel, mergeEdits, validateEdits } from '../dist-electron/project-edits.js';
 
 const editFixture = () => ({
   ...emptyModel(),
