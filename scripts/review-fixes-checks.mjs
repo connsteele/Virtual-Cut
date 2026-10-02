@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { _electron as electron, expect } from 'playwright/test';
 import { root, require, electronEnvironment } from './shared.mjs';
+import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 
 // Every run owns its project and copies of the synthetic eight-second source.
 if (process.argv.includes('--reopen')) {
@@ -378,6 +379,7 @@ if (process.argv.includes('--reopen')) {
     await expect(page.getByRole('banner').getByRole('status')).toHaveText('Manual save made');
     await seek(6.25);
     const closed = new Promise((resolve) => appProcess.once('exit', resolve));
+    await collectBeforeWindowClose(app);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
     await closed;
     await new Promise((resolve, reject) => {

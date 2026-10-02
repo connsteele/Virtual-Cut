@@ -9,7 +9,7 @@ permissions:
 jobs:
   synthetic:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       VIRTUAL_CUT_SUITE_OUTPUT: ${{ runner.temp }}/virtual-cut-test-runs
     steps:
@@ -24,7 +24,8 @@ jobs:
       - run: npm test
       - name: Install synthetic media prerequisites
         run: choco install ffmpeg --yes --no-progress
-      - run: npm run test:native
+      - name: Measure native and desktop coverage with regression gates
+        run: npm run test:coverage
       - name: Keep reports and bounded logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -34,4 +35,9 @@ jobs:
             ${{ runner.temp }}/virtual-cut-test-runs/**/report.json
             ${{ runner.temp }}/virtual-cut-test-runs/**/report.md
             ${{ runner.temp }}/virtual-cut-test-runs/run-*/*.log
+            ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/summary.json
+            ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/sources.json
+            ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/renderer/**
+            ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/native/**
+            ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/combined/**
           retention-days: 7

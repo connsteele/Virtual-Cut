@@ -1,4 +1,5 @@
 export const fast = [
+  'coverage-pipeline.test.mjs',
   'save-policy.test.mjs',
   'media.test.mjs',
   'source-folders.test.mjs',

@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const require = createRequire(import.meta.url);
 
+if (process.env.VIRTUAL_CUT_COVERAGE_DIR && process.env.VIRTUAL_CUT_COVERAGE_CHECK)
+  (await import('./coverage-desktop.mjs')).installCoverageCollector();
+
 export function electronEnvironment(extra = {}) {
   const env = { ...process.env, ...extra };
   // Editors may set this for their own Node utilities. A desktop launch needs

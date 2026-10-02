@@ -190,7 +190,7 @@ try {
   // Editing leaves the playhead fixed before, during and after every gesture.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
   await page.waitForTimeout(200);
-  const snap = page.getByRole('button', { name: 'Snap to playhead', exact: true });
+  const snap = page.getByRole('button', { name: 'Snapping', exact: true });
   await expect(snap).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Selection follows playhead').uncheck();
   async function dragTo(locator, target, origin, check = true, extent = [0, 8], cancel = false) {
@@ -370,6 +370,72 @@ try {
   await position.press('Escape');
   const labels = await ruler.locator('b').allTextContents();
   assert(labels.length >= 3 && new Set(labels).size === labels.length);
+  // Readout mode is keyboard accessible, accepts indexed frames, and never seeks on toggle.
+  const framesMode = page.getByRole('button', { name: 'Show position as frames', exact: true });
+  await framesMode.focus();
+  await page.keyboard.press('Enter');
+  await expect(framesMode).toHaveAttribute('aria-pressed', 'true');
+  await expect(position).toHaveValue('75');
+  assert(Math.abs((await at()) - 2.5) < 0.02);
+  await position.fill('90');
+  await position.press('Enter');
+  await expect.poll(at).toBeCloseTo(3, 2);
+  await position.fill('1.5');
+  await position.press('Enter');
+  await expect(position).toHaveAttribute('aria-invalid', 'true');
+  await position.press('Escape');
+  await page.getByRole('button', { name: 'Show position as time', exact: true }).click();
+  await expect(position).toHaveValue('00:00:03.000');
+  const pb = await position.boundingBox();
+  assert((await ruler.boundingBox()).y - (pb.y + pb.height) >= 8, 'Position has space above ruler');
+  const beforeScrub = (await state()).model;
+  const targets = [
+    ...beforeScrub.markers[fixture.rid].flatMap((m) =>
+      m.end == null ? [m.time] : [m.time, m.end],
+    ),
+    ...beforeScrub.clips.filter((c) => c.rid === fixture.rid).flatMap((c) => [c.start, c.end]),
+  ];
+  async function scrubNear(target, surface, enabled, extent = [0, 8]) {
+    const box = await surface.boundingBox();
+    const x = box.x + ((target - extent[0]) / (extent[1] - extent[0])) * box.width;
+    await page.mouse.move(x - 24, box.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(x + 5, box.y + 12, { steps: 3 });
+    if (enabled)
+      await expect(page.locator('[data-snap-guide]')).toHaveAttribute(
+        'data-snap-guide',
+        String(target),
+      );
+    else await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
+    await page.mouse.up();
+    await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
+    const expected = enabled ? target : target + (5 / box.width) * (extent[1] - extent[0]);
+    await expect.poll(at).toBeCloseTo(expected, 2);
+  }
+  for (const manipulate of [true, false]) {
+    const button = page.getByRole('button', { name: 'H · Manipulate', exact: true });
+    if ((await button.getAttribute('aria-pressed')) !== String(manipulate)) await button.click();
+    for (const target of [...new Set(targets)].filter((t) => t > 0.3 && t < 7.7))
+      await scrubNear(target, manipulate ? ruler : film, true);
+  }
+  await snap.click();
+  await scrubNear(extended.time, ruler, false);
+  await snap.click();
+  const zoomTarget = targets.find((t) => t > 3 && t < 5);
+  assert(zoomTarget != null);
+  await seek(zoomTarget);
+  await page.getByRole('button', { name: 'Zoom in timeline', exact: true }).click();
+  const zoomExtent = await page
+    .getByTestId('scrub-surface')
+    .evaluate((el) => [Number(el.dataset.viewStart), Number(el.dataset.viewEnd)]);
+  await scrubNear(zoomTarget, ruler, true, zoomExtent);
+  await page.getByRole('button', { name: 'Fit full recording', exact: true }).click();
+  assert.deepEqual(
+    (await state()).model.markers,
+    beforeScrub.markers,
+    'Scrubbing does not edit markers',
+  );
+  assert.deepEqual((await state()).model.clips, beforeScrub.clips, 'Scrubbing does not edit clips');
   await capture('snap-ranges-wide');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
   await capture('snap-ranges-compact');

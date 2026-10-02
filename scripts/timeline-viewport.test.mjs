@@ -2,6 +2,22 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { zoomViewport, fitViewport } from '../src/workflow/timelineViewport.ts';
 import { rulerTicks, parsePosition, positionText } from '../src/workflow/timelineRuler.ts';
+import { framePosition, parseFramePosition } from '../src/workflow/framePosition.ts';
+
+test('frame positions follow real VFR timestamps, reject invalid indices, and estimate only without an index', () => {
+  const source = { frameTimes: [0, 0.04, 0.09, 0.13, 1.95], fps: 30, duration: 2 };
+  assert.equal(framePosition(source, 0.089), 1);
+  assert.equal(framePosition(source, 0.09), 2);
+  assert.equal(framePosition(source, 2), 4);
+  assert.equal(parseFramePosition(source, '3'), 0.13);
+  for (const value of ['5', '-1', '1.5', '1:00', 'Infinity', ''])
+    assert.equal(parseFramePosition(source, value), null);
+  const nominal = { duration: 2, fps: 30 };
+  assert.equal(framePosition(nominal, 0.1), 3);
+  assert.equal(framePosition(nominal, 2), 59);
+  assert.equal(parseFramePosition(nominal, '30'), 1);
+  assert.equal(parseFramePosition(nominal, '60'), null);
+});
 
 test('Exact position input accepts elapsed times, rejects malformed components and rounds display', () => {
   for (const [text, expected] of [

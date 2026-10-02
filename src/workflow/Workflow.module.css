@@ -345,6 +345,19 @@
 .cutCenter > .tools {
   flex-shrink: 0;
 }
+@media (max-height: 800px) {
+  .cutCenter {
+    padding-block: 6px !important;
+    gap: 4px;
+  }
+  .cutCenter > .tools {
+    gap: 4px;
+    font-size: 11px;
+  }
+  .cutCenter > .tools .button {
+    padding: 4px 5px;
+  }
+}
 .inspector {
   padding: 16px;
   overflow: auto;

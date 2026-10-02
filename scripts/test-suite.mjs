@@ -20,6 +20,8 @@ const base = path.resolve(
 );
 await mkdir(base, { recursive: true });
 const directory = await mkdtemp(path.join(base, 'run-'));
+if (process.argv.includes('--coverage'))
+  process.env.VIRTUAL_CUT_COVERAGE_DIR = path.join(directory, 'coverage');
 await mkdir(path.join(directory, 'temp'));
 await writeFile(path.join(directory, '.virtual-cut-tests-owned'), 'running');
 const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -82,7 +84,13 @@ async function run(name, command, args, extra = {}) {
     child = spawn(command, args, {
       cwd: root,
       windowsHide: true,
-      env: { ...env, ...extra },
+      env: {
+        ...env,
+        ...extra,
+        ...(process.env.VIRTUAL_CUT_COVERAGE_DIR && known.includes(name)
+          ? { VIRTUAL_CUT_COVERAGE_CHECK: name }
+          : {}),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const capture = (data) => {
@@ -181,6 +189,9 @@ try {
     }
     if (fast.includes(name))
       await run(name, process.execPath, [
+        ...(process.env.VIRTUAL_CUT_COVERAGE_DIR
+          ? ['--import', './scripts/coverage-fast.mjs']
+          : []),
         '--experimental-strip-types',
         '--test',
         `scripts/${name}`,
@@ -209,6 +220,29 @@ try {
   );
   await writeFile(path.join(directory, '.virtual-cut-tests-owned'), 'complete');
   console.log(`Report: ${path.join(directory, 'report.json')}`);
+  if (process.env.VIRTUAL_CUT_COVERAGE_DIR) {
+    const { coverageReport } = await import('./coverage-report.mjs');
+    const gates = path.join(root, 'scripts/coverage-gates.json');
+    const coverage = await coverageReport(
+      process.env.VIRTUAL_CUT_COVERAGE_DIR,
+      path.join(directory, 'report.json'),
+      existsSync(gates) ? gates : undefined,
+    );
+    if (coverage.status === 'failed') report.status = 'failed';
+    report.coverage = {
+      status: coverage.status,
+      summary: path.join(process.env.VIRTUAL_CUT_COVERAGE_DIR, 'summary.json'),
+    };
+    await writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2));
+    await writeFile(
+      path.join(directory, 'report.md'),
+      `# ${profile}: ${report.status}\n\n` +
+        report.checks
+          .map((r) => `- ${r.status}: ${r.name}${r.reason ? ' — ' + r.reason : ''}`)
+          .join('\n') +
+        `\n\nCoverage: ${coverage.status}. See ${report.coverage.summary}\n`,
+    );
+  }
   // Retain five completed runs. Only delete direct, real, marked suite-owned folders.
   const completed = [];
   for (const item of await readdir(base, { withFileTypes: true })) {

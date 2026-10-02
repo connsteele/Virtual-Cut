@@ -1641,9 +1641,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     H · Manipulate
                   </Button>
                   <Button
-                    aria-label="Snap to playhead"
+                    aria-label="Snapping"
                     aria-pressed={snapEnabled}
-                    title="Snap manipulated clip edges and markers to the playhead position at drag start"
+                    title="Snap edits to the playhead; snap ruler/filmstrip scrubbing to marker and clip boundaries, with Manipulate on or off"
                     onClick={() => {
                       setSnapEnabled(!snapEnabled);
                       localStorage.setItem('virtual-cut.snap-playhead', String(!snapEnabled));

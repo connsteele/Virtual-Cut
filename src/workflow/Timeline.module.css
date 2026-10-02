@@ -10,6 +10,14 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 26px;
+  padding-bottom: 8px;
+}
+.positionModes {
+  display: flex;
+  gap: 3px;
+}
+.positionModes button {
+  padding: 5px;
 }
 .zoomTools,
 .panTools {
@@ -490,6 +498,13 @@
   border-inline: 4px solid transparent;
 }
 @media (max-height: 800px) {
+  .legendRow {
+    gap: 4px;
+  }
+  .position input {
+    width: 120px;
+    font-size: 14px;
+  }
   .frames {
     height: 48px;
   }

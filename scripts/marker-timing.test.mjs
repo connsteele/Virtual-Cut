@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markerTime, adjustMarker, layoutMarkers } from '../src/workflow/markerTiming.ts';
-import { playheadSnap } from '../src/workflow/playheadSnap.ts';
+import { playheadSnap, scrubSnap } from '../src/workflow/playheadSnap.ts';
+
+test('scrub magnet chooses nearest visible boundary with deterministic ties at any zoom', () => {
+  assert.equal(scrubSnap(5.05, [5.1, 5], 0, 10, 1000), 5);
+  assert.equal(scrubSnap(5.08, [5, 5.1], 0, 10, 1000), 5.1);
+  assert.equal(scrubSnap(5.15, [5], 0, 10, 1000), null);
+  assert.equal(scrubSnap(5.015, [5], 4, 6, 1000), 5);
+  assert.equal(scrubSnap(5.03, [5], 4, 6, 1000), null);
+  assert.equal(scrubSnap(4, [3.99, NaN, Infinity], 4, 6, 1000), null);
+  assert.equal(scrubSnap(6, [6], 4, 6, 1000), 6);
+  assert.equal(scrubSnap(5, [5], 4, 6, 0), null);
+});
 
 test('playhead magnet has a pixel-sized threshold, respects zoom and can be disabled', () => {
   assert.equal(playheadSnap(5.09, 5, 10, 1000), 5);

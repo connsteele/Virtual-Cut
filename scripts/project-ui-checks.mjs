@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment } from './shared.mjs';
+import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 const checksRoot = testPath('milestone-1');
 const fixture = JSON.parse(await readFile(path.join(checksRoot, 'latest-native.json'), 'utf8'));
 await mkdir(checksRoot, { recursive: true });
@@ -82,6 +83,7 @@ async function go(name) {
     .click();
 }
 async function close() {
+  await collectBeforeWindowClose(app);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
   if (app.process().exitCode === null)
     await new Promise((resolve) => app.process().once('exit', resolve));

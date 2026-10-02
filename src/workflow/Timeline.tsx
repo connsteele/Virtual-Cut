@@ -12,12 +12,13 @@ import type { AudioTrack } from '../../electron/workflow-types';
 import { clipColor, layoutClips } from './clipLayout';
 import { Button } from './ui';
 import { fitViewport, zoomViewport, type TimelineViewport } from './timelineViewport';
-import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-react';
+import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed, Clock3, Film } from 'lucide-react';
 import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
 import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
-import { playheadSnap } from './playheadSnap';
+import { playheadSnap, scrubSnap } from './playheadSnap';
 import { rulerTicks, parsePosition, positionText } from './timelineRuler';
+import { framePosition, parseFramePosition } from './framePosition';
 
 export function Timeline({
   recording,
@@ -76,6 +77,11 @@ export function Timeline({
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
+  const [positionMode, setPositionMode] = useState(() =>
+    localStorage.getItem('virtual-cut.position-mode') === 'frames' ? 'frames' : 'time',
+  );
+  const positionValue =
+    positionMode === 'frames' ? String(framePosition(recording, current)) : positionText(current);
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
   const stationaryMarkerClick = useRef<{ time: number; at: number } | null>(null);
@@ -256,7 +262,21 @@ export function Timeline({
   });
   function scrub(x: number) {
     const rect = track.current!.getBoundingClientRect();
-    onSeek(start + Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * span);
+    const value = start + Math.max(0, Math.min(1, (x - rect.left) / rect.width)) * span;
+    const target = snapEnabled
+      ? scrubSnap(
+          value,
+          [
+            ...markers.flatMap((m) => (m.end == null ? [m.time] : [m.time, m.end])),
+            ...(showClips ? clips.flatMap((c) => [c.start, c.end]) : []),
+          ],
+          start,
+          end,
+          rect.width,
+        )
+      : null;
+    setSnapGuide(target);
+    onSeek(target ?? value);
   }
   function moveMarker(x: number) {
     const d = markerDrag.current;
@@ -364,10 +384,14 @@ export function Timeline({
           <input
             aria-label="Timeline position"
             aria-invalid={!!positionError}
-            title="Enter seconds or hours:minutes:seconds.milliseconds; Enter to seek, Escape to cancel"
-            value={positionDraft ?? positionText(current)}
+            title={
+              positionMode === 'time'
+                ? 'Enter seconds or hours:minutes:seconds.milliseconds; Enter to seek, Escape to cancel'
+                : `Zero-based ${recording.frameTimes?.length ? 'indexed' : 'estimated'} frame number; Enter to seek, Escape to cancel`
+            }
+            value={positionDraft ?? positionValue}
             onFocus={(e) => {
-              setPositionDraft(positionText(current));
+              setPositionDraft(positionValue);
               e.currentTarget.select();
             }}
             onChange={(e) => {
@@ -385,10 +409,15 @@ export function Timeline({
               }
               if (e.key !== 'Enter') return;
               e.preventDefault();
-              const value = parsePosition(positionDraft ?? positionText(current));
+              const value =
+                positionMode === 'frames'
+                  ? parseFramePosition(recording, positionDraft ?? positionValue)
+                  : parsePosition(positionDraft ?? positionValue);
               if (value == null || value < fullStart || value > fullEnd) {
                 setPositionError(
-                  `Enter a time from ${positionText(fullStart)} to ${positionText(fullEnd)}.`,
+                  positionMode === 'frames'
+                    ? 'Enter a whole frame number inside the current recording or clip.'
+                    : `Enter a time from ${positionText(fullStart)} to ${positionText(fullEnd)}.`,
                 );
                 return;
               }
@@ -397,6 +426,28 @@ export function Timeline({
             }}
           />
         </label>
+        <div className={s.positionModes} role="group" aria-label="Position format">
+          {(['time', 'frames'] as const).map((mode) => (
+            <Button
+              key={mode}
+              aria-label={mode === 'time' ? 'Show position as time' : 'Show position as frames'}
+              aria-pressed={positionMode === mode}
+              title={
+                mode === 'time'
+                  ? 'Elapsed time'
+                  : `Frame number (starts at 0${recording.frameTimes?.length ? '' : '; estimated from nominal frame rate'})`
+              }
+              onClick={() => {
+                setPositionMode(mode);
+                setPositionDraft(null);
+                setPositionError('');
+                localStorage.setItem('virtual-cut.position-mode', mode);
+              }}
+            >
+              {mode === 'time' ? <Clock3 size={15} /> : <Film size={15} />}
+            </Button>
+          ))}
+        </div>
         {positionError && (
           <span className={s.positionError} role="alert">
             {positionError}
@@ -520,17 +571,20 @@ export function Timeline({
           if (pointer.current !== e.pointerId) return;
           scrub(e.clientX);
           pointer.current = null;
+          setSnapGuide(null);
           onScrubActive?.(false);
           if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         onPointerCancel={() => {
+          setSnapGuide(null);
           finishMarker(false);
           finishHandle(false);
           pointer.current = null;
           onScrubActive?.(false);
         }}
         onLostPointerCapture={() => {
+          setSnapGuide(null);
           finishMarker(false);
           finishHandle(false);
           pointer.current = null;
@@ -913,7 +967,7 @@ export function Timeline({
           <div
             className={s.snapGuide}
             data-snap-guide={snapGuide}
-            aria-label="Snapped to playhead"
+            aria-label="Snap alignment"
             style={{ left: percent(snapGuide) }}
           />
         )}

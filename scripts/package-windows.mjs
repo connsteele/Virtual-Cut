@@ -5,6 +5,11 @@ import path from 'node:path';
 import { require, root, runNode } from './shared.mjs';
 import { brandWindowsExecutable } from './brand-windows-executable.mjs';
 
+if (process.env.VIRTUAL_CUT_COVERAGE_DIR)
+  throw new Error(
+    'Coverage builds are test-only and cannot be packaged. Unset VIRTUAL_CUT_COVERAGE_DIR.',
+  );
+
 if (process.platform !== 'win32')
   throw new Error('The Windows folder build must be assembled on Windows.');
 await runNode(path.join(root, 'scripts/build.mjs'));

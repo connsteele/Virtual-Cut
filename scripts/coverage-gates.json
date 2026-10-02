@@ -1,0 +1,11 @@
+{
+  "src/workflow/autosave.ts": { "lines": 100, "functions": 100, "branches": 100 },
+  "src/workflow/useProjectWorkspace.ts": { "lines": 75, "functions": 74, "branches": 76 },
+  "electron/project-edits.ts": { "lines": 98, "functions": 100, "branches": 94 },
+  "electron/project-store.cts": { "lines": 92, "functions": 100, "branches": 83 },
+  "electron/project-recovery.cts": { "lines": 90, "functions": 100, "branches": 70 },
+  "electron/project-service.cts": { "lines": 92, "functions": 94, "branches": 82 },
+  "electron/clip-export.cts": { "lines": 90, "functions": 97, "branches": 78 },
+  "electron/destination-plan.cts": { "lines": 93, "functions": 94, "branches": 84 },
+  "electron/review-state.cts": { "lines": 100, "functions": 100, "branches": 100 }
+}
