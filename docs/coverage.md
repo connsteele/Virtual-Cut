@@ -2,6 +2,31 @@
 
 Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's owned G: run directory; override `VIRTUAL_CUT_SUITE_OUTPUT` elsewhere. Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
 
+## M3 review iteration — 0.4.1, October 2, 2026
+
+All **44 maintained scripts passed** in one complete current-source run across **85 application
+source files**. All fifteen existing critical-module floors pass without changes. The new
+floating-window review check exercises transport/typing isolation, bidirectional page following,
+transcript-wide cue filters, adjusted paired boundaries, overlap target selection and Undo/Redo.
+
+| Area     |                  Lines |              Functions |               Branches |
+| -------- | ---------------------: | ---------------------: | ---------------------: |
+| Renderer |     80.04% (3005/3754) |     71.54% (1104/1543) |     76.22% (3039/3987) |
+| Native   |     90.10% (3133/3477) |       90.55% (805/889) |     80.76% (2406/2979) |
+| Combined | **84.88% (6138/7231)** | **78.49% (1909/2432)** | **78.16% (5445/6966)** |
+
+Report: `G:\GPT\Work\virtual-cut\review-0.4.1\final-checks\run-2MCdFa\coverage\combined\index.html`.
+The adjacent `summary.json` records complete collection, unchanged gates and two intentionally
+terminated filing/recovery workers with conservative partial counters. The earlier `run-vut47E`
+used the wrong runner profile without a package, skipped desktop prerequisites and is retained as
+incomplete evidence; none of its counters contribute to this baseline.
+
+Real CPU/GPU/batch comparisons, missing-GPU fallback, worker lifetime and real packaged recognition
+are separate evidence in [throughput research](research/transcription-throughput-0.4.1.md).
+Python coverage, acoustic correctness and GPU VRAM usage are not established by this percentage.
+The normal package is uninstrumented. A final CSS-only compact Media spacing correction is outside
+the TypeScript coverage denominator and receives a separate packaged layout check.
+
 ## M3 first review — 0.4.0, October 2, 2026
 
 All **43 maintained scripts passed** in the full current-source run. A measured follow-up expands context/import-consent interactions and captures floating-window counters before each close. The final reconciled report is **complete**, covers **83 application source files**, and passes **fifteen critical-module gates**. The eleven M2 floors are unchanged; four new floors protect context, transcript edits, immutable storage and timed exports.

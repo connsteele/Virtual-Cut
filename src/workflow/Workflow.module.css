@@ -1692,6 +1692,10 @@
   max-height: 30%;
   overflow-y: auto;
 }
+.mediaPreview > details {
+  /* The preview's flex gap already separates these sections. */
+  margin-block: 0;
+}
 .sourceActions {
   display: flex;
   justify-content: flex-end;

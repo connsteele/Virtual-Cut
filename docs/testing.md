@@ -1,16 +1,16 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.0 has eleven fast, fifteen native and seventeen desktop scripts (43 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.1 has eleven fast, fifteen native and eighteen desktop scripts (44 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Current measured results and module gates are in [coverage](coverage.md); version-specific sections below preserve historical evidence. Closeout expands the existing deletion test with ownership/schema rejection, pending writes, lock contention, unavailable peers, linked ancestors and referenced-project protection. Storage tests report unavailable or linked locations honestly. These use disposable files and do not alter app behavior.
 
-| Command                                                       | Gate                                                                                                                                                         |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm test`                                                    | Build/type checks, lint, eleven fast synthetic test files                                                                                                      |
-| `npm run test:native`                                         | Build and fifteen native media/persistence/export/filmstrip/review/transcript scripts, using Electron's SQLite runtime                                                 |
-| `npm run test:desktop`                                        | Fast, native prerequisites and seventeen actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
-| `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                              |
-| `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                   |
+| Command                                                       | Gate                                                                                                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm test`                                                    | Build/type checks, lint, eleven fast synthetic test files                                                                                                          |
+| `npm run test:native`                                         | Build and fifteen native media/persistence/export/filmstrip/review/transcript scripts, using Electron's SQLite runtime                                             |
+| `npm run test:desktop`                                        | Fast, native prerequisites and eighteen actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
+| `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                                    |
+| `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                         |
 
 The Windows GitHub workflow runs build/lint/fast checks followed by measured native/desktop coverage with synthetic media. Packaged and human hardware/Resolve checks are separate. The workflow uses the official [checkout](https://github.com/actions/checkout), [Node setup](https://github.com/actions/setup-node), and [artifact upload](https://github.com/actions/upload-artifact) actions. A first hosted run is still required after publishing the branch.
 

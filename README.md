@@ -22,7 +22,7 @@ The local test setup uses six complete 4K AV1 recordings with original audio. Pr
 
 ## Run the app
 
-Version 0.4.0 adds **Transcript** to project controls and optional transcription to each import's audio setup. Use Projects for game/brief context and **Batch context** for inheritance or overrides. Recognition only starts after an explicit request; opening saved transcripts does not load a model. The separate window supports word seeking, search, corrections, cue review and JSON/SRT export. See [M301–M308](docs/m3-review.md) for the prepared local review project, observed CPU timings and known recognition errors.
+Version 0.4.1 refines **Transcript** to project controls and optional transcription to each import's audio setup. Use Projects for game/brief context and **Batch context** for inheritance or overrides. Recognition only starts after an explicit request; opening saved transcripts does not load a model. The separate window supports word seeking, search, corrections, cue review and JSON/SRT export. See [M301–M308](docs/m3-review.md) for the prepared local review project, observed CPU timings and known recognition errors.
 
 Version 0.3.23 groups cleanup files with expandable counts and explains retained saves. Projects shows a storage breakdown below Preview cache, measured only when the panel opens or Refresh is clicked. Sources and all completed outputs/companions remain protected. M281–M286 passed; see [the M2 closeout and explicit follow-ups](docs/m2-closeout.md).
 
