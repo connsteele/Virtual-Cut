@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises'
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment } from './shared.mjs';
+import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 const fixture = JSON.parse(
   await readFile(
     process.env.VIRTUAL_CUT_TRANSCRIPT_FIXTURE ||
@@ -174,6 +175,7 @@ try {
       'No horizontal overflow',
     );
   }
+  await collectBeforeWindowClose(app);
   await transcript.close();
   await writeFile(
     path.join(dir, 'profile', 'transcript-window.json'),
@@ -203,6 +205,7 @@ try {
   );
   await expect(reopened.getByLabel('Transcript phrases')).toContainText('Cai');
   // Context is editable without running recognition; batch inheritance is visible.
+  await collectBeforeWindowClose(app);
   await reopened.close();
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await page.getByText('Project game and video brief', { exact: true }).click();

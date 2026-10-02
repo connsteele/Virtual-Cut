@@ -16,6 +16,8 @@ export function installCoverageCollector() {
     await mkdir(directory, { recursive: true });
     const pid = await app.evaluate(() => process.pid);
     const check = process.env.VIRTUAL_CUT_COVERAGE_CHECK;
+    const windowIds = new WeakMap();
+    let nextWindowId = 0;
     // An expectation is recorded at launch, before a successful collector can hide a missing one.
     await writeFile(
       path.join(directory, `${check}-expected-${pid}.json`),
@@ -32,10 +34,14 @@ export function installCoverageCollector() {
       const pages = app.windows();
       if (!pages.length) throw Error('Renderer coverage missing: no windows');
       for (let i = 0; i < pages.length; i++) {
+        // A reopened floating window is a new renderer. Preserve its predecessor's
+        // final counters instead of reusing its array position and overwriting them.
+        if (!windowIds.has(pages[i])) windowIds.set(pages[i], nextWindowId++);
+        const windowId = windowIds.get(pages[i]);
         const coverage = await pages[i].evaluate(() => globalThis.__coverage__);
         if (!coverage || !Object.keys(coverage).length) throw Error('Renderer coverage missing');
         await writeFile(
-          path.join(directory, `${check}-renderer-${pid}-${i}.json`),
+          path.join(directory, `${check}-renderer-${pid}-${windowId}.json`),
           JSON.stringify({ check, kind: 'renderer', pid, complete: true, coverage }),
         );
         const session = await pages[i].context().newCDPSession(pages[i]);
@@ -55,7 +61,7 @@ export function installCoverageCollector() {
         await session.detach();
         if (!preload) throw Error('Isolated preload coverage missing');
         await writeFile(
-          path.join(directory, `${check}-preload-${pid}-${i}.json`),
+          path.join(directory, `${check}-preload-${pid}-${windowId}.json`),
           JSON.stringify({ check, kind: 'preload', pid, complete: true, coverage: preload }),
         );
       }

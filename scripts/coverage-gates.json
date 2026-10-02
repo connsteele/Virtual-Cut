@@ -9,5 +9,9 @@
   "electron/destination-plan.cts": { "lines": 93, "functions": 94, "branches": 84 },
   "electron/review-state.cts": { "lines": 100, "functions": 100, "branches": 100 },
   "electron/project-deletion.cts": { "lines": 95, "functions": 95, "branches": 84 },
-  "electron/project-storage.cts": { "lines": 98, "functions": 90, "branches": 90 }
+  "electron/project-storage.cts": { "lines": 98, "functions": 90, "branches": 90 },
+  "electron/project-context.ts": { "lines": 100, "functions": 100, "branches": 90 },
+  "electron/transcript-edits.ts": { "lines": 90, "functions": 100, "branches": 80 },
+  "electron/transcript-store.cts": { "lines": 95, "functions": 100, "branches": 80 },
+  "electron/transcript-export.ts": { "lines": 100, "functions": 100, "branches": 90 }
 }
