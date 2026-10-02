@@ -202,7 +202,47 @@ try {
     'A disconnected monitor must not hide the reopened transcript window',
   );
   await expect(reopened.getByLabel('Transcript phrases')).toContainText('Cai');
+  // Context is editable without running recognition; batch inheritance is visible.
+  await reopened.close();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByText('Project game and video brief', { exact: true }).click();
+  const projectContext = page.getByRole('region', { name: 'Project context', exact: true }).last();
+  await projectContext.getByLabel('Game context').selectOption('set');
+  await projectContext.getByLabel('Game name', { exact: true }).fill('Review game');
+  await projectContext.getByLabel('Names and game terms (optional)').fill('Cai, Castor');
+  await projectContext.getByLabel('Video brief (optional)').fill('Character development');
+  await expect(projectContext).toContainText('Using: Review game');
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.getByRole('button', { name: 'Batch context', exact: true }).click();
+  const batchContext = page.getByRole('region', { name: 'Batch context', exact: true });
+  await batchContext.getByLabel('Game context').selectOption('inherit');
+  await expect(batchContext).toContainText('Using: Review game');
+  await batchContext.getByLabel('Video brief').selectOption('append');
+  await batchContext.getByLabel('Batch brief', { exact: true }).fill('Opening scene');
+  await batchContext.getByLabel('Game context').selectOption('none');
+  await expect(batchContext).toContainText('Using: no specific game');
+  await batchContext.getByLabel('Game context').selectOption('inherit');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  // Consent belongs to each import, rather than silently carrying forward.
+  for (const name of ['Import files', 'Import folder']) {
+    await page.getByRole('button', { name, exact: true }).click();
+    const consent = page.getByLabel('Transcribe this import locally');
+    await expect(consent).not.toBeChecked();
+    await consent.check();
+    await page.getByLabel('Transcribe audio').selectOption('mic');
+    await page.getByLabel('Speech language').selectOption('en');
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  }
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const savedContexts = await page.evaluate(
+    async () => (await window.virtualCut.project.current()).model.contexts,
+  );
+  assert.equal(savedContexts.find((c) => c.id === 'project').game.name, 'Review game');
+  assert.ok(
+    savedContexts.some(
+      (c) => c.gameMode === 'inherit' && c.briefMode === 'append' && c.brief === 'Opening scene',
+    ),
+  );
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(dir, 'result.json'),
@@ -222,6 +262,12 @@ try {
   console.log(
     `Floating transcript, seeking, corrections, Undo, phrase timing, reopen and IPC isolation passed: ${dir}`,
   );
+} catch (error) {
+  if (app) {
+    const main = await app.firstWindow();
+    await writeFile(path.join(dir, 'failure.html'), await main.content());
+  }
+  throw error;
 } finally {
   if (app) await app.close();
 }
