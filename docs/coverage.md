@@ -2,7 +2,39 @@
 
 Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's owned G: run directory; override `VIRTUAL_CUT_SUITE_OUTPUT` elsewhere. Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
 
-## Measured 0.3.21 baseline
+## Final M2 baseline — 0.3.23, October 2, 2026
+
+All **39 maintained scripts passed** in the full current-source run. The expanded deletion/storage safety check then passed in an explicit measured follow-up. The reconciled report is **complete** across **73 application source files**, with **all eleven critical-module gates passing**. The original nine floors are unchanged; cleanup and storage now have measured floors too.
+
+| Area     |                  Lines |              Functions |               Branches |
+| -------- | ---------------------: | ---------------------: | ---------------------: |
+| Renderer |     79.83% (2728/3417) |      71.35% (994/1393) |     75.77% (2678/3534) |
+| Native   |     92.25% (2643/2865) |       92.35% (664/719) |     81.84% (1781/2176) |
+| Combined | **85.49% (5371/6282)** | **78.50% (1658/2112)** | **78.09% (4459/5710)** |
+
+Reports: `G:\GPT\Work\virtual-cut\m2-closeout\coverage-baseline\combined\index.html`, with renderer/native drill-down, `summary.json` and `reconciled-tests.json` alongside. Input runs are `coverage\run-LyXaCX` and `safety-coverage\run-Xl5kYw` beneath the closeout folder. Application source fingerprints and counter maps are identical. The latest deletion check replaces its earlier passing attempt; other full-run counters remain. Both attempts are recorded. This pass had no failed scripts, prerequisite skips or missing collectors.
+
+The two intentionally terminated filing/recovery workers retain conservative partial counters; their parent recovery scenarios passed. The range interaction script completed in 464 seconds under instrumentation. It was slow, not deadlocked; coverage timing is not an app-performance measurement.
+
+| Critical module                    |  Lines | Functions | Branches |
+| ---------------------------------- | -----: | --------: | -------: |
+| Autosave policy                    |   100% |      100% |     100% |
+| Workspace persistence coordination | 81.21% |    79.06% |   76.86% |
+| Edit validation/merge              | 98.87% |      100% |   94.28% |
+| Project store                      | 92.19% |      100% |   83.95% |
+| Recovery                           | 91.22% |      100% |   73.21% |
+| Project/filing service             | 93.37% |    94.66% |   82.71% |
+| Export/packet verification         | 90.11% |    97.14% |   78.14% |
+| Destination validation             | 93.68% |    94.44% |   84.81% |
+| Acceptance revision state          |   100% |      100% |     100% |
+| Project deletion                   | 96.80% |    95.83% |   84.21% |
+| Storage accounting                 | 98.30% |    91.66% |   92.68% |
+
+New safety scenarios prove preservation/rejection for foreign, corrupt and future-version saves; pending database writes; changed identity; a writer lock acquired after planning; unavailable peer projects; linked ancestors; and a project referenced as media. Storage checks cover incomplete and linked locations. Floors for deletion are 95/95/84 (lines/functions/branches); storage is 98/90/90. These preserve the measured behavioral baseline without requiring 100% of defensive branches.
+
+Remaining gaps include rare filesystem races during deletion, unusual malformed records, some permission/disk-full paths, packet-clock fallback branches and less-used renderer error/prototype UI. A high percentage does not establish those cases, all codecs, or every Resolve version. Meaningful protection assertions remain the gate. No additional app behavior changed; the normal uninstrumented build and lint pass, and the accepted 0.3.23 package remains current. M2 acceptance and explicit follow-ups are in [closeout](m2-closeout.md). First hosted CI is still pending authorized publication.
+
+## Historical 0.3.21 baseline
 
 All 37 maintained scripts have passing evidence across the full run and explicit corrected runs. The reconciled report is **complete**, with all nine critical-module gates passing and 70 application source files inventoried.
 

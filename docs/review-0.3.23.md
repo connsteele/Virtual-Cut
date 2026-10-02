@@ -17,14 +17,16 @@ The screenshot’s original save folder was unavailable during this inspection, 
 
 **Source footage, full exports and `.vcut.json` companions remain protected in every cleanup option.** Grouping and storage accounting do not broaden the deletion allowlist.
 
-## Manual review
+## Accepted manual review
+
+M285 and M286 passed Connor's review. Optional scrolling within Storage is retained as polish. See [M2 closeout](m2-closeout.md) for the final acceptance and carried-forward observations.
 
 - **M285 — Cleanup grouping and retained reasons:** Open deletion for an expendable project containing several previews/saves. Confirm repeated types show a caret and count, one item stays directly visible, and retained entries explain why they remain. Check keyboard expansion and compact layout. Cancel is sufficient to review the grouping; M284 already accepted actual deletion.
 - **M286 — Project storage:** Open Projects and inspect Storage below Preview cache. Compare categories with the project’s files if useful. Make a save or prepare previews, reopen Projects or use Refresh, and expect updated sizes. There should be no repeated measuring while the panel sits open, and no saves caused by viewing storage. Unavailable files are identified, and full outputs/companions remain preserved.
 
 ## M2 goalpost
 
-The manual production feature path and Connor’s representative batch have passed their reported review. The board now closes the accepted core Review, destination, export, marker mapping, dates, filing, snapping, deletion and whole-pool handoff tickets, plus the automated failure/recovery gate. VC-74 holds these two new checks.
+The manual production feature path and Connor’s representative batch have passed their reported review. The board closes the accepted core Review, destination, export, marker mapping, dates, filing, snapping, deletion and whole-pool handoff tickets, plus the automated failure/recovery gate. VC-74 is Done following M285/M286 acceptance.
 
 Keep the specific unreviewed observations visible: M254 Library viewer/typing; M249 Resolve reopen/new-timeline inheritance (repeat checking is accepted via M283); M212 older MP4/MKV tail presentation and separate clip-context observation; M217 statistics behavior. The existing O01–O05 deep recipes remain available without requiring another full successful batch. VC-41 is conditional on a natural terminal playback failure. VC-49’s first hosted CI run requires publication; no push is authorized. M3–M5 and deferred Library latency/parity are outside M2.
 

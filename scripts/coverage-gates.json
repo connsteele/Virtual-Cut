@@ -7,5 +7,7 @@
   "electron/project-service.cts": { "lines": 92, "functions": 94, "branches": 82 },
   "electron/clip-export.cts": { "lines": 90, "functions": 97, "branches": 78 },
   "electron/destination-plan.cts": { "lines": 93, "functions": 94, "branches": 84 },
-  "electron/review-state.cts": { "lines": 100, "functions": 100, "branches": 100 }
+  "electron/review-state.cts": { "lines": 100, "functions": 100, "branches": 100 },
+  "electron/project-deletion.cts": { "lines": 95, "functions": 95, "branches": 84 },
+  "electron/project-storage.cts": { "lines": 98, "functions": 90, "branches": 90 }
 }

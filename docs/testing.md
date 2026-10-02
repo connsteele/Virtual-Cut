@@ -2,6 +2,8 @@
 
 `scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.23 has nine fast, fourteen native and sixteen desktop scripts (39 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
+The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Current measured results and module gates are in [coverage](coverage.md); version-specific sections below preserve historical evidence. Closeout expands the existing deletion test with ownership/schema rejection, pending writes, lock contention, unavailable peers, linked ancestors and referenced-project protection. Storage tests report unavailable or linked locations honestly. These use disposable files and do not alter app behavior.
+
 | Command                                                       | Gate                                                                                                                                                         |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `npm test`                                                    | Build/type checks, lint, nine fast synthetic test files                                                                                                      |

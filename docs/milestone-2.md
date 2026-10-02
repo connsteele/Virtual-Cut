@@ -1,6 +1,12 @@
-# Milestone 2 — verified exports and reviewed filing (0.3.16)
+# Milestone 2 — verified exports and reviewed filing
 
-## Current candidate — 0.3.16
+## Closeout — 0.3.23
+
+Connor accepted the representative first-batch workflow and M281–M286 refinements. See [M2 closeout](m2-closeout.md) for the accepted scope, current validation and explicit follow-ups. Library previews/ranges, coverage measurement, save recovery and cleanup/storage are delivered. The older sections below record the implementation sequence; their pending statements describe those earlier versions.
+
+The unresolved natural playback trigger and older container-tail observations are retained as Later work. The first hosted CI run remains an open Baseline publication gate. M3–M5 are not started by this closeout.
+
+## Historical candidate — 0.3.16
 
 The manual path includes accepted batch filing, verified Done receipts, a completed Library with offline-original preview and matching-output relink, and an explicit Resolve marker-notes/colors helper. Review now supports Date modified sorting, optional global-order folder runs and accurate current Done locations. Handoff groups helper status, installation/removal and transfer instructions in one panel. See [the latest additions](review-0.3.16.md) and [filing and Library](filing-and-library.md).
 

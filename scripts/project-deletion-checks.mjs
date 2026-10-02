@@ -17,6 +17,10 @@ import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { projectStorageUsage } = require('../dist-electron/project-storage.cjs');
+const {
+  planProjectDeletion,
+  executeProjectDeletion,
+} = require('../dist-electron/project-deletion.cjs');
 const { recoverProjectCopy, inspectProject } = require('../dist-electron/project-recovery.cjs');
 const { DatabaseSync } = require('node:sqlite');
 const base = testPath('project-deletion');
@@ -193,6 +197,78 @@ assert.equal(report.rows.find((r) => r.id === 'manual').files, 2);
 assert.equal(report.rows.find((r) => r.id === 'images').bytes, 27);
 assert(report.issues.some((i) => i.includes('nested')));
 assert.deepEqual(await readdir(other.file + '.saves'), beforeNames);
+// A cleanup preview must retain saves whose ownership or schema cannot be established.
+const guarded = await create('Guarded');
+await service.close();
+await mkdir(guarded.file + '.saves');
+const foreign = path.join(guarded.file + '.saves', `manual-1-${randomUUID()}.vcut`);
+const corrupt = path.join(guarded.file + '.saves', `manual-2-${randomUUID()}.vcut`);
+const future = path.join(guarded.file + '.saves', `manual-3-${randomUUID()}.vcut`);
+await copyFile(other.file, foreign);
+await writeFile(corrupt, 'not a database');
+await copyFile(guarded.file, future);
+const futureDb = new DatabaseSync(future);
+futureDb.exec('PRAGMA user_version=999');
+futureDb.close();
+plan = await planProjectDeletion(guarded, [guarded]);
+for (const file of [foreign, corrupt, future]) {
+  assert(!plan.files.some((f) => f.path === file));
+  assert(plan.retainedDetails.some((f) => f.path === file));
+}
+await assert.rejects(
+  () => planProjectDeletion({ ...guarded, id: randomUUID() }, [guarded]),
+  /project file changed/i,
+);
+await writeFile(guarded.file + '-wal', 'pending');
+await assert.rejects(() => planProjectDeletion(guarded, [guarded]), /pending database/i);
+await unlink(guarded.file + '-wal');
+const beforeOpen = await planProjectDeletion(guarded, [guarded]);
+await writeFile(guarded.file + '.lock', JSON.stringify({ pid: process.pid }));
+await assert.rejects(() => executeProjectDeletion(beforeOpen, true), /now open/i);
+assert(await exists(guarded.file));
+assert(
+  await exists(guarded.file + '.lock'),
+  'A failed cleanup must not remove another writer lock',
+);
+await unlink(guarded.file + '.lock');
+// An unavailable known peer prevents claiming exclusive ownership of previews.
+plan = await planProjectDeletion(other, [other, { ...guarded, file: guarded.file + '.missing' }]);
+assert(!plan.files.some((f) => f.kind === 'preview'));
+assert(plan.retainedDetails.some((f) => /another recent project/.test(f.reason)));
+// Even a normal leaf reached through a junction is retained, protecting its real target.
+const linkedParent = path.join(dir, 'linked-parent');
+await symlink(path.dirname(guarded.file), linkedParent, 'junction');
+await assert.rejects(
+  () =>
+    planProjectDeletion(
+      { ...guarded, file: path.join(linkedParent, path.basename(guarded.file)) },
+      [],
+    ),
+  /linked folders/i,
+);
+// A malformed/reference-conflicted project must never authorize deleting its own media.
+const guardedDb = new DatabaseSync(guarded.file);
+guardedDb
+  .prepare('INSERT INTO sources(id,body) VALUES (?,?)')
+  .run(sourceId, JSON.stringify({ id: sourceId, file: guarded.file, fingerprint }));
+guardedDb.close();
+await assert.rejects(() => planProjectDeletion(guarded, [guarded]), /referenced as source media/i);
+assert(await exists(guarded.file));
+// Missing cache locations are reported without scanning the finished-video root.
+const offlineReport = await projectStorageUsage(
+  { ...other, cache: path.join(dir, 'absent-cache') },
+  [],
+  [],
+);
+assert(offlineReport.issues.some((i) => /unavailable/.test(i)));
+assert.equal(offlineReport.rows.find((r) => r.id === 'exports').files, 0);
+const linkedReport = await projectStorageUsage(
+  { ...other, cache: linkedParent },
+  [{ file: nested }],
+  [],
+);
+assert(linkedReport.issues.some((i) => /linked or non-folder/.test(i)));
+assert.equal(linkedReport.rows.find((r) => r.id === 'sources').unavailable, 1);
 await writeFile(
   path.join(base, 'latest-native.json'),
   JSON.stringify({ dir, project: other, output, metadata }, null, 2),
