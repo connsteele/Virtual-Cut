@@ -161,10 +161,24 @@ try {
     `Player should fill the available Library space: ${playerHeight}/${libraryHeight}; video=${viewerHeight}`,
   );
   await library.locator('summary', { hasText: 'Clip details & markers' }).click();
-  await library
-    .getByRole('button', { name: /Red marker/ })
-    .last()
-    .click();
+  const libraryVideo = library.locator('video');
+  await libraryVideo.evaluate((v) => v.pause());
+  const beforeMarkerSelection = await libraryVideo.evaluate((v) => v.currentTime);
+  const timelineMarker = library.getByRole('button', {
+    name: 'Select marker: Red marker',
+    exact: true,
+  });
+  await timelineMarker.click();
+  await expect(timelineMarker).toHaveAttribute('aria-pressed', 'true');
+  assert(
+    Math.abs((await libraryVideo.evaluate((v) => v.currentTime)) - beforeMarkerSelection) < 0.02,
+  );
+  const detailMarker = library.getByRole('button', { name: /Red marker/ }).last();
+  await detailMarker.click();
+  assert(
+    Math.abs((await libraryVideo.evaluate((v) => v.currentTime)) - beforeMarkerSelection) < 0.02,
+  );
+  await detailMarker.dblclick();
   await expect
     .poll(() => library.locator('video').evaluate((v) => v.currentTime))
     .toBeGreaterThan(0.5);

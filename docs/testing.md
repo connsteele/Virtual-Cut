@@ -49,3 +49,7 @@ The generated MP4 experiment under `G:\GPT\Work\virtual-cut\review-0.3.17\chapte
 ## Version 0.3.19 additions
 
 Existing marker timing checks cover the screen-space snapping threshold at full and zoomed extents and disabled/zero-width cases. The range desktop gate adds actual clip start/end, range start/end/body and point-marker magnetic gestures, frozen targets, disabled snapping, persistence of the toggle, zoom, invalid-edge constraints, Escape and Undo. Alt-drag with Manipulate off, thin text-free bands and wide/compact controls are checked. Library desktop verification waits for a complete cached overview and observes placeholder mutations through a verified revisit, as well as checking unchanged cached image URLs. These are scenario checks; renderer/native code coverage remains unmeasured under VC-50.
+
+## Version 0.3.20 additions
+
+The range desktop gate asserts stationary video time at pointer-down, during movement and after release/save across all snapping gestures. It exercises H-mode Alt conversion shapes during/after capture, selection/deselection versus double-click seeking, H-mode double-click, keyboard retiming, ruler/filmstrip scrubbing, exact-position input validation/cancel/focus and compact layout. Timeline unit checks cover elapsed-time parsing/rounding and bounded, spaced labels for compact, zoomed and long recordings. Existing feedback and zoom checks target the explicit seeking surface. Coverage measurement remains a separate VC-50 task.

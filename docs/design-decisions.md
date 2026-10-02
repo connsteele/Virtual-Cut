@@ -88,6 +88,10 @@ Connor requested three cues: **Mark** turns the following spoken thought into a 
 
 The [spoken-cue feature plan](feature-requests/spoken-cues.md) records these meanings and proposed timing, detection, review, clip-linking, and staged implementation behavior. Detection from recorded mic audio belongs after an explicitly started transcription job; it does not require an always-running listener. Timing defaults and handling of pauses or ambiguous command words still need validation on sample recordings. This feature is not yet implemented.
 
+## Timeline interaction correction — 0.3.20
+
+Connor approved separate selection, editing and seeking. Single-click marker/clip selects; double-click seeks to start. Mouse scrubbing begins only on the dedicated ruler or filmstrip/waveform surface. Empty edit lanes deselect. Manipulate dragging and keyboard retiming leave the playhead fixed, making it a useful snap reference. Points are circles and range endpoints are split circles while H is enabled, including Alt-drag conversion. H off uses pointed shapes. The dedicated ruler has adaptive labels; Position accepts elapsed seconds or HH:MM:SS.mmm with Enter/Escape. No timecode overlay/replace mode is introduced. This supersedes the earlier edit-preview-follow behavior.
+
 ## Current proposals, awaiting further UI discussion
 
 - Neutral charcoal surfaces with the supplied teal for primary accents; lighter related tones where small controls require greater contrast.

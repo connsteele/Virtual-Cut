@@ -169,10 +169,9 @@ function MarkerEditor({
               <button
                 className={s.markerLabel}
                 style={{ color: markerColor(m) }}
-                onClick={() => {
-                  onSelect(m.id);
-                  onSeek(m.time);
-                }}
+                onClick={() => onSelect(m.id)}
+                onDoubleClick={() => onSeek(m.time)}
+                title="Select marker; double-click to seek"
               >
                 ◆{' '}
                 <span>
@@ -655,12 +654,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   function selectClip(id: string) {
     setCid(id);
     setMid('');
-    markerSeek.current = null;
+    markerSeek.current = transport.current?.current() ?? null;
   }
   function selectMarker(id: string, recordId = r.id) {
     setMid(id);
     markerRecord.current = recordId;
-    markerSeek.current = model.markers[recordId]?.find((m) => m.id === id)?.time ?? null;
+    markerSeek.current = transport.current?.current() ?? null;
   }
   useLayoutEffect(() => {
     if (!renameMarkerId) return;
@@ -689,13 +688,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       (el) => (mid ? el.dataset.markerCard : el.dataset.cutClip) === id,
     );
     const container = card?.closest<HTMLElement>('aside');
-    if (
-      !card ||
-      !container ||
-      (container.contains(document.activeElement) &&
-        document.activeElement?.matches('input,textarea,select'))
-    )
-      return;
+    if (!card || !container || container.contains(document.activeElement)) return;
     const rect = card.getBoundingClientRect(),
       area = container.getBoundingClientRect();
     if (rect.top < area.top || rect.bottom > area.bottom)
@@ -1218,7 +1211,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         selectedMarkerId={mid}
         onMarkerSelect={(id) => selectMarker(id, record.id)}
         onMarkerMove={(id, time, end) => {
-          markerSeek.current = time;
+          markerSeek.current = transport.current?.current() ?? record.position;
           editMarker(id, { time, end }, record.id);
         }}
         onMarkerDeselect={() => {
@@ -1236,10 +1229,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           trimming.current = active;
         }}
         onTrim={(id, edge, value) => {
-          // A seek notification can arrive after pointer-up, before React has
-          // rendered the new extent. Keep that notification from selecting a
-          // different overlapping clip using the previous extent.
-          markerSeek.current = value;
+          // Editing does not seek. Ignore any pending snapshot at the stationary playhead.
+          markerSeek.current = transport.current?.current() ?? record.position;
           updateClip(id, { [edge]: value });
         }}
         legend={legend}
@@ -1694,7 +1685,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     onClick={(event) => {
                       if ((event.target as HTMLElement).closest('button,input,select,textarea'))
                         return;
-                      if (follow) transport.current?.seek(x.start);
                       selectClip(x.id);
                     }}
                     onFocus={() => selectClip(x.id)}
@@ -2746,8 +2736,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             </tbody>
           </table>
           <p>
-            Editing shortcuts leave typing fields alone. Enter finishes a name edit. With
-            selection-follow off, click a clip card or its timeline bar to select it.
+            Editing shortcuts leave typing fields alone. Enter finishes a name edit. Click a clip or
+            marker to select it; double-click to seek to its start. Click or drag the ruler or
+            filmstrip to seek. Manipulate edits keep the playhead fixed. Enter an exact time in
+            Position and press Enter to seek; Escape cancels.
           </p>
         </Modal>
       )}

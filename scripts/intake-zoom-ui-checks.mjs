@@ -217,7 +217,7 @@ try {
       Number(micShape.split(' ')[511].split(',')[1]) < 5,
     'Mic signal begins at the same transition',
   );
-  await track.click({ position: { x: (await track.boundingBox()).width * 0.5, y: 40 } });
+  await track.click({ position: { x: (await track.boundingBox()).width * 0.5, y: 12 } });
   await expect
     .poll(() => page.locator('video').evaluate((v) => v.currentTime))
     .toBeCloseTo((at.start + at.end) / 2, 1);
@@ -231,12 +231,12 @@ try {
   assert.deepEqual(await view(), full);
   // Zoom around a visible marker, then click it; click elsewhere clears the marker.
   await wheel(4.5 / 8, -120);
-  await page.getByRole('button', { name: 'Seek to marker: Zoom marker', exact: true }).click();
+  await page.getByRole('button', { name: 'Select marker: Zoom marker', exact: true }).click();
   await expect(page.locator('[data-marker-card="zoom-marker"]')).toHaveAttribute(
     'data-selected',
     'true',
   );
-  await track.click({ position: { x: 30, y: 40 } });
+  await track.click({ position: { x: 30, y: 12 } });
   await expect(page.locator('[data-marker="zoom-marker"]')).toHaveAttribute(
     'aria-pressed',
     'false',

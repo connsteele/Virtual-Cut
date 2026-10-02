@@ -4,7 +4,6 @@ import {
   markerColor,
   markerColorName,
   time,
-  short,
   type Clip,
   type Marker,
   type Recording,
@@ -18,6 +17,7 @@ import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
 import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
 import { playheadSnap } from './playheadSnap';
+import { rulerTicks, parsePosition, positionText } from './timelineRuler';
 
 export function Timeline({
   recording,
@@ -74,8 +74,11 @@ export function Timeline({
   onTrimActive?: (active: boolean) => void;
   onScrubActive?: (active: boolean) => void;
 }) {
+  const [positionDraft, setPositionDraft] = useState<string | null>(null);
+  const [positionError, setPositionError] = useState('');
   const track = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
+  const stationaryMarkerClick = useRef<{ time: number; at: number } | null>(null);
   const markerDrag = useRef<{
     marker: Marker;
     x: number;
@@ -121,6 +124,7 @@ export function Timeline({
     const cancel = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || (!drag.current && !markerDrag.current)) return;
       e.preventDefault();
+      stationaryMarkerClick.current = null;
       drag.current = null;
       setPreview(null);
       markerDrag.current = null;
@@ -282,11 +286,12 @@ export function Timeline({
     if (value !== raw && !aligns) d.value = adjustMarker(recording, d.marker, d.edge, raw);
     setSnapGuide(aligns ? d.target : null);
     setMarkerPreview({ id: d.marker.id, ...d.value });
-    onSeek(d.edge === 'end' ? d.value.end! : d.value.time);
   }
   function finishMarker(commit: boolean) {
     const d = markerDrag.current;
     if (!d) return;
+    stationaryMarkerClick.current =
+      commit && !d.moved ? { time: d.marker.time, at: performance.now() } : null;
     markerDrag.current = null;
     setSnapGuide(null);
     setMarkerPreview(null);
@@ -340,7 +345,6 @@ export function Timeline({
     if (magnetic !== raw && !aligns) d.value = trimTime(d.clip, d.edge, raw);
     setSnapGuide(aligns ? d.target : null);
     setPreview({ id: d.id, edge: d.edge, value: d.value });
-    onSeek(d.value);
   }
   function finishHandle(commit: boolean) {
     const d = drag.current;
@@ -355,6 +359,49 @@ export function Timeline({
   return (
     <div className={s.timeline} data-testid="combined-timeline">
       <div className={s.legendRow}>
+        <label className={s.position}>
+          Position
+          <input
+            aria-label="Timeline position"
+            aria-invalid={!!positionError}
+            title="Enter seconds or hours:minutes:seconds.milliseconds; Enter to seek, Escape to cancel"
+            value={positionDraft ?? positionText(current)}
+            onFocus={(e) => {
+              setPositionDraft(positionText(current));
+              e.currentTarget.select();
+            }}
+            onChange={(e) => {
+              setPositionDraft(e.target.value);
+              setPositionError('');
+            }}
+            onBlur={() => {
+              setPositionDraft(null);
+              setPositionError('');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              const value = parsePosition(positionDraft ?? positionText(current));
+              if (value == null || value < fullStart || value > fullEnd) {
+                setPositionError(
+                  `Enter a time from ${positionText(fullStart)} to ${positionText(fullEnd)}.`,
+                );
+                return;
+              }
+              onSeek(value);
+              e.currentTarget.blur();
+            }}
+          />
+        </label>
+        {positionError && (
+          <span className={s.positionError} role="alert">
+            {positionError}
+          </span>
+        )}
         {legend && (
           <div className={s.legend} aria-label="Marker color key">
             {[...new Set(markers.map(markerColorName).concat('Blue'))].map((name) => (
@@ -416,24 +463,33 @@ export function Timeline({
         data-view-start={start}
         data-view-end={end}
         onDragStart={(e) => e.preventDefault()}
+        onDoubleClick={(e) => {
+          // Pointer capture retargets a stationary H-mode double-click to the track.
+          const click = stationaryMarkerClick.current;
+          if (e.target === e.currentTarget && click && performance.now() - click.at < 500)
+            onSeek(click.time);
+        }}
         onPointerDown={(e) => {
+          stationaryMarkerClick.current = null;
           if (
             e.button !== 0 ||
             (e.target as HTMLElement).closest(
-              '[data-marker],[data-marker-range],[data-clip-handle]',
+              '[data-marker],[data-marker-range],[data-clip-container]',
             )
           )
             return;
           e.preventDefault();
           onMarkerDeselect?.();
+          if (!(e.target as HTMLElement).closest('[data-seek-surface]')) {
+            onSelect?.('');
+            return;
+          }
           setPointerFocus(true);
           e.currentTarget.focus({ preventScroll: true });
           pointer.current = e.pointerId;
           onScrubActive?.(true);
           e.currentTarget.setPointerCapture(e.pointerId);
           scrub(e.clientX);
-          const clip = (e.target as HTMLElement).closest<HTMLElement>('[data-clip]');
-          if (clip?.dataset.clip) onSelect?.(clip.dataset.clip);
         }}
         onPointerMove={(e) => {
           if (markerDrag.current?.pointer === e.pointerId) {
@@ -494,10 +550,22 @@ export function Timeline({
           }
         }}
       >
-        <div className={s.ruler}>
-          <span>{span < 10 ? time(start) : short(start)}</span>
-          <span>{span < 10 ? time(start + span / 2) : short(start + span / 2)}</span>
-          <span>{span < 10 ? time(end) : short(end)}</span>
+        <div
+          className={s.ruler}
+          data-seek-surface="ruler"
+          aria-label="Time ruler"
+          title="Click or drag to seek"
+        >
+          {rulerTicks(start, end, width).map((tick) => (
+            <span
+              key={tick.time}
+              data-ruler-tick={tick.time}
+              data-major={!!tick.label}
+              style={{ left: percent(tick.time) }}
+            >
+              {tick.label && <b>{tick.label}</b>}
+            </span>
+          ))}
         </div>
         <div
           className={s.markerLane}
@@ -520,7 +588,6 @@ export function Timeline({
                 e.currentTarget.focus({ preventScroll: true });
                 onTrimActive?.(true);
                 onMarkerSelect?.(m.id);
-                onSeek(m.time);
                 markerDrag.current = {
                   marker: m,
                   x: e.clientX,
@@ -553,13 +620,10 @@ export function Timeline({
                   : markerTime(recording, origin, direction);
                 const next = adjustMarker(recording, m, edge, value);
                 onMarkerSelect?.(m.id);
-                onSeek(edge === 'end' ? next.end! : next.time);
                 onMarkerMove(m.id, next.time, next.end);
               },
-              onClick: () => {
-                onMarkerSelect?.(m.id);
-                onSeek(m.time);
-              },
+              onClick: () => onMarkerSelect?.(m.id),
+              onDoubleClick: () => onSeek(m.time),
             });
             return range ? (
               <div
@@ -579,7 +643,7 @@ export function Timeline({
                   {...controls('move')}
                   data-marker={m.id}
                   className={s.rangeBody}
-                  aria-label={`Seek to marker: ${m.name}`}
+                  aria-label={`Select marker: ${m.name}`}
                   aria-pressed={m.id === selectedMarkerId}
                   title={`${m.name} · ${time(m.time)} – ${time(m.end!)} · ${time(m.end! - m.time)}${handleMode ? ' · Drag to move range' : ''}`}
                 />
@@ -606,7 +670,7 @@ export function Timeline({
                 className={s.marker}
                 style={{ left: percent(m.time), top: lane * 26, color: markerColor(m) }}
                 title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag to move' : ''} · Alt-drag to make a range`}
-                aria-label={`Seek to marker: ${m.name}`}
+                aria-label={`Select marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}
                 aria-disabled={handleMode && !trimEnabled}
               >
@@ -617,6 +681,7 @@ export function Timeline({
         </div>
         <div
           className={s.filmstrip}
+          data-seek-surface="filmstrip"
           data-waveform-mode={waveMode}
           hidden={!filmstrip.native && !recording.frames.length && waveMode === 'off'}
         >
@@ -758,9 +823,8 @@ export function Timeline({
                     data-clip={c.id}
                     aria-label={`Select clip: ${c.name}`}
                     aria-pressed={c.id === selectedId}
-                    onClick={(e) => {
-                      if (e.detail === 0) onSelect?.(c.id);
-                    }}
+                    onClick={() => onSelect?.(c.id)}
+                    onDoubleClick={() => onSeek(c.start)}
                   >
                     <b>{String(index + 1).padStart(2, '0')}</b> <span>{c.name}</span>
                   </button>

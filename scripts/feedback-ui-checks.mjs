@@ -209,7 +209,7 @@ try {
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
   // Unrelated keys after pointer scrubbing must not create a whole-timeline highlight.
   const track = page.getByTestId('scrub-surface');
-  await track.click({ position: { x: 30, y: 40 } });
+  await track.click({ position: { x: 30, y: 12 } });
   await page.keyboard.press('e');
   assert.equal(await track.evaluate((el) => getComputedStyle(el).outlineStyle), 'none');
   await page.keyboard.press('ArrowRight');
@@ -306,20 +306,20 @@ try {
   await page.keyboard.press('Backspace');
   await expect(page.locator('[data-delete-confirm]')).toHaveCount(0);
   await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: /Seek to marker: Keyboard marke/ }).click();
+  await page.getByRole('button', { name: /Select marker: Keyboard marke/ }).click();
   await expect(page.locator('[data-marker-card][data-selected=true]')).toHaveCount(1);
   await expect(page.locator('[data-cut-clip][data-selected=true]')).toHaveCount(0);
   // Clicking the filmstrip clears marker priority, even at the same playhead.
   const scrubBox = await page.getByTestId('scrub-surface').boundingBox();
   await page
     .getByTestId('scrub-surface')
-    .click({ position: { x: scrubBox.width / p.model.recordings[0].duration, y: 45 } });
+    .click({ position: { x: scrubBox.width / p.model.recordings[0].duration, y: 12 } });
   await expect(page.locator('[data-marker-card][data-selected=true]')).toHaveCount(0);
   await unfocus();
   await page.keyboard.press('r');
   await expect(page.getByLabel('Clip name', { exact: true }).first()).toBeFocused();
   await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: /Seek to marker: Keyboard marke/ }).click();
+  await page.getByRole('button', { name: /Select marker: Keyboard marke/ }).click();
   await page.getByLabel('Marker color', { exact: true }).selectOption('Fuchsia');
   await saved();
   assert.equal((await state()).model.markers[rid][0].color, 'Fuchsia');

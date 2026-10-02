@@ -23,6 +23,7 @@ export function CompletedLibrary({
     [loading, setLoading] = useState('');
   const [preview, setPreview] = useState<Recording>();
   const [previewStatus, setPreviewStatus] = useState('');
+  const [selectedMarker, setSelectedMarker] = useState<{ clip: string; id: string }>();
   const visited = useRef(new Set<string>());
   const prepared = useRef<{ url: string; token: string } | null>(null);
   const request = useRef(0),
@@ -319,10 +320,11 @@ export function CompletedLibrary({
                   showClips={false}
                   onActivityChange={w.setPlaybackActive}
                   trimEnabled={false}
-                  onMarkerSelect={(id) => {
-                    const marker = selected.markers.find((m) => m.id === id);
-                    if (marker) transport.current?.seek(marker.time);
-                  }}
+                  selectedMarkerId={
+                    selectedMarker?.clip === selected.exportId ? selectedMarker.id : undefined
+                  }
+                  onMarkerSelect={(id) => setSelectedMarker({ clip: selected.exportId, id })}
+                  onMarkerDeselect={() => setSelectedMarker(undefined)}
                 />
               </div>
               <details className={s.facts}>
@@ -347,7 +349,12 @@ export function CompletedLibrary({
                     .map((m) => (
                       <button
                         key={m.id}
-                        onClick={() => transport.current?.seek(m.time)}
+                        onClick={() => setSelectedMarker({ clip: selected.exportId, id: m.id })}
+                        onDoubleClick={() => transport.current?.seek(m.time)}
+                        aria-pressed={
+                          selectedMarker?.clip === selected.exportId && selectedMarker.id === m.id
+                        }
+                        title="Select marker; double-click to seek"
                         style={{ borderLeftColor: markerColor(m) }}
                       >
                         <strong>{m.name}</strong>

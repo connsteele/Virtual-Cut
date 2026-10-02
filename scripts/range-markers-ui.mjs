@@ -99,7 +99,7 @@ try {
   assert(Math.abs(model.markers[fixture.rid].find((m) => m.id === 'inside').end - 6.5) < 0.1);
   // Dragging a body retains duration; Escape commits nothing.
   const body = await range('inside')
-    .getByRole('button', { name: 'Seek to marker: Inside', exact: true })
+    .getByRole('button', { name: 'Select marker: Inside', exact: true })
     .boundingBox();
   const before = model.markers[fixture.rid].find((m) => m.id === 'inside');
   await page.mouse.move(body.x + body.width / 2, body.y + body.height / 2);
@@ -117,18 +117,31 @@ try {
   await card('point').getByRole('button', { name: 'Make point marker', exact: true }).click();
   await expect(range('point')).toHaveCount(0);
   const point = await page.locator('[data-marker="point"]').boundingBox();
-  await page.keyboard.down('Shift');
+  await page.keyboard.down('Alt');
   await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
   await page.mouse.down();
   await page.mouse.move(point.x + point.width / 2 + surface.width / 8, point.y + point.height / 2, {
     steps: 8,
   });
+  const splitShape = async (id) =>
+    range(id)
+      .locator('[data-marker-edge="start"] span')
+      .evaluate((el) => ({
+        clip: getComputedStyle(el).clipPath,
+        radius: getComputedStyle(el).borderTopLeftRadius,
+      }));
+  assert.deepEqual(
+    await splitShape('point'),
+    { clip: 'none', radius: '8px' },
+    'Alt conversion keeps split circles while dragging',
+  );
   await page.mouse.up();
-  await page.keyboard.up('Shift');
+  await page.keyboard.up('Alt');
   await expect(range('point')).toBeVisible();
+  assert.deepEqual(await splitShape('point'), { clip: 'none', radius: '8px' });
   // Manual inspector scrolling stays where the user put it through position updates.
   await range('cross-start')
-    .getByRole('button', { name: 'Seek to marker: Cross start', exact: true })
+    .getByRole('button', { name: 'Select marker: Cross start', exact: true })
     .click();
   const aside = card('cross-start').locator('xpath=ancestor::aside');
   const scrolled = await aside.evaluate((el) => {
@@ -174,7 +187,7 @@ try {
     (m) => m.name === 'New range keyboard',
   );
   assert(created && created.end > created.time);
-  // Magnetic edits capture the playhead before dragging changes the preview position.
+  // Editing leaves the playhead fixed before, during and after every gesture.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
   await page.waitForTimeout(200);
   const snap = page.getByRole('button', { name: 'Snap to playhead', exact: true });
@@ -189,11 +202,19 @@ try {
     const delta = ((target - origin) * track.width) / (extent[1] - extent[0]) + 8;
     await page.mouse.move(x, y);
     await page.mouse.down();
+    assert(
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      'Pointer-down must not seek',
+    );
     const destination =
       (await locator.getAttribute('data-clip-handle')) != null
         ? track.x + ((target - extent[0]) * track.width) / (extent[1] - extent[0]) + 8
         : x + delta;
     await page.mouse.move(destination, y, { steps: 10 });
+    assert(
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      'Dragging must not seek',
+    );
     if (check)
       await expect(page.locator('[data-snap-guide]')).toHaveAttribute(
         'data-snap-guide',
@@ -204,6 +225,10 @@ try {
     await page.mouse.up();
     await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
     await saved();
+    assert(
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      'Release and save must not seek',
+    );
   }
   let currentModel = (await state()).model;
   const clip = currentModel.clips[0];
@@ -234,7 +259,7 @@ try {
   await saved();
   // Body movement aligns the nearest endpoint and retains duration.
   await dragTo(
-    range('cross-start').getByRole('button', { name: 'Seek to marker: Cross start', exact: true }),
+    range('cross-start').getByRole('button', { name: 'Select marker: Cross start', exact: true }),
     4,
     3,
   );
@@ -288,6 +313,63 @@ try {
   const finalBody = range(pointId).locator('[data-marker]');
   assert.equal(await finalBody.textContent(), '');
   assert.equal(await finalBody.evaluate((el) => getComputedStyle(el, '::before').height), '6px');
+  assert.notEqual((await splitShape(pointId)).clip, 'none', 'H off restores pointed ends');
+  // Select, deselect and seek are separate mouse actions, even with Follow enabled.
+  await page.getByLabel('Selection follows playhead').check();
+  await seek(1.5);
+  const at = () => page.locator('video').evaluate((v) => v.currentTime);
+  const clipButton = page.locator(`[data-clip="${clip.id}"]`);
+  await clipButton.click();
+  assert(Math.abs((await at()) - 1.5) < 0.02);
+  await finalBody.click();
+  assert(Math.abs((await at()) - 1.5) < 0.02);
+  await expect(finalBody).toHaveAttribute('aria-pressed', 'true');
+  const lane = page.getByLabel('Timeline markers', { exact: true });
+  await lane.click({ position: { x: 10, y: 10 } });
+  await expect(finalBody).toHaveAttribute('aria-pressed', 'false');
+  assert(Math.abs((await at()) - 1.5) < 0.02);
+  await finalBody.dblclick();
+  await expect.poll(at).toBeCloseTo(extended.time, 1);
+  await clipButton.dblclick();
+  await expect.poll(at).toBeCloseTo(clip.start, 1);
+  await page.getByRole('button', { name: 'H · Manipulate', exact: true }).click();
+  await seek(1.5);
+  await finalBody.dblclick();
+  await expect.poll(at).toBeCloseTo(extended.time, 1);
+  await seek(1.5);
+  await finalBody.focus();
+  await finalBody.press('ArrowRight');
+  assert(Math.abs((await at()) - 1.5) < 0.02, 'Keyboard retiming does not seek');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const ruler = page.getByLabel('Time ruler', { exact: true });
+  const rb = await ruler.boundingBox();
+  await ruler.click({ position: { x: rb.width / 4, y: 12 } });
+  await expect.poll(at).toBeCloseTo(2, 1);
+  const film = page.locator('[data-seek-surface="filmstrip"]');
+  const fb = await film.boundingBox();
+  await page.mouse.move(fb.x + fb.width / 4, fb.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(fb.x + fb.width / 2, fb.y + 20, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(at).toBeCloseTo(4, 1);
+  const position = page.getByRole('textbox', { name: 'Timeline position', exact: true });
+  await position.fill('00:00:02.500');
+  await position.press('Enter');
+  await expect.poll(at).toBeCloseTo(2.5, 2);
+  await position.fill('00:70:00');
+  await position.press('Enter');
+  await expect(position).toHaveAttribute('aria-invalid', 'true');
+  assert(Math.abs((await at()) - 2.5) < 0.02);
+  await position.fill('99');
+  await position.press('Enter');
+  await expect(position).toHaveAttribute('aria-invalid', 'true');
+  await position.press('Escape');
+  await expect(position).toHaveValue('00:00:02.500');
+  await position.focus();
+  assert.equal(await position.evaluate((el) => getComputedStyle(el).outlineStyle), 'solid');
+  await position.press('Escape');
+  const labels = await ruler.locator('b').allTextContents();
+  assert(labels.length >= 3 && new Set(labels).size === labels.length);
   await capture('snap-ranges-wide');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
   await capture('snap-ranges-compact');

@@ -128,20 +128,60 @@
   background: #182321;
   touch-action: none;
   user-select: none;
-  cursor: ew-resize;
+  cursor: default;
 }
 /* Pointer scrubbing should not gain a large keyboard ring on an unrelated key.
    Tab focus and arrow-key seeking still receive the normal visible focus ring. */
 .track[data-pointer-focus='true']:focus-visible {
   outline: none;
 }
-.ruler {
+.position {
   display: flex;
-  justify-content: space-between;
-  padding: 3px 6px;
-  font-size: 10px;
+  align-items: center;
+  gap: 7px;
   color: var(--muted);
+  font-size: 11px;
+}
+.position input {
+  width: 142px;
+  padding: 4px 7px;
+  font:
+    600 15px ui-monospace,
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.positionError {
+  color: #ffb69a;
+  font-size: 11px;
+}
+.ruler {
+  position: relative;
+  height: 34px;
+  color: #bbcec8;
+  cursor: ew-resize;
+  border-bottom: 1px solid var(--line);
+}
+.ruler > span {
+  position: absolute;
+  bottom: 0;
+  height: 5px;
+  border-left: 1px solid #637b74;
   pointer-events: none;
+}
+.ruler > span[data-major='true'] {
+  height: 11px;
+}
+.ruler b {
+  position: absolute;
+  bottom: 13px;
+  left: 4px;
+  font:
+    11px ui-monospace,
+    monospace;
+  white-space: nowrap;
+}
+.filmstrip {
+  cursor: ew-resize;
 }
 .markerLane {
   position: relative;
@@ -203,6 +243,14 @@
 .rangeEnd span {
   clip-path: polygon(0 0, 100% 0, 100% 68%, 0 100%);
 }
+.markerRange[data-manipulate='true'] .rangeStart span {
+  clip-path: none;
+  border-radius: 8px 0 0 8px;
+}
+.markerRange[data-manipulate='true'] .rangeEnd span {
+  clip-path: none;
+  border-radius: 0 8px 8px 0;
+}
 .markerRange[data-manipulate='true'] .rangeEdge {
   cursor: ew-resize;
 }
@@ -216,7 +264,7 @@
 }
 .snapGuide {
   position: absolute;
-  top: 21px;
+  top: 0;
   bottom: 0;
   width: 2px;
   background: var(--teal-light, #71d7cd);
@@ -426,7 +474,7 @@
 }
 .playhead {
   position: absolute;
-  top: 21px;
+  top: 0;
   bottom: 0;
   width: 1px;
   background: #e4fff8;

@@ -101,7 +101,7 @@ export async function verifyIteration03({ page, app, capture, go, videoReady, st
   assert(
     images.every((i) => !i.draggable && i.fit === 'contain' && Math.abs(i.ratio - 16 / 9) < 0.05),
   );
-  const flag = page.getByRole('button', { name: 'Seek to marker: Needs review' });
+  const flag = page.getByRole('button', { name: 'Select marker: Needs review' });
   const markerBox = await flag.boundingBox();
   const frameBox = await surface.locator('img').first().boundingBox();
   assert(markerBox.y + markerBox.height <= frameBox.y + 1);
