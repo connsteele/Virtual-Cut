@@ -2,11 +2,13 @@
 
 Research checked September 28, 2026. This is a source-based assessment; no models were downloaded or benchmarked for this note.
 
+**October 2 implementation update:** The 0.4.0 review implements the selected local runtime and disposable worker. See [M3 implementation](../m3-implementation.md) and [M3 review](../m3-review.md) for measured results and remaining acceptance. The proposals below preserve the original research context.
+
 ## Product decision
 
 Run speech recognition locally. A cloud speech account and per-minute payment must not be required to transcribe, search, or review footage. An agent correction pass is optional and separate from recognition. Preserve the original recognized text and accepted corrections.
 
-Connor selected **faster-whisper** as the initial engine. His additional requirement is that its worker must be fully stopped whenever Virtual Cut is not explicitly running a transcription operation. This is an accepted design requirement; the runtime and shutdown behavior have not yet been implemented or tested.
+Connor selected **faster-whisper** as the initial engine. His additional requirement is that its worker must be fully stopped whenever Virtual Cut is not explicitly running a transcription operation. This was an unimplemented requirement at the time of this research; the October 2 implementation now has real completion, cancellation, failure and parent-crash lifecycle checks.
 
 Keep the React/TypeScript/Electron application. Run speech recognition in an isolated worker that reports progress, cancellation, source-time segments, optional word times, language, and engine/model version. A Python runtime or native executable is a contained dependency, not a whole-application rewrite.
 

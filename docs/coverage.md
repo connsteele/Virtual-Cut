@@ -2,6 +2,31 @@
 
 Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's owned G: run directory; override `VIRTUAL_CUT_SUITE_OUTPUT` elsewhere. Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
 
+## M3 first review — 0.4.0, October 2, 2026
+
+All **43 maintained scripts passed** in the full current-source run. A measured follow-up expands context/import-consent interactions and captures floating-window counters before each close. The final reconciled report is **complete**, covers **83 application source files**, and passes **fifteen critical-module gates**. The eleven M2 floors are unchanged; four new floors protect context, transcript edits, immutable storage and timed exports.
+
+| Area     |                  Lines |              Functions |               Branches |
+| -------- | ---------------------: | ---------------------: | ---------------------: |
+| Renderer |     79.69% (2912/3654) |     71.04% (1072/1509) |     75.62% (2889/3820) |
+| Native   |     90.31% (3067/3396) |       90.73% (793/874) |     80.40% (2273/2827) |
+| Combined | **84.80% (5979/7050)** | **78.26% (1865/2383)** | **77.65% (5162/6647)** |
+
+Final report: `G:\GPT\Work\virtual-cut\review-0.4.0\final-coverage\combined\index.html`, with `summary.json` and `reconciled-tests.json` beside the area reports. Inputs are `coverage\run-MoOdTr`, `context-coverage\run-tjOUaR` and `window-coverage\run-SA2t36` beneath the same review root. Source fingerprints and instrumentation maps match. Explicit later attempts replace earlier counters for the same check, with superseded attempts retained.
+
+| New critical module          |  Lines | Functions | Branches | Floor (L/F/B) |
+| ---------------------------- | -----: | --------: | -------: | ------------- |
+| Project/batch context        |   100% |      100% |   93.61% | 100/100/90    |
+| Transcript edits/cue actions | 94.02% |      100% |   84.95% | 90/100/80     |
+| Immutable transcript storage | 98.07% |      100% |   83.33% | 95/100/80     |
+| Transcript export timing     |   100% |      100% |      90% | 100/100/90    |
+
+The lower combined percentage than M2 reflects added code in the denominator, including speech-process integration and the floating window. The measured native runtime adapter is only 21.87% line-covered in the maintained suite, which uses a synthetic worker boundary. Separate real-model checks exercise actual extraction/recognition and process exit after success, cancellation, failure and a killed parent; the packaged application also completes a real recognition job. These executions are reported separately, not added to the measured percentage. Python-worker coverage is **not measured by Istanbul**.
+
+The first attempt caught the v3-save cleanup compatibility regression, compact-toolbar/viewer regression, and outdated shell API whitelist; those were corrected and rerun. A hidden-window CSS transition needed reduced motion in the test while keeping the original color assertions. The original failed run remains at `G:\GPT\Work\virtual-cut\test-runs\run-aBQ19i` and is excluded because its application source differs. A later context-form test corrected an exact label selector. Floating renderer counters initially disappeared after close/reopen; collection now runs before each close and uses stable per-window identities, preserving prior windows. No coverage floors were lowered.
+
+Intentional filing/recovery worker termination retains conservative partial counters. Acoustic transcription accuracy, speaker identification, GPU behavior, portable runtime installation and manual multi-monitor UX remain separate from coverage. See [M3 review](m3-review.md) for actual timings, known missed cues and the human review checklist. The normal packaged build contains no coverage instrumentation.
+
 ## Final M2 baseline — 0.3.23, October 2, 2026
 
 All **39 maintained scripts passed** in the full current-source run. The expanded deletion/storage safety check then passed in an explicit measured follow-up. The reconciled report is **complete** across **73 application source files**, with **all eleven critical-module gates passing**. The original nine floors are unchanged; cleanup and storage now have measured floors too.

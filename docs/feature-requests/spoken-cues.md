@@ -1,6 +1,8 @@
 # Microphone cues: Mark, Cut, Note
 
-Recorded September 28, 2026. Requested product direction, with proposed behavior for the first implementation. This feature is not implemented in the desktop foundation.
+Recorded September 28, 2026. Requested product direction, with proposed behavior for the first implementation.
+
+**October 2 implementation update:** The 0.4.0 review includes microphone-only, reviewed Mark/Note/Cut candidates, original recognition, manual corrections, continuation across pauses, timed local notes and reversible marker/split actions. See [M3 implementation](../m3-implementation.md) and [M3 review](../m3-review.md). Automatic semantic context interpretation, relative visual cut targeting, agent rewriting and Notion publication remain future work. The requirements below retain the broader requested direction; they are not a claim that every acceptance item has shipped.
 
 ## Connor's requested meanings
 
