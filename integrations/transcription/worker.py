@@ -168,13 +168,31 @@ def worker():
             ordinal = 0
             language = request["language"] or None
             emit({"type": "info", "language": language or "", "duration": duration})
-            for start, end in ranges:
+            # Experimental batching is available to the measurement harness only.
+            # Preserve each utterance's real source offset; never concatenate gaps.
+            batch_size = int(request.get("batchSize", 1))
+            if batch_size not in [1, 2, 4, 8]:
+                raise RuntimeError("Unsupported speech batch size.")
+            groups = []
+            for span in ranges:
+                if groups and len(groups[-1]) < batch_size and span[1] - groups[-1][0][0] <= 180 * 16000:
+                    groups[-1].append(span)
+                else:
+                    groups.append([span])
+            for group in groups:
+                start, end = group[0][0], group[-1][1]
                 audio.setpos(start)
                 chunk = np.frombuffer(audio.readframes(end - start), dtype="<i2").astype(np.float32) / 32768.0
-                segments, info = model.transcribe(chunk, language=language, beam_size=5,
-                    word_timestamps=True, vad_filter=False, condition_on_previous_text=False,
-                    temperature=0, hallucination_silence_threshold=2,
-                    hotwords=request.get("vocabulary") or None)
+                transcriber = model
+                extra = {"condition_on_previous_text": False, "hallucination_silence_threshold": 2}
+                if batch_size > 1:
+                    from faster_whisper import BatchedInferencePipeline
+                    transcriber = BatchedInferencePipeline(model)
+                    extra = {"batch_size": batch_size, "clip_timestamps": [
+                        {"start": (a - start) / 16000, "end": (b - start) / 16000} for a, b in group]}
+                segments, info = transcriber.transcribe(chunk, language=language, beam_size=5,
+                    word_timestamps=True, vad_filter=False,
+                    temperature=0, hotwords=request.get("vocabulary") or None, **extra)
                 if language is None:
                     language = info.language
                     emit({"type": "info", "language": language, "languageProbability": info.language_probability, "duration": duration})
