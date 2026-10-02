@@ -88,7 +88,7 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
   );
   // Merely opening or seeking an older project must not create editorial changes.
   for (const field of ['contexts', 'transcriptEdits', 'cueDecisions'] as const)
-    if (!before[field] && !after[field] && !current[field]) delete result[field];
+    if (!result[field]?.length) delete result[field];
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
     // Each collection is homogeneous; the shared identity operation preserves its type.
     Object.assign(result, {
@@ -139,6 +139,9 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
 export function editorial(model: Model): string {
   return JSON.stringify({
     ...model,
+    contexts: model.contexts?.length ? model.contexts : undefined,
+    transcriptEdits: model.transcriptEdits?.length ? model.transcriptEdits : undefined,
+    cueDecisions: model.cueDecisions?.length ? model.cueDecisions : undefined,
     clips: model.clips.map((c) => ({ ...c, filed: false })),
     selectedRecordingId: undefined,
     recordings: model.recordings.map((r) => ({

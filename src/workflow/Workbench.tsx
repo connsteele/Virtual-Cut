@@ -916,6 +916,37 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         '',
     );
   }
+  useEffect(() => {
+    const api = window.virtualCut?.transcript;
+    if (!api) return;
+    const stopSeek = api.onSeek((event) => {
+      if (project?.project.id !== event.projectId || workspace.blocking) return;
+      transport.current?.command('pause');
+      setPage('cut');
+      if (rid !== event.sourceId) selectRecord(event.sourceId);
+      updateRecording(event.sourceId, { position: event.time });
+      if (page === 'cut' && r.id === event.sourceId) transport.current?.seek(event.time);
+    });
+    const stopCommand = api.onCommand((event) => {
+      if (project?.project.id !== event.command.projectId) {
+        api.finishCommand(event.token, 'The project changed. Reopen the transcript.');
+        return;
+      }
+      void workspace
+        .run(() => api.apply(event.token), true)
+        .then((result) =>
+          api.finishCommand(
+            event.token,
+            result ? undefined : 'The editor could not apply this change. Check the main window.',
+          ),
+        );
+    });
+    return () => {
+      stopSeek();
+      stopCommand();
+    };
+  });
+  const transcriptPositionSent = useRef(0);
   function addClip() {
     if (!r.duration) return;
     const start = Math.min(r.duration - 0.1, transport.current?.current() || 0),
@@ -1244,6 +1275,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         markers={model.markers[record.id] || []}
         clips={model.clips.filter((c) => c.rid === record.id).sort((a, b) => a.start - b.start)}
         onPosition={(position) => {
+          if (project && performance.now() - transcriptPositionSent.current > 120) {
+            transcriptPositionSent.current = performance.now();
+            window.virtualCut?.transcript.position(project.project.id, record.id, position);
+          }
           if (page === 'cut' && record.id === r.id && follow && !trimming.current) {
             const under =
               clips.find((x) => x.id === cid && position >= x.start && position < x.end) ||
@@ -1490,7 +1525,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           {(project || page !== 'library') && (
             <div className={s.toolbar}>
               {project ? (
-                <BatchTools workspace={workspace} />
+                <>
+                  <BatchTools workspace={workspace} />
+                  <Button
+                    disabled={!project || workspace.blocking}
+                    onClick={() =>
+                      void workspace.flush().then(() => window.virtualCut?.transcript.open(rid))
+                    }
+                  >
+                    Transcript
+                  </Button>
+                </>
               ) : (
                 <>
                   <span className={s.batch}>
@@ -2627,6 +2672,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 {model.notes.map((n) => (
                   <div key={n.id} className={s.clipTile}>
                     <strong>{n.title}</strong>
+                    {n.sourceId && n.time != null && (
+                      <Button
+                        disabled={!model.recordings.some((r) => r.id === n.sourceId)}
+                        onClick={() => {
+                          selectRecord(n.sourceId!);
+                          updateRecording(n.sourceId!, { position: n.time! });
+                          if (page === 'cut' && r.id === n.sourceId)
+                            transport.current?.seek(n.time!);
+                          setPage('cut');
+                          setDrawer('');
+                        }}
+                      >
+                        Go to spoken note · {n.time.toFixed(3)} s
+                      </Button>
+                    )}
                     <textarea
                       aria-label={n.title}
                       value={n.text}

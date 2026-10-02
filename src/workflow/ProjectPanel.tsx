@@ -12,6 +12,7 @@ import { Button, Field, Modal } from './ui';
 import { CleanupFiles, ProjectStorage, storageSize as size } from './ProjectStorage';
 import s from './Workflow.module.css';
 import { ContextEditor, defaultContext } from './ContextEditor';
+import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 export function ProjectPanel({
@@ -249,7 +250,13 @@ export function ImportPanel({
   const [notes, setNotes] = useState(defaults?.mic != null),
     [game, setGame] = useState(defaults?.game ?? 1),
     [mic, setMic] = useState(defaults?.mic ?? 2);
-  const audio: ImportAudio = { game, mic: notes ? mic : null };
+  const [transcribe, setTranscribe] = useState(false);
+  const [transcription, setTranscription] = useState(initialTranscriptionOptions);
+  const audio: ImportAudio = {
+    game,
+    mic: notes ? mic : null,
+    ...(transcribe ? { transcription } : {}),
+  };
   return (
     <Modal title="Batch audio setup" onClose={onClose}>
       {drop && (
@@ -319,6 +326,19 @@ export function ImportPanel({
       <p className={s.muted}>
         Track numbers count audio tracks only, starting at 1. Recordings with a different track
         layout will be flagged for you to check.
+      </p>
+      <label className={s.tools}>
+        <input
+          type="checkbox"
+          checked={transcribe}
+          onChange={(e) => setTranscribe(e.target.checked)}
+        />{' '}
+        Transcribe this import locally
+      </label>
+      {transcribe && <TranscriptionOptions value={transcription} onChange={setTranscription} />}
+      <p className={s.muted}>
+        Transcription is optional. You can start it later from Transcript. Speaker detection is not
+        included in this iteration.
       </p>
       <Button
         primary

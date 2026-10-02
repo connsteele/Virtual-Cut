@@ -1,4 +1,5 @@
 export const fast = [
+  'transcript-domain.test.mjs',
   'project-context.test.mjs',
   'coverage-pipeline.test.mjs',
   'save-policy.test.mjs',
@@ -11,6 +12,7 @@ export const fast = [
   'review-order.test.mjs',
 ];
 export const native = [
+  'transcript-storage-checks.mjs',
   'project-deletion-checks.mjs',
   'range-markers-native.mjs',
   'resolve-helper-checks.mjs',
@@ -27,6 +29,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'transcription-ui-checks.mjs',
   'project-deletion-ui.mjs',
   'range-markers-ui.mjs',
   'filing-ui-checks.mjs',
@@ -45,6 +48,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],
@@ -65,6 +69,12 @@ export const dependencies = {
 };
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
+  'transcription-sample-study.mjs':
+    'Real copied-audio comparison with and without vocabulary hints; requires explicit samples and local runtime.',
+  'transcription-native-checks.mjs':
+    'Real DJI speech integration measurement; requires an explicitly supplied local ASR runtime and disposable audio sample.',
+  'transcription-worker-checks.mjs':
+    'Real ASR lifecycle measurement; requires the local model and copied speech fixture.',
   'resolve-live-fixture.mjs':
     'Disposable media generator for live Resolve acceptance; no Resolve connection or user project edits.',
   'project-checks.mjs': 'Legacy wrapper; constituent checks are maintained above.',

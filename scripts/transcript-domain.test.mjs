@@ -105,6 +105,9 @@ test('word corrections preserve spaces and originals; stale edits and invented w
 test('older projects do not gain Undo entries merely through unchanged merges', () => {
   const current = model();
   assert.equal(editorial(current), editorial(mergeEdits(current, current, current)));
+  const withEmptyFields = { ...current, transcriptEdits: [], cueDecisions: [], contexts: [] };
+  assert.equal(editorial(current), editorial(withEmptyFields));
+  assert.equal(editorial(current), editorial(mergeEdits(current, withEmptyFields, current)));
 });
 test('mic cues require review, distinguish Mark/Note/Cut, and reject ambiguous clip splits', () => {
   let next = model();

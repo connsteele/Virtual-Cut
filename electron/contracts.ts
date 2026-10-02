@@ -20,6 +20,7 @@ export interface OpenedVideo {
 }
 
 export interface VirtualCutApi {
+  transcript: import('./transcript-contracts.js').TranscriptApi;
   diagnostics: import('./diagnostic-contracts.js').DiagnosticApi;
   project: import('./project-contracts.js').ProjectApi;
   getAppInfo(): Promise<AppInfo>;

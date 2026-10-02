@@ -4,6 +4,47 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 // Sandboxed preloads cannot require arbitrary local modules. Keep runtime
 // imports confined to Electron; the shared contract is erased by TypeScript.
 const api: VirtualCutApi = {
+  transcript: {
+    open: (source) => ipcRenderer.invoke('transcript:open', source),
+    onSource: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, source: string) => callback(source);
+      ipcRenderer.on('transcript:source-event', f);
+      return () => ipcRenderer.removeListener('transcript:source-event', f);
+    },
+    session: (source) => ipcRenderer.invoke('transcript:session', source),
+    page: (id, transcriptId, page, search) =>
+      ipcRenderer.invoke('transcript:page', id, transcriptId, page, search),
+    runtime: () => ipcRenderer.invoke('transcript:runtime'),
+    configure: (part, device) => ipcRenderer.invoke('transcript:configure', part, device),
+    start: (id, source, batch, options) =>
+      ipcRenderer.invoke('transcript:start', id, source, batch, options),
+    job: (id, job, action) => ipcRenderer.invoke('transcript:job', id, job, action),
+    seek: (id, source, time) => ipcRenderer.invoke('transcript:seek', id, source, time),
+    command: (command) => ipcRenderer.invoke('transcript:command', command),
+    apply: (token) => ipcRenderer.invoke('transcript:apply', token),
+    finishCommand: (token, error) => ipcRenderer.send('transcript:finishCommand', token, error),
+    position: (id, source, time) => ipcRenderer.send('transcript:position', id, source, time),
+    onSeek: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
+        callback(value);
+      ipcRenderer.on('transcript:seek-event', f);
+      return () => ipcRenderer.removeListener('transcript:seek-event', f);
+    },
+    onCommand: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
+        callback(value);
+      ipcRenderer.on('transcript:command-event', f);
+      return () => ipcRenderer.removeListener('transcript:command-event', f);
+    },
+    onPosition: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
+        callback(value);
+      ipcRenderer.on('transcript:position-event', f);
+      return () => ipcRenderer.removeListener('transcript:position-event', f);
+    },
+    export: (id, transcriptId, format, exportId) =>
+      ipcRenderer.invoke('transcript:export', id, transcriptId, format, exportId),
+  },
   diagnostics: {
     summary: () => ipcRenderer.invoke('diagnostics:summary'),
     copy: () => ipcRenderer.invoke('diagnostics:copy'),

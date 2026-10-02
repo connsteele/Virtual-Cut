@@ -1,10 +1,16 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { App } from './App';
 import './global.css';
+const App = React.lazy(() => import('./App').then((module) => ({ default: module.App })));
+const TranscriptWindow = React.lazy(() =>
+  import('./workflow/TranscriptWindow').then((module) => ({ default: module.TranscriptWindow })),
+);
+
+const transcript = window.location.hash === '#transcript';
+if (transcript) document.body.classList.add('transcript-window');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <React.Suspense fallback={null}>{transcript ? <TranscriptWindow /> : <App />}</React.Suspense>
   </React.StrictMode>,
 );

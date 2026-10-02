@@ -24,6 +24,7 @@ import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { DemoMedia } from './demo-media.cjs';
 import { ProjectService } from './project-service.cjs';
+import { registerTranscriptWindow } from './transcript-window.cjs';
 import { recoverProjectCopy } from './project-recovery.cjs';
 import { DroppedImports } from './dropped-imports.cjs';
 import {
@@ -43,6 +44,7 @@ const videoAccess = new VideoAccess();
 const demoMedia = new DemoMedia();
 const droppedImports = new DroppedImports();
 let projects: ProjectService;
+let transcriptWindow: ReturnType<typeof registerTranscriptWindow>;
 let closing = false;
 let diagnostics: Diagnostics;
 let lastProjectFile: string | undefined;
@@ -632,6 +634,7 @@ async function createWindow(): Promise<void> {
     }
   });
   window.on('closed', () => {
+    transcriptWindow?.close();
     if (mainWindow === window) mainWindow = null;
     videoAccess.clear();
   });
@@ -676,6 +679,13 @@ app
       diagnostics,
     );
     void projects.logToolVersions();
+    transcriptWindow = registerTranscriptWindow(
+      projects,
+      () => mainWindow,
+      getRendererUrl,
+      app.getPath('userData'),
+      backgroundTest,
+    );
     await demoMedia
       .load(path.join(app.getAppPath(), 'demo-media.local.json'))
       .catch((error: unknown) => {
