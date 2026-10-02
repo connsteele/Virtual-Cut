@@ -148,6 +148,7 @@ try {
   assert(await stat(activeFile));
   await page.getByRole('button', { name: 'Delete project: Active cleanup', exact: true }).click();
   await modal.getByRole('button', { name: 'Delete with cleanup', exact: true }).click();
+  await expect(modal).toContainText('completed exports and their companions were preserved');
   await expect(
     page.getByRole('button', { name: 'Delete project: Active cleanup', exact: true }),
   ).toHaveCount(0);

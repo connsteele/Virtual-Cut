@@ -131,7 +131,15 @@ await service.close();
 await mkdir(basic.file + '.saves', { recursive: true });
 const basicSave = path.join(basic.file + '.saves', `manual-123-${randomUUID()}.vcut`);
 await copyFile(basic.file, basicSave);
+// M3 must still recognize legitimate M2 save copies during cleanup planning.
+const oldSchema = new DatabaseSync(basicSave);
+oldSchema.exec('PRAGMA user_version=3');
+oldSchema.close();
 plan = await service.deletionPlan(basic.id);
+assert(
+  plan.files.some((f) => f.path === basicSave),
+  'Schema 3 save copies remain recognized',
+);
 await service.deleteProject(basic.id, plan.token, false);
 assert(await exists(basicSave));
 const recovered = path.join(dir, 'Recovered after deletion.vcut');
