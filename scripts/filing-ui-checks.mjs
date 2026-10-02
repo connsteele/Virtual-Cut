@@ -231,7 +231,10 @@ try {
   await expect(doneCard.locator('details').first()).toContainText(
     beforeRelink.model.clips.find((c) => c.id === secondId).folder,
   );
-  await page.getByRole('button', { name: 'Tree', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
   const doneTree = page
     .locator('aside')
     .filter({ has: page.getByRole('button', { name: 'All destinations', exact: true }) });
@@ -317,6 +320,35 @@ try {
   await card.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: /^File queue ·/ }).click();
   await expect(dialog().getByRole('table', { name: 'Filing plan' })).toContainText('Collision');
+  await dialog()
+    .getByRole('table', { name: 'Filing plan' })
+    .getByTitle(/^Open destination in Explorer/)
+    .click();
+  assert.equal(
+    await app.evaluate(() => globalThis.revealedDestination),
+    path.join((await current()).project.destination, 'Recovery'),
+  );
+  for (const dimensions of [
+    [1600, 1000],
+    [1100, 720],
+  ]) {
+    await app.evaluate(
+      ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
+      dimensions,
+    );
+    await page.waitForTimeout(120);
+    assert(
+      await dialog()
+        .getByRole('table', { name: 'Filing plan' })
+        .locator('tbody td:nth-child(2)')
+        .evaluate(
+          (e) => getComputedStyle(e).whiteSpace === 'nowrap' && e.scrollWidth <= e.clientWidth + 1,
+        ),
+    );
+    assert(await dialog().evaluate((e) => e.getBoundingClientRect().right <= innerWidth));
+    await capture(`filing-plan-${dimensions[0]}`);
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
   await expect(
     dialog().getByRole('button', { name: 'File 1 accepted clips', exact: true }),
   ).toBeDisabled();

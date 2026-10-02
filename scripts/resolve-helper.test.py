@@ -4,6 +4,8 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import patch
+import time
 
 spec = importlib.util.spec_from_file_location('vcut', pathlib.Path(__file__).parents[1] / 'integrations/resolve/Virtual Cut metadata.py')
 helper = importlib.util.module_from_spec(spec)
@@ -29,6 +31,43 @@ class Item:
 
 
 class Tests(unittest.TestCase):
+    def test_pool_discovery_nested_bins_duplicates_and_no_video_reads(self):
+        class Folder:
+            def __init__(self, id, clips, children=None): self.id, self.clips, self.children = id, clips, children or []
+            def GetUniqueId(self): return self.id
+            def GetClipList(self): return self.clips
+            def GetSubFolderList(self): return self.children
+        class Media:
+            def __init__(self, id, file): self.id, self.file = id, file
+            def GetMediaId(self): return self.id
+            def GetClipProperty(self): return {'File Path':self.file}
+        first = Media('one', self.file)
+        duplicate = Media('two', self.file)
+        child = Folder('child', [duplicate, Media('image','image.jpg'), Media('timeline','')])
+        root = Folder('root', [first, first], [child])
+        child.children = [root]  # Even an unexpected repeated bin cannot loop.
+        pool = type('Pool', (), {'GetRootFolder':lambda _: root})()
+        with patch('builtins.open', side_effect=AssertionError('Discovery read a file')), patch.object(helper.os.path, 'isfile', return_value=True) as exists:
+            matches, scanned, checks = helper.discover_companions(helper.pool_items(pool))
+        self.assertEqual([m.id for m in matches], ['one','two'])
+        self.assertEqual((scanned,checks,exists.call_count), (4,1,1))
+        supported = [Media(ext, 'clip.' + ext.upper()) for ext in ('mp4','mkv','mov','m4v','webm')]
+        with patch.object(helper.os.path, 'isfile', return_value=True):
+            self.assertEqual(helper.discover_companions(supported)[0], supported)
+        # Report metadata lookup cost separately; this excludes live Resolve IPC and video hashes.
+        items = [Media(str(i), str(pathlib.Path(self.temp.name) / (str(i)+'.mp4'))) for i in range(5000)]
+        started = time.perf_counter()
+        self.assertEqual(helper.discover_companions(items)[0], [])
+        print('5000 local companion lookups (mock Media Pool): {:.3f}s'.format(time.perf_counter()-started))
+
+    def test_matching_file_verification_is_reused_only_within_one_check(self):
+        first, second = Item(self.file,self.old), Item(self.file,self.old)
+        cache = {}
+        with patch.object(helper, 'load_companion', wraps=helper.load_companion) as load:
+            helper.plan_clip(first,cache); helper.plan_clip(second,cache)
+            self.assertEqual(load.call_count,1)
+            helper.plan_clip(first,{})
+            self.assertEqual(load.call_count,2)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.file = str(pathlib.Path(self.temp.name) / 'clip.mp4')

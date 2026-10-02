@@ -81,6 +81,7 @@ export interface FilingPlan {
     clipId: string;
     name: string;
     path: string;
+    folder: string;
     requested?: ExportPlan['requested'];
     planned?: ExportPlan['planned'];
     issues: string[];

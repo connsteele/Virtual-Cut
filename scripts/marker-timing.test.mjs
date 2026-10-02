@@ -1,7 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markerTime, adjustMarker, layoutMarkers } from '../src/workflow/markerTiming.ts';
-import { playheadSnap, scrubSnap } from '../src/workflow/playheadSnap.ts';
+import { playheadSnap, scrubSnap, editTargets, editSnap } from '../src/workflow/playheadSnap.ts';
+
+test('edit magnets exclude self, choose nearest valid peer and align either range endpoint', () => {
+  const markers = [
+    { id: 'self', time: 2, end: 3 },
+    { id: 'peer', time: 5, end: 6 },
+    { id: 'point', time: 7 },
+  ];
+  const clips = [{ id: 'clip', start: 1, end: 4 }];
+  const frozen = editTargets(0, markers, clips, { marker: 'self' });
+  assert.deepEqual(frozen, [0, 5, 6, 7, 1, 4]);
+  markers[1].time = 9;
+  assert(frozen.includes(5));
+  assert.deepEqual(editTargets(0, [], clips, { clip: 'clip' }), [0]);
+  const snap = (value, offsets, targets, valid = () => true) =>
+    editSnap(value, offsets, targets, 0, 10, 1000, valid);
+  assert.equal(snap(3.06, [0, 2], [3, 5.05]).target, 5.05);
+  assert.equal(snap(3.06, [0, 2], [3, 5.05]).value, 3.05);
+  assert.equal(snap(3.06, [0], [3.07, 3], (_v, _o, t) => t === 3).target, 3);
+  assert.equal(snap(3.11, [0], [3]), null);
+  assert.equal(snap(3, [0], []), null);
+  assert.equal(
+    snap(3, [0], [3], () => false),
+    null,
+  );
+});
 
 test('scrub magnet chooses nearest visible boundary with deterministic ties at any zoom', () => {
   assert.equal(scrubSnap(5.05, [5.1, 5], 0, 10, 1000), 5);

@@ -148,13 +148,13 @@ export function HandoffPanel() {
           the video into Resolve's Media Pool.
         </li>
         <li>
-          Select the imported videos in the Media Pool. Open{' '}
-          <strong>Workspace → Scripts → Utility → Virtual Cut metadata</strong>.
+          Open <strong>Workspace → Scripts → Utility → Virtual Cut metadata</strong>.
         </li>
         <li>
-          Choose <strong>Check selected clips</strong> to inspect the read-only plan. Then choose{' '}
-          <strong>Apply marker metadata</strong> to transfer matching marker names, colors and
-          notes.
+          Choose <strong>Check whole Media Pool</strong> to find matching video companions across
+          all bins. Selection is optional. The helper reports discovery and full file-verification
+          time. Inspect the plan, then choose <strong>Apply marker metadata</strong> to transfer
+          matching marker names, colors and notes.
         </li>
         <li>
           Inspect the Media Pool markers before adding clips to a new timeline. Rerunning the helper

@@ -114,7 +114,7 @@ try {
   );
   await card('point').getByRole('button', { name: 'Make range', exact: true }).click();
   await expect(range('point')).toBeVisible();
-  await card('point').getByRole('button', { name: 'Make point marker', exact: true }).click();
+  await card('point').getByRole('button', { name: 'Remove range end', exact: true }).click();
   await expect(range('point')).toHaveCount(0);
   const point = await page.locator('[data-marker="point"]').boundingBox();
   await page.keyboard.down('Alt');
@@ -193,26 +193,34 @@ try {
   const snap = page.getByRole('button', { name: 'Snapping', exact: true });
   await expect(snap).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Selection follows playhead').uncheck();
-  async function dragTo(locator, target, origin, check = true, extent = [0, 8], cancel = false) {
-    await seek(target);
+  async function dragTo(
+    locator,
+    target,
+    origin,
+    check = true,
+    extent = [0, 8],
+    cancel = false,
+    playhead = target,
+  ) {
+    await seek(playhead);
     const track = await page.getByTestId('scrub-surface').boundingBox();
     const box = await locator.boundingBox();
     const x = box.x + box.width / 2,
       y = box.y + box.height / 2;
-    const delta = ((target - origin) * track.width) / (extent[1] - extent[0]) + 8;
+    const delta = ((target - origin) * track.width) / (extent[1] - extent[0]) + (check ? 2 : 8);
     await page.mouse.move(x, y);
     await page.mouse.down();
     assert(
-      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - playhead) < 0.02,
       'Pointer-down must not seek',
     );
     const destination =
       (await locator.getAttribute('data-clip-handle')) != null
-        ? track.x + ((target - extent[0]) * track.width) / (extent[1] - extent[0]) + 8
+        ? track.x + ((target - extent[0]) * track.width) / (extent[1] - extent[0]) + (check ? 2 : 8)
         : x + delta;
     await page.mouse.move(destination, y, { steps: 10 });
     assert(
-      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - playhead) < 0.02,
       'Dragging must not seek',
     );
     if (check)
@@ -226,7 +234,7 @@ try {
     await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
     await saved();
     assert(
-      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - target) < 0.02,
+      Math.abs((await page.locator('video').evaluate((v) => v.currentTime)) - playhead) < 0.02,
       'Release and save must not seek',
     );
   }
@@ -277,6 +285,56 @@ try {
   ).id;
   await dragTo(page.locator(`[data-marker="${pointId}"]`), 7, 6);
   assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time, 7);
+  const peerState = (await state()).model;
+  const peerRange = peerState.markers[fixture.rid].find((m) => m.id === 'inside');
+  const peerClip = peerState.clips[0];
+  const undo = async () => {
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await saved();
+  };
+  for (const target of [peerRange.time, peerRange.end, peerClip.start, peerClip.end]) {
+    await dragTo(page.locator(`[data-marker="${pointId}"]`), target, 7, true, [0, 8], false, 0.5);
+    assert.equal(
+      (await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time,
+      target,
+    );
+    await undo();
+  }
+  await dragTo(
+    page.getByLabel(`Trim end of ${clip.name}`, { exact: true }),
+    7,
+    peerClip.end,
+    true,
+    [0, 8],
+    false,
+    0.5,
+  );
+  assert.equal((await state()).model.clips[0].end, 7);
+  await undo();
+  await dragTo(
+    range('inside').getByLabel('Marker end: Inside', { exact: true }),
+    7,
+    peerRange.end,
+    true,
+    [0, 8],
+    false,
+    0.5,
+  );
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === 'inside').end, 7);
+  await undo();
+  await dragTo(
+    range('cross-start').getByRole('button', { name: 'Select marker: Cross start', exact: true }),
+    peerClip.end,
+    moved.end,
+    true,
+    [0, 8],
+    false,
+    0.5,
+  );
+  const peerMoved = (await state()).model.markers[fixture.rid].find((m) => m.id === 'cross-start');
+  assert.equal(peerMoved.end, peerClip.end);
+  assert.equal(peerMoved.end - peerMoved.time, moved.end - moved.time);
+  await undo();
   await snap.click();
   await dragTo(page.locator(`[data-marker="${pointId}"]`), 6, 7, false);
   assert((await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time > 6.03);

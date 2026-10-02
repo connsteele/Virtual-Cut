@@ -16,7 +16,7 @@ import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed, Clock3, Film } fro
 import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
 import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
-import { playheadSnap, scrubSnap } from './playheadSnap';
+import { editSnap, editTargets, scrubSnap } from './playheadSnap';
 import { rulerTicks, parsePosition, positionText } from './timelineRuler';
 import { framePosition, parseFramePosition } from './framePosition';
 
@@ -93,7 +93,7 @@ export function Timeline({
     pointer: number;
     recording: string;
     moved: boolean;
-    target: number | null;
+    targets: number[];
   } | null>(null);
   const [markerPreview, setMarkerPreview] = useState<{
     id: string;
@@ -107,7 +107,7 @@ export function Timeline({
     value: number;
     pointer: number;
     recording: string;
-    target: number | null;
+    targets: number[];
   } | null>(null);
   const callbacks = useRef({ onTrimActive, onScrubActive });
   const [preview, setPreview] = useState<{
@@ -117,12 +117,15 @@ export function Timeline({
   } | null>(null);
   const [pointerFocus, setPointerFocus] = useState(false);
   const [snapGuide, setSnapGuide] = useState<number | null>(null);
-  const snapTarget = () =>
+  const snapTargets = (exclude: { marker?: string; clip?: string }) =>
     snapEnabled
-      ? current >= recording.duration
-        ? recording.duration
-        : markerTime(recording, current)
-      : null;
+      ? editTargets(
+          current >= recording.duration ? recording.duration : markerTime(recording, current),
+          markers,
+          showClips ? clips : [],
+          exclude,
+        )
+      : [];
   useEffect(() => {
     callbacks.current = { onTrimActive, onScrubActive };
   }, [onTrimActive, onScrubActive]);
@@ -285,26 +288,18 @@ export function Timeline({
     const width = track.current!.getBoundingClientRect().width;
     const origin = d.edge === 'end' ? d.marker.end! : d.marker.time;
     const raw = origin + ((x - d.x) / width) * span;
-    let value = playheadSnap(raw, d.target, span, width);
-    let boundary: 'time' | 'end' =
-      d.edge === 'end' || (d.edge === 'extend' && raw >= d.marker.time) ? 'end' : 'time';
-    if (d.edge === 'move' && d.marker.end != null && d.target != null) {
-      const duration = d.marker.end - d.marker.time;
-      if (
-        Math.abs(raw + duration - d.target) < Math.abs(raw - d.target) &&
-        playheadSnap(raw + duration, d.target, span, width) === d.target
-      ) {
-        value = d.target - duration;
-        boundary = 'end';
-      }
-    }
-    d.value = adjustMarker(recording, d.marker, d.edge, value);
-    const aligns =
-      d.target != null &&
-      d.value[boundary] != null &&
-      Math.abs(d.value[boundary]! - d.target) < 0.000001;
-    if (value !== raw && !aligns) d.value = adjustMarker(recording, d.marker, d.edge, raw);
-    setSnapGuide(aligns ? d.target : null);
+    const offsets =
+      d.edge === 'move' && d.marker.end != null ? [0, d.marker.end - d.marker.time] : [0];
+    const snap = editSnap(raw, offsets, d.targets, start, end, width, (value, offset, target) => {
+      const adjusted = adjustMarker(recording, d.marker, d.edge, value);
+      const boundary =
+        offset > 0 || d.edge === 'end' || (d.edge === 'extend' && value >= d.marker.time)
+          ? adjusted.end
+          : adjusted.time;
+      return boundary != null && Math.abs(boundary - target) < 0.000001;
+    });
+    d.value = adjustMarker(recording, d.marker, d.edge, snap?.value ?? raw);
+    setSnapGuide(snap?.target ?? null);
     setMarkerPreview({ id: d.marker.id, ...d.value });
   }
   function finishMarker(commit: boolean) {
@@ -359,11 +354,17 @@ export function Timeline({
     if (!d) return;
     const rect = track.current!.getBoundingClientRect();
     const raw = start + ((x - rect.left) / rect.width) * span;
-    const magnetic = playheadSnap(raw, d.target, span, rect.width);
-    d.value = trimTime(d.clip, d.edge, magnetic);
-    const aligns = d.target != null && Math.abs(d.value - d.target) < 0.000001;
-    if (magnetic !== raw && !aligns) d.value = trimTime(d.clip, d.edge, raw);
-    setSnapGuide(aligns ? d.target : null);
+    const snap = editSnap(
+      raw,
+      [0],
+      d.targets,
+      start,
+      end,
+      rect.width,
+      (value, _offset, target) => Math.abs(trimTime(d.clip, d.edge, value) - target) < 0.000001,
+    );
+    d.value = trimTime(d.clip, d.edge, snap?.value ?? raw);
+    setSnapGuide(snap?.target ?? null);
     setPreview({ id: d.id, edge: d.edge, value: d.value });
   }
   function finishHandle(commit: boolean) {
@@ -650,7 +651,7 @@ export function Timeline({
                   pointer: e.pointerId,
                   recording: recording.id,
                   moved: false,
-                  target: snapTarget(),
+                  targets: snapTargets({ marker: m.id }),
                 };
                 track.current!.setPointerCapture(e.pointerId);
               },
@@ -906,7 +907,7 @@ export function Timeline({
                               value: c[edge],
                               pointer: e.pointerId,
                               recording: recording.id,
-                              target: snapTarget(),
+                              targets: snapTargets({ clip: c.id }),
                             };
                             // The track remains mounted if a zoomed trim moves the
                             // clip/edge outside the viewport during this gesture.

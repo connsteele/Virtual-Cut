@@ -1276,6 +1276,49 @@
 .modal > * + * {
   margin-top: 15px;
 }
+.modal.filingModal {
+  width: min(1120px, 94vw);
+}
+.filingTable td:first-child {
+  overflow-wrap: anywhere;
+}
+.filingTable td:nth-child(2) {
+  white-space: nowrap;
+}
+.destinationLink {
+  text-align: left;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.markerEnd {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  min-width: 0;
+}
+.markerEnd label {
+  flex: 1;
+}
+.markerEnd button {
+  padding: 6px;
+  flex-shrink: 0;
+}
+.projectRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.projectRow > button:first-child {
+  flex: 1;
+  text-align: left;
+}
+.deletionFiles {
+  max-height: 30vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding-left: 22px;
+}
 .modal > p {
   line-height: 1.7;
 }

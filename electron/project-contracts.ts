@@ -77,7 +77,21 @@ export interface RecentProject {
   name: string;
   file: string;
 }
+export interface ProjectDeletionPlan {
+  token: string;
+  id: string;
+  name: string;
+  file: string;
+  files: { path: string; kind: 'project' | 'save' | 'preview'; bytes: number }[];
+  retained: string[];
+}
 export interface ProjectApi {
+  deletionPlan(id: string): Promise<ProjectDeletionPlan>;
+  deleteProject(
+    id: string,
+    token: string,
+    cleanup: boolean,
+  ): Promise<{ removed: number; bytes: number; retained: string[] }>;
   installResolveHelper(): Promise<string>;
   resolveHelperStatus(): Promise<ResolveHelperStatus>;
   removeResolveHelper(): Promise<ResolveHelperStatus>;

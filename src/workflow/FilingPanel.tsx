@@ -55,7 +55,7 @@ export function FilingPanel({
   );
   const pending = records.some((e) => ['queued', 'running'].includes(e.state));
   return (
-    <Modal title="File accepted clips" onClose={onClose}>
+    <Modal title="File accepted clips" onClose={onClose} className={s.filingModal}>
       <p>
         Copy the accepted clips into their chosen folders using the source container. Each video
         keeps its original video and clean game audio. The requested cuts expand to usable
@@ -71,11 +71,22 @@ export function FilingPanel({
       </div>
       {!showProgress && (
         <>
-          <p className={s.muted}>Destination: {plan?.root || p.project.destination}</p>
+          <p className={s.muted}>
+            Destination:{' '}
+            <Button
+              className={s.destinationLink}
+              title="Open destination in Explorer"
+              onClick={() =>
+                void w.run(() => window.virtualCut!.project.revealDestination(id, ''), true)
+              }
+            >
+              {plan?.root || p.project.destination}
+            </Button>
+          </p>
           {checking && <p role="status">Checking accepted clips and destinations…</p>}
           {plan && (
             <div className={s.saveTableWrap}>
-              <table className={s.saveTable} aria-label="Filing plan">
+              <table className={`${s.saveTable} ${s.filingTable}`} aria-label="Filing plan">
                 <thead>
                   <tr>
                     <th>
@@ -97,7 +108,18 @@ export function FilingPanel({
                       <td>
                         <strong>{row.name}</strong>
                         <br />
-                        <span className={s.muted}>{row.path}</span>
+                        <Button
+                          className={s.destinationLink}
+                          title="Open destination in Explorer (nearest existing parent if not created yet)"
+                          onClick={() =>
+                            void w.run(
+                              () => window.virtualCut!.project.revealDestination(id, row.folder),
+                              true,
+                            )
+                          }
+                        >
+                          {row.path}
+                        </Button>
                       </td>
                       <td>
                         {range(row.requested)}
@@ -173,7 +195,28 @@ export function FilingPanel({
               <tbody>
                 {records.map((e) => (
                   <tr key={e.plan.id}>
-                    <td>{e.plan.name}</td>
+                    <td>
+                      {e.plan.name}
+                      <br />
+                      <Button
+                        className={s.destinationLink}
+                        title="Open filing destination in Explorer (nearest existing parent if not created yet)"
+                        onClick={() =>
+                          void w.run(
+                            () =>
+                              e.state === 'verified'
+                                ? window.virtualCut!.project.revealExport(id, e.plan.id, 'video')
+                                : window.virtualCut!.project.revealDestination(
+                                    id,
+                                    e.filing!.folder,
+                                  ),
+                            true,
+                          )
+                        }
+                      >
+                        {e.output || e.filing!.folder || p.project.destination}
+                      </Button>
+                    </td>
                     <td>
                       <strong>{e.filing?.state === 'complete' ? 'Done' : e.state}</strong>
                       <br />

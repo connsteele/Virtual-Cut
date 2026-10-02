@@ -126,3 +126,11 @@ Connor requested optional snapping to the playhead for dragged clip edges, range
 ## Readout and scrub snapping — 0.3.21
 
 Position offers remembered elapsed time and zero-based frame numbers. Indexed frame timestamps take precedence for VFR; nominal-FPS fallback is labelled estimated. Mode changes do not seek. Numeric entry remains direct. With Snap on, ruler/filmstrip dragging aligns to the nearest visible point marker, range endpoint or shown clip endpoint within ten screen pixels. This applies with H on or off and does not edit annotations or create Undo. Out-of-view boundaries are ineligible; equal-distance targets prefer earlier time. A guide clears on release/cancel.
+
+## VC-26 follow-up — 0.3.22
+
+Manipulation also snaps to peer point/range/clip boundaries, excluding the dragged annotation and freezing targets for the gesture. Range End can be removed without losing Start or metadata. Review must identify trimming relative to the whole source even when name, folder and markers are unchanged, and its tree starts visible.
+
+The Resolve helper offers a whole-Media-Pool companion scan and retains selected-only checking. It traverses Resolve bins and tests adjacent companion paths; it never recursively scans disk folders. Only matched supported exports incur full identity verification. A batch manifest remains an alternative if actual discovery becomes a bottleneck.
+
+Connor explicitly requires that project cleanup **never delete full exports**. Preserve completed videos and companion metadata permanently across both deletion choices, as well as source footage. Cleanup may remove verified same-project save copies and known disposable previews only. Present the exact file list; retain shared, linked, changed, unknown or unproven files. Never recursively delete the user-selected cache/destination directory. A currently open project is saved and closed before inspection; Cancel deletes nothing and leaves it closed. Settings, helper installations and shared diagnostics are outside project cleanup.

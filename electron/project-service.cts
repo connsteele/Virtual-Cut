@@ -15,6 +15,11 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
+import {
+  planProjectDeletion,
+  executeProjectDeletion,
+  type DeletionPlan,
+} from './project-deletion.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { FilmstripCache } from './filmstrip.cjs';
@@ -71,6 +76,42 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  private deletions = new Map<string, DeletionPlan>();
+  async deletionPlan(id: string) {
+    if (this.store?.data.project.id === id)
+      throw new Error('Save and close this project before deleting it.');
+    const known = await this.recent();
+    const project = known.find((p) => p.id === id);
+    if (!project) throw new Error('Choose a recent project.');
+    const plan = await planProjectDeletion(project, known);
+    this.deletions.clear();
+    this.deletions.set(plan.token, plan);
+    return {
+      token: plan.token,
+      id: plan.id,
+      name: plan.name,
+      file: plan.file,
+      files: plan.files,
+      retained: plan.retained,
+    };
+  }
+  async deleteProject(id: string, token: string, cleanup: boolean) {
+    if (typeof cleanup !== 'boolean') throw new Error('Choose a deletion option.');
+    const plan = this.deletions.get(token);
+    if (!plan || plan.id !== id || this.store?.data.project.id === id)
+      throw new Error('Check the deletion preview again.');
+    const known = await this.recent();
+    const fresh = await planProjectDeletion({ id, file: plan.file, name: plan.name }, known);
+    const selected = (p: DeletionPlan) => p.files.filter((f) => cleanup || f.kind === 'project');
+    if (JSON.stringify(selected(fresh)) !== JSON.stringify(selected(plan)))
+      throw new Error('Project files or ownership changed. Check deletion again.');
+    const result = await executeProjectDeletion(plan, cleanup);
+    this.deletions.delete(token);
+    const temporary = path.join(this.profile, 'projects.json.tmp');
+    await writeFile(temporary, JSON.stringify(known.filter((p) => p.id !== id)));
+    await rename(temporary, path.join(this.profile, 'projects.json'));
+    return result;
+  }
   private filingPlans = new Map<string, { plan: FilingPlan; records: ExportRecord[] }>();
   private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
   private filmstripCache = new FilmstripCache();
@@ -1120,6 +1161,7 @@ export class ProjectService {
         clipId: clip.id,
         name: clip.name,
         path: snapshot.destinations!.rows.find((r) => r.clipId === clip.id)?.path || '',
+        folder: clip.folder,
         issues: [...(snapshot.destinations!.rows.find((r) => r.clipId === clip.id)?.issues || [])],
       };
       plan.rows.push(row);

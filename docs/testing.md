@@ -1,12 +1,12 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.21 has nine fast, thirteen native and fifteen desktop scripts (37 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.22 has nine fast, fourteen native and sixteen desktop scripts (39 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 | Command                                                       | Gate                                                                                                                                                         |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `npm test`                                                    | Build/type checks, lint, nine fast synthetic test files                                                                                                      |
-| `npm run test:native`                                         | Build and thirteen native media/persistence/export/filmstrip/review scripts, using Electron's SQLite runtime                                                 |
-| `npm run test:desktop`                                        | Fast, native prerequisites and fifteen actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and review |
+| `npm run test:native`                                         | Build and fourteen native media/persistence/export/filmstrip/review scripts, using Electron's SQLite runtime                                                 |
+| `npm run test:desktop`                                        | Fast, native prerequisites and sixteen actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and review |
 | `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                              |
 | `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                   |
 
@@ -53,6 +53,10 @@ Existing marker timing checks cover the screen-space snapping threshold at full 
 ## Version 0.3.20 additions
 
 The range desktop gate asserts stationary video time at pointer-down, during movement and after release/save across all snapping gestures. It exercises H-mode Alt conversion shapes during/after capture, selection/deselection versus double-click seeking, H-mode double-click, keyboard retiming, ruler/filmstrip scrubbing, exact-position input validation/cancel/focus and compact layout. Timeline unit checks cover elapsed-time parsing/rounding and bounded, spaced labels for compact, zoomed and long recordings. Existing feedback and zoom checks target the explicit seeking surface. Coverage measurement remains a separate VC-50 task.
+
+## Version 0.3.22 additions
+
+The 0.3.22 follow-up adds native and Electron project deletion checks: preserve sources/exports/companions, retain unknown/shared/linked files and locked saves, reject stale previews, exercise both deletion choices and Cancel, and save/close an active project. Existing range checks cover peer point/range/clip snapping with a stationary playhead. Review and filing checks cover Trim, initially visible Tree, destination links and nowrap timings. Nine Python helper tests now include recursive bin discovery, duplicate-path lookup/verification reuse and all five supported export containers. These focused runs do not remeasure full application coverage.
 
 ## Version 0.3.21 additions
 

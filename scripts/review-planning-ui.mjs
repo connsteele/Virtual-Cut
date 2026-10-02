@@ -49,6 +49,17 @@ try {
   await page.getByRole('button', { name: 'Open project file…', exact: true }).click();
   await nav.getByRole('button', { name: 'Review', exact: true }).click();
   await expect(card(fixture.clipIds[0])).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const initialReview = await state();
+  for (const clip of initialReview.model.clips) {
+    const source = initialReview.model.recordings.find((r) => r.id === clip.rid);
+    await expect(card(clip.id).getByRole('button', { name: 'Trim', exact: true })).toHaveCount(
+      clip.start > 0.001 || clip.end < source.duration - 0.001 ? 1 : 0,
+    );
+  }
   await page.getByRole('button', { name: 'Destination plan', exact: true }).click();
   await expect(modal().getByRole('table')).toContainText('Ready to review');
   await expect(modal()).toContainText(fixture.dest);
@@ -112,7 +123,10 @@ try {
     .poll(async () => (await state()).model.clips.every((c) => c.folder === 'Existing/Planned UI'))
     .toBe(true);
   assert.equal(await stat(path.join(fixture.dest, 'Existing/Planned UI')).catch(() => null), null);
-  await page.getByRole('button', { name: 'Tree', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
   const tree = page
     .locator('aside')
     .filter({ has: page.getByRole('button', { name: 'All destinations', exact: true }) });

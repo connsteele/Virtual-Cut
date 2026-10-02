@@ -233,32 +233,41 @@ function MarkerEditor({
                 />
               </label>
               {m.end != null ? (
-                <label>
-                  End
-                  <input
-                    key={`end:${m.end}`}
-                    type="number"
-                    aria-label="Marker end"
-                    min={m.time}
-                    max={recording.duration}
-                    step={1 / (recording.fps || 30)}
-                    defaultValue={Number(m.end.toFixed(3))}
-                    onBlur={(e) => {
-                      if (
-                        e.currentTarget.value.trim() &&
-                        Number.isFinite(e.currentTarget.valueAsNumber)
-                      )
-                        onChange(
-                          m.id,
-                          adjustMarker(recording, m, 'end', e.currentTarget.valueAsNumber),
-                        );
-                      e.currentTarget.value = String(m.end);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
-                    }}
-                  />
-                </label>
+                <div className={s.markerEnd}>
+                  <label>
+                    End
+                    <input
+                      key={`end:${m.end}`}
+                      type="number"
+                      aria-label="Marker end"
+                      min={m.time}
+                      max={recording.duration}
+                      step={1 / (recording.fps || 30)}
+                      defaultValue={Number(m.end.toFixed(3))}
+                      onBlur={(e) => {
+                        if (
+                          e.currentTarget.value.trim() &&
+                          Number.isFinite(e.currentTarget.valueAsNumber)
+                        )
+                          onChange(
+                            m.id,
+                            adjustMarker(recording, m, 'end', e.currentTarget.valueAsNumber),
+                          );
+                        e.currentTarget.value = String(m.end);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                      }}
+                    />
+                  </label>
+                  <Button
+                    aria-label="Remove range end"
+                    title="Remove end — keep a point marker at Start"
+                    onClick={() => onChange(m.id, { end: undefined })}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
               ) : (
                 <Button
                   onClick={() => onChange(m.id, adjustMarker(recording, m, 'extend', m.time + 1))}
@@ -267,9 +276,6 @@ function MarkerEditor({
                 </Button>
               )}
             </div>
-            {m.end != null && (
-              <Button onClick={() => onChange(m.id, { end: undefined })}>Make point marker</Button>
-            )}
             <textarea
               aria-label="Marker note"
               placeholder="Note (optional)"
@@ -621,7 +627,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [folderIds, setFolderIds] = useState<string[]>([]),
     [reviewFilter, setReviewFilter] = useState('Remaining'),
     [expanded, setExpanded] = useState(''),
-    [reviewTree, setReviewTree] = useState(false),
+    [reviewTree, setReviewTree] = useState(true),
     [folderFilter, setFolderFilter] = useState(''),
     [sourceFolderFilter, setSourceFolderFilter] = useState(''),
     [checked, setChecked] = useState<string[]>([]),

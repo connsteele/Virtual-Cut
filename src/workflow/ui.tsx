@@ -28,13 +28,20 @@ export function Modal({
   title,
   onClose,
   children,
+  className = '',
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <Dialog title={title} eyebrow="VIRTUAL CUT" onClose={onClose} className={s.modal}>
+    <Dialog
+      title={title}
+      eyebrow="VIRTUAL CUT"
+      onClose={onClose}
+      className={`${s.modal} ${className}`}
+    >
       {children}
     </Dialog>
   );

@@ -9,10 +9,45 @@ import json
 import math
 import os
 import re
+import time
 
 COLORS = {'Blue', 'Cyan', 'Green', 'Yellow', 'Red', 'Pink', 'Purple', 'Fuchsia',
           'Rose', 'Lavender', 'Sky', 'Mint', 'Lemon', 'Sand', 'Cocoa', 'Cream'}
 PREFIX = 'virtual-cut-marker:'
+EXPORT_EXTENSIONS = {'.mp4', '.mkv', '.mov', '.m4v', '.webm'}
+
+
+def pool_items(media_pool):
+    """Visit bins without changing Resolve's current bin or selection."""
+    pending, seen_folders, seen_items = [media_pool.GetRootFolder()], set(), set()
+    while pending:
+        folder = pending.pop()
+        identity = folder.GetUniqueId()
+        if identity in seen_folders:
+            continue
+        seen_folders.add(identity)
+        pending.extend(folder.GetSubFolderList() or [])
+        for item in folder.GetClipList() or []:
+            identity = item.GetMediaId()
+            if identity not in seen_items:
+                seen_items.add(identity)
+                yield item
+
+
+def discover_companions(items):
+    """Metadata-only lookup: no video reads, filesystem recursion, or imports."""
+    matches, checked, scanned = [], {}, 0
+    for item in items:
+        scanned += 1
+        file = (item.GetClipProperty() or {}).get('File Path', '')
+        if not file or os.path.splitext(file)[1].lower() not in EXPORT_EXTENSIONS:
+            continue
+        key = os.path.normcase(os.path.abspath(file))
+        if key not in checked:
+            checked[key] = os.path.isfile(file + '.vcut.json')
+        if checked[key]:
+            matches.append(item)
+    return matches, scanned, len(checked)
 
 
 def digest(value):
@@ -135,12 +170,18 @@ def plan_markers(data, fps, existing):
     return changes, conflicts
 
 
-def plan_clip(item):
+def plan_clip(item, verified=None):
     properties = item.GetClipProperty()
     media_path = properties.get('File Path')
     if not media_path or not os.path.isfile(media_path):
         raise ValueError('Select an online media-pool video with its adjacent .vcut.json file.')
-    data = load_companion(media_path)
+    key = os.path.normcase(os.path.abspath(media_path))
+    if verified is None:
+        data = load_companion(media_path)
+    else:
+        if key not in verified:
+            verified[key] = load_companion(media_path)
+        data = verified[key]
     fps = float(properties.get('FPS', 0))
     snapshot = copy.deepcopy(item.GetMarkers() or {})
     changes, conflicts = plan_markers(data, fps, snapshot)
@@ -201,27 +242,34 @@ def show_window(resolve, bmd):
     ui = fusion.UIManager
     dispatcher = bmd.UIDispatcher(ui)
     window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 850, 600]}, ui.VGroup([
-        ui.Label({'Text': 'Select imported videos in the Media Pool, then check the plan. Companions must sit beside their videos.', 'WordWrap': True, 'Weight': 0}),
+        ui.Label({'Text': 'Check the whole Media Pool to find supported video exports in every bin with an adjacent .vcut.json. No selection needed. Matching videos are fully verified; large exports can take time.', 'WordWrap': True, 'Weight': 0}),
         ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
         ui.TextEdit({'ID': 'Plan', 'ReadOnly': True, 'PlainText': 'No plan checked yet.'}),
         ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0}),
-        ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply marker metadata', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
+        ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check whole Media Pool'}), ui.Button({'ID': 'Selected', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply marker metadata', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
     ]))
     items = window.GetItems()
-    state = {'plans': [], 'project': None, 'selection': []}
+    state = {'plans': [], 'project': None}
 
-    def check(_event):
+    def check(_event, selected_only=False):
+        started = time.perf_counter()
         state['plans'] = []
         items['Apply'].Enabled = False
         current = resolve.GetProjectManager().GetCurrentProject()
-        selected = current.GetMediaPool().GetSelectedClips() if current else []
-        selected = selected or []
         state['project'] = current.GetUniqueId() if current else None
-        state['selection'] = [item.GetMediaId() for item in selected]
+        if not current:
+            items['Status'].Text = 'Open a Resolve project first.'; return
+        try:
+            pool = current.GetMediaPool()
+            selected, scanned, checked = discover_companions((pool.GetSelectedClips() or []) if selected_only else pool_items(pool))
+        except Exception as error:
+            items['Status'].Text = 'Media Pool scan failed: ' + str(error); return
+        discovery_seconds = time.perf_counter() - started
+        verified = {}
         lines, errors = [], []
         for item in selected:
             try:
-                plan = plan_clip(item)
+                plan = plan_clip(item, verified)
                 state['plans'].append(plan)
                 lines.append(item.GetName() + '\n' + plan['path'])
                 for change in plan['changes']:
@@ -236,21 +284,26 @@ def show_window(resolve, bmd):
                 lines.append('')
             except Exception as error:
                 errors.append(str(error)); lines.append(item.GetName() + ': ' + str(error))
-        items['Plan'].PlainText = '\n'.join(lines) or 'Select one or more imported videos in the Media Pool.'
+        items['Plan'].PlainText = '\n'.join(lines) or 'No matching video companions found beside imported videos.'
         count = sum(len(plan['changes']) for plan in state['plans'])
-        items['Status'].Text = str(count) + ' marker changes. ' + str(len(errors)) + ' conflicts/errors.'
+        items['Status'].Text = '{} items scanned, {} companion locations checked, {} matching clips in {:.2f}s. {} marker changes, {} conflicts/errors. Total with file verification: {:.2f}s.'.format(scanned, checked, len(selected), discovery_seconds, count, len(errors), time.perf_counter() - started)
         items['Apply'].Enabled = bool(count and not errors)
 
     def apply(_event):
         items['Apply'].Enabled = False
         current = resolve.GetProjectManager().GetCurrentProject()
-        selected = current.GetMediaPool().GetSelectedClips() if current else []
-        if not current or current.GetUniqueId() != state['project'] or [item.GetMediaId() for item in (selected or [])] != state['selection']:
-            items['Status'].Text = 'The project or selection changed. Check the plan again.'; return
+        if not current or current.GetUniqueId() != state['project']:
+            items['Status'].Text = 'The project changed. Check the plan again.'; return
         count = 0
         try:
+            present = {item.GetMediaId(): item for item in pool_items(current.GetMediaPool())}
             for plan in state['plans']:
-                count += apply_clip(plan)
+                if plan['mediaId'] not in present:
+                    raise ValueError('A planned clip left the Media Pool. Check the plan again.')
+                plan['item'] = present[plan['mediaId']]
+            for plan in state['plans']:
+                if plan['changes']:
+                    count += apply_clip(plan)
             if not resolve.GetProjectManager().SaveProject():
                 raise RuntimeError('Markers applied, but Resolve could not save the project. Save it manually.')
             items['Status'].Text = str(count) + ' marker changes applied and project saved. Check again to verify; repeated apply adds no duplicates.'
@@ -258,6 +311,7 @@ def show_window(resolve, bmd):
             items['Status'].Text = str(count) + ' changes completed before this error: ' + str(error)
 
     window.On.Check.Clicked = check
+    window.On.Selected.Clicked = lambda event: check(event, True)
     window.On.Apply.Clicked = apply
     window.On.Close.Clicked = lambda _event: dispatcher.ExitLoop()
     window.On.VirtualCutMetadata.Close = lambda _event: dispatcher.ExitLoop()

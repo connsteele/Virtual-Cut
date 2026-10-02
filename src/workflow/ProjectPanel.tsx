@@ -3,7 +3,11 @@ import { JobTime } from './JobTime';
 import { FolderOpen, Trash2 } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
-import type { DroppedImport, ImportAudio } from '../../electron/project-contracts';
+import type {
+  DroppedImport,
+  ImportAudio,
+  ProjectDeletionPlan,
+} from '../../electron/project-contracts';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
 
@@ -16,11 +20,100 @@ export function ProjectPanel({
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
+  const [deletion, setDeletion] = useState<ProjectDeletionPlan>();
+  const [checkingDelete, setCheckingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleted, setDeleted] = useState('');
   const api = window.virtualCut?.project;
+  const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  async function prepareDelete(id: string) {
+    setCheckingDelete(true);
+    setDeleteError('');
+    setDeleted('');
+    try {
+      if (w.snapshot?.project.id === id) await w.sample();
+      setDeletion(await api!.deletionPlan(id));
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCheckingDelete(false);
+    }
+  }
+  async function remove(cleanup: boolean) {
+    if (!deletion) return;
+    await w.run(async () => {
+      const result = await api!.deleteProject(deletion.id, deletion.token, cleanup);
+      setDeleted(
+        `Deleted ${result.removed} files (${size(result.bytes)}). Source footage, completed exports and their companions were preserved.`,
+      );
+      setDeletion(undefined);
+    });
+  }
   async function open(action: () => ReturnType<NonNullable<typeof api>['open']>) {
     const value = await w.run(action);
     if (value) onClose();
   }
+  if (deletion)
+    return (
+      <Modal
+        title={`Delete project: ${deletion.name}`}
+        onClose={() => !w.busy && setDeletion(undefined)}
+      >
+        <p>
+          The project is closed. Delete removes its project file and Recent entry. Cleanup also
+          removes the verified save copies and disposable previews listed below. This cannot be
+          undone.
+        </p>
+        <p>
+          <strong>
+            Source footage, completed exports and .vcut.json companions are always kept.
+          </strong>{' '}
+          Shared or unrecognized files, installed helpers, app settings and diagnostics are kept.
+        </p>
+        <p>
+          {deletion.files.filter((f) => f.kind === 'save').length} save copies (including
+          before-upgrade copies) · {deletion.files.filter((f) => f.kind === 'preview').length}{' '}
+          disposable previews · {size(deletion.files.reduce((sum, f) => sum + f.bytes, 0))} with
+          cleanup.
+        </p>
+        <details>
+          <summary>Files to delete</summary>
+          <ul className={s.deletionFiles}>
+            {deletion.files.map((f) => (
+              <li key={f.path}>
+                {f.kind}: {f.path} ({size(f.bytes)})
+              </li>
+            ))}
+          </ul>
+        </details>
+        {!!deletion.retained.length && (
+          <details>
+            <summary>Retained files or folders · {deletion.retained.length}</summary>
+            <ul className={s.deletionFiles}>
+              {deletion.retained.map((file) => (
+                <li key={file}>{file}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {w.error && (
+          <p role="alert" className={s.error}>
+            {w.error}
+          </p>
+        )}
+        <div className={s.tools}>
+          <Button className={s.dangerButton} disabled={w.busy} onClick={() => void remove(false)}>
+            Delete without cleanup
+          </Button>
+          <Button className={s.dangerButton} disabled={w.busy} onClick={() => void remove(true)}>
+            Delete with cleanup
+          </Button>
+          <Button disabled={w.busy} onClick={() => setDeletion(undefined)}>
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+    );
   return (
     <Modal title="Projects" onClose={onClose}>
       <Field label="New project name">
@@ -72,16 +165,31 @@ export function ProjectPanel({
         </section>
       )}
       <h3>Recent projects</h3>
+      {checkingDelete && <p role="status">Saving and checking project files…</p>}
+      {deleteError && (
+        <p role="alert" className={s.error}>
+          {deleteError}
+        </p>
+      )}
+      {deleted && <p role="status">{deleted}</p>}
       <div className={s.folderList}>
         {w.recents.map((p) => (
-          <Button
-            key={p.id}
-            disabled={w.busy}
-            title={p.file}
-            onClick={() => void open(() => api!.open(p.id))}
-          >
-            {p.name}
-          </Button>
+          <div className={s.projectRow} key={p.id}>
+            <Button
+              disabled={w.busy || checkingDelete}
+              title={p.file}
+              onClick={() => void open(() => api!.open(p.id))}
+            >
+              {p.name}
+            </Button>
+            <Button
+              aria-label={`Delete project: ${p.name}`}
+              disabled={w.busy || checkingDelete}
+              onClick={() => void prepareDelete(p.id)}
+            >
+              <Trash2 size={16} />
+            </Button>
+          </div>
         ))}
       </div>
       {!w.recents.length && <p className={s.muted}>Your saved projects will appear here.</p>}

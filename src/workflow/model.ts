@@ -216,6 +216,7 @@ export function migrateModel(saved: Model): Model {
   };
 }
 export function reviewChanges(model: Model, clip: Clip) {
+  const source = model.recordings.find((r) => r.id === clip.rid);
   const within = (m: Marker) => markerIntersects(m, clip.start, clip.end);
   const before = (model.markerBaseline?.[clip.rid] || []).filter(within);
   const after = (model.markers[clip.rid] || []).filter(within);
@@ -226,6 +227,7 @@ export function reviewChanges(model: Model, clip: Clip) {
       JSON.stringify(after.find((m) => m.id === id)),
   ).length;
   return {
+    trim: !!source && (clip.start > 0.001 || clip.end < source.duration - 0.001),
     name: clip.name !== (clip.originalName ?? clip.name),
     move: clip.folder !== (clip.originalFolder ?? clip.folder),
     markers,

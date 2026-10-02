@@ -1,4 +1,4 @@
-import { reviewChanges, type Clip, type Model } from './model';
+import { reviewChanges, time, type Clip, type Model } from './model';
 import { Button } from './ui';
 import s from './Workflow.module.css';
 
@@ -16,6 +16,14 @@ export function ReviewSignals({
   const changes = reviewChanges(model, clip);
   return (
     <div className={s.reviewSignals} aria-label="Review checklist">
+      {changes.trim && (
+        <Button
+          title={`Trimmed source: ${time(clip.start)} → ${time(clip.end)}`}
+          onClick={() => onInspect('')}
+        >
+          Trim
+        </Button>
+      )}
       {changes.name && (
         <Button title={`Original: ${clip.originalName}`} onClick={() => onInspect('name')}>
           Name
@@ -30,7 +38,7 @@ export function ReviewSignals({
         <Button onClick={() => onInspect('markers')}>Markers · {changes.markers}</Button>
       )}
       {clip.note && <Button onClick={() => onInspect('note')}>Note</Button>}
-      {!changes.name && !changes.move && !changes.markers && !clip.note && (
+      {!changes.trim && !changes.name && !changes.move && !changes.markers && !clip.note && (
         <span className={s.muted}>No proposed changes</span>
       )}
       {clip.filed ? (

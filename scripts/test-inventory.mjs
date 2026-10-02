@@ -10,6 +10,7 @@ export const fast = [
   'review-order.test.mjs',
 ];
 export const native = [
+  'project-deletion-checks.mjs',
   'range-markers-native.mjs',
   'resolve-helper-checks.mjs',
   'filing-native-checks.mjs',
@@ -25,6 +26,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'project-deletion-ui.mjs',
   'range-markers-ui.mjs',
   'filing-ui-checks.mjs',
   'save-policy-ui.mjs',
@@ -42,6 +44,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],
   'save-policy-ui.mjs': ['feedback-native-checks.mjs'],
