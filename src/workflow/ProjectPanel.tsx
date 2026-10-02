@@ -9,6 +9,7 @@ import type {
   ProjectDeletionPlan,
 } from '../../electron/project-contracts';
 import { Button, Field, Modal } from './ui';
+import { CleanupFiles, ProjectStorage, storageSize as size } from './ProjectStorage';
 import s from './Workflow.module.css';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
@@ -25,7 +26,6 @@ export function ProjectPanel({
   const [deleteError, setDeleteError] = useState('');
   const [deleted, setDeleted] = useState('');
   const api = window.virtualCut?.project;
-  const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   async function prepareDelete(id: string) {
     setCheckingDelete(true);
     setDeleteError('');
@@ -76,24 +76,31 @@ export function ProjectPanel({
           disposable previews · {size(deletion.files.reduce((sum, f) => sum + f.bytes, 0))} with
           cleanup.
         </p>
-        <details>
-          <summary>Files to delete</summary>
-          <ul className={s.deletionFiles}>
-            {deletion.files.map((f) => (
-              <li key={f.path}>
-                {f.kind}: {f.path} ({size(f.bytes)})
-              </li>
-            ))}
-          </ul>
-        </details>
+        <section aria-label="Files to delete">
+          <h4>Files to delete</h4>
+          <CleanupFiles
+            items={deletion.files.map((f) => ({
+              path: f.path,
+              group: {
+                project: 'Project file',
+                save: 'Save copies',
+                preview: 'Disposable previews',
+              }[f.kind],
+              detail: size(f.bytes),
+            }))}
+          />
+        </section>
         {!!deletion.retained.length && (
           <details>
             <summary>Retained files or folders · {deletion.retained.length}</summary>
-            <ul className={s.deletionFiles}>
-              {deletion.retained.map((file) => (
-                <li key={file}>{file}</li>
-              ))}
-            </ul>
+            <p className={s.muted}>
+              A retained, valid save can still recover its checkpoint through Recover from save.
+              Open or unverified saves are kept conservatively; their recovery is not guaranteed.
+              Previews can be regenerated from available media.
+            </p>
+            <CleanupFiles
+              items={deletion.retainedDetails.map((f) => ({ ...f, detail: f.reason }))}
+            />
           </details>
         )}
         {w.error && (
@@ -159,6 +166,7 @@ export function ProjectPanel({
             <dt>Preview cache</dt>
             <dd>{w.snapshot.project.cache}</dd>
           </dl>
+          <ProjectStorage key={w.snapshot.project.id} id={w.snapshot.project.id} />
           <Button disabled={w.busy} onClick={() => void w.sample().then(onClose)}>
             Close project · return to sample
           </Button>

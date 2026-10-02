@@ -34,6 +34,26 @@ try {
   await expect(modal).toContainText(
     'Source footage, completed exports and .vcut.json companions are always kept.',
   );
+  const previews = modal.locator('summary').filter({ hasText: /^Disposable previews \(4\)$/ });
+  await expect(previews).toBeVisible();
+  await expect(previews.locator('..')).not.toHaveAttribute('open');
+  await expect(modal.locator('summary').filter({ hasText: /^Save copies \(2\)$/ })).toBeVisible();
+  assert.equal(
+    await modal
+      .locator('summary')
+      .filter({ hasText: /^Project file/ })
+      .count(),
+    0,
+  );
+  await previews.focus();
+  await page.keyboard.press('Enter');
+  await expect(previews.locator('..').locator('li')).toHaveCount(4);
+  await page.keyboard.press('Enter');
+  const retained = modal.locator('summary').filter({ hasText: /^Retained files or folders/ });
+  await retained.click();
+  await expect(modal).toContainText('A retained, valid save can still recover its checkpoint');
+  await expect(modal).toContainText('Save copy is open or has pending database files');
+  await retained.click();
   for (const [w, h] of [
     [1600, 1000],
     [1100, 720],
@@ -79,6 +99,48 @@ try {
   await page.getByLabel('New project name').fill('Active cleanup');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  const storage = page.getByRole('region', { name: 'Project storage' });
+  await expect(storage).toContainText('Total measured, excluding source footage');
+  await expect(storage).toContainText('Before-upgrade saves');
+  const current = await page.evaluate(() => window.virtualCut.project.current());
+  const unknown = path.join(current.project.cache, 'test-size.txt');
+  await writeFile(unknown, 'x'.repeat(4096));
+  await storage.getByRole('button', { name: 'Refresh storage' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    storage
+      .locator('div')
+      .filter({ has: page.locator('dt', { hasText: /^Other cache files/ }) })
+      .filter({ has: page.locator('dd', { hasText: '4 KB' }) }),
+  ).toHaveCount(1);
+  assert.equal(
+    (await page.evaluate(() => window.virtualCut.project.current())).revision,
+    current.revision,
+  );
+  for (const [w, h] of [
+    [1600, 1000],
+    [1100, 720],
+  ]) {
+    await app.evaluate(
+      ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
+      [w, h],
+    );
+    await page.waitForTimeout(150);
+    await storage.scrollIntoViewIfNeeded();
+    assert(await storage.evaluate((e) => e.scrollWidth <= e.clientWidth + 1));
+    await expect(storage.getByRole('button', { name: 'Refresh storage' })).toBeInViewport();
+    const data = await app.evaluate(async ({ BrowserWindow }) =>
+      (
+        await BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, {
+          stayHidden: true,
+          stayAwake: true,
+        })
+      )
+        .toPNG()
+        .toString('base64'),
+    );
+    await writeFile(path.join(dir, `storage-${w}.png`), Buffer.from(data, 'base64'));
+  }
   await page.getByRole('button', { name: 'Delete project: Active cleanup', exact: true }).click();
   await expect(modal).toContainText('The project is closed');
   assert.equal(await page.evaluate(() => window.virtualCut.project.current()), null);

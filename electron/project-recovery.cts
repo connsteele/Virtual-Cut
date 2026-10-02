@@ -1,12 +1,20 @@
 import { DatabaseSync, backup } from 'node:sqlite';
-import { mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
 import { link, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { validateEdits } from './project-edits.js';
 
 export const PROJECT_APP_ID = 1447253332;
 export const PROJECT_VERSION = 3;
+/** Closed copies need no journal files. Active/pending databases must still read their WAL. */
+export function openProjectReadOnly(file: string) {
+  const pending = ['.lock', '-wal', '-shm'].some((suffix) => existsSync(file + suffix));
+  const uri = pathToFileURL(file);
+  uri.search = 'immutable=1';
+  return new DatabaseSync(pending ? file : uri.href, { readOnly: true });
+}
 const sessionSchema = `CREATE TABLE project_session (
   id INTEGER PRIMARY KEY CHECK(id=1), clean INTEGER NOT NULL,
   opened_at TEXT NOT NULL, closed_at TEXT);
@@ -66,7 +74,9 @@ export function createSessionSchema(db: DatabaseSync) {
 /** Upgrade a closed rolling save in place only after its replacement verifies.
  * The project-level pre-upgrade copy remains in its original format. */
 export function compactSaveCopy(file: string) {
-  const source = new DatabaseSync(file, { readOnly: true });
+  if (['.lock', '-wal', '-shm'].some((suffix) => existsSync(file + suffix)))
+    throw new Error('Save copy is open or has pending database files.');
+  const source = openProjectReadOnly(file);
   const temporary = file + `.${randomUUID()}.partial`;
   try {
     try {
@@ -155,7 +165,13 @@ export function migrateProject(db: DatabaseSync, file: string) {
 /** Recover to a new identity and file. Never overwrite the damaged project or its saves. */
 export async function recoverProjectCopy(source: string, destination: string) {
   const temporary = destination + `.${randomUUID()}.partial`;
-  const sourceDb = new DatabaseSync(source, { readOnly: true });
+  // Recovery can also target a live working project: its backup must observe concurrent commits.
+  const checkpoint =
+    /\.vcut\.saves$/i.test(path.dirname(source)) &&
+    /^(auto|manual|migration-v\d+-v\d+)-\d+-[a-f\d-]+\.vcut$/i.test(path.basename(source));
+  const sourceDb = checkpoint
+    ? openProjectReadOnly(source)
+    : new DatabaseSync(source, { readOnly: true });
   try {
     inspectProject(sourceDb);
     await backup(sourceDb, temporary);

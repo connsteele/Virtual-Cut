@@ -84,8 +84,15 @@ export interface ProjectDeletionPlan {
   file: string;
   files: { path: string; kind: 'project' | 'save' | 'preview'; bytes: number }[];
   retained: string[];
+  retainedDetails: { path: string; reason: string; group: string }[];
+}
+export interface ProjectStorageUsage {
+  measuredAt: string;
+  rows: { id: string; label: string; files: number; bytes: number; unavailable: number }[];
+  issues: string[];
 }
 export interface ProjectApi {
+  storageUsage(id: string): Promise<ProjectStorageUsage>;
   deletionPlan(id: string): Promise<ProjectDeletionPlan>;
   deleteProject(
     id: string,

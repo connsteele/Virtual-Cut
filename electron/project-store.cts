@@ -23,6 +23,7 @@ import {
   migrateProject,
   createSessionSchema,
   compactSaveCopy,
+  openProjectReadOnly,
 } from './project-recovery.cjs';
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
@@ -260,7 +261,7 @@ export class ProjectStore {
     await this.loadCopies();
     if (!this.copies.some((c) => c.id === saveId))
       throw new Error('Choose an available save copy.');
-    const check = new DatabaseSync(path.join(this.file + '.saves', saveId), { readOnly: true });
+    const check = openProjectReadOnly(path.join(this.file + '.saves', saveId));
     let saved: Data, sources: NativeSource[], jobs: MediaJob[];
     try {
       inspectProject(check);

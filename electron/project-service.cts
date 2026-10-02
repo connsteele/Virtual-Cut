@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectStore, type NativeSource } from './project-store.cjs';
+import { projectStorageUsage } from './project-storage.cjs';
 import {
   planProjectDeletion,
   executeProjectDeletion,
@@ -76,6 +77,10 @@ async function waveform(file: string, sampleRate: number) {
 }
 
 export class ProjectService {
+  async storageUsage(id: string) {
+    const store = this.require(id);
+    return projectStorageUsage(store.data.project, store.sources(), store.exports());
+  }
   private deletions = new Map<string, DeletionPlan>();
   async deletionPlan(id: string) {
     if (this.store?.data.project.id === id)
@@ -93,6 +98,7 @@ export class ProjectService {
       file: plan.file,
       files: plan.files,
       retained: plan.retained,
+      retainedDetails: plan.retainedDetails,
     };
   }
   async deleteProject(id: string, token: string, cleanup: boolean) {

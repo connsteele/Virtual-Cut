@@ -1830,6 +1830,52 @@
   overflow-wrap: anywhere;
   color: var(--muted);
 }
+.projectStorage {
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+  padding-top: 12px;
+}
+.projectStorage h4 {
+  margin: 0 auto 0 0;
+}
+.projectInfo .storageRows {
+  display: block;
+}
+.storageRows > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 5px 0;
+}
+.storageRows dd {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.storageTotal {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  font-weight: 600;
+}
+.cleanupGroups {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+.cleanupSingle {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.cleanupGroups small {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.cleanupGroups summary {
+  padding: 6px 0;
+  cursor: pointer;
+}
 .jobList {
   display: grid;
   gap: 10px;

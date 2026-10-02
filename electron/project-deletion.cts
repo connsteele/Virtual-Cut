@@ -96,7 +96,12 @@ export async function planProjectDeletion(
     file: project.file,
     files: [],
     retained: [],
+    retainedDetails: [],
     signatures: new Map(),
+  };
+  const retain = (file: string, group: string, reason: string) => {
+    plan.retained.push(file);
+    plan.retainedDetails.push({ path: file, group, reason });
   };
   const protectedFiles = new Set<string>();
   const protect = (p: ReturnType<typeof readProject>) => {
@@ -124,7 +129,13 @@ export async function planProjectDeletion(
   for (const entry of await readdir(saves, { withFileTypes: true }).catch(() => [])) {
     const file = path.join(saves, entry.name);
     if (!/^(auto|manual|migration-v\d+-v\d+)-\d+-[a-f\d-]+\.vcut$/i.test(entry.name)) {
-      plan.retained.push(file);
+      retain(
+        file,
+        /\.(lock|vcut-(wal|shm))$/i.test(entry.name)
+          ? 'Save support files'
+          : 'Other save-folder files',
+        'Not a recognized standalone save copy.',
+      );
       continue;
     }
     try {
@@ -133,13 +144,18 @@ export async function planProjectDeletion(
         if (await lstat(file + suffix).catch(() => null))
           throw new Error('Save copy is open or has pending database files.');
       const saved = readProject(file);
-      if (saved.project.id !== project.id) throw new Error('Different project');
+      if (saved.project.id !== project.id)
+        throw new Error('This save belongs to a different project.');
       protect(saved);
       // Include previews of sources removed from the current project but retained in its saves.
       data.sources.push(...saved.sources);
       candidates.push({ path: file, kind: 'save' });
-    } catch {
-      plan.retained.push(file);
+    } catch (e) {
+      retain(
+        file,
+        'Save copies',
+        e instanceof Error ? e.message : 'This save could not be verified.',
+      );
     }
   }
   if (protectedFiles.has(key(project.file)))
@@ -149,8 +165,10 @@ export async function planProjectDeletion(
   plan.files.push({ path: project.file, kind: 'project', bytes: signature.size });
   plan.signatures.set(project.file, signature);
   if (sharedCache || unknownPeers) {
-    plan.retained.push(
+    retain(
       `${data.project.cache} (shared cache or another recent project could not be checked)`,
+      'Preview cache',
+      'Shared cache or another recent project could not be checked.',
     );
   } else {
     const prefixes = [
@@ -172,17 +190,22 @@ export async function planProjectDeletion(
         )
       )
         candidates.push({ path: file, kind: 'preview' });
-      else plan.retained.push(file);
+      else retain(file, 'Other cache files', 'Not a verified disposable preview for this project.');
     }
   }
   for (const candidate of candidates) {
     try {
-      if (protectedFiles.has(key(candidate.path))) throw new Error('Protected media');
+      if (protectedFiles.has(key(candidate.path)))
+        throw new Error('Referenced source footage or completed output.');
       const info = await regular(candidate.path);
       plan.files.push({ ...candidate, bytes: info.size });
       plan.signatures.set(candidate.path, info);
-    } catch {
-      plan.retained.push(candidate.path);
+    } catch (e) {
+      retain(
+        candidate.path,
+        candidate.kind === 'save' ? 'Save copies' : 'Previews',
+        e instanceof Error ? e.message : 'File could not be verified.',
+      );
     }
   }
   return plan;

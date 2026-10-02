@@ -291,6 +291,7 @@ function registerDesktopApi(): void {
     });
   };
   workspace('recent', () => projects.recent());
+  workspace('storageUsage', (id) => projects.storageUsage(id));
   workspace('deletionPlan', (id) => projects.deletionPlan(id));
   workspace('deleteProject', (id, token, cleanup) => projects.deleteProject(id, token, cleanup));
   workspace('current', () => (projects.store ? projects.snapshot() : null));

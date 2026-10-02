@@ -1,6 +1,6 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.22 has nine fast, fourteen native and sixteen desktop scripts (39 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.3.23 has nine fast, fourteen native and sixteen desktop scripts (39 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 | Command                                                       | Gate                                                                                                                                                         |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
