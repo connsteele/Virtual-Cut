@@ -50,6 +50,7 @@ export function Player({
   onPlayable,
   onSelect,
   handleMode = false,
+  snapEnabled = false,
   trimEnabled = true,
   onTrim,
   onTrimActive,
@@ -80,6 +81,7 @@ export function Player({
   onPlayable?: (ready: boolean) => void;
   onSelect?: (id: string) => void;
   handleMode?: boolean;
+  snapEnabled?: boolean;
   trimEnabled?: boolean;
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
@@ -841,6 +843,7 @@ export function Player({
         }}
         onSelect={onSelect}
         handleMode={handleMode}
+        snapEnabled={snapEnabled}
         trimEnabled={trimEnabled}
         onTrim={onTrim}
         onTrimActive={(active) => {

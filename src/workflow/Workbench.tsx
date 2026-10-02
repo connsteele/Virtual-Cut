@@ -11,6 +11,7 @@ import {
   Image,
   ImageOff,
   Layers,
+  Magnet,
   Maximize,
   NotebookPen,
   Plus,
@@ -594,6 +595,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [handleMode, setHandleMode] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(
+    () => localStorage.getItem('virtual-cut.snap-playhead') !== 'false',
+  );
   const trimming = useRef(false);
   const [page, setPage] = useState<PageId>('cut'),
     [rid, setRid] = useState('r1'),
@@ -1226,6 +1230,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         audioStatus={currentAudioStatus(project?.jobs || [], record)}
         showClips={page === 'cut' || page === 'selects'}
         handleMode={page === 'cut' && handleMode && canEdit && !workspace.blocking}
+        snapEnabled={snapEnabled}
         trimEnabled={!workspace.busy}
         onTrimActive={(active) => {
           trimming.current = active;
@@ -1639,10 +1644,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   <Button
                     aria-pressed={handleMode}
                     disabled={!canEdit}
-                    title="Manipulate: drag clip edges to trim or circular markers to move (H)"
+                    title="Manipulate: drag clip/range edges or move markers; Alt-drag a point to make a range (H)"
                     onClick={() => setHandleMode(!handleMode)}
                   >
                     H · Manipulate
+                  </Button>
+                  <Button
+                    aria-label="Snap to playhead"
+                    aria-pressed={snapEnabled}
+                    title="Snap manipulated clip edges and markers to the playhead position at drag start"
+                    onClick={() => {
+                      setSnapEnabled(!snapEnabled);
+                      localStorage.setItem('virtual-cut.snap-playhead', String(!snapEnabled));
+                    }}
+                  >
+                    <Magnet size={15} /> Snap
                   </Button>
                   <label className={s.followToggle}>
                     <input
@@ -2707,7 +2723,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['S', 'Split selected clip'],
                 [
                   'H',
-                  'Manipulate on Cut: drag clip edges to trim or circular markers to move; Left/Right nudges a focused marker',
+                  'Manipulate on Cut: drag clip/range edges or move markers; Alt-drag a point to extend a range; Left/Right nudges a focused marker',
                 ],
                 ['M / Shift+M', 'Create a Blue point / range marker and name it'],
                 ['R', 'Rename selected clip or marker (selects its name)'],

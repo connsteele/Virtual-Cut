@@ -95,15 +95,59 @@ try {
   await expect(library.locator('[data-frame-time]').first()).toBeVisible({ timeout: 30000 });
   await library.getByRole('button', { name: 'Fit full recording', exact: true }).click();
   await expect(library.locator('[data-frame-time] img').first()).toBeVisible();
+  await expect(library.getByText('Loading filmstrip…', { exact: true })).toHaveCount(0);
   const overviewUrl = await library.locator('[data-frame-time] img').first().getAttribute('src');
   await page.getByLabel('Search completed clips').fill('');
   await page.getByRole('button', { name: 'Preview completed clip: First', exact: true }).click();
+  await expect(
+    library.getByRole('region', { name: 'Footage viewer' }).locator('strong').first(),
+  ).toHaveText('First');
   await expect(library.locator('[data-frame-time] img').first()).toBeVisible({ timeout: 30000 });
+  await expect(library.getByText('Loading filmstrip…', { exact: true })).toHaveCount(0);
+  await page.evaluate(() => {
+    window.__cachedStripFlashes = [];
+    window.__stripObserver = new MutationObserver(() => {
+      const root = document.querySelector('[aria-label="Completed Library"]');
+      if (
+        root &&
+        [...root.querySelectorAll('[role="status"]')].some(
+          (el) =>
+            el.textContent?.includes('Loading filmstrip') ||
+            el.textContent?.includes('Preparing filmstrip'),
+        )
+      )
+        window.__cachedStripFlashes.push({
+          text: [...root.querySelectorAll('[role="status"]')].map((el) => el.textContent),
+          tiles: root.querySelectorAll('[data-frame-time]').length,
+          requested: [...root.querySelectorAll('[data-tile-time]')].map(
+            (el) => el.dataset.tileTime,
+          ),
+          width: root.querySelector('[data-testid="scrub-surface"]')?.getBoundingClientRect().width,
+        });
+    });
+    window.__stripObserver.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
   await secondCard.click();
+  await expect(
+    library.getByRole('region', { name: 'Footage viewer' }).locator('strong').first(),
+  ).toHaveText('Second');
   await expect(library.locator('[data-frame-time] img').first()).toHaveAttribute(
     'src',
     overviewUrl,
     { timeout: 30000 },
+  );
+  await page.waitForTimeout(200);
+  assert.deepEqual(
+    await page.evaluate(() => {
+      window.__stripObserver.disconnect();
+      return window.__cachedStripFlashes;
+    }),
+    [],
+    'Verified cached revisit has no pending filmstrip placeholder',
   );
   await capture('library-viewer-wide');
   const viewerHeight = await library

@@ -174,6 +174,124 @@ try {
     (m) => m.name === 'New range keyboard',
   );
   assert(created && created.end > created.time);
+  // Magnetic edits capture the playhead before dragging changes the preview position.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1000));
+  await page.waitForTimeout(200);
+  const snap = page.getByRole('button', { name: 'Snap to playhead', exact: true });
+  await expect(snap).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Selection follows playhead').uncheck();
+  async function dragTo(locator, target, origin, check = true, extent = [0, 8], cancel = false) {
+    await seek(target);
+    const track = await page.getByTestId('scrub-surface').boundingBox();
+    const box = await locator.boundingBox();
+    const x = box.x + box.width / 2,
+      y = box.y + box.height / 2;
+    const delta = ((target - origin) * track.width) / (extent[1] - extent[0]) + 8;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    const destination =
+      (await locator.getAttribute('data-clip-handle')) != null
+        ? track.x + ((target - extent[0]) * track.width) / (extent[1] - extent[0]) + 8
+        : x + delta;
+    await page.mouse.move(destination, y, { steps: 10 });
+    if (check)
+      await expect(page.locator('[data-snap-guide]')).toHaveAttribute(
+        'data-snap-guide',
+        String(target),
+      );
+    else await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
+    if (cancel) await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await expect(page.locator('[data-snap-guide]')).toHaveCount(0);
+    await saved();
+  }
+  let currentModel = (await state()).model;
+  const clip = currentModel.clips[0];
+  await dragTo(page.getByLabel(`Trim start of ${clip.name}`, { exact: true }), 3, clip.start);
+  assert.equal((await state()).model.clips[0].start, 3);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await saved();
+  await dragTo(page.getByLabel(`Trim end of ${clip.name}`, { exact: true }), 5, clip.end);
+  assert.equal((await state()).model.clips[0].end, 5);
+  await dragTo(range('inside').getByLabel('Marker start: Inside', { exact: true }), 3.5, 3.2);
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === 'inside').time, 3.5);
+  await dragTo(range('inside').getByLabel('Marker end: Inside', { exact: true }), 5.5, 6.5);
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === 'inside').end, 5.5);
+  // Escape cancels a snapped gesture; an invalid target cannot cross the other edge.
+  await dragTo(
+    range('inside').getByLabel('Marker start: Inside', { exact: true }),
+    4,
+    3.5,
+    true,
+    [0, 8],
+    true,
+  );
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === 'inside').time, 3.5);
+  await dragTo(range('inside').getByLabel('Marker start: Inside', { exact: true }), 6, 3.5, false);
+  const constrained = (await state()).model.markers[fixture.rid].find((m) => m.id === 'inside');
+  assert(constrained.time < constrained.end && constrained.end === 5.5);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await saved();
+  // Body movement aligns the nearest endpoint and retains duration.
+  await dragTo(
+    range('cross-start').getByRole('button', { name: 'Seek to marker: Cross start', exact: true }),
+    4,
+    3,
+  );
+  const moved = (await state()).model.markers[fixture.rid].find((m) => m.id === 'cross-start');
+  assert.equal(moved.time, 2);
+  assert.equal(moved.end, 4);
+  await seek(6);
+  await unfocus();
+  await page.keyboard.press('m');
+  await page.keyboard.type('Snap point');
+  await page.keyboard.press('Enter');
+  await saved();
+  const pointId = (await state()).model.markers[fixture.rid].find(
+    (m) => m.name === 'Snap point',
+  ).id;
+  await dragTo(page.locator(`[data-marker="${pointId}"]`), 7, 6);
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time, 7);
+  await snap.click();
+  await dragTo(page.locator(`[data-marker="${pointId}"]`), 6, 7, false);
+  assert((await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time > 6.03);
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('virtual-cut.snap-playhead')),
+    'false',
+  );
+  await snap.click();
+  await seek(6);
+  await page.getByRole('button', { name: 'Zoom in timeline', exact: true }).click();
+  currentModel = (await state()).model;
+  const beforeZoom = currentModel.markers[fixture.rid].find((m) => m.id === pointId).time;
+  await dragTo(page.locator(`[data-marker="${pointId}"]`), 6.5, beforeZoom, true, [4, 8]);
+  assert.equal((await state()).model.markers[fixture.rid].find((m) => m.id === pointId).time, 6.5);
+  await page.getByRole('button', { name: 'Fit full recording', exact: true }).click();
+  // Alt-drag converts to a range even without Manipulate; a left drag preserves the old point as End.
+  await page.getByRole('button', { name: 'H · Manipulate', exact: true }).click();
+  const pointBox = await page.locator(`[data-marker="${pointId}"]`).boundingBox();
+  const fullTrack = await page.getByTestId('scrub-surface').boundingBox();
+  await page.keyboard.down('Alt');
+  await page.mouse.move(pointBox.x + pointBox.width / 2, pointBox.y + pointBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    pointBox.x + pointBox.width / 2 - fullTrack.width / 8,
+    pointBox.y + pointBox.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await saved();
+  const extended = (await state()).model.markers[fixture.rid].find((m) => m.id === pointId);
+  assert(Math.abs(extended.time - 5.5) < 0.04);
+  assert.equal(extended.end, 6.5);
+  const finalBody = range(pointId).locator('[data-marker]');
+  assert.equal(await finalBody.textContent(), '');
+  assert.equal(await finalBody.evaluate((el) => getComputedStyle(el, '::before').height), '6px');
+  await capture('snap-ranges-wide');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+  await capture('snap-ranges-compact');
+  await expect(snap).toBeInViewport();
   await go('Review');
   await saved();
   assert.equal(errors.length, 0, errors.join('\n'));

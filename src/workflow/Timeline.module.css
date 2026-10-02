@@ -156,16 +156,23 @@
 }
 .rangeBody {
   position: absolute;
-  inset: 4px 0;
+  inset: 0;
   width: 100%;
   padding: 0 10px;
   border: 0;
   color: inherit;
-  background: color-mix(in srgb, currentColor 25%, transparent);
+  background: transparent;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 10px;
+}
+.rangeBody::before {
+  content: '';
+  position: absolute;
+  inset: 9px 0;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  pointer-events: none;
 }
 .rangeEdge {
   position: absolute;
@@ -196,14 +203,6 @@
 .rangeEnd span {
   clip-path: polygon(0 0, 100% 0, 100% 68%, 0 100%);
 }
-.markerRange[data-manipulate='true'] .rangeStart span {
-  clip-path: none;
-  border-radius: 12px 0 0 12px;
-}
-.markerRange[data-manipulate='true'] .rangeEnd span {
-  clip-path: none;
-  border-radius: 0 12px 12px 0;
-}
 .markerRange[data-manipulate='true'] .rangeEdge {
   cursor: ew-resize;
 }
@@ -211,8 +210,19 @@
   cursor: grab;
   touch-action: none;
 }
-.markerRange[data-selected='true'] .rangeBody {
-  outline: 1px solid var(--text);
+.rangeBody:active,
+.rangeEdge:active {
+  outline: none;
+}
+.snapGuide {
+  position: absolute;
+  top: 21px;
+  bottom: 0;
+  width: 2px;
+  background: var(--teal-light, #71d7cd);
+  box-shadow: 0 0 5px #71d7cd;
+  pointer-events: none;
+  z-index: 7;
 }
 .marker {
   position: absolute;

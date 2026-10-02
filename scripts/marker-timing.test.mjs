@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markerTime, adjustMarker, layoutMarkers } from '../src/workflow/markerTiming.ts';
+import { playheadSnap } from '../src/workflow/playheadSnap.ts';
+
+test('playhead magnet has a pixel-sized threshold, respects zoom and can be disabled', () => {
+  assert.equal(playheadSnap(5.09, 5, 10, 1000), 5);
+  assert.equal(playheadSnap(5.11, 5, 10, 1000), 5.11);
+  assert.equal(playheadSnap(5.018, 5, 2, 1000), 5);
+  assert.equal(playheadSnap(5.09, 5, 2, 1000), 5.09);
+  assert.equal(playheadSnap(5.09, null, 10, 1000), 5.09);
+  assert.equal(playheadSnap(5.09, 5, 10, 0), 5.09);
+});
 test('marker movement snaps, clamps and steps across irregular frame timestamps', () => {
   const r = { duration: 2, fps: 30, frameTimes: [0, 0.04, 0.09, 0.13, 1.95] };
   assert.equal(markerTime(r, 0.08), 0.09);

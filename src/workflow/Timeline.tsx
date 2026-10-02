@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   markerColors,
   markerColor,
@@ -17,6 +17,7 @@ import { ZoomIn, ZoomOut, ArrowLeft, ArrowRight, LocateFixed } from 'lucide-reac
 import s from './Timeline.module.css';
 import { useFilmstrip } from './useFilmstrip';
 import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
+import { playheadSnap } from './playheadSnap';
 
 export function Timeline({
   recording,
@@ -40,6 +41,7 @@ export function Timeline({
   waveMode = 'off',
   audioTracks = [],
   handleMode = false,
+  snapEnabled = false,
   trimEnabled = true,
   onTrim,
   onTrimActive,
@@ -66,6 +68,7 @@ export function Timeline({
   waveMode?: 'off' | 'overlay' | 'replace';
   audioTracks?: AudioTrack[];
   handleMode?: boolean;
+  snapEnabled?: boolean;
   trimEnabled?: boolean;
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
@@ -81,6 +84,7 @@ export function Timeline({
     pointer: number;
     recording: string;
     moved: boolean;
+    target: number | null;
   } | null>(null);
   const [markerPreview, setMarkerPreview] = useState<{
     id: string;
@@ -94,6 +98,7 @@ export function Timeline({
     value: number;
     pointer: number;
     recording: string;
+    target: number | null;
   } | null>(null);
   const callbacks = useRef({ onTrimActive, onScrubActive });
   const [preview, setPreview] = useState<{
@@ -102,6 +107,13 @@ export function Timeline({
     value: number;
   } | null>(null);
   const [pointerFocus, setPointerFocus] = useState(false);
+  const [snapGuide, setSnapGuide] = useState<number | null>(null);
+  const snapTarget = () =>
+    snapEnabled
+      ? current >= recording.duration
+        ? recording.duration
+        : markerTime(recording, current)
+      : null;
   useEffect(() => {
     callbacks.current = { onTrimActive, onScrubActive };
   }, [onTrimActive, onScrubActive]);
@@ -113,6 +125,7 @@ export function Timeline({
       setPreview(null);
       markerDrag.current = null;
       setMarkerPreview(null);
+      setSnapGuide(null);
       callbacks.current.onTrimActive?.(false);
       pointer.current = null;
       callbacks.current.onScrubActive?.(false);
@@ -123,18 +136,22 @@ export function Timeline({
       drag.current = null;
       markerDrag.current = null;
       setMarkerPreview(null);
+      setSnapGuide(null);
       pointer.current = null;
       setPreview(null);
       callbacks.current.onTrimActive?.(false);
       callbacks.current.onScrubActive?.(false);
     };
-  }, [handleMode, recording.id, trimEnabled]);
+  }, [handleMode, recording.id, trimEnabled, snapEnabled]);
   const [width, setWidth] = useState(0);
   const [keys, setKeys] = useState(
     () => localStorage.getItem('virtual-cut.keyframe-ticks') !== 'false',
   );
-  useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+  useLayoutEffect(() => {
+    if (track.current) setWidth(track.current.getBoundingClientRect().width);
+    const observer = new ResizeObserver(() => {
+      if (track.current) setWidth(track.current.getBoundingClientRect().width);
+    });
     if (track.current) observer.observe(track.current);
     return () => observer.disconnect();
   }, []);
@@ -243,7 +260,27 @@ export function Timeline({
     d.moved = true;
     const width = track.current!.getBoundingClientRect().width;
     const origin = d.edge === 'end' ? d.marker.end! : d.marker.time;
-    d.value = adjustMarker(recording, d.marker, d.edge, origin + ((x - d.x) / width) * span);
+    const raw = origin + ((x - d.x) / width) * span;
+    let value = playheadSnap(raw, d.target, span, width);
+    let boundary: 'time' | 'end' =
+      d.edge === 'end' || (d.edge === 'extend' && raw >= d.marker.time) ? 'end' : 'time';
+    if (d.edge === 'move' && d.marker.end != null && d.target != null) {
+      const duration = d.marker.end - d.marker.time;
+      if (
+        Math.abs(raw + duration - d.target) < Math.abs(raw - d.target) &&
+        playheadSnap(raw + duration, d.target, span, width) === d.target
+      ) {
+        value = d.target - duration;
+        boundary = 'end';
+      }
+    }
+    d.value = adjustMarker(recording, d.marker, d.edge, value);
+    const aligns =
+      d.target != null &&
+      d.value[boundary] != null &&
+      Math.abs(d.value[boundary]! - d.target) < 0.000001;
+    if (value !== raw && !aligns) d.value = adjustMarker(recording, d.marker, d.edge, raw);
+    setSnapGuide(aligns ? d.target : null);
     setMarkerPreview({ id: d.marker.id, ...d.value });
     onSeek(d.edge === 'end' ? d.value.end! : d.value.time);
   }
@@ -251,6 +288,7 @@ export function Timeline({
     const d = markerDrag.current;
     if (!d) return;
     markerDrag.current = null;
+    setSnapGuide(null);
     setMarkerPreview(null);
     if (
       commit &&
@@ -295,7 +333,12 @@ export function Timeline({
     const d = drag.current;
     if (!d) return;
     const rect = track.current!.getBoundingClientRect();
-    d.value = trimTime(d.clip, d.edge, start + ((x - rect.left) / rect.width) * span);
+    const raw = start + ((x - rect.left) / rect.width) * span;
+    const magnetic = playheadSnap(raw, d.target, span, rect.width);
+    d.value = trimTime(d.clip, d.edge, magnetic);
+    const aligns = d.target != null && Math.abs(d.value - d.target) < 0.000001;
+    if (magnetic !== raw && !aligns) d.value = trimTime(d.clip, d.edge, raw);
+    setSnapGuide(aligns ? d.target : null);
     setPreview({ id: d.id, edge: d.edge, value: d.value });
     onSeek(d.value);
   }
@@ -303,6 +346,7 @@ export function Timeline({
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    setSnapGuide(null);
     setPreview(null);
     if (commit && d.recording === recording.id && d.value !== d.clip[d.edge])
       onTrim?.(d.id, d.edge, d.value);
@@ -464,7 +508,13 @@ export function Timeline({
             const range = m.end != null;
             const controls = (edge: 'move' | 'start' | 'end') => ({
               onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
-                if (!handleMode || !trimEnabled || !onMarkerMove || e.button !== 0) return;
+                if (
+                  (!handleMode && !(!range && e.altKey)) ||
+                  !trimEnabled ||
+                  !onMarkerMove ||
+                  e.button !== 0
+                )
+                  return;
                 e.preventDefault();
                 e.stopPropagation();
                 e.currentTarget.focus({ preventScroll: true });
@@ -475,10 +525,11 @@ export function Timeline({
                   marker: m,
                   x: e.clientX,
                   value: { time: m.time, end: m.end },
-                  edge: !range && e.shiftKey ? 'extend' : edge,
+                  edge: !range && (e.altKey || e.shiftKey) ? 'extend' : edge,
                   pointer: e.pointerId,
                   recording: recording.id,
                   moved: false,
+                  target: snapTarget(),
                 };
                 track.current!.setPointerCapture(e.pointerId);
               },
@@ -531,9 +582,7 @@ export function Timeline({
                   aria-label={`Seek to marker: ${m.name}`}
                   aria-pressed={m.id === selectedMarkerId}
                   title={`${m.name} · ${time(m.time)} – ${time(m.end!)} · ${time(m.end! - m.time)}${handleMode ? ' · Drag to move range' : ''}`}
-                >
-                  <span>{m.name}</span>
-                </button>
+                />
                 {(['start', 'end'] as const).map((edge) => (
                   <button
                     key={edge}
@@ -556,7 +605,7 @@ export function Timeline({
                 data-manipulate={handleMode}
                 className={s.marker}
                 style={{ left: percent(m.time), top: lane * 26, color: markerColor(m) }}
-                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag to move; Shift-drag to make a range' : ''}`}
+                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag to move' : ''} · Alt-drag to make a range`}
                 aria-label={`Seek to marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}
                 aria-disabled={handleMode && !trimEnabled}
@@ -571,7 +620,7 @@ export function Timeline({
           data-waveform-mode={waveMode}
           hidden={!filmstrip.native && !recording.frames.length && waveMode === 'off'}
         >
-          {filmstrip.native && filmstrip.status && waveMode !== 'replace' && (
+          {width > 0 && filmstrip.native && filmstrip.status && waveMode !== 'replace' && (
             <span className={s.frameStatus} role="status">
               {filmstrip.status}
             </span>
@@ -739,6 +788,7 @@ export function Timeline({
                               value: c[edge],
                               pointer: e.pointerId,
                               recording: recording.id,
+                              target: snapTarget(),
                             };
                             // The track remains mounted if a zoomed trim moves the
                             // clip/edge outside the viewport during this gesture.
@@ -794,6 +844,14 @@ export function Timeline({
         )}
         {current >= start && current <= end && (
           <div className={s.playhead} style={{ left: percent(current) }} />
+        )}
+        {snapGuide != null && snapGuide >= start && snapGuide <= end && (
+          <div
+            className={s.snapGuide}
+            data-snap-guide={snapGuide}
+            aria-label="Snapped to playhead"
+            style={{ left: percent(snapGuide) }}
+          />
         )}
       </div>
       {zoomed && (

@@ -23,6 +23,8 @@ export function CompletedLibrary({
     [loading, setLoading] = useState('');
   const [preview, setPreview] = useState<Recording>();
   const [previewStatus, setPreviewStatus] = useState('');
+  const visited = useRef(new Set<string>());
+  const prepared = useRef<{ url: string; token: string } | null>(null);
   const request = useRef(0),
     transport = useRef<Transport>(null);
   const p = w.snapshot!,
@@ -30,6 +32,7 @@ export function CompletedLibrary({
     folders = [...new Set(clips.map((c) => c.folder))].sort();
   useEffect(() => {
     retainedMemory.sync(p.project.id, []);
+    visited.current.clear();
     return () => retainedMemory.sync('', []);
   }, [p.project.id]);
   useEffect(
@@ -39,12 +42,30 @@ export function CompletedLibrary({
     [],
   );
   useEffect(() => {
-    setPreview(undefined);
+    if (!active) {
+      request.current++;
+      setLoading('');
+      const pending = prepared.current;
+      prepared.current = null;
+      if (pending)
+        void window
+          .virtualCut!.project.releaseRetained(p.project.id, pending.token)
+          .catch(() => {});
+    }
+  }, [active, p.project.id]);
+  useEffect(() => {
     setPreviewStatus('');
     if (!active || !selected) return;
     let alive = true;
-    const token = crypto.randomUUID();
+    const ready = prepared.current?.url === selected.url ? prepared.current : null;
+    prepared.current = null;
+    const token = ready?.token || crypto.randomUUID();
     const api = window.virtualCut!.project;
+    if (ready)
+      return () => {
+        void api.releaseRetained(p.project.id, token).catch(() => {});
+      };
+    setPreview(undefined);
     setPreviewStatus('Preparing filmstrip and game waveform…');
     void api
       .inspectRetained(p.project.id, selected.exportId, token)
@@ -52,6 +73,9 @@ export function CompletedLibrary({
         if (alive) {
           setPreview(value);
           setPreviewStatus('');
+          visited.current.add(selected.exportId);
+          if (visited.current.size > 6)
+            visited.current.delete(visited.current.values().next().value!);
         }
       })
       .catch((e) => {
@@ -88,7 +112,31 @@ export function CompletedLibrary({
     window.dispatchEvent(new Event('virtual-cut-pause-workspace'));
     try {
       const value = await window.virtualCut!.project.retainedMedia(p.project.id, clip.exportId);
-      if (token === request.current) setSelected(value);
+      if (token !== request.current) return;
+      // Keep the existing viewer during verified revisit preparation, then swap
+      // the video and its ready timing data together. No pending placeholder frame.
+      if (visited.current.has(value.exportId)) {
+        const previewToken = crypto.randomUUID();
+        try {
+          const details = await window.virtualCut!.project.inspectRetained(
+            p.project.id,
+            value.exportId,
+            previewToken,
+          );
+          if (token !== request.current) {
+            await window.virtualCut!.project.releaseRetained(p.project.id, previewToken);
+            return;
+          }
+          prepared.current = { url: value.url!, token: previewToken };
+          setPreview(details);
+        } catch (e) {
+          await window
+            .virtualCut!.project.releaseRetained(p.project.id, previewToken)
+            .catch(() => {});
+          throw e;
+        }
+      } else setPreview(undefined);
+      setSelected(value);
     } catch (e) {
       if (token === request.current) {
         setSelected(undefined);
