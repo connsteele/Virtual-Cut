@@ -1,4 +1,5 @@
 import type { Model, Recording, Clip, Marker } from './workflow-types.js';
+import { validateContexts } from './project-context.js';
 
 export function emptyModel(): Model {
   return {
@@ -67,6 +68,12 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
   current = withoutDone(current);
   const result = structuredClone(current);
   const byId = (x: { id: string }) => x.id;
+  result.contexts = mergeItems(
+    before.contexts || [],
+    after.contexts || [],
+    current.contexts || [],
+    byId,
+  );
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
     // Each collection is homogeneous; the shared identity operation preserves its type.
     Object.assign(result, {
@@ -126,6 +133,7 @@ export function editorial(model: Model): string {
   });
 }
 export function validateEdits(model: Model): Model {
+  validateContexts(model.contexts);
   if (JSON.stringify(model).length > 32 * 1024 * 1024)
     throw new Error('Project edit is too large. Use a smaller pinned preview.');
   const sources = new Map(model.recordings.map((r) => [r.id, r]));

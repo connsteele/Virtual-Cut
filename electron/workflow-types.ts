@@ -158,6 +158,7 @@ export interface Target {
   items: Entry[];
 }
 export interface Model {
+  contexts?: import('./project-context.js').CreativeContext[];
   selectedRecordingId?: string;
   recordings: Recording[];
   clips: Clip[];

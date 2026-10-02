@@ -11,6 +11,7 @@ import type {
 import { Button, Field, Modal } from './ui';
 import { CleanupFiles, ProjectStorage, storageSize as size } from './ProjectStorage';
 import s from './Workflow.module.css';
+import { ContextEditor, defaultContext } from './ContextEditor';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 export function ProjectPanel({
@@ -21,6 +22,7 @@ export function ProjectPanel({
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
+  const [newContext, setNewContext] = useState(defaultContext('project'));
   const [deletion, setDeletion] = useState<ProjectDeletionPlan>();
   const [checkingDelete, setCheckingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -131,11 +133,25 @@ export function ProjectPanel({
         previews. Review assigns subfolders beneath the finished-video root. Recordings stay in
         their original locations.
       </p>
+      <details>
+        <summary>New project game and video brief (optional)</summary>
+        <ContextEditor value={newContext} onChange={setNewContext} />
+      </details>
       <div className={s.tools}>
         <Button
           primary
           disabled={!api || !name.trim() || w.busy}
-          onClick={() => void open(() => api!.create(name))}
+          onClick={() =>
+            void open(async () => {
+              const created = await api!.create(name);
+              if (!created) return null;
+              await api!.save(created.project.id, created.model, {
+                ...created.model,
+                contexts: [newContext],
+              });
+              return api!.checkpoint(created.project.id);
+            })
+          }
         >
           Create project
         </Button>
@@ -167,6 +183,18 @@ export function ProjectPanel({
             <dd>{w.snapshot.project.cache}</dd>
           </dl>
           <ProjectStorage key={w.snapshot.project.id} id={w.snapshot.project.id} />
+          <details>
+            <summary>Project game and video brief</summary>
+            <ContextEditor
+              value={w.model.contexts?.find((c) => c.id === 'project') || defaultContext('project')}
+              onChange={(context) =>
+                w.setModel((model) => ({
+                  ...model,
+                  contexts: [...(model.contexts || []).filter((c) => c.id !== 'project'), context],
+                }))
+              }
+            />
+          </details>
           <Button disabled={w.busy} onClick={() => void w.sample().then(onClose)}>
             Close project · return to sample
           </Button>
@@ -464,6 +492,7 @@ export function SaveHistory({
 }
 
 export function BatchTools({ workspace: w }: { workspace: Workspace }) {
+  const [contextOpen, setContextOpen] = useState(false);
   const [creating, setCreating] = useState(false),
     [name, setName] = useState(''),
     [jobs, setJobs] = useState(false),
@@ -503,6 +532,30 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       <Button disabled={w.blocking} onClick={() => setCreating(true)}>
         New batch
       </Button>
+      <Button disabled={w.blocking} onClick={() => setContextOpen(true)}>
+        Batch context
+      </Button>
+      {contextOpen && (
+        <Modal title="Batch game and video brief" onClose={() => setContextOpen(false)}>
+          <ContextEditor
+            contexts={w.model.contexts}
+            value={
+              w.model.contexts?.find((c) => c.id === p.activeBatchId) ||
+              defaultContext(p.activeBatchId)
+            }
+            onChange={(context) =>
+              w.setModel((model) => ({
+                ...model,
+                contexts: [
+                  ...(model.contexts || []).filter((c) => c.id !== p.activeBatchId),
+                  context,
+                ],
+              }))
+            }
+          />
+          <Button onClick={() => setContextOpen(false)}>Done</Button>
+        </Modal>
+      )}
       <Button
         disabled={w.blocking}
         onClick={() => {
