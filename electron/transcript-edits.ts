@@ -53,10 +53,30 @@ export const cueReviewKey = (transcript: TranscriptSummary, segment: TranscriptS
 /** Deliberate cues are candidates, never commands. Use only microphone recognition. */
 export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptSegment) {
   if (transcript.role !== 'mic') return null;
-  const match = /^\s*(mark|note|cut|split|clip[\s-]+(?:start|in|end|out))\b[\s,:.!-]*(.*)$/is.exec(
-    segment.cueKind ? `${segment.cueKind} ${segment.cueText || ''}` : segment.text,
-  );
-  if (!match || /^(?:is|was|has|had|will|would|could|can|the|that)\b/i.test(match[2])) return null;
+  const time = segment.words[0]?.start ?? segment.start;
+  // Derived cues have already passed the raw phrase guard; their punctuation may be absent.
+  if (segment.cueKind)
+    return { kind: segment.cueKind, text: segment.cueText || '', time, uncertain: true };
+  const match =
+    /^\s*(mark|note|cut|split|clip[\s-]+(?:start|in|end|out))\b([\s,:.!-]*)(.*)$/is.exec(
+      segment.text,
+    );
+  if (!match) return null;
+  const body = match[3].trim();
+  const noteRequest =
+    /^(?:mark|note)$/i.test(match[1]) &&
+    /[:,]/.test(match[2]) &&
+    /^(?:can|could)\s+I\s+(?:get|make|add|have|record|leave)\s+(?:(?:a|the|this|some)\s+)?(?:note|marker)\b/i.test(
+      body,
+    );
+  const colonContext =
+    /^(?:mark|note)$/i.test(match[1]) && match[2].includes(':') && /^(?:the|that)\b/i.test(body);
+  if (
+    /^(?:is|was|has|had|will|would|could|can|the|that)\b/i.test(body) &&
+    !noteRequest &&
+    !colonContext
+  )
+    return null;
   return {
     kind: (match[1].toLowerCase() === 'split'
       ? 'cut'
@@ -65,8 +85,8 @@ export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptS
         : /^clip[\s-]+(?:end|out)$/i.test(match[1])
           ? 'clip-end'
           : match[1].toLowerCase()) as CueKind,
-    text: segment.cueText ?? match[2].trim(),
-    time: segment.words[0]?.start ?? segment.start,
+    text: body,
+    time,
     uncertain: true,
   };
 }

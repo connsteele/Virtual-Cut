@@ -28,6 +28,13 @@ The local review package can explicitly reference an existing workstation runtim
 
 ## Boundaries
 
+VC-84 accepts punctuated first-person requests for a note/marker (including the
+reported “Mark, can I get a note…” form) and explicit colon-prefixed context.
+Ordinary name references and requests addressed to Mark remain excluded. All
+results are uncertain microphone candidates requiring review; no annotation is
+created by detection. Positive/negative phrase cases and rejection/rerun preservation
+passed domain checks. This tests wording rules, not broader acoustic recognition.
+
 VC-83 keeps a separate reviewed title and context text, exposes the included source
 span, and allows choosing the last included phrase. Silence does not shorten the
 proposal. Bounded context parts are derived on read; recognition stays immutable.

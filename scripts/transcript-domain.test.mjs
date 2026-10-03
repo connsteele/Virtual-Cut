@@ -244,6 +244,51 @@ test('mic cues require review, distinguish Mark/Note/Cut, and reject ambiguous c
     /exactly one clip/,
   );
 });
+test('deliberate punctuated note requests stay review candidates without promoting ordinary names', () => {
+  for (const text of [
+    'Mark, can I get a note from Anna about the qualifier match?',
+    'Mark: could I add a marker about this encounter?',
+    'Note: the gate opens after the battle.',
+    'Mark: that animation is unusual.',
+    'Mark remember this transition',
+  ]) {
+    const candidate = cueCandidate(transcript, phrase(0, text));
+    assert(candidate, text);
+    assert.equal(candidate.uncertain, true);
+    assert.equal(cueCandidate({ ...transcript, role: 'game' }, phrase(0, text)), null);
+    const derived = { ...phrase(0, text), cueKind: candidate.kind, cueText: candidate.text };
+    assert.deepEqual(cueCandidate(transcript, derived), candidate);
+  }
+  for (const text of [
+    'Mark is a character',
+    'Mark was here',
+    'Mark can win this match',
+    'Mark, can you help me?',
+    'Mark, can I borrow your sword?',
+    'Mark, the player went home',
+    'Mark, that is his name',
+    'Cut the cheese',
+    'We should mark this later',
+    'Note that this is ordinary speech',
+  ])
+    assert.equal(cueCandidate(transcript, phrase(0, text)), null, text);
+  const source = phrase(0, 'Mark, can I get a note from Anna about the qualifier match?');
+  const rejected = applyTranscriptCommand(
+    model(),
+    transcript,
+    source,
+    command('reject-cue'),
+    () => 'unused',
+  );
+  assert.deepEqual(rejected.markers, {});
+  assert.deepEqual(rejected.notes, []);
+  assert.equal(rejected.cueDecisions[0].status, 'rejected');
+  assert.equal(
+    reviewedCue(rejected.cueDecisions, { ...transcript, id: 'rerun' }, source).status,
+    'rejected',
+  );
+});
+
 test('paged literal search, corrected matches, shared context and continuation across silence', () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
