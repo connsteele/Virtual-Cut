@@ -9,8 +9,15 @@
   color: var(--text);
 }
 .window h1 {
-  font-size: 28px;
-  margin: 5px 0 20px;
+  margin: 0;
+}
+.screenReaderTitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .window h2 {
   font-size: 17px;
@@ -39,7 +46,6 @@
 .window select {
   width: 100%;
 }
-.header,
 .toolbar,
 .search,
 .phraseHeading,
@@ -48,21 +54,27 @@
   align-items: center;
   gap: 10px;
 }
-.header {
-  justify-content: space-between;
-}
-.brand {
-  color: var(--teal-light);
-  letter-spacing: 2px;
-  font-size: 11px;
-}
 .toolbar {
+  align-items: flex-end;
   flex-wrap: wrap;
   margin: 12px 0;
 }
 .toolbar > label {
   flex: 1;
   min-width: 200px;
+  margin: 0;
+}
+.segments {
+  margin-top: 8px;
+}
+.help {
+  margin-block: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.help summary {
+  cursor: pointer;
 }
 .card,
 .editor {

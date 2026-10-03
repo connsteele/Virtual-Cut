@@ -52,8 +52,24 @@ try {
   const transcript = await newWindow;
   transcript.setDefaultTimeout(20000);
   transcript.on('pageerror', (e) => errors.push(e.message));
-  await expect(transcript.getByRole('heading', { name: 'Transcript', exact: true })).toBeVisible();
+  await expect(transcript).toHaveTitle('Transcription · Virtual Cut');
   await expect(transcript.getByLabel('Transcript phrases').locator('article')).not.toHaveCount(0);
+  const alignment = await transcript.evaluate(() => {
+    const recording = document.querySelector('select'),
+      start = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Transcribe'),
+      settings = document.querySelector('[aria-label="Local transcription setup"]');
+    return [recording, start, settings].map((e) => e.getBoundingClientRect().bottom);
+  });
+  assert.ok(Math.max(...alignment) - Math.min(...alignment) < 2, 'Recording and its actions align');
+  const leadingGap = await transcript.evaluate(() => {
+    const help = document.querySelector('details summary').parentElement;
+    const first = document.querySelector('[aria-label="Transcript phrases"] article');
+    return first.getBoundingClientRect().top - help.getBoundingClientRect().bottom;
+  });
+  assert.ok(
+    leadingGap >= 0 && leadingGap < 40,
+    `No large unused area above transcript (${leadingGap}px)`,
+  );
   const phrases = transcript.getByLabel('Transcript phrases');
   const words = phrases.locator('article').first().locator('[class*="words"] button');
   await words.nth(3).click();
@@ -270,6 +286,74 @@ try {
   await expect(batchContext).toContainText('Using: no specific game');
   await batchContext.getByLabel('Game context').selectOption('inherit');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
+  // Optional real installed-runtime acceptance: empty GPU location, then restore it.
+  // A disposable profile and native picker stub protect the user's working settings.
+  if (process.env.VIRTUAL_CUT_VERIFY_GPU === '1') {
+    const next = app.waitForEvent('window');
+    await page.getByRole('button', { name: 'Transcript', exact: true }).click();
+    const view = await next;
+    const before = await view.evaluate(() => window.virtualCut.transcript.runtime(true));
+    assert.equal(before.configured, true);
+    assert.equal(before.gpu.available, true);
+    const empty = path.join(dir, 'empty-gpu');
+    await mkdir(empty);
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+    }, empty);
+    await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
+    await view.getByRole('button', { name: 'Choose GPU runtime…', exact: true }).click();
+    await expect(view.getByRole('region', { name: 'Local speech runtime' })).toContainText(empty);
+    await view.getByRole('button', { name: 'Transcribe', exact: true }).click();
+    const status = view.getByRole('region', { name: 'Transcription device readiness' });
+    const start = view.getByRole('button', { name: 'Start transcription', exact: true });
+    await expect(status.getByRole('alert')).toContainText('Automatic will use CPU');
+    await expect(start).toBeDisabled();
+    await view.getByLabel('Continue this request on CPU').check();
+    await expect(start).toBeEnabled();
+    await view.getByLabel('Processing device').selectOption('cuda');
+    await expect(start).toBeDisabled();
+    await expect(status.getByRole('alert')).toContainText('NVIDIA GPU is unavailable');
+    const missing = await view.evaluate(() => window.virtualCut.transcript.runtime());
+    for (const name of ['Import files', 'Import folder']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      await page.getByLabel('Transcribe this import locally').check();
+      await expect(
+        page.getByRole('region', { name: 'Transcription device readiness' }),
+      ).toContainText('Automatic will use CPU');
+      const choose = page.getByRole('button', {
+        name: name === 'Import files' ? 'Choose files…' : 'Choose folder…',
+        exact: true,
+      });
+      await expect(choose).toBeDisabled();
+      await page.getByLabel('Continue this request on CPU').check();
+      await expect(choose).toBeEnabled();
+      await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+    }
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
+    }, before.settings.gpuLibraries);
+    await view.getByRole('button', { name: 'Choose GPU runtime…', exact: true }).click();
+    await view.getByLabel('Processing device').selectOption('auto');
+    await status.getByRole('button', { name: 'Check again', exact: true }).click();
+    await expect(status.getByRole('status')).toContainText('NVIDIA GPU is available');
+    await expect(start).toBeEnabled();
+    const restored = await view.evaluate(() => window.virtualCut.transcript.runtime());
+    assert.equal(restored.settings.gpuLibraries, before.settings.gpuLibraries);
+    assert.equal(restored.gpu.available, true);
+    await writeFile(
+      path.join(dir, 'actual-gpu-readiness.json'),
+      JSON.stringify({ passed: true, before, missing, restored }, null, 2),
+    );
+    await collectBeforeWindowClose(app);
+    await view.close();
+    // Import calls the same real native probe with the restored, available runtime.
+    await page.getByRole('button', { name: 'Import files', exact: true }).click();
+    await page.getByLabel('Transcribe this import locally').check();
+    await expect(
+      page.getByRole('region', { name: 'Transcription device readiness' }),
+    ).toContainText('NVIDIA GPU is available');
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  }
   // Consent belongs to each import, rather than silently carrying forward.
   await app.evaluate(({ ipcMain }) => {
     globalThis.gpuTest = { available: false, configured: true, calls: 0 };
@@ -329,7 +413,7 @@ try {
   await page.getByRole('button', { name: 'Transcript', exact: true }).click();
   const deviceView = await deviceWindow;
   deviceView.on('pageerror', (e) => errors.push(e.message));
-  await deviceView.getByRole('button', { name: 'Transcribe…', exact: true }).click();
+  await deviceView.getByRole('button', { name: 'Transcribe', exact: true }).click();
   await expect(
     deviceView.getByRole('region', { name: 'Transcription device readiness' }).getByRole('alert'),
   ).toContainText('Automatic will use CPU');

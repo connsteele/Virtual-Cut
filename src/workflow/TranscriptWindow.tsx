@@ -353,19 +353,7 @@ export function TranscriptWindow() {
   const hasSelection = selection && selection.transcriptId === currentId;
   return (
     <main className={s.window}>
-      <header className={s.header}>
-        <div>
-          <span className={s.brand}>VIRTUAL CUT</span>
-          <h1>Transcript</h1>
-        </div>
-        <Button
-          title="Local transcription setup"
-          aria-label="Local transcription setup"
-          onClick={() => setSetup(!setup)}
-        >
-          <Settings size={20} />
-        </Button>
-      </header>
+      <h1 className={s.screenReaderTitle}>Transcription</h1>
       {!session ? (
         <p>Open a project in the main window to read or generate transcripts.</p>
       ) : (
@@ -387,7 +375,15 @@ export function TranscriptWindow() {
               </select>
             </Field>
             <Button onClick={() => setStartOpen(!startOpen)} disabled={!session.sourceId}>
-              Transcribe…
+              Transcribe
+            </Button>
+            <Button
+              title="Local transcription setup"
+              aria-label="Local transcription setup"
+              aria-expanded={setup}
+              onClick={() => setSetup(!setup)}
+            >
+              <Settings size={20} />
             </Button>
           </div>
           {startOpen && (
@@ -542,41 +538,9 @@ export function TranscriptWindow() {
       {selected && session && (
         <>
           <div className={s.toolbar}>
-            <Field label="Show">
+            <Field label="Select transcript">
               <select
-                aria-label="Transcript filter"
-                value={filter}
-                onChange={(e) => {
-                  setFilter(e.target.value as typeof filter);
-                  setPageIndex(0);
-                  setFollow(false);
-                }}
-              >
-                <option value="all">Full transcript</option>
-                <option value="pending">Cues · needs review</option>
-                <option value="cues">All cues</option>
-                <option value="accepted">Accepted cues</option>
-                <option value="rejected">Rejected cues</option>
-              </select>
-            </Field>
-            <Button
-              aria-pressed={follow}
-              onClick={() => {
-                setFollow(!follow);
-                if (!follow) {
-                  setFilter('all');
-                  setSearch('');
-                  setSelection(undefined);
-                }
-              }}
-            >
-              Follow playback
-            </Button>
-          </div>
-          <div className={s.toolbar}>
-            <Field label="Recognition">
-              <select
-                aria-label="Recognition"
+                aria-label="Select transcript"
                 value={currentId}
                 onChange={(e) => {
                   setTranscriptId(e.target.value);
@@ -626,6 +590,38 @@ export function TranscriptWindow() {
               SRT
             </Button>
           </div>
+          <div className={s.toolbar}>
+            <Field label="Show">
+              <select
+                aria-label="Transcript filter"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value as typeof filter);
+                  setPageIndex(0);
+                  setFollow(false);
+                }}
+              >
+                <option value="all">Full transcript</option>
+                <option value="pending">Cues · needs review</option>
+                <option value="cues">All cues</option>
+                <option value="accepted">Accepted cues</option>
+                <option value="rejected">Rejected cues</option>
+              </select>
+            </Field>
+            <Button
+              aria-pressed={follow}
+              onClick={() => {
+                setFollow(!follow);
+                if (!follow) {
+                  setFilter('all');
+                  setSearch('');
+                  setSelection(undefined);
+                }
+              }}
+            >
+              Follow playback
+            </Button>
+          </div>
           {!!session.outputs.length && (
             <Field label="Export transcript timing">
               <select value={exportId} onChange={(e) => setExportId(e.target.value)}>
@@ -659,13 +655,26 @@ export function TranscriptWindow() {
               Original
             </label>
           </div>
-          <p className={s.muted}>
-            {selected.wordCount} words · {selected.model} · {selected.device} ·{' '}
-            {selected.context.gameName || 'No game specified'}
-            {selected.context.vocabulary ? ' · vocabulary hints used' : ''}. Click a word to seek.
-            Double-click to correct; Escape closes the editor. J/K/L controls playback when you are
-            not typing. Dotted words have low recognition confidence.
-          </p>
+          <details className={s.help}>
+            <summary>
+              {selected.wordCount} words ·{' '}
+              {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
+              {selected.context.gameName || 'No game specified'}
+              {selected.context.vocabulary ? ' · vocabulary hints used' : ''}
+              {' · Help'}
+            </summary>
+            <p>Speech model: {selected.model}</p>
+            <p>
+              Click a word to seek. Double-click to correct; Escape closes the editor. J/K/L
+              controls playback when you are not typing. Dotted words have low recognition
+              confidence.
+            </p>
+            <p>
+              Spoken microphone cues: Marker, Note, Split, Clip start and Clip end. Marker is
+              recommended to avoid confusion with the name Mark; guarded legacy Mark cues still
+              work. Every proposed action requires review.
+            </p>
+          </details>
           {selected.deviceMessage && <p className={s.muted}>{selected.deviceMessage}</p>}
           {selected.state !== 'complete' && (
             <p>

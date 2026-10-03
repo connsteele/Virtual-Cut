@@ -91,7 +91,7 @@ try {
   await main.getByRole('button', { name: 'Transcript', exact: true }).click();
   const view = await opened;
   view.on('pageerror', (e) => errors.push(e.message));
-  await view.getByLabel('Recognition', { exact: true }).selectOption(transcriptId);
+  await view.getByLabel('Select transcript', { exact: true }).selectOption(transcriptId);
   const phrases = view.getByLabel('Transcript phrases');
   await expect(phrases.locator('article')).toHaveCount(60);
   await view.getByRole('button', { name: 'word30', exact: true }).click();
@@ -266,7 +266,7 @@ try {
   const reopened = await reopening;
   reopened.on('pageerror', (e) => errors.push(e.message));
   await expect(reopened.getByLabel('Search transcript')).toHaveValue('word');
-  await expect(reopened.getByLabel('Recognition', { exact: true })).toHaveValue(transcriptId);
+  await expect(reopened.getByLabel('Select transcript', { exact: true })).toHaveValue(transcriptId);
   await expect(reopened.getByLabel('Original', { exact: true })).toBeChecked();
   await expect(reopened.getByRole('navigation', { name: 'Transcript pages' })).toContainText(
     'Page 2',
