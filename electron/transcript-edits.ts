@@ -9,6 +9,12 @@ import type {
 
 export const correctionId = (transcriptId: string, segmentId: number, wordIndex?: number) =>
   `${transcriptId}:${segmentId}:${wordIndex == null ? 'phrase' : wordIndex}`;
+
+/** A paired range always takes its suggested title from the start cue. */
+export function cueTitle(transcript: TranscriptSummary, segment: TranscriptSegment) {
+  const cue = cueCandidate(transcript, segment);
+  return cue?.kind === 'clip-end' ? (segment.cuePartner?.text ?? cue.text) : (cue?.text ?? '');
+}
 /** Deliberate cues are candidates, never commands. Use only microphone recognition. */
 export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptSegment) {
   if (transcript.role !== 'mic') return null;
@@ -194,7 +200,10 @@ export function applyTranscriptCommand(
       next.clips.push({
         id: decision.clipId,
         rid: record.id,
-        name: text.slice(0, 200) || 'Spoken clip',
+        name:
+          (command.text ?? (cue.kind === 'clip-start' ? cue.text : other.text))
+            .trim()
+            .slice(0, 200) || 'Spoken clip',
         start,
         end,
         folder: '_Review',

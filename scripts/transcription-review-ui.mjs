@@ -115,6 +115,18 @@ try {
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
   await view.getByLabel('Transcript filter').selectOption('pending');
   await expect(phrases.locator('article')).toHaveCount(3);
+  await expect(view.getByLabel('Cue text 95')).toHaveValue('opening');
+  await phrases
+    .locator('article')
+    .nth(1)
+    .getByRole('button', { name: 'Accept clip range', exact: true })
+    .click();
+  await expect(phrases.locator('article')).toHaveCount(1);
+  let current = await main.evaluate(() => window.virtualCut.project.current());
+  assert.equal(current.model.clips.at(-1).name, 'opening');
+  assert.equal(current.model.cueDecisions.length, 2);
+  await main.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(phrases.locator('article')).toHaveCount(3);
   await view.getByLabel('Cue text 10').fill('opening');
   await view.getByLabel('Cue position 10').fill('0.8');
   await view.getByLabel('Cue end 10').fill('9.6');
@@ -124,7 +136,7 @@ try {
     .getByRole('button', { name: 'Accept clip range', exact: true })
     .click();
   await expect(phrases.locator('article')).toHaveCount(1);
-  let current = await main.evaluate(() => window.virtualCut.project.current());
+  current = await main.evaluate(() => window.virtualCut.project.current());
   assert.equal(current.model.cueDecisions.length, 2);
   assert.deepEqual(
     current.model.clips.filter((c) => c.name === 'opening').map((c) => [c.start, c.end]),

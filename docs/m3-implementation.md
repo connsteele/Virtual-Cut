@@ -28,6 +28,12 @@ The local review package can explicitly reference an existing workstation runtim
 
 ## Boundaries
 
+VC-82 initializes a paired clip's title from the start cue when opened from either
+boundary. Reviewed title overrides remain explicit; both decisions and the new clip
+still share one Undo step. Domain checks and the hidden Electron transcript review
+passed both boundary flows, including Undo/Redo. Evidence:
+`G:\GPT\Work\virtual-cut\review-0.4.4\cue-titles\run-wbPVRz\report.json`.
+
 Floating transcript windows are included; docking is excluded by user decision. Automated context-aware name correction belongs to early M4 (VC-24). Speaker detection remains last-priority, explicit follow-up work. Recognition confidence and timings are estimates requiring representative audio review; an automated integration pass is not a claim of transcription accuracy.
 
 ## References

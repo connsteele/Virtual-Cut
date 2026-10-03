@@ -16,7 +16,7 @@ export interface TranscriptWord {
 }
 export type CueKind = 'mark' | 'note' | 'cut' | 'clip-start' | 'clip-end';
 export interface TranscriptSegment {
-  cuePartner?: { id: number; time: number };
+  cuePartner?: { id: number; time: number; text?: string };
   /** Derived only when reading a cue; original recognized text/timing stay unchanged. */
   cueText?: string;
   cueSegmentIds?: number[];

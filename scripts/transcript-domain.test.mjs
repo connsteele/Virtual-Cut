@@ -13,6 +13,7 @@ import {
   correctedText,
   correctionId,
   cueCandidate,
+  cueTitle,
   reviewedCue,
 } from '../dist-electron/transcript-edits.js';
 import {
@@ -428,6 +429,21 @@ test('paired Clip in/out cues create one range atomically, reject stale partners
     start,
   );
   assert.deepEqual([endFirst.clips.at(-1).start, endFirst.clips.at(-1).end], [10, 40]);
+  assert.equal(endFirst.clips.at(-1).name, 'opening scene');
+  assert.equal(after.clips.at(-1).name, 'opening scene');
+  assert.equal(
+    cueTitle(transcript, { ...end, cuePartner: { id: 0, time: 10, text: 'opening scene' } }),
+    'opening scene',
+  );
+  const renamed = applyTranscriptCommand(
+    before,
+    transcript,
+    end,
+    command('accept-cue', { segmentId: 1, partnerSegmentId: 0, text: 'Reviewed title' }),
+    () => 'range',
+    start,
+  );
+  assert.equal(renamed.clips.at(-1).name, 'Reviewed title');
 });
 
 test('cue filters cover every page, corrections and review state; playback pages follow both directions', () => {
@@ -454,6 +470,7 @@ test('cue filters cover every page, corrections and review state; playback pages
     );
     assert.equal(cues.segments[0].cuePartner.id, 90);
     assert.equal(cues.segments[1].cuePartner.id, 63);
+    assert.equal(cueTitle(transcript, cues.segments[1]), 'opening');
     const decision = {
       id: 'cue',
       sourceId: 'source',

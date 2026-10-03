@@ -5,7 +5,7 @@ import type {
   TranscriptSession,
   TranscriptSummary,
 } from '../../electron/transcript-contracts';
-import { cueCandidate, reviewedCue } from '../../electron/transcript-edits';
+import { cueCandidate, cueTitle, reviewedCue } from '../../electron/transcript-edits';
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 
@@ -66,7 +66,7 @@ export function TranscriptCue({
           )}
           <input
             aria-label={`Cue text ${segment.id}`}
-            value={draft.text ?? cue.text}
+            value={draft.text ?? cueTitle(transcript, segment)}
             onChange={(e) => setDraft({ ...draft, text: e.target.value })}
           />
           <div className={s.toolbar}>
@@ -121,7 +121,7 @@ export function TranscriptCue({
             }
             onClick={() =>
               onCommand('accept-cue', {
-                text: draft.text ?? cue.text,
+                text: draft.text ?? cueTitle(transcript, segment),
                 time: Number(start),
                 endTime: range ? Number(end) : undefined,
                 partnerSegmentId: range ? segment.cuePartner?.id : undefined,

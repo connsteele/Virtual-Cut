@@ -91,7 +91,8 @@ export class TranscriptStore {
           text: correctedText(model, id, other),
         });
         if (candidate?.kind !== 'clip-start' && candidate?.kind !== 'clip-end') continue;
-        if (candidate.kind !== cue.kind) cuePartner = { id: other.id, time: candidate.time };
+        if (candidate.kind !== cue.kind)
+          cuePartner = { id: other.id, time: candidate.time, text: candidate.text };
         break;
       }
     }
