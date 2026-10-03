@@ -24,6 +24,8 @@ export function registerTranscriptWindow(
   let window: BrowserWindow | null = null;
   let preferredSource = '';
   let lastPosition = 0;
+  let viewStore: ProjectService['store'] = null;
+  let viewSessionId = randomUUID();
   const pending = new Map<
     string,
     {
@@ -146,7 +148,14 @@ export function registerTranscriptWindow(
     },
     true,
   );
-  handle('session', async (sourceId) => projects.transcriptSession(sourceId || preferredSource));
+  handle('session', async (sourceId) => {
+    if (projects.store !== viewStore) {
+      viewStore = projects.store;
+      viewSessionId = randomUUID();
+    }
+    const session = projects.transcriptSession(sourceId || preferredSource);
+    return session ? { ...session, viewSessionId } : null;
+  });
   handle('pageAt', async (id, transcriptId, time) =>
     projects.require(id).transcripts.pageAt(transcriptId, time),
   );

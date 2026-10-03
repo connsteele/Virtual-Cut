@@ -25,6 +25,74 @@ import {
   transcriptSaveSuggestion,
 } from '../dist-electron/transcript-export.js';
 const { TranscriptStore } = createRequire(import.meta.url)('../dist-electron/transcript-store.cjs');
+import { readTranscriptView, saveTranscriptView } from '../dist-electron/transcript-view.js';
+test('transcript reading state is bounded, session scoped and excludes editing drafts', () => {
+  const values = new Map();
+  let writes = 0;
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => {
+      writes++;
+      values.set(key, value);
+    },
+  };
+  const view = {
+    projectId: 'project',
+    sourceId: 'source',
+    transcriptId: 'speech',
+    page: 2,
+    search: 'Cai',
+    filter: 'all',
+    follow: false,
+    original: true,
+    scroll: 800,
+    focus: { segment: 125, word: 3 },
+    draft: 'DO NOT SAVE THIS',
+  };
+  saveTranscriptView(storage, 'session', view);
+  assert.equal(writes, 1);
+  const { draft, ...expected } = view;
+  assert.deepEqual(
+    readTranscriptView(storage, 'session', 'project', 'source', ['speech']),
+    expected,
+  );
+  assert.equal(
+    readTranscriptView(storage, 'new-session', 'project', 'source', ['speech']),
+    undefined,
+  );
+  assert.equal(
+    readTranscriptView(storage, 'session', 'other-project', 'source', ['speech']),
+    undefined,
+  );
+  assert.equal(readTranscriptView(storage, 'session', 'project', 'source', ['removed']), undefined);
+  assert(![...values.values()][0].includes(draft));
+  for (let i = 0; i < 10; i++)
+    saveTranscriptView(storage, 'session', { ...view, sourceId: `source${i}` });
+  assert.equal(JSON.parse([...values.values()][0]).views.length, 8);
+  assert.equal(readTranscriptView(storage, 'session', 'project', 'source0', ['speech']), undefined);
+  const before = writes;
+  for (const bad of [
+    { page: -1 },
+    { scroll: NaN },
+    { search: 'x'.repeat(301) },
+    { focus: { segment: -1 } },
+    { filter: 'invalid' },
+    { follow: null },
+  ])
+    saveTranscriptView(storage, 'session', { ...view, ...bad });
+  assert.equal(writes, before);
+  values.set('virtual-cut-transcript-view-v1', '{bad json');
+  assert.equal(readTranscriptView(storage, 'session', 'project', 'source', ['speech']), undefined);
+  const unavailable = {
+    getItem: () => {
+      throw new Error('unavailable');
+    },
+    setItem: () => {
+      throw new Error('unavailable');
+    },
+  };
+  assert.doesNotThrow(() => saveTranscriptView(unavailable, 'session', view));
+});
 const transcript = {
   id: 'speech',
   sourceId: 'source',

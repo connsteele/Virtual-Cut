@@ -8,11 +8,20 @@ import type {
   TranscriptSession,
 } from '../../electron/transcript-contracts';
 import { correctionId, cueCandidate, reviewedCue } from '../../electron/transcript-edits';
+import { readTranscriptView, saveTranscriptView } from '../../electron/transcript-view';
+import type { TranscriptView } from '../../electron/transcript-view';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 
+const viewStorage = () => {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+};
 const time = (seconds: number) => {
   const total = Math.floor(seconds),
     ms = Math.floor((seconds - total) * 1000);
@@ -26,6 +35,7 @@ export function TranscriptWindow() {
   const [page, setPage] = useState<TranscriptPage>(),
     [pageIndex, setPageIndex] = useState(0),
     [search, setSearch] = useState('');
+  const [loadedPageKey, setLoadedPageKey] = useState('');
   const [filter, setFilter] = useState<'all' | 'cues' | 'pending' | 'accepted' | 'rejected'>('all');
   const [follow, setFollow] = useState(true);
   const [focusedWord, setFocusedWord] = useState<{ segment: number; word?: number }>();
@@ -46,25 +56,56 @@ export function TranscriptWindow() {
     text: string;
   }>();
   const identity = useRef('');
-  const acceptSession = useCallback((value: TranscriptSession | null) => {
-    const nextIdentity = `${value?.projectId || ''}:${value?.sourceId || ''}`;
-    if (identity.current !== nextIdentity) {
-      identity.current = nextIdentity;
-      setTranscriptId('');
-      setPageIndex(0);
-      setSearch('');
-      setFilter('all');
-      setFollow(true);
-      setFocusedWord(undefined);
-      setExportId('');
-      setSelection(undefined);
-      setError('');
-      setNotice('');
-    }
-    setSession((previous) =>
-      JSON.stringify(value) === JSON.stringify(previous) ? previous : value,
-    );
+  const reading = useRef<{ owner: string; view: TranscriptView } | undefined>(undefined);
+  const restore = useRef<{ identity: string; scroll: number } | undefined>(undefined);
+  const remember = useCallback(() => {
+    const storage = viewStorage();
+    if (reading.current && storage)
+      saveTranscriptView(storage, reading.current.owner, {
+        ...reading.current.view,
+        scroll: window.scrollY,
+      });
   }, []);
+  const acceptSession = useCallback(
+    (value: TranscriptSession | null) => {
+      const nextIdentity = `${value?.viewSessionId || ''}:${value?.projectId || ''}:${value?.sourceId || ''}`;
+      if (identity.current !== nextIdentity) {
+        remember();
+        identity.current = nextIdentity;
+        const storage = viewStorage();
+        const saved =
+          value?.viewSessionId && storage
+            ? readTranscriptView(
+                storage,
+                value.viewSessionId,
+                value.projectId,
+                value.sourceId,
+                value.transcripts.map((t) => t.id),
+              )
+            : undefined;
+        restore.current = { identity: nextIdentity, scroll: saved?.scroll || 0 };
+        setTranscriptId(saved?.transcriptId || '');
+        setPageIndex(saved?.page || 0);
+        setSearch(saved?.search || '');
+        setFilter(saved?.filter || 'all');
+        setFollow(saved?.follow ?? true);
+        setOriginal(saved?.original ?? false);
+        setFocusedWord(saved?.focus);
+        setExportId('');
+        setSelection(undefined);
+        setError('');
+        setNotice('');
+      }
+      setSession((previous) =>
+        JSON.stringify(value) === JSON.stringify(previous) ? previous : value,
+      );
+    },
+    [remember],
+  );
+  useEffect(() => {
+    window.addEventListener('beforeunload', remember);
+    return () => window.removeEventListener('beforeunload', remember);
+  }, [remember]);
   const refreshSession = async () => {
     const value = await api.session(sourceId || undefined);
     acceptSession(value);
@@ -106,6 +147,38 @@ export function TranscriptWindow() {
   const currentId = selected?.id || '';
   const projectId = session?.projectId || '';
   const editRevision = JSON.stringify(session?.edits);
+  const pageKey = JSON.stringify([identity.current, currentId, pageIndex, search, filter]);
+  reading.current =
+    session?.viewSessionId && currentId
+      ? {
+          owner: session.viewSessionId,
+          view: {
+            projectId,
+            sourceId: session.sourceId,
+            transcriptId: currentId,
+            page: pageIndex,
+            search,
+            filter,
+            follow,
+            original,
+            scroll: 0,
+            focus: focusedWord,
+          },
+        }
+      : undefined;
+  const usablePage =
+    loadedPageKey === pageKey && page?.transcript.id === currentId ? page : undefined;
+  useEffect(() => {
+    const pending = restore.current;
+    if (!pending || !usablePage) return;
+    const frame = requestAnimationFrame(() => {
+      if (restore.current === pending && identity.current === pending.identity) {
+        window.scrollTo(0, pending.scroll);
+        restore.current = undefined;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [usablePage]);
   useEffect(() => {
     let alive = true;
     if (!projectId || !currentId) return;
@@ -114,7 +187,10 @@ export function TranscriptWindow() {
         void api
           .page(projectId, currentId, pageIndex, search, filter)
           .then((value) => {
-            if (alive) setPage(value);
+            if (alive) {
+              setPage(value);
+              setLoadedPageKey(pageKey);
+            }
           })
           .catch((e) => {
             if (alive) setError(String(e));
@@ -136,6 +212,7 @@ export function TranscriptWindow() {
     selected?.state,
     editRevision,
     session?.revision,
+    pageKey,
   ]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -169,13 +246,16 @@ export function TranscriptWindow() {
       search ||
       filter !== 'all' ||
       selection ||
-      !page ||
-      page.transcript.id !== currentId ||
+      !usablePage ||
+      restore.current ||
       position.projectId !== projectId ||
       position.sourceId !== session?.sourceId
     )
       return;
-    if (position.time >= (page.followStart ?? 0) && position.time < (page.followEnd ?? Infinity)) {
+    if (
+      position.time >= (usablePage.followStart ?? 0) &&
+      position.time < (usablePage.followEnd ?? Infinity)
+    ) {
       const current = document.querySelector('[data-active-word="true"]');
       const rect = current?.getBoundingClientRect();
       if (rect && (rect.top < 100 || rect.bottom > window.innerHeight - 100))
@@ -204,7 +284,7 @@ export function TranscriptWindow() {
     search,
     filter,
     selection,
-    page,
+    usablePage,
   ]);
   async function action(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -269,7 +349,6 @@ export function TranscriptWindow() {
       expected: JSON.stringify(expected || null),
     });
   }
-  const usablePage = page?.transcript.id === currentId ? page : undefined;
   const hasSelection = selection && selection.transcriptId === currentId;
   return (
     <main className={s.window}>
@@ -296,8 +375,6 @@ export function TranscriptWindow() {
                 value={session.sourceId}
                 onChange={(e) => {
                   setSourceId(e.target.value);
-                  setTranscriptId('');
-                  setPageIndex(0);
                   setSelection(undefined);
                 }}
               >

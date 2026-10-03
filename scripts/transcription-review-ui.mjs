@@ -228,6 +228,71 @@ try {
       .toString('base64'),
   );
   await writeFile(path.join(dir, 'setup-compact.png'), Buffer.from(image, 'base64'));
+  await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
+  await view.getByLabel('Transcript filter').selectOption('all');
+  await view.getByLabel('Search transcript').fill('word');
+  await expect(phrases.locator('article')).toHaveCount(60);
+  await view.getByRole('button', { name: 'Next transcript page', exact: true }).click();
+  await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 2');
+  await view.getByRole('button', { name: 'word80', exact: true }).dblclick();
+  await view.getByLabel('Corrected transcript text').fill('Unsaved draft must not reopen');
+  await view.getByLabel('Original', { exact: true }).check();
+  const owner = await view.evaluate(
+    async () => (await window.virtualCut.transcript.session()).viewSessionId,
+  );
+  await view.evaluate(() => {
+    window.scrollTo(0, 700);
+    window.readingWrites = 0;
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'virtual-cut-transcript-view-v1') window.readingWrites++;
+      return write.call(this, key, value);
+    };
+  });
+  const scroll = await view.evaluate(() => scrollY);
+  assert(scroll > 0);
+  await position(1);
+  await view.waitForTimeout(1500); // Cover a session poll without writing reading state.
+  await expect.poll(() => view.evaluate(() => window.readingWrites)).toBe(0);
+  const closed = view.waitForEvent('close');
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('#transcript'))
+      .close(),
+  );
+  await closed;
+  const reopening = app.waitForEvent('window');
+  await main.getByRole('button', { name: 'Transcript', exact: true }).click();
+  const reopened = await reopening;
+  reopened.on('pageerror', (e) => errors.push(e.message));
+  await expect(reopened.getByLabel('Search transcript')).toHaveValue('word');
+  await expect(reopened.getByLabel('Recognition', { exact: true })).toHaveValue(transcriptId);
+  await expect(reopened.getByLabel('Original', { exact: true })).toBeChecked();
+  await expect(reopened.getByRole('navigation', { name: 'Transcript pages' })).toContainText(
+    'Page 2',
+  );
+  await expect(
+    reopened.getByRole('button', { name: 'Follow playback', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'false');
+  await expect(reopened.getByRole('button', { name: 'word80', exact: true })).toHaveClass(
+    /selected/,
+  );
+  await expect(reopened.getByLabel('Transcript correction')).toHaveCount(0);
+  await expect.poll(() => reopened.evaluate(() => scrollY)).toBe(scroll);
+  const cached = await reopened.evaluate(() =>
+    localStorage.getItem('virtual-cut-transcript-view-v1'),
+  );
+  assert(!cached.includes('Unsaved draft'));
+  await main.evaluate(() => window.virtualCut.project.close());
+  await expect(
+    reopened.getByText('Open a project in the main window to read or generate transcripts.'),
+  ).toBeVisible();
+  await main.evaluate(() => window.virtualCut.project.open());
+  await expect(reopened.getByLabel('Search transcript')).toHaveValue('');
+  const newOwner = await reopened.evaluate(
+    async () => (await window.virtualCut.transcript.session()).viewSessionId,
+  );
+  assert.notEqual(newOwner, owner, 'Reopening a project starts a fresh reading session');
   assert.deepEqual(errors, []);
   console.log(
     `Transcript JKL/focus, page following, cross-page cue filters, paired ranges/Undo, explicit split targets and setup passed: ${dir}`,

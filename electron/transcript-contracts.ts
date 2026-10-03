@@ -100,6 +100,8 @@ export interface AsrRuntime {
   threads: number;
 }
 export interface TranscriptSession {
+  /** Opaque reading-state lifetime, reset when a project is opened or the app restarts. */
+  viewSessionId?: string;
   clips: { id: string; name: string; start: number; end: number }[];
   outputs: { id: string; name: string; start: number; end: number }[];
   projectId: string;

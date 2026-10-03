@@ -28,6 +28,18 @@ The local review package can explicitly reference an existing workstation runtim
 
 ## Boundaries
 
+VC-80 retains search, selected recognition, page/filter, highlighted word, original
+display and scroll when the transcript window is closed normally and reopened in
+the same open project. A small cache holds at most eight recording views. It writes
+only on source changes or normal window close; there are no position/poll writes.
+The native controller supplies an opaque lifetime that changes on project reopen
+or app restart. Unavailable storage and stale transcripts fall back to a fresh view.
+Correction/cue drafts, transcript bodies, jobs and project edits are excluded.
+The native close path, page-two restoration, draft exclusion and project-reopen reset
+passed hidden Electron checks. An initial test used Playwright's forced page disposal,
+which skips the ordinary close lifecycle; it was corrected to use BrowserWindow.close.
+Evidence: `review-0.4.4/reading-state/run-xAGDdt/transcript-review/run-B8qBSi` on G:.
+
 VC-85 labels the native transcript save dialog by source or verified completed-clip
 scope and suggests a Windows-safe filename containing the selected name, scope and
 audio role. The SRT tooltip uses the selected timing scope. Domain and hidden Electron
