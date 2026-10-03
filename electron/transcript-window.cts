@@ -8,7 +8,7 @@ import { Diagnostics, failureFields } from './diagnostics.cjs';
 import { observeWindow } from './window-diagnostics.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
-import { transcriptHandoff, transcriptSrt } from './transcript-export.js';
+import { transcriptHandoff, transcriptSrt, transcriptSaveSuggestion } from './transcript-export.js';
 import type { TranscriptApi, TranscriptCommand } from './transcript-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -349,9 +349,10 @@ export function registerTranscriptWindow(
           timestampShift: 0,
           name: source.title,
         };
+    const suggestion = transcriptSaveSuggestion(scope, transcript.role, format);
     const chosen = await dialog.showSaveDialog(window || main()!, {
-      title: 'Export source transcript',
-      defaultPath: path.join(s.data.project.destination, `transcript-${transcript.role}.${format}`),
+      title: suggestion.title,
+      defaultPath: path.join(s.data.project.destination, suggestion.filename),
       filters: [{ name: format.toUpperCase(), extensions: [format] }],
     });
     if (chosen.canceled || !chosen.filePath) return null;

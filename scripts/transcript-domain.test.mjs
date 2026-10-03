@@ -22,6 +22,7 @@ import {
   transcriptHandoff,
   transcriptSrt,
   subtitleTime,
+  transcriptSaveSuggestion,
 } from '../dist-electron/transcript-export.js';
 const { TranscriptStore } = createRequire(import.meta.url)('../dist-electron/transcript-store.cjs');
 const transcript = {
@@ -479,6 +480,34 @@ test('overlapping exported clips use source offsets, boundary words, corrections
     }).spans[0].timingPrecision,
     'phrase',
   );
+});
+
+test('transcript save suggestions identify scope and sanitize Windows filenames', () => {
+  const scope = { name: 'Opening scene.mp4', start: 1, end: 5, sourceStart: 0, timestampShift: 0 };
+  assert.deepEqual(transcriptSaveSuggestion(scope, 'game', 'json'), {
+    title: 'Export source transcript',
+    filename: 'Opening scene-source-transcript-game.json',
+  });
+  assert.deepEqual(transcriptSaveSuggestion({ ...scope, exportId: 'verified' }, 'mic', 'srt'), {
+    title: 'Export completed clip transcript',
+    filename: 'Opening scene-clip-transcript-mic.srt',
+  });
+  for (const name of [
+    'CON',
+    'con.data',
+    'LPT¹',
+    '../../bad:clip?*.mp4',
+    'x\n\t',
+    '...',
+    'x'.repeat(1000),
+  ]) {
+    const { filename } = transcriptSaveSuggestion({ ...scope, name }, 'game', 'json');
+    assert.equal(filename.includes('/') || filename.includes('\\'), false, filename);
+    assert.equal(/[<>:"|?*]/.test(filename), false, filename);
+    assert([...filename].every((c) => c.charCodeAt(0) >= 32));
+    assert(filename.length < 190);
+    assert.equal(/^(?:CON|LPT¹)(?:\.|$)/i.test(filename), false, filename);
+  }
 });
 
 test('Split aliases, editable cue timing and explicit overlap selection preserve cue provenance', () => {

@@ -141,7 +141,11 @@ try {
   await transcript.getByLabel('Transcript filter').selectOption('all');
   const exported = path.join(dir, 'transcript.json');
   await app.evaluate(({ dialog }, file) => {
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+    globalThis.transcriptSaveDialogs = [];
+    dialog.showSaveDialog = async (_parent, options) => {
+      globalThis.transcriptSaveDialogs.push(options);
+      return { canceled: false, filePath: file };
+    };
   }, exported);
   await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
   await expect.poll(async () => !!(await readFile(exported, 'utf8').catch(() => ''))).toBe(true);
@@ -150,6 +154,34 @@ try {
     exportedText.includes('Cai') && exportedText.includes('several'),
     'Export preserves correction and recognition original',
   );
+  let saveOptions = await app.evaluate(() => globalThis.transcriptSaveDialogs.at(-1));
+  assert.equal(saveOptions.title, 'Export source transcript');
+  assert.match(saveOptions.defaultPath, /-source-transcript-mic\.json$/);
+  const outputs = await transcript.evaluate(
+    async () => (await window.virtualCut.transcript.session()).outputs,
+  );
+  assert(outputs.length, 'Fixture provides a verified completed output');
+  await transcript.getByLabel('Export transcript timing').selectOption(outputs[0].id);
+  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  await expect
+    .poll(async () => JSON.parse(await readFile(exported, 'utf8')).scope.exportId)
+    .toBe(outputs[0].id);
+  saveOptions = await app.evaluate(() => globalThis.transcriptSaveDialogs.at(-1));
+  assert.equal(saveOptions.title, 'Export completed clip transcript');
+  assert.match(saveOptions.defaultPath, /-clip-transcript-mic\.json$/);
+  const clipHandoff = JSON.parse(await readFile(exported, 'utf8'));
+  assert.equal(clipHandoff.scope.name, outputs[0].name);
+  assert.equal(clipHandoff.scope.start, outputs[0].start);
+  assert.equal(clipHandoff.scope.end, outputs[0].end);
+  const companion = `${clipHandoff.scope.output}.vcut.json`;
+  const companionBefore = await readFile(companion, 'utf8');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, companion);
+  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  await expect(transcript.getByRole('alert')).toContainText('Video companions are preserved');
+  assert.equal(await readFile(companion, 'utf8'), companionBefore);
+  await transcript.getByLabel('Export transcript timing').selectOption('');
   assert.match(
     await transcript.evaluate(() =>
       window.virtualCut.project

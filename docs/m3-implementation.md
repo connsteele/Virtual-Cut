@@ -28,6 +28,12 @@ The local review package can explicitly reference an existing workstation runtim
 
 ## Boundaries
 
+VC-85 labels the native transcript save dialog by source or verified completed-clip
+scope and suggests a Windows-safe filename containing the selected name, scope and
+audio role. The SRT tooltip uses the selected timing scope. Domain and hidden Electron
+checks passed both scopes, actual verified ranges and refusal to overwrite a video's
+companion. Evidence: `review-0.4.4/export-scope/run-JHmJOr/report.json` on G:.
+
 VC-84 accepts punctuated first-person requests for a note/marker (including the
 reported “Mark, can I get a note…” form) and explicit colon-prefixed context.
 Ordinary name references and requests addressed to Mark remain excluded. All

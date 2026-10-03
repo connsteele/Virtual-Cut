@@ -10,6 +10,27 @@ export interface TranscriptScope {
   output?: string;
   name: string;
 }
+
+/** A suggestion only; the native save dialog still lets the user choose its destination. */
+export function transcriptSaveSuggestion(
+  scope: TranscriptScope,
+  role: TranscriptSummary['role'],
+  format: 'srt' | 'json',
+) {
+  let name =
+    [...scope.name.replace(/[<>:"/\\|?*]/g, '-')]
+      .map((character) => (character.charCodeAt(0) < 32 ? '-' : character))
+      .join('')
+      .trim()
+      .replace(/\.(?:mp4|m4v|mov|mkv|webm)$/i, '')
+      .slice(0, 140)
+      .replace(/[. ]+$/, '') || 'Untitled';
+  if (/^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i.test(name)) name = `Clip-${name}`;
+  return {
+    title: scope.exportId ? 'Export completed clip transcript' : 'Export source transcript',
+    filename: `${name}-${scope.exportId ? 'clip' : 'source'}-transcript-${role}.${format}`,
+  };
+}
 export function transcriptHandoff(
   transcript: TranscriptSummary,
   segments: Iterable<TranscriptSegment>,

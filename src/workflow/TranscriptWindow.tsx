@@ -526,7 +526,11 @@ export function TranscriptWindow() {
               <Download size={16} /> JSON
             </Button>
             <Button
-              title="Export corrected phrases as source-timed subtitles"
+              title={
+                exportId
+                  ? 'Export corrected phrases with completed-clip timing'
+                  : 'Export corrected phrases with source timing'
+              }
               disabled={busy || selected.state !== 'complete'}
               onClick={() =>
                 void action(async () => {
