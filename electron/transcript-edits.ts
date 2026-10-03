@@ -58,19 +58,21 @@ export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptS
   if (segment.cueKind)
     return { kind: segment.cueKind, text: segment.cueText || '', time, uncertain: true };
   const match =
-    /^\s*(mark|note|cut|split|clip[\s-]+(?:start|in|end|out))\b([\s,:.!-]*)(.*)$/is.exec(
+    /^\s*(marker|mark|note|cut|split|clip[\s-]+(?:start|in|end|out))\b([\s,:.!-]*)(.*)$/is.exec(
       segment.text,
     );
   if (!match) return null;
   const body = match[3].trim();
   const noteRequest =
-    /^(?:mark|note)$/i.test(match[1]) &&
+    /^(?:marker|mark|note)$/i.test(match[1]) &&
     /[:,]/.test(match[2]) &&
     /^(?:can|could)\s+I\s+(?:get|make|add|have|record|leave)\s+(?:(?:a|the|this|some)\s+)?(?:note|marker)\b/i.test(
       body,
     );
   const colonContext =
-    /^(?:mark|note)$/i.test(match[1]) && match[2].includes(':') && /^(?:the|that)\b/i.test(body);
+    /^(?:marker|mark|note)$/i.test(match[1]) &&
+    match[2].includes(':') &&
+    /^(?:the|that)\b/i.test(body);
   if (
     /^(?:is|was|has|had|will|would|could|can|the|that)\b/i.test(body) &&
     !noteRequest &&
@@ -78,13 +80,15 @@ export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptS
   )
     return null;
   return {
-    kind: (match[1].toLowerCase() === 'split'
-      ? 'cut'
-      : /^clip[\s-]+(?:start|in)$/i.test(match[1])
-        ? 'clip-start'
-        : /^clip[\s-]+(?:end|out)$/i.test(match[1])
-          ? 'clip-end'
-          : match[1].toLowerCase()) as CueKind,
+    kind: (match[1].toLowerCase() === 'marker'
+      ? 'mark'
+      : match[1].toLowerCase() === 'split'
+        ? 'cut'
+        : /^clip[\s-]+(?:start|in)$/i.test(match[1])
+          ? 'clip-start'
+          : /^clip[\s-]+(?:end|out)$/i.test(match[1])
+            ? 'clip-end'
+            : match[1].toLowerCase()) as CueKind,
     text: body,
     time,
     uncertain: true,

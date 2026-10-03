@@ -313,13 +313,16 @@ test('mic cues require review, distinguish Mark/Note/Cut, and reject ambiguous c
     /exactly one clip/,
   );
 });
-test('deliberate punctuated note requests stay review candidates without promoting ordinary names', () => {
+test('Marker and legacy Mark requests stay review candidates without promoting ordinary names', () => {
   for (const text of [
     'Mark, can I get a note from Anna about the qualifier match?',
     'Mark: could I add a marker about this encounter?',
     'Note: the gate opens after the battle.',
     'Mark: that animation is unusual.',
     'Mark remember this transition',
+    'Marker remember this transition',
+    'Marker: the gate opens after the battle.',
+    'Marker, can I get a note about this encounter?',
   ]) {
     const candidate = cueCandidate(transcript, phrase(0, text));
     assert(candidate, text);
@@ -339,8 +342,33 @@ test('deliberate punctuated note requests stay review candidates without promoti
     'Cut the cheese',
     'We should mark this later',
     'Note that this is ordinary speech',
+    'Marker is on the map',
+    'Markers appear on the map',
+    'The marker is blue',
   ])
     assert.equal(cueCandidate(transcript, phrase(0, text)), null, text);
+  const legacy = phrase(3, 'Mark remember Cai');
+  const preferred = { ...legacy, text: 'Marker remember Cai' };
+  const accepted = applyTranscriptCommand(
+    model(),
+    transcript,
+    legacy,
+    command('accept-cue', { segmentId: 3 }),
+    () => 'kept',
+  );
+  assert.equal(cueCandidate(transcript, preferred).kind, 'mark');
+  assert.equal(reviewedCue(accepted.cueDecisions, transcript, preferred).status, 'accepted');
+  assert.throws(
+    () =>
+      applyTranscriptCommand(
+        accepted,
+        transcript,
+        preferred,
+        command('accept-cue', { segmentId: 3 }),
+        () => 'duplicate',
+      ),
+    /already reviewed/,
+  );
   const source = phrase(0, 'Mark, can I get a note from Anna about the qualifier match?');
   const rejected = applyTranscriptCommand(
     model(),
