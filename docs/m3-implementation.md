@@ -94,6 +94,22 @@ verified CUDA startup on a disposable synthetic sample. Final native, Electron
 transcript/import and shell checks passed. See [0.4.5 evidence and review](review-0.4.5.md)
 for paths and scope; speech-stack integration remains deferred.
 
+## Transcript layout and Marker cue — 0.4.6 (VC-88)
+
+The floating native/document title identifies Transcription. Recording, Transcribe
+and settings share one row; selectors precede related actions and override inherited
+Field margins locally to align their bottoms. Model/provenance and instructions are
+available in expandable Help. There is no reserved blank space before phrases.
+Existing reading-state storage, keyboard guards and editorial commands are unchanged.
+
+Marker is the recommended spoken word, mapped to the existing `mark` cue kind.
+Guarded legacy Mark remains supported, so cue IDs, accepted/rejected decisions,
+rerun matching and Undo need no migration. Both are uncertain microphone-only
+candidates requiring review. Ordinary grammar and game dialogue remain excluded.
+This reduces a naming ambiguity but does not prove acoustic recognition accuracy.
+The consolidated [0.4.6 review](review-0.4.6.md) separates new UI/speech checks from
+previous passes and the remaining M3 production work.
+
 ## References
 
 - [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
