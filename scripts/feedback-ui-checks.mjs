@@ -209,7 +209,9 @@ try {
     samples.flat().every((x) => !x.disabled && Number(x.opacity) === 1),
     `Quiet undo must not dim header and batch controls: ${JSON.stringify(samples)}`,
   );
-  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+  // Opening a project starts a fresh session history. After undoing its first edit,
+  // another Undo is optional, but the undone edit must always remain redoable.
+  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
   // Unrelated keys after pointer scrubbing must not create a whole-timeline highlight.
   const track = page.getByTestId('scrub-surface');
   await track.click({ position: { x: 30, y: 12 } });
