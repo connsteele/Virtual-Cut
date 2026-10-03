@@ -146,3 +146,15 @@ Measure only the active project when Projects opens or the user explicitly refre
 ## M2 coverage closeout — October 2, 2026
 
 Connor agreed to complete the final coverage pass before moving on. Prioritize behavioral tests for durable edits, recovery, media/export preservation, timing, reviewed acceptance and cleanup safety. Keep measured module regression floors and report renderer/native coverage separately. Do not require an arbitrary high whole-app percentage or add implementation-mirroring tests for UI polish. Existing stable features provide contracts that later audio/agent features must preserve. Retain untouched executable files in coverage totals, and keep hosted CI, live Resolve compatibility and manual review evidence distinct from local test execution.
+
+## Local crash evidence — October 3, 2026
+
+Connor requested logging after an unexplained exit during transcript interaction.
+0.4.3 observes both windows and records redacted transcript operations, compiled failure
+locations and native exit reasons. Local-only Crashpad starts before renderers; dumps
+are separate from copied/exported text reports because they can contain process memory.
+No telemetry server or automatic upload is configured. A per-process session marker
+records an unclean prior exit on the next launch; it does not claim whether a crash,
+external termination or shutdown caused it. Startup-only retention limits old dumps;
+no heartbeat or continuous disk scan is added. The 0.4.2 natural exit remains VC-86,
+separate from the verified instrumentation. See [current review](review-0.4.3.md).

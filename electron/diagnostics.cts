@@ -1,6 +1,14 @@
 import { appendFile, mkdir, readdir, readFile, lstat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  unlinkSync,
+} from 'node:fs';
 import type { DiagnosticSummary } from './diagnostic-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -8,6 +16,19 @@ import type { DiagnosticSummary } from './diagnostic-contracts.js' with {
 const events = new Set([
   'session-start',
   'session-end',
+  'previous-session-unfinished',
+  'diagnostic-setup-failed',
+  'crash-capture',
+  'window-open',
+  'window-close-request',
+  'window-closed',
+  'window-unresponsive',
+  'window-responsive',
+  'window-load-failed',
+  'preload-error',
+  'renderer-error',
+  'transcript-action',
+  'transcript-action-failed',
   'operation-start',
   'operation-end',
   'operation-failed',
@@ -73,6 +94,18 @@ const words = new Set([
   'abnormal-exit',
   'clean-exit',
   'integrity-failure',
+  'session',
+  'page',
+  'pageAt',
+  'runtime',
+  'setupHelp',
+  'configure',
+  'start',
+  'transport',
+  'seek',
+  'command',
+  'apply',
+  'finishCommand',
 ]);
 const filePattern = /^session-[\dT-]+-[a-f\d-]{36}-\d+\.jsonl$/;
 const MAX_BYTES = 1024 * 1024,
@@ -84,12 +117,33 @@ export function errorCode(error: unknown) {
     ? code
     : 'UNCLASSIFIED';
 }
+export function failureFields(error: unknown) {
+  const candidate = error instanceof Error ? error : undefined;
+  return {
+    errorCode: errorCode(error),
+    errorType: candidate?.name,
+    // Only compiled application locations, never the message, function arguments or host path.
+    frames: candidate?.stack
+      ?.match(
+        /(?:dist-electron[/\\][\w.-]+\.(?:cjs|js)|app:\/\/virtual-cut\/assets\/[\w.-]+\.js):\d+:\d+/g,
+      )
+      ?.slice(0, 8),
+  };
+}
 /** Strict fields: no raw paths, annotations, command arguments, messages or URLs. */
 function safeFields(data: Record<string, unknown>, nested = false): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (
-      ['sourceId', 'jobId', 'projectId', 'operationId', 'previewId', 'mediaId'].includes(key) &&
+      [
+        'sourceId',
+        'jobId',
+        'projectId',
+        'operationId',
+        'previewId',
+        'mediaId',
+        'previousSession',
+      ].includes(key) &&
       typeof value === 'string' &&
       /^[a-f\d-]{36}$/i.test(value)
     )
@@ -116,6 +170,9 @@ function safeFields(data: Record<string, unknown>, nested = false): Record<strin
         'readRequests',
         'readFailures',
         'readCancellations',
+        'windowId',
+        'line',
+        'pid',
       ].includes(key) &&
       typeof value === 'number' &&
       Number.isFinite(value)
@@ -142,6 +199,40 @@ function safeFields(data: Record<string, unknown>, nested = false): Record<strin
       output[key] = value;
     if (['packaged', 'paused', 'seeking'].includes(key) && typeof value === 'boolean')
       output[key] = value;
+    if (['enabled', 'uploadToServer'].includes(key) && typeof value === 'boolean')
+      output[key] = value;
+    if (key === 'window' && ['main', 'transcript'].includes(String(value))) output[key] = value;
+    if (key === 'script' && typeof value === 'string' && /^assets\/[\w.-]+\.js$/.test(value))
+      output[key] = value;
+    if (
+      key === 'processType' &&
+      ['GPU', 'Utility', 'Zygote', 'Sandbox helper', 'Unknown'].includes(String(value))
+    )
+      output[key] = value;
+    if (
+      key === 'errorType' &&
+      [
+        'Error',
+        'TypeError',
+        'RangeError',
+        'ReferenceError',
+        'SyntaxError',
+        'URIError',
+        'EvalError',
+        'AggregateError',
+      ].includes(String(value))
+    )
+      output[key] = value;
+    if (key === 'frames' && Array.isArray(value))
+      output[key] = value
+        .filter(
+          (v) =>
+            typeof v === 'string' &&
+            /^(?:dist-electron[/\\][\w.-]+\.(?:cjs|js)|app:\/\/virtual-cut\/assets\/[\w.-]+\.js):\d+:\d+$/.test(
+              v,
+            ),
+        )
+        .slice(0, 8);
     if (
       key === 'fault' &&
       typeof value === 'string' &&
@@ -204,11 +295,100 @@ export class Diagnostics {
   private rateCount = 0;
   dropped = 0;
   logging = true;
+  private marker?: string;
   constructor(
     profile: string,
     private limits = { bytes: MAX_BYTES, files: MAX_FILES },
   ) {
     this.directory = path.join(profile, 'diagnostics');
+  }
+  /** One tiny marker per process, written only on startup/exit; no heartbeat or media polling. */
+  beginSession() {
+    try {
+      mkdirSync(this.directory, { recursive: true });
+      for (const name of readdirSync(this.directory).filter((n) =>
+        /^active-[a-f\d-]{36}\.json$/i.test(n),
+      )) {
+        const file = path.join(this.directory, name);
+        try {
+          const previous = JSON.parse(readFileSync(file, 'utf8'));
+          if (!Number.isSafeInteger(previous.pid) || previous.pid <= 0) continue;
+          try {
+            process.kill(previous.pid, 0);
+            continue;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue;
+          }
+          this.record('previous-session-unfinished', {
+            previousSession: name.slice(7, -5),
+            pid: previous.pid,
+          });
+          unlinkSync(file);
+        } catch {
+          /* Invalid or concurrently removed marker; never infer a crash from it. */
+        }
+      }
+      this.marker = path.join(this.directory, `active-${this.session}.json`);
+      writeFileSync(this.marker, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
+    } catch (error) {
+      this.record('diagnostic-setup-failed', { errorCode: errorCode(error) });
+    }
+  }
+  /** Fatal Node errors can exit before an asynchronous flush reaches disk. */
+  fatal(error: unknown) {
+    try {
+      mkdirSync(this.directory, { recursive: true });
+      appendFileSync(
+        path.join(this.directory, `${this.prefix}-999999.jsonl`),
+        JSON.stringify({
+          at: new Date().toISOString(),
+          session: this.session,
+          level: 'error',
+          event: 'uncaught-error',
+          ...safeFields(failureFields(error)),
+        }) + '\n',
+      );
+    } catch {
+      /* The process is already terminating; preserve its original failure. */
+    }
+  }
+  endSession() {
+    try {
+      this.record('session-end');
+      const tail = this.queue.splice(0).join('');
+      if (tail) appendFileSync(path.join(this.directory, `${this.prefix}-999999.jsonl`), tail);
+      if (this.marker) unlinkSync(this.marker);
+    } catch {
+      /* Leave an explicitly uncertain marker. */
+    }
+  }
+  /** Once per launch, prune only old native dump files; never Crashpad's database or active writes. */
+  async pruneCrashDumps() {
+    const files: { file: string; size: number; time: number }[] = [];
+    const visit = async (directory: string, depth: number) => {
+      const info = await lstat(directory).catch(() => null);
+      if (!info?.isDirectory() || info.isSymbolicLink()) return;
+      for (const name of await readdir(directory)) {
+        const file = path.join(directory, name),
+          entry = await lstat(file).catch(() => null);
+        if (!entry || entry.isSymbolicLink()) continue;
+        if (entry.isDirectory() && depth < 2) await visit(file, depth + 1);
+        else if (entry.isFile() && /^[a-f\d-]{36}\.dmp$/i.test(name))
+          files.push({ file, size: entry.size, time: entry.mtimeMs });
+      }
+    };
+    try {
+      await visit(path.join(this.directory, 'crashes'), 0);
+      let bytes = 0;
+      for (const [index, file] of files.sort((a, b) => b.time - a.time).entries()) {
+        bytes += file.size;
+        const age = Date.now() - file.time;
+        if (age > 60_000 && (index >= 5 || bytes > 128 * 1024 * 1024 || age > 7 * 86400_000))
+          await unlink(file.file).catch(() => {});
+      }
+    } catch (error) {
+      this.record('diagnostic-setup-failed', failureFields(error));
+    }
   }
   record(event: string, data: Record<string, unknown> = {}) {
     if (!events.has(event)) return;
@@ -328,7 +508,7 @@ export class Diagnostics {
       session: this.session,
       logging: this.logging,
       dropped: this.dropped,
-      text: `Virtual Cut diagnostics\nSession: ${this.session}\nLocal logging: ${this.logging ? 'available' : 'unavailable; recent events held in memory'}\nDropped events this session: ${this.dropped}\nPaths, media, notes, transcripts, command arguments and raw error text are excluded. Job IDs match the project records. Nothing is uploaded.\n\n${(this.logging ? lines : this.recent).slice(-400).join('\n')}`,
+      text: `Virtual Cut diagnostics\nSession: ${this.session}\nLocal logging: ${this.logging ? 'available' : 'unavailable; recent events held in memory'}\nDropped events this session: ${this.dropped}\nPaths, media, notes, transcripts, command arguments and raw error text are excluded. Job IDs match the project records. Nothing is uploaded. Native crash dumps are separate in the crashes folder; they may contain memory data and are never included in this report. An unfinished-session event means no clean exit was recorded, not proof of an application bug.\n\n${(this.logging ? lines : this.recent).slice(-400).join('\n')}`,
     };
   }
 }

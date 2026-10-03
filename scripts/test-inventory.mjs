@@ -29,6 +29,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'crash-diagnostics-checks.mjs',
   'transcription-review-ui.mjs',
   'transcription-ui-checks.mjs',
   'project-deletion-ui.mjs',

@@ -4,6 +4,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Diagnostics, failureFields } from './diagnostics.cjs';
+import { observeWindow } from './window-diagnostics.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
 import { transcriptHandoff, transcriptSrt } from './transcript-export.js';
@@ -17,6 +19,7 @@ export function registerTranscriptWindow(
   rendererUrl: () => string,
   profile: string,
   hidden: boolean,
+  diagnostics: Diagnostics,
 ) {
   let window: BrowserWindow | null = null;
   let preferredSource = '';
@@ -50,9 +53,21 @@ export function registerTranscriptWindow(
     fn: (...args: Parameters<TranscriptApi[K]>) => ReturnType<TranscriptApi[K]>,
     mainOnly = false,
   ) {
-    ipcMain.handle(`transcript:${name}`, (event, ...args) => {
+    ipcMain.handle(`transcript:${name}`, async (event, ...args) => {
       trusted(event, mainOnly);
-      return fn(...(args as Parameters<TranscriptApi[K]>));
+      // Capture user intent, not contents or high-frequency position/poll traffic.
+      const fields = {
+        window: event.sender === main()?.webContents ? 'main' : 'transcript',
+        operation: name,
+      };
+      if (!['session', 'page', 'pageAt', 'runtime'].includes(name))
+        diagnostics.record('transcript-action', fields);
+      try {
+        return await fn(...(args as Parameters<TranscriptApi[K]>));
+      } catch (error) {
+        diagnostics.record('transcript-action-failed', { ...fields, ...failureFields(error) });
+        throw error;
+      }
     });
   }
   handle(
@@ -114,6 +129,7 @@ export function registerTranscriptWindow(
         },
       });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      observeWindow(window, 'transcript', diagnostics);
       window.webContents.on('will-navigate', (e) => e.preventDefault());
       window.on('close', () => {
         if (window) writeFileSync(boundsFile, JSON.stringify(window.getBounds()));

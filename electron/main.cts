@@ -10,12 +10,14 @@ import {
   session,
   shell,
   clipboard,
+  crashReporter,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
 import { realpath, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
+import { observeWindow } from './window-diagnostics.cjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AppInfo, OpenedVideo, ProjectFolder } from './contracts.js' with {
@@ -64,6 +66,19 @@ if (requestedProfile) {
   mkdirSync(requestedProfile, { recursive: true });
   app.setPath('userData', requestedProfile);
   app.setPath('sessionData', requestedProfile);
+}
+
+// Start before creating either renderer. Native dumps remain local and separate
+// from the redacted text report; no submit URL or automatic upload is configured.
+let crashCapture = false;
+try {
+  const crashDirectory = path.join(app.getPath('userData'), 'diagnostics', 'crashes');
+  mkdirSync(crashDirectory, { recursive: true });
+  app.setPath('crashDumps', crashDirectory);
+  crashReporter.start({ uploadToServer: false });
+  crashCapture = true;
+} catch {
+  /* Diagnostics below reports unavailable capture without blocking startup. */
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -618,9 +633,7 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
-  window.webContents.on('render-process-gone', (_event, details) =>
-    diagnostics.record('renderer-gone', { reason: details.reason, exitCode: details.exitCode }),
-  );
+  observeWindow(window, 'main', diagnostics);
   window.on('close', (event) => {
     if (!closing && projects.store) {
       event.preventDefault();
@@ -652,6 +665,9 @@ app
   .whenReady()
   .then(async () => {
     diagnostics = new Diagnostics(app.getPath('userData'));
+    diagnostics.beginSession();
+    await diagnostics.pruneCrashDumps();
+    diagnostics.record('crash-capture', { enabled: crashCapture, uploadToServer: false });
     diagnostics.record('session-start', {
       app: app.getVersion(),
       electron: process.versions.electron,
@@ -660,11 +676,14 @@ app
       packaged: app.isPackaged,
     });
     app.on('child-process-gone', (_event, details) =>
-      diagnostics.record('child-gone', { reason: details.reason, exitCode: details.exitCode }),
+      diagnostics.record('child-gone', {
+        reason: details.reason,
+        exitCode: details.exitCode,
+        processType: details.type,
+      }),
     );
     process.on('uncaughtExceptionMonitor', (e) => {
-      diagnostics.record('uncaught-error', { errorCode: errorCode(e) });
-      void diagnostics.flush();
+      diagnostics.fatal(e);
     });
     nativeTheme.themeSource = 'dark';
     Menu.setApplicationMenu(null);
@@ -685,6 +704,7 @@ app
       getRendererUrl,
       app.getPath('userData'),
       backgroundTest,
+      diagnostics,
     );
     await demoMedia
       .load(path.join(app.getAppPath(), 'demo-media.local.json'))
@@ -715,10 +735,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 let logsFlushed = false;
+app.on('will-quit', () => diagnostics?.endSession());
 app.on('before-quit', (event) => {
   if (!diagnostics || logsFlushed) return;
   event.preventDefault();
-  diagnostics.record('session-end');
   void Promise.race([
     diagnostics.flush(),
     new Promise((resolve) => setTimeout(resolve, 700)),

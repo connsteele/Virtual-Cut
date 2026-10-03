@@ -40,11 +40,18 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Diagnostics" onClose={onClose}>
       <p>
-        Recent activity and failures stay on this computer. Paths, media, notes and transcripts are
-        excluded. Nothing is uploaded.
+        Recent activity and failures stay on this computer. Text logs exclude personal paths, media,
+        notes and transcripts. Nothing is uploaded.
       </p>
       <p className={s.muted}>
         Up to five 1 MB log files are kept. Playback logs state changes, not every frame or seek.
+      </p>
+      <p className={s.muted}>
+        Native crash reports stay in the crashes subfolder and may contain memory data. They are
+        never uploaded or included in Copy diagnostics or Save diagnostic report. At startup, older
+        dumps are trimmed to five files, 128 MB and seven days; newly written dumps wait until a
+        later launch. An unfinished session can also mean a forced close or shutdown; it does not
+        identify the cause.
       </p>
       {report && (
         <p>
