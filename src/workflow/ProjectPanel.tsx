@@ -253,6 +253,7 @@ export function ImportPanel({
     [mic, setMic] = useState(defaults?.mic ?? 2);
   const [transcribe, setTranscribe] = useState(false);
   const [transcription, setTranscription] = useState(initialTranscriptionOptions);
+  const [transcriptionReady, setTranscriptionReady] = useState(false);
   const audio: ImportAudio = {
     game,
     mic: notes ? mic : null,
@@ -332,11 +333,20 @@ export function ImportPanel({
         <input
           type="checkbox"
           checked={transcribe}
-          onChange={(e) => setTranscribe(e.target.checked)}
+          onChange={(e) => {
+            setTranscriptionReady(false);
+            setTranscribe(e.target.checked);
+          }}
         />{' '}
         Transcribe this import locally
       </label>
-      {transcribe && <TranscriptionOptions value={transcription} onChange={setTranscription} />}
+      {transcribe && (
+        <TranscriptionOptions
+          value={transcription}
+          onChange={setTranscription}
+          onReadyChange={setTranscriptionReady}
+        />
+      )}
       {transcribe && transcription.roles.includes('mic') && !notes && (
         <p role="status">
           Enable microphone audio notes above to assign its track, or choose Game dialogue only.
@@ -350,6 +360,7 @@ export function ImportPanel({
         primary
         disabled={
           w.busy ||
+          (transcribe && !transcriptionReady) ||
           (transcribe && transcription.roles.includes('mic') && !notes) ||
           (!!drop && !drop.count) ||
           !Number.isInteger(game) ||
@@ -766,6 +777,18 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                         </p>
                         {j.state === 'running' && <progress value={j.progress} max={1} />}
                         <p className={s.muted}>{j.message}</p>
+                        {j.device && (
+                          <p>
+                            {j.device === 'cuda' ? 'NVIDIA GPU' : 'CPU'} transcription
+                            {j.deviceMessage ? ' · GPU fallback' : ''}
+                          </p>
+                        )}
+                        {j.deviceMessage && (
+                          <details>
+                            <summary>Why CPU was used</summary>
+                            <p>{j.deviceMessage}</p>
+                          </details>
+                        )}
                       </div>
                       <div className={s.tools}>
                         {['queued', 'running'].includes(j.state) && (

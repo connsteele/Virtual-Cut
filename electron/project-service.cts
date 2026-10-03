@@ -134,6 +134,8 @@ export class ProjectService {
           progress: j.progress,
           message: j.message,
           elapsedMs: j.elapsedMs,
+          device: j.device,
+          deviceMessage: j.deviceMessage,
         })),
     };
   }
@@ -1697,6 +1699,7 @@ export class ProjectService {
       kind: job.kind,
     });
     job = { ...job, started: new Date().toISOString(), elapsedMs: 0 };
+    if (job.kind === 'transcribe') job = { ...job, device: undefined, deviceMessage: undefined };
     const elapsedMs = () => Math.round(performance.now() - began);
     const s = this.require(),
       source = s.sources().find((x) => x.id === job.sourceId);
@@ -1811,7 +1814,7 @@ export class ProjectService {
               .match(/models--[^/]+--([^/]+)/)?.[1] ||
             path.basename(this.transcription.settings.model),
           pipeline: TRANSCRIPTION_PIPELINE,
-          device: this.transcription.settings.device,
+          device: request.device || this.transcription.settings.device,
           created: new Date().toISOString(),
           context: request.contextId
             ? s.transcripts.context(request.contextId)
@@ -1843,7 +1846,19 @@ export class ProjectService {
           },
           signal,
           (event) => {
-            if (event.device) transcript.device = event.device;
+            if (event.device) {
+              transcript.device = event.device;
+              job = {
+                ...job,
+                device: event.device,
+                deviceMessage: event.message || job.deviceMessage,
+              };
+              last = 0;
+              progress(
+                0.03,
+                event.device === 'cpu' ? 'Transcribing on CPU' : 'Transcribing on NVIDIA GPU',
+              );
+            }
             if (event.type === 'info' && event.message) {
               transcript.deviceMessage = event.message;
               this.diagnostics?.record('transcription-device', {

@@ -1,0 +1,21 @@
+.status {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #303d3b;
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.status p {
+  margin: 0;
+}
+.status details p {
+  margin-top: 8px;
+}
+.status button {
+  justify-self: start;
+}
+.warning {
+  border-left: 3px solid #dfb46c;
+}

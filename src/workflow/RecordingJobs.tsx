@@ -31,6 +31,8 @@ export function RecordingTranscription({ jobs, sourceId }: { jobs: MediaJob[]; s
         <div key={job.id}>
           <small>
             {jobLabel(job)} · {job.state === 'succeeded' ? 'ready' : job.state}
+            {job.device && ` · ${job.device === 'cuda' ? 'NVIDIA GPU' : 'CPU'}`}
+            {job.deviceMessage && ' · GPU fallback'}
           </small>
           {job.state === 'running' && (
             <progress aria-label={jobLabel(job)} value={job.progress} max={1} />

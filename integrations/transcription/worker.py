@@ -121,6 +121,8 @@ def worker():
         if requested == "cuda" and not available:
             raise RuntimeError(reason + ". Choose Automatic or CPU, or configure the GPU runtime folder.")
         device = "cuda" if requested != "cpu" and available else "cpu"
+        if requested == "auto" and device == "cpu":
+            emit({"type": "info", "device": "cpu", "message": reason})
         def load_model(device):
             model = WhisperModel(request["model"], device=device,
                                  compute_type="float16" if device == "cuda" else "int8",
@@ -137,6 +139,7 @@ def worker():
             gc.collect()
             reason = "GPU check failed; using CPU: " + str(error)
             device = "cpu"
+            emit({"type": "info", "device": "cpu", "message": reason})
             model = load_model(device)
         emit({"type": "info", "device": device, "message": reason if device == "cpu" and requested == "auto" else ""})
         emit({"type": "stage", "message": "Recognizing speech", "progress": 0.05,

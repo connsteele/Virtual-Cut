@@ -116,7 +116,15 @@ try {
         );
       });
     signal.throwIfAborted();
-    receive({ type: 'info', language: 'en', duration: 15, engine: 'fixture', runtime: 'fixture' });
+    receive({
+      type: 'info',
+      device: 'cpu',
+      message: 'GPU unavailable in synthetic fixture',
+      language: 'en',
+      duration: 15,
+      engine: 'fixture',
+      runtime: 'fixture',
+    });
     receive({
       type: 'segment',
       segment: {
@@ -167,6 +175,38 @@ try {
   const transcript = service.store.transcripts.get(job.id);
   assert.equal(transcript.state, 'complete');
   assert.equal(transcript.wordCount, 11);
+  assert.equal(transcript.device, 'cpu');
+  const finishedJob = service.store.jobs().find((j) => j.id === job.id);
+  assert.equal(finishedJob.device, 'cpu');
+  assert.equal(finishedJob.deviceMessage, 'GPU unavailable in synthetic fixture');
+  assert.equal(
+    service.transcriptSession(rid).jobs.find((j) => j.id === job.id).deviceMessage,
+    finishedJob.deviceMessage,
+  );
+  const { TranscriptionRuntime } = require('../dist-electron/transcription-runtime.cjs');
+  const readiness = new TranscriptionRuntime(path.join(dir, 'readiness'));
+  readiness.settings = { ...service.transcription.settings };
+  let checks = 0,
+    release;
+  readiness.execute = async (_config, _signal, receive) => {
+    checks++;
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    receive({ type: 'gpu', available: checks > 1, message: checks > 1 ? 'Ready' : 'Unavailable' });
+  };
+  const firstCheck = readiness.inspectGpu(),
+    concurrentCheck = readiness.inspectGpu(true);
+  assert.equal(firstCheck, concurrentCheck, 'Concurrent checks reuse the in-flight probe');
+  assert.equal(checks, 1);
+  release();
+  assert.equal((await firstCheck).available, false);
+  assert.equal((await readiness.inspectGpu()).available, false);
+  assert.equal(checks, 1, 'Opening another view reuses the completed readiness result');
+  const recheck = readiness.inspectGpu(true);
+  assert.equal(checks, 2);
+  release();
+  assert.equal((await recheck).available, true);
   assert.equal(frozenVocabulary, '');
   assert.equal(
     service.store.transcripts.segment(job.id, 1).start,

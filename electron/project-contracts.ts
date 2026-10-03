@@ -38,6 +38,8 @@ export interface ProjectInfo {
   cache: string;
 }
 export interface MediaJob {
+  device?: 'cpu' | 'cuda';
+  deviceMessage?: string;
   started?: string;
   elapsedMs?: number;
   id: string;

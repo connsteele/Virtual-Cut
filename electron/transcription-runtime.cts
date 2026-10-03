@@ -27,6 +27,7 @@ export class TranscriptionRuntime {
   settings: AsrRuntime;
   private file: string;
   private gpuStatus?: Promise<{ available: boolean; message: string }>;
+  private gpuChecking = false;
   constructor(
     profile: string,
     private toolsDirectory = '',
@@ -88,11 +89,13 @@ export class TranscriptionRuntime {
     mkdirSync(path.dirname(this.file), { recursive: true });
     writeFileSync(this.file, JSON.stringify(this.settings));
   }
-  inspectGpu() {
+  inspectGpu(refresh = false) {
+    if (refresh && !this.gpuChecking) this.gpuStatus = undefined;
     return (this.gpuStatus ??= (async () => {
       if (!this.configured)
         return { available: false, message: 'Set up local speech recognition first.' };
       let result = { available: false, message: 'GPU check did not finish.' };
+      this.gpuChecking = true;
       try {
         await this.execute(
           { ...this.settings, mode: 'probe' },
@@ -104,6 +107,8 @@ export class TranscriptionRuntime {
         );
       } catch (e) {
         result.message = String(e);
+      } finally {
+        this.gpuChecking = false;
       }
       return result;
     })());

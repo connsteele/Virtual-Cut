@@ -40,6 +40,7 @@ export function TranscriptWindow() {
   const [follow, setFollow] = useState(true);
   const [focusedWord, setFocusedWord] = useState<{ segment: number; word?: number }>();
   const [options, setOptions] = useState(initialTranscriptionOptions);
+  const [transcriptionReady, setTranscriptionReady] = useState(false);
   const [exportId, setExportId] = useState('');
   const [runtime, setRuntime] = useState<Awaited<ReturnType<TranscriptApi['runtime']>>>();
   const [setup, setSetup] = useState(false),
@@ -391,7 +392,11 @@ export function TranscriptWindow() {
           </div>
           {startOpen && (
             <section className={s.card} aria-label="Start transcription">
-              <TranscriptionOptions value={options} onChange={setOptions} />
+              <TranscriptionOptions
+                value={options}
+                onChange={setOptions}
+                onReadyChange={setTranscriptionReady}
+              />
               <p>
                 Local speech recognition runs once for each selected audio track. Existing matching
                 results are reused; originals and corrections are preserved.{' '}
@@ -403,7 +408,7 @@ export function TranscriptWindow() {
               </p>
               <Button
                 primary
-                disabled={busy || !runtime?.configured}
+                disabled={busy || !runtime?.configured || !transcriptionReady}
                 onClick={() =>
                   void action(() =>
                     api.start(session.projectId, session.sourceId, session.batchId, options),
@@ -501,8 +506,10 @@ export function TranscriptWindow() {
           <section className={s.job} key={job.id}>
             <div>
               <strong>{job.state}</strong> · {job.message}
+              {job.device && <small> · {job.device === 'cuda' ? 'NVIDIA GPU' : 'CPU'}</small>}
               {job.elapsedMs != null && <small> · {(job.elapsedMs / 1000).toFixed(1)} s</small>}
             </div>
+            {job.deviceMessage && <p>GPU fallback: {job.deviceMessage}</p>}
             {['running', 'queued'].includes(job.state) && <progress max={1} value={job.progress} />}
             {['running', 'queued'].includes(job.state) && (
               <Button

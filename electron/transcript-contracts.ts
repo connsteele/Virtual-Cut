@@ -116,6 +116,8 @@ export interface TranscriptSession {
   edits: TranscriptEdit[];
   decisions: CueDecision[];
   jobs: {
+    device?: 'cpu' | 'cuda';
+    deviceMessage?: string;
     id: string;
     sourceId: string;
     state: string;
@@ -170,7 +172,7 @@ export interface TranscriptApi {
   job(projectId: string, id: string, action: 'cancel' | 'retry' | 'pause'): Promise<void>;
   command(command: TranscriptCommand): Promise<void>;
   seek(projectId: string, sourceId: string, time: number): Promise<void>;
-  runtime(): Promise<{
+  runtime(refresh?: boolean): Promise<{
     configured: boolean;
     settings: AsrRuntime;
     gpu?: { available: boolean; message: string };

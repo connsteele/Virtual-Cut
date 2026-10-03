@@ -180,11 +180,14 @@ export function registerTranscriptWindow(
       .map((e) => e.segmentId);
     return s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
   });
-  handle('runtime', async () => ({
-    configured: projects.transcription.configured,
-    settings: projects.transcription.settings,
-    gpu: await projects.transcription.inspectGpu(),
-  }));
+  handle('runtime', async (refresh) => {
+    if (refresh != null && typeof refresh !== 'boolean') throw new Error('Invalid GPU check.');
+    return {
+      configured: projects.transcription.configured,
+      settings: projects.transcription.settings,
+      gpu: await projects.transcription.inspectGpu(refresh),
+    };
+  });
   handle('setupHelp', async (topic) => {
     const links: Record<string, string> = {
       engine: 'https://github.com/SYSTRAN/faster-whisper#installation',

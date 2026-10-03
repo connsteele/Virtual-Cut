@@ -271,17 +271,96 @@ try {
   await batchContext.getByLabel('Game context').selectOption('inherit');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   // Consent belongs to each import, rather than silently carrying forward.
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.gpuTest = { available: false, configured: true, calls: 0 };
+    ipcMain.removeHandler('transcript:runtime');
+    ipcMain.handle('transcript:runtime', async () => {
+      globalThis.gpuTest.calls++;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return {
+        configured: globalThis.gpuTest.configured,
+        settings: { device: 'auto' },
+        gpu: { available: globalThis.gpuTest.available, message: 'Synthetic NVIDIA runtime check' },
+      };
+    });
+  });
   for (const name of ['Import files', 'Import folder']) {
     await page.getByRole('button', { name, exact: true }).click();
     const consent = page.getByLabel('Transcribe this import locally');
     await expect(consent).not.toBeChecked();
     await consent.check();
+    const submit = page.getByRole('button', {
+      name: name === 'Import files' ? 'Choose files…' : 'Choose folder…',
+      exact: true,
+    });
+    const readiness = page.getByRole('region', { name: 'Transcription device readiness' });
+    await expect(submit).toBeDisabled();
+    await expect(readiness.getByRole('alert')).toContainText('Automatic will use CPU');
+    await expect(submit).toBeDisabled();
+    await page.getByLabel('Continue this request on CPU').check();
+    await expect(submit).toBeEnabled();
+    await page.getByLabel('Processing device').selectOption('cpu');
+    await expect(readiness).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+    await page.getByLabel('Processing device').selectOption('auto');
+    await expect(page.getByLabel('Continue this request on CPU')).not.toBeChecked();
+    await expect(submit).toBeDisabled();
+    await app.evaluate(() => {
+      globalThis.gpuTest.available = true;
+    });
+    await page.getByRole('button', { name: 'Check again', exact: true }).click();
+    await expect(readiness.getByRole('status')).toContainText('NVIDIA GPU is available');
+    await expect(submit).toBeEnabled();
+    await app.evaluate(() => {
+      globalThis.gpuTest.available = false;
+    });
+    await page.getByLabel('Processing device').selectOption('cuda');
+    await expect(readiness.getByRole('alert')).toContainText('NVIDIA GPU is unavailable');
+    await expect(submit).toBeDisabled();
+    await page.getByLabel('Processing device').selectOption('cpu');
+    await expect(submit).toBeEnabled();
     await expect(page.getByLabel('Transcribe audio')).toHaveValue('both');
-    await expect(page.getByLabel('Processing device')).toHaveValue('auto');
+    await expect(page.getByLabel('Processing device')).toHaveValue('cpu');
     await page.getByLabel('Transcribe audio').selectOption('mic');
     await page.getByLabel('Speech language').selectOption('en');
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   }
+  const deviceWindow = app.waitForEvent('window');
+  await page.getByRole('button', { name: 'Transcript', exact: true }).click();
+  const deviceView = await deviceWindow;
+  deviceView.on('pageerror', (e) => errors.push(e.message));
+  await deviceView.getByRole('button', { name: 'Transcribe…', exact: true }).click();
+  await expect(
+    deviceView.getByRole('region', { name: 'Transcription device readiness' }).getByRole('alert'),
+  ).toContainText('Automatic will use CPU');
+  await expect(
+    deviceView.getByRole('button', { name: 'Start transcription', exact: true }),
+  ).toBeDisabled();
+  await deviceView.getByLabel('Continue this request on CPU').check();
+  await expect(
+    deviceView.getByRole('button', { name: 'Start transcription', exact: true }),
+  ).toBeEnabled();
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('#transcript'))
+      .setSize(500, 600),
+  );
+  assert.equal(
+    await deviceView.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+    true,
+  );
+  const warningImage = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()
+        .find((w) => w.webContents.getURL().endsWith('#transcript'))
+        .webContents.capturePage(undefined, { stayHidden: true })
+    )
+      .toPNG()
+      .toString('base64'),
+  );
+  await writeFile(path.join(dir, 'gpu-warning-compact.png'), Buffer.from(warningImage, 'base64'));
+  await collectBeforeWindowClose(app);
+  await deviceView.close();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const savedContexts = await page.evaluate(
     async () => (await window.virtualCut.project.current()).model.contexts,

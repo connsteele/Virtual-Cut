@@ -24,7 +24,7 @@ const api: VirtualCutApi = {
     session: (source) => ipcRenderer.invoke('transcript:session', source),
     page: (id, transcriptId, page, search, filter) =>
       ipcRenderer.invoke('transcript:page', id, transcriptId, page, search, filter),
-    runtime: () => ipcRenderer.invoke('transcript:runtime'),
+    runtime: (refresh) => ipcRenderer.invoke('transcript:runtime', refresh),
     configure: (part, device) => ipcRenderer.invoke('transcript:configure', part, device),
     start: (id, source, batch, options) =>
       ipcRenderer.invoke('transcript:start', id, source, batch, options),
