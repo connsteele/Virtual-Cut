@@ -1,6 +1,6 @@
 # Virtual Cut development
 
-Read `README.md`, `docs/design-decisions.md`, and `docs/foundation.md` before changing the app. `docs/layout-concepts.md` describes the UI alternatives.
+Read `README.md`, `docs/design-decisions.md`, and `docs/foundation.md` before changing the app. `docs/layout-concepts.md` describes the UI alternatives. `docs/decisions/` summarizes confirmed decisions as short records, `docs/user-guide.md` describes current controls, and `CHANGELOG.md` holds version history.
 
 ## Stack and organization
 
