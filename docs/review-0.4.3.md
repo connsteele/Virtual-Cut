@@ -6,10 +6,14 @@ Build: `G:\GPT\Work\virtual-cut\review-0.4.3\builds\Virtual-Cut-0.4.3-win-x64-20
 
 **Research update — October 3:** The [GPU pipeline comparison](research/whisperx-gpu-study.md)
 completed 24 comparisons and separate chunk/lifecycle trials. VC-81 now selects
-optional WhisperX alignment/speaker adapters with preserved utterance recognition.
+optional WhisperX alignment and game-only speaker adapters with preserved utterance recognition.
 Full WhisperX recognition regressed sparse-dialogue seeking and is not selected as
 the default. Speaker controls remain unimplemented; this research adds no new manual
 checkboxes or application build. Continue the 0.4.3 review below.
+
+**Speaker scope:** Game audio only. Mic retains transcription, word timing and spoken
+cues, and skips speaker models and labels. The microphone speaker results and combined
+pipeline timings in the research were comparison tests, not planned microphone behavior.
 
 ## Current review — 0.4.3
 

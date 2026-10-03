@@ -2,12 +2,17 @@
 
 ## Decision
 
-Use WhisperX's alignment and speaker utilities behind optional, replaceable
+Use WhisperX's alignment and game-audio speaker utilities behind optional, replaceable
 postprocessing adapters. Retain the production `utterance-v1` recognition policy.
 Do not switch the app to WhisperX's default full-file recognition pipeline on these
 results. Its speed advantage is real, but sparse speech produced unacceptable seek
 positions and cue regressions. Speaker labels need user correction and an unknown
 state; they do not establish a fictional character's identity.
+
+Speaker identification is for Game audio only, as clarified by Connor on October 3.
+Mic retains transcription, word timing and spoken cues, and skips speaker models
+and labels. The microphone speaker runs below were uniform comparison tests;
+they do not define the microphone feature scope.
 
 This is completed engineering research for VC-81, not a new application build.
 The 0.4.3 app, saved transcripts, corrections and normal runtime remain unchanged.
@@ -66,6 +71,11 @@ Seconds, including processing and worker startup at the boundaries described abo
 | Sparse Cai dialogue, 80.1 s |                 4.64 |     11.69 |      12.77 |   11.73 |
 | Dungeon dialogue, 251.0 s   |                18.77 |     26.46 |      28.69 |   15.82 |
 
+The microphone A/B/C totals include speaker processing used only for this experiment.
+They are not the planned microphone processing cost. The ASR-alone measurements
+remain valid; microphone transcription and optional alignment without a speaker
+stage would need their own combined timing measurement.
+
 C completes the long game sample about 2.3–2.4 times faster than A/B. Direct speaker
 inference, including loading its models, cost roughly 1–5 seconds on these samples;
 alignment added approximately 0.7–4.6 seconds. Python imports and separate-process
@@ -115,7 +125,8 @@ to establish a correct word-seek anchor.
    but labels are not one-to-one with them: several characters share a cluster.
    Shared voice actors and model merging are possible explanations; neither is
    established here. No human-verified voice reference or diarization error rate
-   is claimed. Separate microphone/game roles remain essential.
+   is claimed. The microphone cluster counts are experimental controls, not a
+   proposed microphone feature. Speaker identification remains Game-only.
 6. **Empty inputs complete.** All three approaches returned zero words on generated
    silence and two additional empty-recognition game samples. Pyannote emitted a
    cluster on one such game recording despite no recognized words. A speaker turn
@@ -175,7 +186,11 @@ Licenses do not by themselves settle a redistribution/provisioning design.
    large displacement, implausibly long words and intervals outside speech support;
    fall back to original anchors. Use validated anchors for clicking words. User
    corrections remain independent of automatic timing proposals.
-4. Speaker detection stays off by default and can run later on existing recognition.
+4. Speaker detection is Game-only, stays off by default and can run later on existing
+   Game recognition. Enforce the role in the worker/backend as well as import controls:
+   Mic-only jobs skip speaker inference, labels and speaker-model setup requirements;
+   jobs containing both roles apply the speaker stage only to the assigned Game track.
+   Verify both cases during integration. Mic transcription, timing and cues remain.
    Use transcript-scoped Speaker 1/2 labels, real overlap and Unknown; preserve
    overlapping-turn evidence. Provide assignment/name corrections. Community-1's
    exclusive turns are a potential reconciliation option, not a tested improvement.

@@ -13,7 +13,7 @@ The original unexpected exit is still under investigation. Earlier release summa
 below retain their original verification scope.
 
 **Speaker pipeline research — October 3.** The [GPU comparison](docs/research/whisperx-gpu-study.md)
-selects optional WhisperX alignment/speaker adapters with preserved utterance recognition.
+selects optional WhisperX alignment and game-only speaker adapters with preserved utterance recognition.
 Its faster full pipeline has sparse-dialogue timing regressions and is not the app default.
 This is research for VC-81; speaker controls are not yet in the 0.4.3 build.
 
