@@ -12,6 +12,11 @@ agent checks from remaining user interaction/listening review and links VC-82–
 The original unexpected exit is still under investigation. Earlier release summaries
 below retain their original verification scope.
 
+**Speaker pipeline research — October 3.** The [GPU comparison](docs/research/whisperx-gpu-study.md)
+selects optional WhisperX alignment/speaker adapters with preserved utterance recognition.
+Its faster full pipeline has sparse-dialogue timing regressions and is not the app default.
+This is research for VC-81; speaker controls are not yet in the 0.4.3 build.
+
 **Current branch: M3 audio intelligence, 0.4.0 first review.** Explicit local transcription, separate game/microphone results, a floating word-seeking transcript window, original-preserving corrections, reviewed spoken cues, and project/batch game and video context are implemented for review. Recognition quality and the remaining M3 boundaries are documented in [the review guide](docs/m3-review.md) and [engineering notes](docs/m3-implementation.md). This workstation build uses an installed local speech runtime; portable provisioning, optional speaker detection and automated agent correction are not included. M2 remains accepted.
 
 | Page        | Current preview                                                                                                                                                                             |

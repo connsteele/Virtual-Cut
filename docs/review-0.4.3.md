@@ -4,6 +4,13 @@ October 3, 2026. Branch `m3-audio-intelligence`. M3 remains in review.
 
 Build: `G:\GPT\Work\virtual-cut\review-0.4.3\builds\Virtual-Cut-0.4.3-win-x64-2026-10-03T06-59-45-661Z\Virtual Cut.exe`.
 
+**Research update — October 3:** The [GPU pipeline comparison](research/whisperx-gpu-study.md)
+completed 24 comparisons and separate chunk/lifecycle trials. VC-81 now selects
+optional WhisperX alignment/speaker adapters with preserved utterance recognition.
+Full WhisperX recognition regressed sparse-dialogue seeking and is not selected as
+the default. Speaker controls remain unimplemented; this research adds no new manual
+checkboxes or application build. Continue the 0.4.3 review below.
+
 ## Current review — 0.4.3
 
 **Start here:** This update adds diagnostics and carries the 0.4.2 word-editor change. It does not fix the four transcript findings listed below, and does not claim the unexpected exit is solved. Your earlier checked results and callouts stay intact. The 0.4.1 recipes are retained as reference; you do not need to repeat the successful functional checks simply because their manual boxes are still empty.
