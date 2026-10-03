@@ -58,6 +58,8 @@ export function TranscriptWindow() {
     text: string;
   }>();
   const identity = useRef('');
+  const followOwner = useRef('');
+  const followLookup = useRef<{ owner: string } | undefined>(undefined);
   const reading = useRef<{ owner: string; view: TranscriptView } | undefined>(undefined);
   const restore = useRef<{ identity: string; scroll: number } | undefined>(undefined);
   const remember = useCallback(() => {
@@ -170,6 +172,16 @@ export function TranscriptWindow() {
       : undefined;
   const usablePage =
     loadedPageKey === pageKey && page?.transcript.id === currentId ? page : undefined;
+  // Position updates share one lookup. Only a reader/context change invalidates it.
+  followOwner.current =
+    follow &&
+    !search &&
+    filter === 'all' &&
+    !selection &&
+    position.projectId === projectId &&
+    position.sourceId === session?.sourceId
+      ? JSON.stringify([identity.current, projectId, currentId, session?.sourceId])
+      : '';
   useEffect(() => {
     const pending = restore.current;
     if (!pending || !usablePage) return;
@@ -264,18 +276,21 @@ export function TranscriptWindow() {
         current?.scrollIntoView({ block: 'center' });
       return;
     }
-    let alive = true;
+    const owner = followOwner.current;
+    if (followLookup.current?.owner === owner) return;
+    const request = { owner };
+    followLookup.current = request;
     void api
       .pageAt(projectId, currentId, position.time)
       .then((index) => {
-        if (alive) setPageIndex(index);
+        if (followOwner.current === owner && followLookup.current === request) setPageIndex(index);
       })
       .catch((e) => {
-        if (alive) setError(String(e));
+        if (followOwner.current === owner && followLookup.current === request) setError(String(e));
+      })
+      .finally(() => {
+        if (followLookup.current === request) followLookup.current = undefined;
       });
-    return () => {
-      alive = false;
-    };
   }, [
     api,
     currentId,

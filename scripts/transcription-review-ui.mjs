@@ -121,6 +121,66 @@ try {
   await new Promise((r) => setTimeout(r, 150));
   await position(0.5);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
+  const storeModule = process.env.VIRTUAL_CUT_TEST_EXECUTABLE
+    ? path.join(
+        path.dirname(process.env.VIRTUAL_CUT_TEST_EXECUTABLE),
+        'resources/app/dist-electron/transcript-store.cjs',
+      )
+    : path.join(root, 'dist-electron/transcript-store.cjs');
+  await app.evaluate((_electron, file) => {
+    const require = process.getBuiltinModule('module').createRequire(file);
+    const { TranscriptStore } = require(file);
+    globalThis.__originalFollowLookup = TranscriptStore.prototype.pageAt;
+    TranscriptStore.prototype.pageAt = async function (...args) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      return globalThis.__originalFollowLookup.apply(this, args);
+    };
+  }, storeModule);
+  // An isolated seek misses lookups repeatedly invalidated by ongoing playback updates.
+  for (const [start, step, expectedPage] of [
+    [6.05, 0.1, 'Page 2'],
+    [5.7, -0.1, 'Page 1'],
+  ]) {
+    const streaming = main.evaluate(
+      async ({ id, rid, start, step }) => {
+        for (let i = 0; i < 20; i++) {
+          window.virtualCut.transcript.position(id, rid, start + i * step);
+          await new Promise((resolve) => setTimeout(resolve, 140));
+        }
+      },
+      { id: fixture.id, rid: fixture.rid, start, step },
+    );
+    try {
+      await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText(
+        expectedPage,
+        { timeout: 1500 },
+      );
+    } finally {
+      await streaming;
+    }
+  }
+  await position(12.3);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await view.getByLabel('Transcript filter').selectOption('pending');
+  await expect(phrases.locator('article')).toHaveCount(4);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await expect(phrases.locator('article')).toHaveCount(4);
+  await expect(view.getByLabel('Transcript filter')).toHaveValue('pending');
+  await view.getByLabel('Transcript filter').selectOption('all');
+  await view.getByRole('button', { name: 'Follow playback', exact: true }).click();
+  await app.evaluate((_electron, file) => {
+    const require = process.getBuiltinModule('module').createRequire(file);
+    require(file).TranscriptStore.prototype.pageAt = globalThis.__originalFollowLookup;
+    delete globalThis.__originalFollowLookup;
+  }, storeModule);
+  await main.locator('video').evaluate((video) => {
+    video.currentTime = 5.8;
+  });
+  await view.getByRole('button', { name: 'Follow playback', exact: true }).focus();
+  await view.keyboard.press('l');
+  await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 2');
+  assert.equal(await main.locator('video').evaluate((video) => video.paused), false);
+  await view.keyboard.press('k');
   await view.getByLabel('Transcript filter').selectOption('pending');
   await expect(phrases.locator('article')).toHaveCount(4);
   await expect(view.getByLabel('Cue title 95')).toHaveValue('opening');
