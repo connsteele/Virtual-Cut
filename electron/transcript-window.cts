@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Diagnostics, failureFields } from './diagnostics.cjs';
 import { observeWindow } from './window-diagnostics.cjs';
+import { SpeechSetup } from './speech-setup.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
 import { transcriptHandoff, transcriptSrt, transcriptSaveSuggestion } from './transcript-export.js';
@@ -21,6 +22,12 @@ export function registerTranscriptWindow(
   hidden: boolean,
   diagnostics: Diagnostics,
 ) {
+  const speechSetup = new SpeechSetup(profile, projects.transcription, (operation, error) =>
+    diagnostics.record(
+      error ? 'operation-failed' : operation === 'install' ? 'operation-start' : 'operation-end',
+      { kind: 'speechSetup', operation, ...(error ? failureFields(error) : {}) },
+    ),
+  );
   let window: BrowserWindow | null = null;
   let preferredSource = '';
   let lastPosition = 0;
@@ -62,7 +69,10 @@ export function registerTranscriptWindow(
         window: event.sender === main()?.webContents ? 'main' : 'transcript',
         operation: name,
       };
-      if (!['session', 'page', 'pageAt', 'runtime'].includes(name))
+      if (
+        !['session', 'page', 'pageAt', 'runtime'].includes(name) &&
+        !(name === 'speechSetup' && args[0] === 'status')
+      )
         diagnostics.record('transcript-action', fields);
       try {
         return await fn(...(args as Parameters<TranscriptApi[K]>));
@@ -187,6 +197,32 @@ export function registerTranscriptWindow(
       settings: projects.transcription.settings,
       gpu: await projects.transcription.inspectGpu(refresh),
     };
+  });
+  handle('speechSetup', async (action, includeGpu) => {
+    if (
+      !['plan', 'start', 'status', 'cancel', 'activate', 'restore'].includes(action) ||
+      (includeGpu != null && typeof includeGpu !== 'boolean')
+    )
+      throw new Error('Unknown speech setup action.');
+    if (
+      ['plan', 'start', 'activate', 'restore'].includes(action) &&
+      projects.store
+        ?.jobs()
+        .some((j) => j.kind === 'transcribe' && ['queued', 'running'].includes(j.state))
+    )
+      throw new Error('Pause or finish transcription before changing its local runtime.');
+    if (action === 'status') return speechSetup.status();
+    if (action === 'cancel') return speechSetup.cancel();
+    if (action === 'activate') return speechSetup.activate();
+    if (action === 'restore') return speechSetup.restore();
+    if (action === 'start') return speechSetup.start();
+    const result = await dialog.showOpenDialog(window || main()!, {
+      title: 'Choose storage for local speech software and model',
+      properties: ['openDirectory'],
+    });
+    return result.canceled || !result.filePaths[0]
+      ? speechSetup.status()
+      : speechSetup.plan(result.filePaths[0], includeGpu ?? true);
   });
   handle('setupHelp', async (topic) => {
     const links: Record<string, string> = {
@@ -386,5 +422,10 @@ export function registerTranscriptWindow(
     await writeFile(chosen.filePath, body, 'utf8');
     return chosen.filePath;
   });
-  return { close: () => window?.close() };
+  return {
+    close: () => {
+      void speechSetup.cancel();
+      window?.close();
+    },
+  };
 }

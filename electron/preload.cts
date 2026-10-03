@@ -5,6 +5,7 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 // imports confined to Electron; the shared contract is erased by TypeScript.
 const api: VirtualCutApi = {
   transcript: {
+    speechSetup: (action, gpu) => ipcRenderer.invoke('transcript:speechSetup', action, gpu),
     setupHelp: (topic) => ipcRenderer.invoke('transcript:setupHelp', topic),
     transport: (id, source, key) => ipcRenderer.invoke('transcript:transport', id, source, key),
     onTransport: (callback) => {

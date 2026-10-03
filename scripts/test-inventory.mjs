@@ -12,6 +12,7 @@ export const fast = [
   'review-order.test.mjs',
 ];
 export const native = [
+  'speech-setup-checks.mjs',
   'transcript-storage-checks.mjs',
   'project-deletion-checks.mjs',
   'range-markers-native.mjs',
@@ -29,6 +30,7 @@ export const native = [
   'review-planning-native.mjs',
 ];
 export const desktop = [
+  'speech-setup-ui.mjs',
   'crash-diagnostics-checks.mjs',
   'transcription-review-ui.mjs',
   'transcription-ui-checks.mjs',
@@ -50,6 +52,7 @@ export const desktop = [
   'review-planning-ui.mjs',
 ];
 export const dependencies = {
+  'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],

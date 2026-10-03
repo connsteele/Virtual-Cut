@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 export const TRANSCRIPTION_PIPELINE = 'utterance-v1';
 import type {
@@ -47,7 +47,7 @@ export class TranscriptionRuntime {
     } catch {
       /* First use. */
     }
-    const bundled = path.join(toolsDirectory, 'asr');
+    const bundled = path.resolve(toolsDirectory, 'asr');
     this.settings = {
       python:
         process.env.VIRTUAL_CUT_ASR_PYTHON ||
@@ -65,7 +65,7 @@ export class TranscriptionRuntime {
         packaged.model ||
         path.join(bundled, 'model'),
       gpuLibraries:
-        process.env.VIRTUAL_CUT_ASR_GPU_LIBRARIES || saved.gpuLibraries || packaged.gpuLibraries,
+        process.env.VIRTUAL_CUT_ASR_GPU_LIBRARIES || (saved.gpuLibraries ?? packaged.gpuLibraries),
       device: saved.device === 'cuda' || saved.device === 'cpu' ? saved.device : 'auto',
       threads: 4,
     };
@@ -84,10 +84,27 @@ export class TranscriptionRuntime {
       throw new Error('Choose Automatic, CPU or NVIDIA GPU.');
     if (part !== 'device' && (!path.isAbsolute(value) || !existsSync(value)))
       throw new Error('Choose an existing runtime location.');
-    Object.assign(this.settings, { [part]: value });
-    this.gpuStatus = undefined;
+    this.use({ ...this.settings, [part]: value });
+  }
+  /** Activate a complete setup atomically, after the native installer has validated it. */
+  use(settings: AsrRuntime) {
+    if (
+      !settings ||
+      !['auto', 'cpu', 'cuda'].includes(settings.device) ||
+      settings.threads !== 4 ||
+      ['python', 'libraries', 'model'].some(
+        (key) =>
+          typeof settings[key as keyof AsrRuntime] !== 'string' ||
+          !path.isAbsolute(String(settings[key as keyof AsrRuntime])),
+      ) ||
+      (settings.gpuLibraries && !path.isAbsolute(settings.gpuLibraries))
+    )
+      throw new Error('Invalid speech runtime configuration.');
     mkdirSync(path.dirname(this.file), { recursive: true });
-    writeFileSync(this.file, JSON.stringify(this.settings));
+    writeFileSync(this.file + '.next', JSON.stringify(settings));
+    renameSync(this.file + '.next', this.file);
+    this.settings = { ...settings };
+    this.gpuStatus = undefined;
   }
   inspectGpu(refresh = false) {
     if (refresh && !this.gpuChecking) this.gpuStatus = undefined;

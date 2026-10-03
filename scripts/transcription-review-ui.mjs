@@ -210,7 +210,7 @@ try {
       .setSize(500, 600),
   );
   await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
-  await view.getByText('Install or update speech recognition', { exact: true }).click();
+  await view.getByText('Use an existing installation / manual setup', { exact: true }).click();
   await expect(
     view.getByRole('button', { name: 'GPU installation guide', exact: true }),
   ).toBeVisible();

@@ -14,6 +14,7 @@ import { TranscriptionOptions, initialTranscriptionOptions } from './Transcripti
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
+import { SpeechSetup } from './SpeechSetup';
 
 const viewStorage = () => {
   try {
@@ -426,16 +427,17 @@ export function TranscriptWindow() {
           <p>
             {runtime?.configured
               ? 'Runtime and model files found.'
-              : 'Choose an installed Python runtime, faster-whisper libraries and a downloaded model.'}{' '}
+              : 'Download a local setup below, or choose an existing installation.'}{' '}
             No audio is uploaded.
           </p>
           <p role="status">{runtime?.gpu?.message}</p>
+          <SpeechSetup api={api} onActivated={async () => setRuntime(await api.runtime(true))} />
           <details>
-            <summary>Install or update speech recognition</summary>
+            <summary>Use an existing installation / manual setup</summary>
             <p>
-              This review build uses a separate local installation. It does not download speech
-              software automatically. Install Python 3.12, faster-whisper 1.2.1 with CTranslate2
-              4.8.2, and a faster-whisper model, then choose their locations below.
+              To use your own installation, install Python 3.12, faster-whisper 1.2.1 with
+              CTranslate2 4.8.2, and a faster-whisper model, then choose their locations below.
+              Downloads only start when you explicitly request them.
             </p>
             <p>
               NVIDIA acceleration also needs CUDA 12 cuBLAS and cuDNN 9. Automatic uses the GPU when

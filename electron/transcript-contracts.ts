@@ -146,6 +146,10 @@ export interface TranscriptCommand {
   expected: string;
 }
 export interface TranscriptApi {
+  speechSetup(
+    action: import('./speech-setup-contracts.js').SpeechSetupAction,
+    includeGpu?: boolean,
+  ): Promise<import('./speech-setup-contracts.js').SpeechSetupState>;
   setupHelp(topic: 'engine' | 'gpu' | 'python' | 'model'): Promise<void>;
   transport(projectId: string, sourceId: string, key: 'j' | 'k' | 'l'): Promise<void>;
   onTransport(
