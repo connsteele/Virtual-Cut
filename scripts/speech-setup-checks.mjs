@@ -96,7 +96,7 @@ try {
       p.stdin.end(input);
     });
   // Both unpackers reject path traversal before any extraction, using a deliberately invalid zip.
-  const python = process.env.VIRTUAL_CUT_ASR_PYTHON || 'C:/python312/python.exe';
+  const python = process.env.VIRTUAL_CUT_PYTHON || process.env.VIRTUAL_CUT_ASR_PYTHON || 'python';
   const zip = path.join(dir, 'bad.zip');
   const made = await processFile(python, [
     '-c',
@@ -139,6 +139,7 @@ try {
   globalThis.fetch = originalFetch;
   if (process.env.VIRTUAL_CUT_VERIFY_SPEECH_INSTALL === '1') {
     await installer.plan(dir, true);
+    const installStarted = performance.now();
     let state;
     if (process.env.VIRTUAL_CUT_REUSE_SETUP_CANDIDATE) {
       const folder = path.resolve(process.env.VIRTUAL_CUT_REUSE_SETUP_CANDIDATE);
@@ -162,6 +163,9 @@ try {
       } while (state.state === 'installing');
     }
     assert.equal(state.state, 'ready', state.message);
+    result.coldInstallElapsedMs = process.env.VIRTUAL_CUT_REUSE_SETUP_CANDIDATE
+      ? null
+      : Math.round(performance.now() - installStarted);
     assert.deepEqual(runtime.settings, initial, 'Installation must not automatically activate');
     const pinned = installer.manifest.id;
     installer.manifest.id = 'different-release';

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment, stopChild } from './shared.mjs';
+import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 
 const base = process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/review-0.4.3/checks';
 await mkdir(base, { recursive: true });
@@ -36,9 +37,10 @@ const launch = () =>
     cwd: root,
     env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
   });
-let app;
+let app, ownedChild;
 try {
   app = await launch();
+  ownedChild = app.process();
   const main = await app.firstWindow();
   await main.waitForFunction(() => !!window.virtualCut);
   const setup = await app.evaluate(({ app, crashReporter, BrowserWindow }) => ({
@@ -69,6 +71,7 @@ try {
       (await records()).some((r) => r.event === 'renderer-error' && r.window === 'transcript'),
     )
     .toBe(true);
+  await collectBeforeWindowClose(app);
   await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows().find((w) =>
       w.webContents.getURL().endsWith('#transcript'),
@@ -94,11 +97,19 @@ try {
   await expect
     .poll(async () => (await dumpFiles(setup.dumps)).length, { timeout: 20000 })
     .toBeGreaterThan(0);
+  // Its renderer is intentionally gone; preserve the pre-crash counters and
+  // leave live windows available for the normal final collector.
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('#transcript'))
+      ?.destroy(),
+  );
   await app.close();
   app = undefined;
   assert(!(await readdir(logDir)).some((n) => n.startsWith('active-')));
   const firstSession = (await records()).find((r) => r.event === 'session-start').session;
   app = await launch();
+  ownedChild = app.process();
   await app.firstWindow();
   await expect
     .poll(async () =>
@@ -109,9 +120,11 @@ try {
   const killedSession = (await records()).find(
     (r) => r.event === 'session-start' && r.session !== firstSession,
   ).session;
-  await stopChild(app.process());
+  await collectBeforeWindowClose(app);
+  await stopChild(ownedChild);
   app = undefined;
   app = await launch();
+  ownedChild = app.process();
   await app.firstWindow();
   await expect
     .poll(async () =>
@@ -182,5 +195,5 @@ try {
   );
   console.log('Crash diagnostics checks passed:', dir);
 } finally {
-  if (app) await app.close().catch(() => stopChild(app.process()));
+  if (app) await app.close().catch(() => stopChild(ownedChild));
 }
