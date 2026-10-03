@@ -10,9 +10,10 @@ jobs:
   synthetic:
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      VIRTUAL_CUT_SUITE_OUTPUT: ${{ runner.temp }}/virtual-cut-test-runs
     steps:
+      # The runner context is unavailable in job-level env, so set the suite output here.
+      - name: Use the runner's temporary directory for test runs
+        run: Add-Content -Path $env:GITHUB_ENV -Value "VIRTUAL_CUT_SUITE_OUTPUT=$env:RUNNER_TEMP\virtual-cut-test-runs"
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
