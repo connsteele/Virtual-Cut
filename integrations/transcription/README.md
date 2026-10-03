@@ -8,10 +8,37 @@ never runs in the renderer. No model stays resident after a job exits.
 
 ## Installation and upgrades
 
-The review build references a separate Python 3.12 installation, an isolated library
-folder, an optional NVIDIA library folder, and a downloaded CTranslate2 Whisper model.
-The package only embeds workstation paths when `VIRTUAL_CUT_ASR_REVIEW_CONFIG` is supplied.
-Public packages do not embed those paths. This is not yet a portable speech installer.
+From 0.4.7, **Transcription > settings > Download local speech setup** offers an
+optional managed Windows x64 installation. Choose a storage folder, inspect download
+and disk requirements, then explicitly start. Recognition uses no account or audio upload.
+The managed engine is separate from Electron and does not change machine Python or PATH.
+The package only embeds workstation paths when `VIRTUAL_CUT_ASR_REVIEW_CONFIG` is supplied;
+public packages can use the same setup flow without those paths.
+
+`runtime-manifest.json` pins the Python 3.12.10 embeddable archive, every transitive
+Windows wheel (including faster-whisper 1.2.1 / CTranslate2 4.8.2), and the large-v3
+model revision. SHA-256 and byte counts are verified while streaming each download.
+Python's hash was checked against its official Sigstore digest; wheel hashes against
+PyPI release metadata; model.bin against the Hub's LFS digest. Small model assets are
+pinned from the same immutable revision. Setup never resolves newer packages at run time.
+
+Each installation has a fresh owned folder and receipt under `Virtual Cut speech`.
+Archives are extracted with traversal/link protection and removed after use. Libraries,
+versions and tokenizer/config files are validated without loading a speech model. **Use
+this setup** activates it separately; **Restore previous setup** preserves the old folders.
+A completed candidate survives app restart. Normal cancellation removes only the verified
+owned incomplete folder; orderly app exit waits for this cleanup. An unexpected process
+exit may leave an incomplete directory;
+there is no automatic scan or deletion of arbitrary folders. Recognition setup is shared
+across projects and retained by project cleanup.
+
+The NVIDIA option adds cuBLAS 12; the selected CTranslate2 wheel supplies cuDNN 9.
+A compatible NVIDIA driver is still a system prerequisite. Readiness and per-job device
+warnings remain authoritative. Python and dependency licenses are retained in their
+installed directories; NVIDIA libraries use their proprietary license. See the official
+[Python release](https://www.python.org/downloads/release/python-31210/),
+[faster-whisper installation](https://github.com/SYSTRAN/faster-whisper#installation),
+and [model](https://huggingface.co/Systran/faster-whisper-large-v3).
 
 Install the pinned engine requirements into a new dedicated folder or virtual environment.
 Keep the old installation until the candidate passes the worker, storage, UI and copied-audio
@@ -30,9 +57,10 @@ wheel includes cuDNN 9; optional `requirements-gpu.txt` supplies cuBLAS 12. Othe
 must provide both. Setup shows load checks and official installation links. Automatic tries
 the GPU then CPU on model startup failure; explicit GPU selection fails visibly.
 
-Before a general release, provide a managed optional runtime/model installer with versioned
-directories, verified downloads, licenses, disk-space/progress reporting and rollback.
-Do not describe workstation configuration as bundled support.
+This is the first managed setup review, not a signed installer/update service or a promise
+of every Windows hardware configuration. Test a new manifest in a separate folder before
+release. Additional models and speaker adapters can have their own pinned manifests;
+the project/transcript contract stays independent of the installation mechanism.
 
 ## Throughput and accuracy
 

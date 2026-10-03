@@ -8,7 +8,7 @@ Local transcription is explicit. Imports offer one opt-in prompt; existing sourc
 
 Recognition runs in a disposable Python process using faster-whisper. A separate guard owns a Windows Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, monitors the app process handle, and assigns the recognition process before sending its request. Completion, cancellation, failure and parent exit release the worker and its children. Extracted 16 kHz mono audio goes into the project's disposable preview directory and is removed. Downloaded model files remain reusable on disk.
 
-The validated runtime is faster-whisper 1.2.1 / CTranslate2 4.8.2, Whisper large-v3, CPU int8 or NVIDIA float16. Imports and later transcription offer Automatic / NVIDIA / CPU. Automatic checks compatible NVIDIA libraries and warms the model encoder before recognition, falling back to CPU on startup failure with a retained explanation. Explicit NVIDIA selection reports failure. Runtime locations are native settings, never supplied by an arbitrary renderer path. Setup links to official installation instructions. The review package still requires a separately installed local runtime; a portable managed installer remains open work. See [runtime isolation and upgrades](../integrations/transcription/README.md).
+The validated runtime is faster-whisper 1.2.1 / CTranslate2 4.8.2, Whisper large-v3, CPU int8 or NVIDIA float16. Imports and later transcription offer Automatic / NVIDIA / CPU. Automatic checks compatible NVIDIA libraries and warms the model encoder before recognition, falling back to CPU on startup failure with a retained explanation. Explicit NVIDIA selection reports failure. Runtime locations are native settings, never supplied by an arbitrary renderer path. From 0.4.7, optional managed setup downloads a pinned engine/model into a native-selected folder, with integrity checks, explicit activation and previous-setup restoration. Existing installations remain supported. See [runtime isolation and upgrades](../integrations/transcription/README.md).
 
 The `utterance-v1` pipeline scans 60-second PCM windows with speech detection and recognizes bounded speech spans independently, preserving each span's source offset. This avoids the severe early word anchors observed when sparse speech was concatenated across silence. Vocabulary hints are opt-in and can improve names or introduce incorrect expected words. They are not an agent correction pass. Pause retains partial recognition for inspection and exits; Resume restarts that track, replacing only its incomplete run. Completed originals are immutable.
 
@@ -24,7 +24,15 @@ Manual corrections also feed candidate detection without replacing the original 
 
 Single-click selects/seeks a word, double-click edits, and Escape closes the editor. J/K/L is forwarded to the main viewer only outside typing controls. Follow playback changes transcript pages in both directions; search, cue filtering, manual paging, wheel browsing and correction suspend it. Cue filters search the entire recognition, not just the visible page. Reading uses bounded SQLite pages, with no live statement retained across generator yields. Recording cards reuse existing job snapshots for game/mic progress; they add no polling or recognition work.
 
-The local review package can explicitly reference an existing workstation runtime through `VIRTUAL_CUT_ASR_REVIEW_CONFIG`. These paths are not embedded in normal public packages. No model is loaded by opening the app or searching a saved transcript. This review build is not a self-contained Python/model installer.
+The local review package can explicitly reference an existing workstation runtime through `VIRTUAL_CUT_ASR_REVIEW_CONFIG`. These paths are not embedded in normal public packages. No model is loaded by opening the app or searching a saved transcript. Version 0.4.7 adds an optional managed download rather than embedding several gigabytes of Python, dependencies and model files in each app build. Clean second-computer compatibility still needs acceptance.
+
+VC-91 keeps one page lookup per active reader context. Frequent position updates do
+not cancel the previous lookup; source/transcript, editing and filter changes still
+invalidate its result. An isolated-seek test had missed the starvation path. A
+continuous 140 ms position stream with 350 ms native lookup latency fails before
+the fix and passes afterward in both directions. Actual source playback across a
+page boundary and late-result isolation after switching cue filters are included.
+These checks establish a failure path, not the exact latency in Connor's session.
 
 ## Boundaries
 

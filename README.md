@@ -6,11 +6,17 @@
 
 ## The workspace
 
-**Latest review: 0.4.6.** The floating Transcription window has compact, aligned
+**Latest review: 0.4.7.** Optional local speech setup now downloads and verifies the
+tested recognition engine, model and optional NVIDIA libraries into a chosen folder.
+Size/free-space planning happens before the download; activation and previous-setup
+restoration are explicit. Follow playback also advances through pages while source
+position updates continue. See [the current review](docs/review-0.4.7.md) for M320–M321 and
+the remaining M3 checks. The floating Transcription window retains compact, aligned
 controls, Select transcript wording and expandable help. **Marker** is the preferred
 spoken microphone cue; guarded legacy Mark and existing decisions remain compatible.
-The [current review guide](docs/review-0.4.6.md) consolidates remaining M3 checks and
-adds M318–M319. GPU readiness warnings, explicit CPU continuation and retained
+Connor's M318–M319 and M316 results are accepted; the current guide preserves those
+passes and separates the latest layout/help/export requests from delivered features.
+GPU readiness warnings, explicit CPU continuation and retained
 device/fallback details from 0.4.5 remain available.
 Local crash capture remains available; the original unexpected exit is still under
 investigation. Earlier release summaries retain their original verification scope.
@@ -19,9 +25,9 @@ investigation. Earlier release summaries retain their original verification scop
 selects optional WhisperX alignment and game-only speaker adapters with preserved utterance recognition.
 Its faster full pipeline has sparse-dialogue timing regressions and is not the app default.
 This is research for VC-81. Connor deferred these stack changes to later M3;
-speaker controls are not in 0.4.6. Speaker identification is planned for game audio only.
+speaker controls are not in 0.4.7. Speaker identification is planned for game audio only.
 
-**Current branch: M3 audio intelligence, 0.4.0 first review.** Explicit local transcription, separate game/microphone results, a floating word-seeking transcript window, original-preserving corrections, reviewed spoken cues, and project/batch game and video context are implemented for review. Recognition quality and the remaining M3 boundaries are documented in [the review guide](docs/m3-review.md) and [engineering notes](docs/m3-implementation.md). This workstation build uses an installed local speech runtime; portable provisioning, optional speaker detection and automated agent correction are not included. M2 remains accepted.
+**Current branch: M3 audio intelligence, 0.4.0 first review.** Explicit local transcription, separate game/microphone results, a floating word-seeking transcript window, original-preserving corrections, reviewed spoken cues, and project/batch game and video context are implemented for review. Recognition quality and the remaining M3 boundaries are documented in [the review guide](docs/m3-review.md) and [engineering notes](docs/m3-implementation.md). Version 0.4.7 adds optional managed recognition provisioning. Speaker detection remains deferred in M3; automated agent correction belongs to M4. M2 remains accepted.
 
 | Page        | Current preview                                                                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

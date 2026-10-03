@@ -1,20 +1,41 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.1 has eleven fast, fifteen native and eighteen desktop scripts (44 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.7 has eleven fast, sixteen native and twenty desktop scripts (47 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Current measured results and module gates are in [coverage](coverage.md); version-specific sections below preserve historical evidence. Closeout expands the existing deletion test with ownership/schema rejection, pending writes, lock contention, unavailable peers, linked ancestors and referenced-project protection. Storage tests report unavailable or linked locations honestly. These use disposable files and do not alter app behavior.
 
-| Command                                                       | Gate                                                                                                                                                               |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm test`                                                    | Build/type checks, lint, eleven fast synthetic test files                                                                                                          |
-| `npm run test:native`                                         | Build and fifteen native media/persistence/export/filmstrip/review/transcript scripts, using Electron's SQLite runtime                                             |
-| `npm run test:desktop`                                        | Fast, native prerequisites and eighteen actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
-| `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                                    |
-| `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                         |
+| Command                                                       | Gate                                                                                                                                                             |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`                                                    | Build/type checks, lint, eleven fast synthetic test files                                                                                                        |
+| `npm run test:native`                                         | Build and sixteen native media/persistence/export/filmstrip/review/transcript/setup scripts, using Electron's SQLite runtime                                     |
+| `npm run test:desktop`                                        | Fast, native prerequisites and twenty actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
+| `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                                  |
+| `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                       |
 
 The Windows GitHub workflow runs build/lint/fast checks followed by measured native/desktop coverage with synthetic media. Packaged and human hardware/Resolve checks are separate. The workflow uses the official [checkout](https://github.com/actions/checkout), [Node setup](https://github.com/actions/setup-node), and [artifact upload](https://github.com/actions/upload-artifact) actions. A first hosted run is still required after publishing the branch.
 
 ## Prerequisites and evidence
+
+The 0.4.7 setup checks cover download hash/size rejection, no-download folder planning,
+partial cancellation, archive traversal, unrelated-file preservation, activation refusal,
+compact/keyboard controls and app exit during a pending download. By default these use
+bounded synthetic files. `VIRTUAL_CUT_VERIFY_SPEECH_INSTALL=1` explicitly adds the full pinned
+download, library validation, actual CUDA model dispatch, activation/rollback and persisted
+candidate checks in a disposable G: folder. It is not enabled on ordinary CI runs.
+
+The existing transcript review gate now sends continuous positions with delayed native
+page lookups in both directions, plays real synthetic source media across a page boundary,
+and changes cue filters while a lookup is pending. The red reproduction remains recorded.
+Crash tests collect coverage before intentional renderer/main failure; the original failed
+collector attempt is retained rather than reported as a product crash fix.
+
+The final 0.4.7 run has passing evidence for all 47 maintained scripts across the broad
+run and a focused feedback retry. That retry corrects a legacy assertion to check Redo
+after undoing the first edit of a reopened project; it does not change application history.
+Source fingerprints/maps match before coverage reconciliation, and all fifteen unchanged
+floors pass. Seven selected final-package scripts plus build also pass. See
+[0.4.7 review/evidence](review-0.4.7.md) and [coverage](coverage.md) for original failures,
+exact reports and measurement boundaries.
 
 M3 adds context inheritance, immutable transcript storage, corrections, cue actions, silence offsets, pagination/search, checkpoint recovery, cancellation/retry and separate-window IPC/layout checks. The maintained storage test uses a synthetic worker boundary; it is not recognition-accuracy evidence. Explicit real-model worker/native/sample scripts remain classified outside CI and need copied audio plus an installed runtime. Their measured results and known recognition errors are in [M3 review](m3-review.md). Python-worker execution is not included in Istanbul's JavaScript/TypeScript percentage.
 

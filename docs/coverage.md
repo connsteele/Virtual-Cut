@@ -2,7 +2,41 @@
 
 Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's owned G: run directory; override `VIRTUAL_CUT_SUITE_OUTPUT` elsewhere. Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
 
-## M3 review iteration — 0.4.1, October 2, 2026
+## M3 review iteration — 0.4.7, October 3, 2026
+
+All **47 maintained scripts** have passing evidence across the full current-source run
+and a focused corrected retry, covering **90 application source files**. All fifteen
+unchanged critical-module floors pass; the final summary reports complete collection
+and `gatesApplied: true`.
+
+| Area     |                  Lines |              Functions |               Branches |
+| -------- | ---------------------: | ---------------------: | ---------------------: |
+| Renderer |     79.74% (3083/3866) |     70.87% (1124/1586) |     75.71% (3164/4179) |
+| Native   |     91.63% (3548/3872) |       90.82% (881/970) |     82.25% (2759/3354) |
+| Combined | **85.69% (6631/7738)** | **78.44% (2005/2556)** | **78.62% (5923/7533)** |
+
+Final report: `G:\GPT\Work\virtual-cut\review-0.4.7\final-coverage\combined\index.html`.
+The adjacent `summary.json` and `reconciled-tests.json` preserve gate results and
+attempt provenance. Full source evidence is `final-regression/run-MRPgvD`; the
+corrected feedback retry is `feedback-correction/run-Bdz0P1`. Reconciliation verifies
+matching application source fingerprints/maps and explicitly replaces superseded
+attempts, rather than summing counters or treating the original failure as a pass.
+
+The broad run's feedback assertion expected another Undo after undoing the first edit
+in a reopened project. It now verifies Redo; application history behavior is unchanged.
+An earlier run (`full-regression/run-qxgh2D`) failed because the coverage collector
+queried windows after deliberate crashes. Collection now occurs before those forced
+failures; its original report is retained and its older-source counters are excluded.
+Neither test correction establishes the cause of Connor's natural exit (VC-86).
+
+Two deliberately terminated filing/recovery workers retain conservative partial
+counters. Managed setup integrity/cancel/rollback and continuous delayed page-follow
+scenarios now have coverage. The full suite included a real cold setup/CUDA startup,
+but synthetic silence does not prove speech quality. The uninstrumented final package
+passed seven selected scripts plus build separately. Python coverage, acoustic quality,
+and clean-second-computer dependency compatibility remain separate measurements.
+
+## Historical M3 review iteration — 0.4.1, October 2, 2026
 
 All **44 maintained scripts passed** in one complete current-source run across **85 application
 source files**. All fifteen existing critical-module floors pass without changes. The new
