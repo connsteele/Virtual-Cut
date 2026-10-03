@@ -1,7 +1,7 @@
 {
   "name": "virtual-cut",
   "productName": "Virtual Cut",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "The Virtual Cut footage workspace.",
   "type": "module",

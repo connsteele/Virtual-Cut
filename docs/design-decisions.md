@@ -70,6 +70,8 @@ Connor previously used Backspace in LosslessCut to remove a range endpoint after
 
 ## Transcript feature requested for exploration
 
+**Review preference — October 2, 2026:** Run an agent computer-use review only when Connor requests it. Record objective functional results separately from Connor's manual checkboxes. Leave subjective UI acceptance and interaction preferences to Connor. During transcript correction, clicking a different word closes the editor and seeks/selects the new word; double-click opens its correction. Clicking the same word preserves the current draft. Saving a correction remains explicit.
+
 - Searchable, timestamped game-dialogue transcripts, with click-to-seek navigation.
 - **Local transcription is strongly preferred and is the default product direction.** No paid cloud speech service is required for transcription. Agent correction afterward is optional; its provider and any associated costs remain separate from the local speech engine.
 - **Selected speech engine:** faster-whisper. Prototype with Whisper large-v3 and measure quality, source-time alignment, and resource use on representative recordings. Other speech engines remain fallback research rather than a required comparison before implementation.

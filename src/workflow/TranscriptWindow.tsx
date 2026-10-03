@@ -234,6 +234,13 @@ export function TranscriptWindow() {
         wordIndex,
         text: correction?.text ?? word?.text ?? segment.text,
       });
+    } else if (
+      selection &&
+      (selection.transcriptId !== selected.id ||
+        selection.segment.id !== segment.id ||
+        selection.wordIndex !== wordIndex)
+    ) {
+      setSelection(undefined);
     }
     const target = word?.start ?? segment.start;
     setPosition({ projectId: session.projectId, sourceId: session.sourceId, time: target });
