@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, copyFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, copyFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment } from './shared.mjs';
@@ -136,6 +136,61 @@ try {
       .getByRole('region', { name: 'Download local speech setup' })
       .getByRole('button', { name: 'Download and install', exact: true }),
   ).toBeVisible();
+  await expect(
+    reopenedWindow.getByLabel(
+      'Include NVIDIA acceleration libraries (compatible NVIDIA driver required)',
+    ),
+  ).not.toBeChecked();
+  await reopenedWindow.getByRole('button', { name: 'Choose setup folder…', exact: true }).click();
+  const reopenedCpu = await reopenedWindow.evaluate(() =>
+    window.virtualCut.transcript.speechSetup('status'),
+  );
+  assert.equal(reopenedCpu.includeGpu, false);
+  const keepFile = path.join(dir, 'user-file-to-keep.txt');
+  await writeFile(keepFile, 'Keep this unrelated file.');
+  // Pause a native download after its first chunk, then close the whole app normally.
+  await app.evaluate(() => {
+    globalThis.fetch = async (_url, options) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2, 3]));
+            options.signal.addEventListener('abort', () => controller.error(new Error('Aborted')));
+          },
+        }),
+      );
+  });
+  await reopenedWindow.getByRole('button', { name: 'Download and install', exact: true }).click();
+  await expect
+    .poll(async () => {
+      try {
+        return (
+          await stat(
+            path.join(reopenedCpu.folder, 'downloads', 'python-3.12.10-embed-amd64.zip.part'),
+          )
+        ).size;
+      } catch {
+        return 0;
+      }
+    })
+    .toBe(3);
+  await collectBeforeWindowClose(app);
+  const child = app.process();
+  const exited = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('App did not finish setup cleanup on close.')),
+      15000,
+    );
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  await main.evaluate(() => window.virtualCut.project.finishClose()).catch(() => {});
+  await exited;
+  app = undefined;
+  await assert.rejects(stat(reopenedCpu.folder), { code: 'ENOENT' });
+  assert.equal(await readFile(keepFile, 'utf8'), 'Keep this unrelated file.');
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(dir, 'report.json'),
@@ -147,6 +202,7 @@ try {
         untouchedRuntime: true,
         compactKeyboard: true,
         reopenedPlan: true,
+        orderlyCloseRemovedOnlyPartialSetup: true,
       },
       null,
       2,

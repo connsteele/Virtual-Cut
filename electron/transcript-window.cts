@@ -423,6 +423,7 @@ export function registerTranscriptWindow(
     return chosen.filePath;
   });
   return {
+    stopSetup: () => speechSetup.cancel(),
     close: () => {
       void speechSetup.cancel();
       window?.close();

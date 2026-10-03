@@ -36,11 +36,12 @@ export function SpeechSetup({
     }, 1000);
     return () => clearInterval(timer);
   }, [state?.state, refresh]);
+  const selectedGpu = state && state.state !== 'idle' ? state.includeGpu : gpu;
   const act = async (action: SpeechSetupAction) => {
     setBusy(true);
     setError('');
     try {
-      setState(await api.speechSetup(action, gpu));
+      setState(await api.speechSetup(action, selectedGpu));
       if (action === 'activate' || action === 'restore') await onActivated();
     } catch (e) {
       setError(String(e));
@@ -60,7 +61,7 @@ export function SpeechSetup({
       <label>
         <input
           type="checkbox"
-          checked={gpu}
+          checked={selectedGpu}
           disabled={busy || installing}
           onChange={(e) => {
             setGpu(e.target.checked);

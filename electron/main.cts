@@ -735,15 +735,20 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 let logsFlushed = false;
+let shutdownStarted = false;
 app.on('will-quit', () => diagnostics?.endSession());
 app.on('before-quit', (event) => {
-  if (!diagnostics || logsFlushed) return;
+  if (logsFlushed) return;
   event.preventDefault();
-  void Promise.race([
-    diagnostics.flush(),
-    new Promise((resolve) => setTimeout(resolve, 700)),
-  ]).finally(() => {
-    logsFlushed = true;
-    app.quit();
-  });
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  // Finish owned partial-install cleanup before Electron terminates its native process.
+  void Promise.allSettled([transcriptWindow?.stopSetup()])
+    .then(() =>
+      Promise.race([diagnostics?.flush(), new Promise((resolve) => setTimeout(resolve, 700))]),
+    )
+    .finally(() => {
+      logsFlushed = true;
+      app.quit();
+    });
 });
