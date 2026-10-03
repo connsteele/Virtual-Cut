@@ -73,6 +73,27 @@ passed both boundary flows, including Undo/Redo. Evidence:
 
 Floating transcript windows are included; docking is excluded by user decision. Automated context-aware name correction belongs to early M4 (VC-24). Speaker detection remains last-priority, explicit follow-up work. Recognition confidence and timings are estimates requiring representative audio review; an automated integration pass is not a claim of transcription accuracy.
 
+## Automatic device readiness — 0.4.5 (VC-87)
+
+Import and floating Transcript options share a lightweight GPU readiness check
+before allowing Automatic/NVIDIA requests to start. A missing GPU requires an
+explicit choice to continue on CPU for that request. Native probes are cached and
+coalesce concurrent calls; Check again invalidates a completed result. The narrow
+IPC contract accepts only an optional boolean refresh flag. No model is loaded and
+no continuous check runs. Device changes and refreshes reset the CPU choice, with
+stale asynchronous results ignored.
+
+Jobs retain actual CPU/CUDA and fallback details through progress, completion,
+session reads and persistence. The worker reports fallback before CPU model loading.
+GPU readiness cannot guarantee later model startup or free VRAM; that remaining
+failure uses the existing Automatic fallback and visible job explanation.
+
+The 0.4.4 review configuration had omitted the installed NVIDIA library folder;
+0.4.5 restores it. A real Automatic run using only the packaged configuration
+verified CUDA startup on a disposable synthetic sample. Final native, Electron
+transcript/import and shell checks passed. See [0.4.5 evidence and review](review-0.4.5.md)
+for paths and scope; speech-stack integration remains deferred.
+
 ## References
 
 - [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)

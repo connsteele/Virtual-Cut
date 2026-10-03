@@ -6,10 +6,12 @@
 
 ## The workspace
 
-**Latest review: 0.4.4.** Paired cue titles, separate title/context review, conservative
-Mark wording, scope-specific transcript export names and transcript-window reading
-restoration are implemented. The [current review guide](docs/review-0.4.4.md) adds
-M314–M316 and preserves the unfinished M312–M313 interaction/listening checks.
+**Latest review: 0.4.5.** Import and later transcription now check GPU readiness
+before starting. If Automatic must use CPU, a visible warning requires choosing
+to continue on CPU. Jobs retain the actual device and fallback reason. This review
+package also restores the omitted NVIDIA library location. The
+[current review guide](docs/review-0.4.5.md) adds M317 and preserves the unfinished
+M312–M316 interaction/listening checks and the 0.4.4 transcript refinements.
 Local crash capture remains available; the original unexpected exit is still under
 investigation. Earlier release summaries retain their original verification scope.
 
@@ -17,7 +19,7 @@ investigation. Earlier release summaries retain their original verification scop
 selects optional WhisperX alignment and game-only speaker adapters with preserved utterance recognition.
 Its faster full pipeline has sparse-dialogue timing regressions and is not the app default.
 This is research for VC-81. Connor deferred these stack changes to later M3;
-speaker controls are not in 0.4.4. Speaker identification is planned for game audio only.
+speaker controls are not in 0.4.5. Speaker identification is planned for game audio only.
 
 **Current branch: M3 audio intelligence, 0.4.0 first review.** Explicit local transcription, separate game/microphone results, a floating word-seeking transcript window, original-preserving corrections, reviewed spoken cues, and project/batch game and video context are implemented for review. Recognition quality and the remaining M3 boundaries are documented in [the review guide](docs/m3-review.md) and [engineering notes](docs/m3-implementation.md). This workstation build uses an installed local speech runtime; portable provisioning, optional speaker detection and automated agent correction are not included. M2 remains accepted.
 
