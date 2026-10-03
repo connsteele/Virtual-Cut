@@ -5,7 +5,13 @@ import type {
   TranscriptSession,
   TranscriptSummary,
 } from '../../electron/transcript-contracts';
-import { cueCandidate, cueTitle, reviewedCue } from '../../electron/transcript-edits';
+import {
+  cueCandidate,
+  cueTitle,
+  cueContext,
+  cueReviewKey,
+  reviewedCue,
+} from '../../electron/transcript-edits';
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 
@@ -15,21 +21,27 @@ export function TranscriptCue({
   session,
   busy,
   onCommand,
+  onSeek,
 }: {
   segment: TranscriptSegment;
   transcript: TranscriptSummary;
   session: TranscriptSession;
   busy: boolean;
   onCommand: (action: 'accept-cue' | 'reject-cue', values: Partial<TranscriptCommand>) => void;
+  onSeek: (time: number) => void;
 }) {
   const cue = cueCandidate(transcript, segment)!;
   const range = cue.kind === 'clip-start' || cue.kind === 'clip-end';
   const [draft, setDraft] = useState<{
+    title?: string;
+    contextEndSegmentId?: number;
     text?: string;
     time?: string;
     end?: string;
     clipId?: string;
   }>({});
+  const context = cueContext(segment, draft.contextEndSegmentId);
+  const suggestedTitle = cueTitle(transcript, segment).slice(0, range ? 200 : 100);
   const start =
     draft.time ??
     String(range && cue.kind === 'clip-end' ? (segment.cuePartner?.time ?? cue.time) : cue.time);
@@ -54,6 +66,15 @@ export function TranscriptCue({
       }}
     >
       <strong>{label} candidate</strong> · {decision?.status || 'Needs review'}
+      {decision?.status === 'accepted' &&
+        decision.contextStart != null &&
+        decision.contextEnd != null && (
+          <p className={s.muted}>
+            Included context: {decision.contextStart.toFixed(3)}–{decision.contextEnd.toFixed(3)}{' '}
+            seconds
+            {decision.title ? ` · ${decision.title}` : ''}
+          </p>
+        )}
       {!decision && (
         <>
           <p>Check the audio and adjust the position before accepting.</p>
@@ -64,11 +85,65 @@ export function TranscriptCue({
                 : 'No unambiguous matching boundary. Correct the cue wording, or create this clip in Cut.'}
             </p>
           )}
-          <input
-            aria-label={`Cue text ${segment.id}`}
-            value={draft.text ?? cueTitle(transcript, segment)}
-            onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-          />
+          {cue.kind !== 'cut' && (
+            <>
+              <Field label="Title">
+                <input
+                  aria-label={`Cue title ${segment.id}`}
+                  value={draft.title ?? suggestedTitle}
+                  maxLength={range ? 200 : 100}
+                  onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                />
+              </Field>
+              <details className={s.context} open>
+                <summary>
+                  Included spoken context · {context.start.toFixed(3)}–{context.end.toFixed(3)} s
+                </summary>
+                <p className={s.muted}>
+                  Speech continues until the next cue, even across pauses. Choose the last included
+                  phrase and review the text. Changing the last phrase resets this text to the
+                  selected speech. Original recognition is kept.
+                </p>
+                <Field label="Include through">
+                  <select
+                    aria-label={`Cue context end ${segment.id}`}
+                    value={context.segmentIds.at(-1)}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        contextEndSegmentId: Number(e.target.value),
+                        text: undefined,
+                      })
+                    }
+                  >
+                    {(segment.cueContext ?? context.parts).map((part) => (
+                      <option key={part.id} value={part.id}>
+                        {part.end.toFixed(3)} s · {part.text.slice(0, 65) || 'Cue phrase'}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Context text">
+                  <textarea
+                    aria-label={`Cue text ${segment.id}`}
+                    value={draft.text ?? context.text}
+                    maxLength={10000}
+                    onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+                  />
+                </Field>
+                <div className={s.toolbar}>
+                  <Button onClick={() => onSeek(context.start)}>Listen from context start</Button>
+                  <Button onClick={() => onSeek(context.end)}>Seek to context end</Button>
+                </div>
+                {segment.cueContextLimited && (
+                  <p className={s.muted}>
+                    This proposal reached the context limit. Later speech remains in the full
+                    transcript.
+                  </p>
+                )}
+              </details>
+            </>
+          )}
           <div className={s.toolbar}>
             <Field label={range ? 'Start (seconds)' : 'Position (seconds)'}>
               <input
@@ -121,7 +196,10 @@ export function TranscriptCue({
             }
             onClick={() =>
               onCommand('accept-cue', {
-                text: draft.text ?? cueTitle(transcript, segment),
+                title: cue.kind !== 'cut' ? (draft.title ?? suggestedTitle) : undefined,
+                text: draft.text ?? context.text,
+                contextEndSegmentId: context.segmentIds.at(-1),
+                contextExpected: cueReviewKey(transcript, segment),
                 time: Number(start),
                 endTime: range ? Number(end) : undefined,
                 partnerSegmentId: range ? segment.cuePartner?.id : undefined,

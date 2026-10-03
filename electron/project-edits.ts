@@ -175,6 +175,19 @@ export function validateEdits(model: Model): Model {
       (decision.markerId != null && !text(decision.markerId, 200)) ||
       (decision.noteId != null && !text(decision.noteId, 200)) ||
       (decision.clipId != null && !text(decision.clipId, 200)) ||
+      (decision.transcriptId != null && !text(decision.transcriptId, 200)) ||
+      (decision.title != null && !text(decision.title, 200)) ||
+      (decision.segmentIds != null &&
+        (!Array.isArray(decision.segmentIds) ||
+          decision.segmentIds.length > 201 ||
+          decision.segmentIds.some((id) => !Number.isSafeInteger(id) || id < 0) ||
+          new Set(decision.segmentIds).size !== decision.segmentIds.length)) ||
+      (decision.contextStart != null &&
+        (!Number.isFinite(decision.contextStart) || decision.contextStart < 0)) ||
+      (decision.contextEnd != null &&
+        (!Number.isFinite(decision.contextEnd) ||
+          decision.contextStart == null ||
+          decision.contextEnd < decision.contextStart)) ||
       (decision.appliedTime != null &&
         (!Number.isFinite(decision.appliedTime) || decision.appliedTime < 0)) ||
       (decision.sourceId != null && !text(decision.sourceId, 200)) ||

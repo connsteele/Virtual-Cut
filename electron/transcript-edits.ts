@@ -13,8 +13,43 @@ export const correctionId = (transcriptId: string, segmentId: number, wordIndex?
 /** A paired range always takes its suggested title from the start cue. */
 export function cueTitle(transcript: TranscriptSummary, segment: TranscriptSegment) {
   const cue = cueCandidate(transcript, segment);
-  return cue?.kind === 'clip-end' ? (segment.cuePartner?.text ?? cue.text) : (cue?.text ?? '');
+  return cue?.kind === 'clip-end'
+    ? (segment.cuePartner?.text ?? segment.cueTitle ?? cue.text)
+    : (segment.cueTitle ?? cue?.text ?? '');
 }
+
+export function cueContext(segment: TranscriptSegment, endSegmentId?: number) {
+  const available = segment.cueContext ?? [
+    {
+      id: segment.id,
+      start: segment.start,
+      end: segment.end,
+      text: segment.cueText ?? segment.text,
+    },
+  ];
+  const last =
+    endSegmentId == null ? available.length - 1 : available.findIndex((p) => p.id === endSegmentId);
+  if (last < 0) throw new Error('Choose an included phrase from this cue context.');
+  const parts = available.slice(0, last + 1);
+  return {
+    parts,
+    text: parts
+      .map((p) => p.text)
+      .filter(Boolean)
+      .join(' '),
+    start: parts[0].start,
+    end: parts.at(-1)!.end,
+    segmentIds: parts.map((p) => p.id),
+  };
+}
+
+export const cueReviewKey = (transcript: TranscriptSummary, segment: TranscriptSegment) =>
+  JSON.stringify({
+    title: cueTitle(transcript, segment),
+    kind: cueCandidate(transcript, segment)?.kind,
+    partner: segment.cuePartner,
+    context: segment.cueContext,
+  });
 /** Deliberate cues are candidates, never commands. Use only microphone recognition. */
 export function cueCandidate(transcript: TranscriptSummary, segment: TranscriptSegment) {
   if (transcript.role !== 'mic') return null;
@@ -144,12 +179,29 @@ export function applyTranscriptCommand(
     noteId: undefined as string | undefined,
   };
   if (decision.status === 'accepted') {
+    if (
+      command.contextExpected != null &&
+      command.contextExpected !== cueReviewKey(transcript, segment)
+    )
+      throw new Error('This cue context changed elsewhere. Refresh it before accepting.');
+    const context = cueContext(segment, command.contextEndSegmentId);
     const target = command.time ?? cue.time;
     if (!Number.isFinite(target) || target < 0 || target > record.duration)
       throw new Error('Choose a cue position inside this recording.');
     decision.appliedTime = target;
-    const text = (command.text ?? cue.text).trim();
+    if (command.text != null && typeof command.text !== 'string')
+      throw new Error('Enter cue context text.');
+    const text = (command.text ?? (segment.cueContext ? context.text : cue.text)).trim();
     if (text.length > 10000) throw new Error('Cue note is too long.');
+    if (command.title != null && (typeof command.title !== 'string' || command.title.length > 200))
+      throw new Error('Enter a cue title of up to 200 characters.');
+    if (cue.kind !== 'cut') {
+      decision.transcriptId = transcript.id;
+      decision.segmentIds = context.segmentIds;
+      decision.contextStart = context.start;
+      decision.contextEnd = context.end;
+      decision.title = command.title?.trim();
+    }
     if (cue.kind === 'cut') {
       const intersecting = next.clips.filter(
         (c) =>
@@ -201,7 +253,13 @@ export function applyTranscriptCommand(
         id: decision.clipId,
         rid: record.id,
         name:
-          (command.text ?? (cue.kind === 'clip-start' ? cue.text : other.text))
+          (
+            command.title ??
+            command.text ??
+            (cue.kind === 'clip-start'
+              ? cueTitle(transcript, segment)
+              : cueTitle(transcript, partner))
+          )
             .trim()
             .slice(0, 200) || 'Spoken clip',
         start,
@@ -209,6 +267,7 @@ export function applyTranscriptCommand(
         folder: '_Review',
         include: true,
         accepted: false,
+        ...(command.title != null && text ? { note: text } : {}),
       });
       next.cueDecisions = [
         ...(next.cueDecisions || []),
@@ -221,6 +280,11 @@ export function applyTranscriptCommand(
           status: 'accepted',
           clipId: decision.clipId,
           appliedTime: other.kind === 'clip-start' ? start : end,
+          transcriptId: decision.transcriptId,
+          segmentIds: decision.segmentIds,
+          contextStart: decision.contextStart,
+          contextEnd: decision.contextEnd,
+          title: decision.title,
         },
       ];
       decision.appliedTime = cue.kind === 'clip-start' ? start : end;
@@ -228,13 +292,13 @@ export function applyTranscriptCommand(
       decision.noteId = newId();
       next.notes.push({
         id: decision.noteId,
-        title: text.slice(0, 100) || 'Spoken note',
+        title: (command.title ?? text).trim().slice(0, 100) || 'Spoken note',
         text,
         url: '',
         sourceId: record.id,
         time: target,
         transcriptId: transcript.id,
-        segmentIds: segment.cueSegmentIds || [segment.id],
+        segmentIds: context.segmentIds,
       });
     } else {
       decision.markerId = newId();
@@ -243,7 +307,7 @@ export function applyTranscriptCommand(
         {
           id: decision.markerId,
           time: target,
-          name: text.slice(0, 100) || 'Spoken marker',
+          name: (command.title ?? text).trim().slice(0, 100) || 'Spoken marker',
           note: text,
           category: 'Context',
           topic: '',

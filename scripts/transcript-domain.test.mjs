@@ -14,6 +14,8 @@ import {
   correctionId,
   cueCandidate,
   cueTitle,
+  cueContext,
+  cueReviewKey,
   reviewedCue,
 } from '../dist-electron/transcript-edits.js';
 import {
@@ -60,7 +62,7 @@ test('project edits reject malformed transcript records before persistence', () 
   const edit = { id: 'x', transcriptId: 'speech', segmentId: 0, text: 'Cai' };
   for (const bad of [
     { id: null },
-    { transcriptId: null },
+    { transcriptId: 1 },
     { segmentId: 1.5 },
     { segmentId: -1 },
     { wordIndex: -1 },
@@ -91,6 +93,14 @@ test('project edits reject malformed transcript records before persistence', () 
     { kind: 'delete' },
     { time: NaN },
     { time: -1 },
+    { title: 'x'.repeat(201) },
+    { transcriptId: 1 },
+    { segmentIds: [-1] },
+    { segmentIds: [0, 0] },
+    { segmentIds: Array.from({ length: 202 }, (_, i) => i) },
+    { contextStart: -1 },
+    { contextEnd: 5 },
+    { contextStart: 8, contextEnd: 5 },
   ])
     assert.throws(
       () => validateEdits({ ...emptyModel(), cueDecisions: [{ ...decision, ...bad }] }),
@@ -284,6 +294,92 @@ test('paged literal search, corrected matches, shared context and continuation a
     db.close();
   }
 });
+test('cue context review preserves pauses and originals, separates title, and rejects stale or foreign spans', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const store = new TranscriptStore(db);
+    store.put({ ...transcript, duration: 100 });
+    store.append('speech', phrase(0, 'Note first thought'));
+    store.append('speech', { ...phrase(1, 'continuation after a long pause'), start: 60, end: 64 });
+    store.append('speech', { ...phrase(2, 'unrelated later discussion'), start: 80, end: 84 });
+    store.append('speech', { ...phrase(3, 'Mark next cue'), start: 90, end: 94 });
+    const proposal = store.cueSegment('speech', 0);
+    assert.equal(cueTitle(transcript, proposal), 'first thought');
+    assert.deepEqual(cueContext(proposal).segmentIds, [0, 1, 2]);
+    assert.equal(cueContext(proposal).end, 84);
+    const reviewed = command('accept-cue', {
+      title: 'Concise title',
+      contextEndSegmentId: 1,
+      contextExpected: cueReviewKey(transcript, proposal),
+    });
+    const after = applyTranscriptCommand(model(), transcript, proposal, reviewed, () => 'note');
+    assert.equal(after.notes[0].title, 'Concise title');
+    assert.equal(after.notes[0].text, 'first thought continuation after a long pause');
+    assert.deepEqual(after.notes[0].segmentIds, [0, 1]);
+    assert.equal(after.cueDecisions[0].contextStart, 10);
+    assert.equal(after.cueDecisions[0].contextEnd, 64);
+    assert.equal(after.cueDecisions[0].transcriptId, 'speech');
+    assert.equal(store.segment('speech', 0).text, 'Note first thought');
+    assert.equal(store.segment('speech', 2).text, 'unrelated later discussion');
+    assert.throws(
+      () =>
+        applyTranscriptCommand(
+          model(),
+          transcript,
+          proposal,
+          { ...reviewed, contextEndSegmentId: 3 },
+          () => 'foreign',
+        ),
+      /included phrase/,
+    );
+    const corrections = {
+      transcriptEdits: [
+        {
+          id: correctionId('speech', 1),
+          transcriptId: 'speech',
+          segmentId: 1,
+          text: 'Changed elsewhere',
+        },
+      ],
+    };
+    assert.throws(
+      () =>
+        applyTranscriptCommand(
+          model(),
+          transcript,
+          store.cueSegment('speech', 0, corrections),
+          reviewed,
+          () => 'stale',
+        ),
+      /context changed/,
+    );
+    const markerProposal = store.cueSegment('speech', 3);
+    const marker = applyTranscriptCommand(
+      model(),
+      transcript,
+      markerProposal,
+      command('accept-cue', { segmentId: 3, title: 'Marker title', text: 'Reviewed context' }),
+      () => 'marker',
+    );
+    assert.equal(marker.markers.source[0].name, 'Marker title');
+    assert.equal(marker.markers.source[0].note, 'Reviewed context');
+    assert.throws(
+      () =>
+        applyTranscriptCommand(
+          model(),
+          transcript,
+          proposal,
+          { ...reviewed, title: 'x'.repeat(201) },
+          () => 'long',
+        ),
+      /cue title/,
+    );
+    validateEdits({ ...emptyModel(), notes: after.notes, cueDecisions: after.cueDecisions });
+  } finally {
+    db.close();
+  }
+});
+
 test('overlapping exported clips use source offsets, boundary words, corrections, and honest phrase precision', () => {
   const original = phrase(),
     edits = {
@@ -471,6 +567,7 @@ test('cue filters cover every page, corrections and review state; playback pages
     assert.equal(cues.segments[0].cuePartner.id, 90);
     assert.equal(cues.segments[1].cuePartner.id, 63);
     assert.equal(cueTitle(transcript, cues.segments[1]), 'opening');
+    assert.deepEqual(cues.segments[1].cueContext, cues.segments[0].cueContext);
     const decision = {
       id: 'cue',
       sourceId: 'source',

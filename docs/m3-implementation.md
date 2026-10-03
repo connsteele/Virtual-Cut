@@ -28,6 +28,18 @@ The local review package can explicitly reference an existing workstation runtim
 
 ## Boundaries
 
+VC-83 keeps a separate reviewed title and context text, exposes the included source
+span, and allows choosing the last included phrase. Silence does not shorten the
+proposal. Bounded context parts are derived on read; recognition stays immutable.
+Paired boundary editors share the start cue's context. Accepted annotations retain
+small transcript/phrase/span provenance in their cue decisions, with ordinary Undo
+and saves. Native commands reject foreign phrases and changed context proposals.
+Hidden Electron checks passed context selection, seeking, typing guards and compact
+layout. The first malformed-record test incorrectly expected an optional null value
+to fail; its corrected case and all ten domain tests passed afterward. The original
+failed report is retained under `review-0.4.4/cue-context/run-NSAtPs`; both desktop
+checks there passed, and the final paired-context follow-up passed in `run-Kjo2vi`.
+
 VC-82 initializes a paired clip's title from the start cue when opened from either
 boundary. Reviewed title overrides remain explicit; both decisions and the new clip
 still share one Undo step. Domain checks and the hidden Electron transcript review

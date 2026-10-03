@@ -19,7 +19,15 @@ const transcriptId = 'synthetic-pagination-and-cues';
 store.transcripts.begin({ ...summary, id: transcriptId, segmentCount: 125, wordCount: 125 });
 for (let i = 0; i < 125; i++) {
   const text =
-    i === 10 ? 'Clip start opening' : i === 95 ? 'Clip end' : i === 110 ? 'Split' : `word${i}`;
+    i === 10
+      ? 'Clip start opening'
+      : i === 95
+        ? 'Clip end'
+        : i === 110
+          ? 'Split'
+          : i === 115
+            ? 'Mark short title'
+            : `word${i}`;
   store.transcripts.append(transcriptId, {
     id: i,
     start: i / 10,
@@ -114,20 +122,20 @@ try {
   await position(0.5);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
   await view.getByLabel('Transcript filter').selectOption('pending');
-  await expect(phrases.locator('article')).toHaveCount(3);
-  await expect(view.getByLabel('Cue text 95')).toHaveValue('opening');
+  await expect(phrases.locator('article')).toHaveCount(4);
+  await expect(view.getByLabel('Cue title 95')).toHaveValue('opening');
   await phrases
     .locator('article')
     .nth(1)
     .getByRole('button', { name: 'Accept clip range', exact: true })
     .click();
-  await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(phrases.locator('article')).toHaveCount(2);
   let current = await main.evaluate(() => window.virtualCut.project.current());
   assert.equal(current.model.clips.at(-1).name, 'opening');
   assert.equal(current.model.cueDecisions.length, 2);
   await main.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(phrases.locator('article')).toHaveCount(3);
-  await view.getByLabel('Cue text 10').fill('opening');
+  await expect(phrases.locator('article')).toHaveCount(4);
+  await view.getByLabel('Cue title 10').fill('Reviewed opening');
   await view.getByLabel('Cue position 10').fill('0.8');
   await view.getByLabel('Cue end 10').fill('9.6');
   await phrases
@@ -135,26 +143,67 @@ try {
     .first()
     .getByRole('button', { name: 'Accept clip range', exact: true })
     .click();
-  await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(phrases.locator('article')).toHaveCount(2);
   current = await main.evaluate(() => window.virtualCut.project.current());
   assert.equal(current.model.cueDecisions.length, 2);
   assert.deepEqual(
-    current.model.clips.filter((c) => c.name === 'opening').map((c) => [c.start, c.end]),
+    current.model.clips.filter((c) => c.name === 'Reviewed opening').map((c) => [c.start, c.end]),
     [[0.8, 9.6]],
   );
   await main.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(phrases.locator('article')).toHaveCount(3);
+  await expect(phrases.locator('article')).toHaveCount(4);
   await main.getByRole('button', { name: 'Redo', exact: true }).click();
-  await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(phrases.locator('article')).toHaveCount(2);
   await expect(view.getByRole('button', { name: 'Accept split', exact: true })).toBeDisabled();
   await view.getByLabel('Split target 110').selectOption('overlap-b');
   await view.getByRole('button', { name: 'Accept split', exact: true }).click();
+  await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(view.getByLabel('Cue title 115')).toHaveValue('short title');
+  await expect(view.getByLabel('Cue text 115')).toHaveValue(/word124/);
+  await view.getByLabel('Cue context end 115').selectOption('116');
+  await expect(view.getByLabel('Cue text 115')).toHaveValue('short title word116');
+  await view.getByLabel('Cue title 115').fill('Context review marker');
+  await view.getByRole('button', { name: 'Seek to context end', exact: true }).click();
+  await expect.poll(() => main.locator('video').evaluate((v) => v.currentTime)).toBe(11.7);
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('#transcript'))
+      .setSize(500, 600),
+  );
+  await view.getByLabel('Cue title 115').focus();
+  await view.getByLabel('Cue title 115').press('l');
+  assert.equal(await main.locator('video').evaluate((v) => v.paused), true);
+  await view.getByLabel('Cue title 115').fill('Context review marker');
+  assert.equal(
+    await view.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+    true,
+  );
+  const cueImage = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()
+        .find((w) => w.webContents.getURL().endsWith('#transcript'))
+        .webContents.capturePage(undefined, { stayHidden: true })
+    )
+      .toPNG()
+      .toString('base64'),
+  );
+  await writeFile(path.join(dir, 'cue-context-compact.png'), Buffer.from(cueImage, 'base64'));
+  await view.getByRole('button', { name: 'Accept marker', exact: true }).click();
   await expect(view.getByText('No matching cues.')).toBeVisible();
   current = await main.evaluate(() => window.virtualCut.project.current());
+  const marker = current.model.markers[fixture.rid].find((m) => m.name === 'Context review marker');
+  assert.equal(marker.note, 'short title word116');
+  const decision = current.model.cueDecisions.find((d) => d.markerId === marker.id);
+  assert.deepEqual(decision.segmentIds, [115, 116]);
+  assert.equal(decision.contextEnd, 11.7);
+  await main.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(phrases.locator('article')).toHaveCount(1);
+  await main.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(view.getByText('No matching cues.')).toBeVisible();
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-a').end, 15);
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-b').end, 11);
   await view.getByLabel('Transcript filter').selectOption('accepted');
-  await expect(phrases.locator('article')).toHaveCount(3);
+  await expect(phrases.locator('article')).toHaveCount(4);
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
       .find((w) => w.webContents.getURL().endsWith('#transcript'))

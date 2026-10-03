@@ -96,8 +96,22 @@ export class TranscriptStore {
         break;
       }
     }
-    const texts = [cue.text],
-      ids = [first.id];
+    if (cue.kind === 'clip-end' && cuePartner) {
+      const start = this.cueSegment(id, cuePartner.id, model);
+      return {
+        ...first,
+        cueKind: cue.kind,
+        cueTitle: start.cueTitle,
+        cueText: start.cueText,
+        cueSegmentIds: start.cueSegmentIds,
+        cueContext: start.cueContext,
+        cueContextLimited: start.cueContextLimited,
+        cuePartner,
+      };
+    }
+    const cueContext = [{ id: first.id, start: first.start, end: first.end, text: cue.text }];
+    let textLength = cue.text.length,
+      cueContextLimited = false;
     for (const row of this.db
       .prepare(
         'SELECT body FROM transcript_segments WHERE transcript_id=? AND ordinal>? ORDER BY ordinal LIMIT 200',
@@ -105,19 +119,26 @@ export class TranscriptStore {
       .all(id, ordinal)) {
       const next = JSON.parse(String(row.body)) as TranscriptSegment;
       const text = correctedText(model, id, next);
-      if (
-        cueCandidate(transcript, { ...next, text }) ||
-        texts.join(' ').length + text.length > 9000
-      )
+      if (cueCandidate(transcript, { ...next, text })) break;
+      if (textLength + text.length + 1 > 9000) {
+        cueContextLimited = true;
         break;
-      texts.push(text.trim());
-      ids.push(next.id);
+      }
+      cueContext.push({ id: next.id, start: next.start, end: next.end, text: text.trim() });
+      textLength += text.length + 1;
     }
+    if (cueContext.length === 201) cueContextLimited = true;
     return {
       ...first,
       cueKind: cue.kind,
-      cueText: texts.filter(Boolean).join(' '),
-      cueSegmentIds: ids,
+      cueTitle: cue.text,
+      cueText: cueContext
+        .map((part) => part.text)
+        .filter(Boolean)
+        .join(' '),
+      cueSegmentIds: cueContext.map((part) => part.id),
+      cueContext,
+      cueContextLimited,
       cuePartner,
     };
   }

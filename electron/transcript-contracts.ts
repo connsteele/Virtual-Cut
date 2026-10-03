@@ -17,6 +17,10 @@ export interface TranscriptWord {
 export type CueKind = 'mark' | 'note' | 'cut' | 'clip-start' | 'clip-end';
 export interface TranscriptSegment {
   cuePartner?: { id: number; time: number; text?: string };
+  cueTitle?: string;
+  /** Bounded, corrected context proposal; never replaces immutable recognition. */
+  cueContext?: { id: number; start: number; end: number; text: string }[];
+  cueContextLimited?: boolean;
   /** Derived only when reading a cue; original recognized text/timing stay unchanged. */
   cueText?: string;
   cueSegmentIds?: number[];
@@ -64,6 +68,11 @@ export interface TranscriptEdit {
   text: string;
 }
 export interface CueDecision {
+  transcriptId?: string;
+  segmentIds?: number[];
+  contextStart?: number;
+  contextEnd?: number;
+  title?: string;
   id: string;
   sourceId?: string;
   track?: number;
@@ -114,6 +123,10 @@ export interface TranscriptSession {
   }[];
 }
 export interface TranscriptCommand {
+  title?: string;
+  contextEndSegmentId?: number;
+  /** Reject a context review if its source wording or pairing changed meanwhile. */
+  contextExpected?: string;
   time?: number;
   endTime?: number;
   partnerSegmentId?: number;

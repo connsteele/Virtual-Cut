@@ -660,6 +660,10 @@ export function TranscriptWindow() {
                       transcript={selected}
                       session={session}
                       busy={busy}
+                      onSeek={(time) => {
+                        setFollow(false);
+                        void action(() => api.seek(projectId, session.sourceId, time));
+                      }}
                       onCommand={(type, values) => {
                         setFollow(false);
                         void action(() => command(segment, type, values.text, undefined, values));

@@ -170,6 +170,23 @@
   display: block;
   width: 100%;
 }
+.context {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #4c4e38;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.context summary {
+  cursor: pointer;
+}
+.context > label,
+.cue > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
 .pagination {
   justify-content: center;
   margin: 12px;
