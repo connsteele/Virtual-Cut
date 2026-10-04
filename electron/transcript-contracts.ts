@@ -178,6 +178,8 @@ export interface TranscriptApi {
   seek(projectId: string, sourceId: string, time: number): Promise<void>;
   runtime(refresh?: boolean): Promise<{
     configured: boolean;
+    /** Which file of a previously chosen setup is gone (moved or deleted outside the app). */
+    removed: string;
     settings: AsrRuntime;
     gpu?: { available: boolean; message: string };
   }>;

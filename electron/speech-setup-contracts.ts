@@ -6,14 +6,16 @@ export interface SpeechSetupLocation {
   folder: string;
   python: string;
   model: string;
-  /** Its Python and model files exist right now. */
+  /** Its Python, speech libraries and model files exist right now. */
   available: boolean;
 }
 export interface SpeechSetupState {
   /** The runtime transcription uses now, and the one a switch would return to. */
   current?: SpeechSetupLocation;
   other?: SpeechSetupLocation;
-  state: 'idle' | 'planned' | 'installing' | 'ready' | 'cancelled' | 'failed' | 'activated';
+  /** `missing`: a ready or active download whose files were moved or deleted outside the app. */
+  state:
+    'idle' | 'planned' | 'installing' | 'ready' | 'cancelled' | 'failed' | 'activated' | 'missing';
   version: string;
   folder: string;
   includeGpu: boolean;

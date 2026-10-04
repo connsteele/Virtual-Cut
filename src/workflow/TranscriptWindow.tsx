@@ -16,6 +16,7 @@ import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { SpeechSetup } from './SpeechSetup';
 import { background } from './background';
+import { useWindowFocus } from './useWindowFocus';
 
 const viewStorage = () => {
   try {
@@ -145,6 +146,8 @@ export function TranscriptWindow() {
       .catch((e) => setError(String(e)));
     return api.onPosition(setPosition);
   }, [api]);
+  // Setup files can be moved or deleted in Explorer; look again whenever this window returns.
+  useWindowFocus(useCallback(() => background(api.runtime().then(setRuntime)), [api]));
   const selected =
     session?.transcripts.find((t) => t.id === transcriptId) ||
     session?.transcripts.find((t) => t.state === 'complete') ||
@@ -435,6 +438,11 @@ export function TranscriptWindow() {
               {!runtime?.configured && (
                 <Button onClick={() => setSetup(true)}>Set up local speech recognition</Button>
               )}
+              {runtime?.removed && (
+                <p className={s.error} role="alert">
+                  {runtime.removed} It may have been moved or deleted.
+                </p>
+              )}
             </section>
           )}
         </>
@@ -448,6 +456,12 @@ export function TranscriptWindow() {
               : 'Download a local setup below, or choose an existing installation.'}{' '}
             No audio is uploaded.
           </p>
+          {runtime?.removed && (
+            <p className={s.error} role="alert" aria-label="Speech setup files missing">
+              {runtime.removed} It may have been moved or deleted. Download it again, switch to the
+              other setup, or choose the files below.
+            </p>
+          )}
           <p role="status">{runtime?.gpu?.message}</p>
           <SpeechSetup api={api} onActivated={async () => setRuntime(await api.runtime(true))} />
           <details>

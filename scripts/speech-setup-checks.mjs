@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, writeFile, readFile, access } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, access, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { require, root } from './shared.mjs';
@@ -53,11 +53,27 @@ try {
   {
     const locProfile = path.join(dir, 'locations-profile');
     const locRuntime = new TranscriptionRuntime(locProfile);
-    const manual = { ...locRuntime.settings };
     const locSetup = new SpeechSetup(locProfile, locRuntime);
     const fresh = await locSetup.status();
     assert.equal(fresh.current.kind, 'manual');
     assert.equal(fresh.other, undefined);
+    // Nothing chosen yet is a first setup, not files that went missing.
+    assert.equal(locRuntime.removed, '');
+    assert.match(locRuntime.problem, /^Set up local transcription/);
+    const manualFolder = path.join(dir, 'manual-speech');
+    const manual = {
+      python: path.join(manualFolder, 'python.exe'),
+      libraries: path.join(manualFolder, 'Lib', 'site-packages'),
+      model: path.join(manualFolder, 'model'),
+      gpuLibraries: '',
+      device: 'auto',
+      threads: 4,
+    };
+    await mkdir(path.join(manual.libraries, 'faster_whisper'), { recursive: true });
+    await mkdir(manual.model, { recursive: true });
+    await writeFile(manual.python, '');
+    await writeFile(path.join(manual.model, 'model.bin'), '');
+    locRuntime.use(manual);
     const savedLocal = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = path.join(dir, 'localappdata');
     assert.equal(await locSetup.suggestedFolder(), path.join(dir, 'localappdata', 'Virtual Cut'));
@@ -69,6 +85,7 @@ try {
       'install-11111111-1111-4111-8111-111111111111',
     );
     await mkdir(path.join(install, 'python'), { recursive: true });
+    await mkdir(path.join(install, 'libraries', 'faster_whisper'), { recursive: true });
     await mkdir(path.join(install, 'model'), { recursive: true });
     await writeFile(path.join(install, 'python', 'python.exe'), '');
     await writeFile(path.join(install, 'model', 'model.bin'), '');
@@ -107,6 +124,84 @@ try {
     // A look-alike path outside the installer's layout is never treated as downloaded.
     locRuntime.use({ ...downloaded, model: path.join(dir, 'elsewhere') });
     assert.equal((await locSetup.status()).current.kind, 'manual');
+    locRuntime.use(downloaded);
+
+    // Files deleted in Explorer while the app runs (VC-90 follow-up). An earlier GPU
+    // result must not survive, and the reason names the missing file.
+    locRuntime.gpuStatus = Promise.resolve({ available: true, message: 'Cached as ready' });
+    const modelFile = path.join(install, 'model', 'model.bin');
+    await rm(modelFile);
+    assert.equal(locRuntime.configured, false);
+    assert.match(locRuntime.removed, /speech model was not found/);
+    assert.match(locRuntime.problem, /moved or deleted\. Open Local transcription setup/);
+    const gone = await locRuntime.inspectGpu();
+    assert.equal(gone.available, false);
+    assert.match(gone.message, /once the speech setup files are found/);
+    assert.equal(locRuntime.gpuStatus, undefined, 'No GPU answer is cached for missing files');
+    const removedState = await locSetup.status();
+    assert.equal(removedState.current.available, false);
+    assert.equal(removedState.other.available, true);
+    // The intact manual setup can still be switched to; the missing one cannot come back.
+    const away = await locSetup.restore();
+    assert.equal(away.current.kind, 'manual');
+    assert.match(away.message, /previous downloaded setup's files are missing/);
+    await assert.rejects(locSetup.restore(), /other setup's files were moved or deleted/);
+    assert.equal(JSON.stringify(locRuntime.settings), JSON.stringify(manual));
+    await writeFile(modelFile, '');
+    assert.equal((await locSetup.status()).other.available, true);
+  }
+  // A checked download that is deleted before or after activation reports itself missing,
+  // cannot be activated, and recovers if its files return. No download or worker runs.
+  {
+    const candidateProfile = path.join(dir, 'candidate-profile');
+    const owner = 'install-22222222-2222-4222-8222-222222222222';
+    const candidateRoot = path.join(dir, 'candidate-root');
+    const folder = path.join(candidateRoot, 'Virtual Cut speech', owner);
+    const manifest = JSON.parse(
+      await readFile(path.join(root, 'integrations/transcription/runtime-manifest.json'), 'utf8'),
+    );
+    await mkdir(path.join(folder, 'python'), { recursive: true });
+    await mkdir(path.join(folder, 'libraries', 'faster_whisper'), { recursive: true });
+    await mkdir(path.join(folder, 'model'), { recursive: true });
+    await writeFile(path.join(folder, 'python', 'python.exe'), '');
+    await writeFile(path.join(folder, 'model', 'model.bin'), '');
+    await writeFile(
+      path.join(folder, '.virtual-cut-speech-install.json'),
+      JSON.stringify({ owner, manifest: manifest.id, complete: true }),
+    );
+    await mkdir(candidateProfile, { recursive: true });
+    await writeFile(
+      path.join(candidateProfile, 'speech-setup-candidate.json'),
+      JSON.stringify({
+        root: candidateRoot,
+        owner,
+        manifest: manifest.id,
+        state: { ...(await installer.status()), state: 'ready', folder, includeGpu: false },
+      }),
+    );
+    const candidateRuntime = new TranscriptionRuntime(candidateProfile);
+    const before = { ...candidateRuntime.settings };
+    const candidateSetup = new SpeechSetup(candidateProfile, candidateRuntime);
+    assert.equal((await candidateSetup.status()).state, 'ready');
+    await rm(path.join(folder, 'model'), { recursive: true });
+    const missing = await candidateSetup.status();
+    assert.equal(missing.state, 'missing');
+    assert.match(missing.message, /moved or deleted outside Virtual Cut/);
+    await assert.rejects(candidateSetup.activate(), /moved or deleted outside Virtual Cut/);
+    assert.deepEqual(candidateRuntime.settings, before);
+    // Reopening the app reports the same; the remembered candidate is not discarded.
+    assert.equal(
+      (await new SpeechSetup(candidateProfile, candidateRuntime).status()).state,
+      'missing',
+    );
+    await mkdir(path.join(folder, 'model'));
+    await writeFile(path.join(folder, 'model', 'model.bin'), '');
+    assert.equal((await candidateSetup.status()).state, 'ready');
+    await candidateSetup.activate();
+    assert.equal((await candidateSetup.status()).state, 'activated');
+    await rm(path.join(folder, 'python', 'python.exe'));
+    assert.equal((await candidateSetup.status()).state, 'missing');
+    assert.match(candidateRuntime.removed, /Python was not found/);
   }
   const plan = await installer.plan(dir, true);
   assert.equal(plan.state, 'planned');
@@ -193,6 +288,7 @@ try {
     cancellation: true,
     cleanup: true,
     traversal: true,
+    removedOutsideApp: true,
     installed: false,
   };
   globalThis.fetch = originalFetch;

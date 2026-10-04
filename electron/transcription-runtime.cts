@@ -28,6 +28,8 @@ export class TranscriptionRuntime {
   private file: string;
   private gpuStatus?: Promise<{ available: boolean; message: string }>;
   private gpuChecking = false;
+  /** A setup was chosen at some point, so missing files mean it was moved or deleted. */
+  private chosen: boolean;
   constructor(
     profile: string,
     private toolsDirectory = '',
@@ -69,14 +71,31 @@ export class TranscriptionRuntime {
       device: saved.device === 'cuda' || saved.device === 'cpu' ? saved.device : 'auto',
       threads: 4,
     };
+    this.chosen = !!(process.env.VIRTUAL_CUT_ASR_PYTHON || saved.python || packaged.python);
+  }
+  /** The first required file that is absent right now, checked on every call. */
+  get missing() {
+    const c = this.settings;
+    if (!existsSync(c.python)) return `Python was not found at ${c.python}.`;
+    if (!existsSync(path.join(c.libraries, 'faster_whisper')))
+      return `The speech libraries were not found in ${c.libraries}.`;
+    if (!existsSync(path.join(c.model, 'model.bin')))
+      return `The speech model was not found in ${c.model}.`;
+    return '';
   }
   get configured() {
-    const c = this.settings;
-    return (
-      existsSync(c.python) &&
-      existsSync(path.join(c.libraries, 'faster_whisper')) &&
-      existsSync(path.join(c.model, 'model.bin'))
-    );
+    return !this.missing;
+  }
+  /** Missing files of a setup that was chosen before, so moved or deleted outside the app. */
+  get removed() {
+    return this.chosen ? this.missing : '';
+  }
+  /** Why transcription cannot start: a first setup, or files moved or deleted outside the app. */
+  get problem() {
+    if (this.configured) return '';
+    return this.removed
+      ? `${this.removed} It may have been moved or deleted. Open Local transcription setup in the Transcript window to download it again, switch setups or choose the files.`
+      : 'Set up local transcription in the Transcript window: download the local setup or choose an existing installation.';
   }
   configure(part: keyof AsrRuntime, value: string) {
     if (part === 'threads') throw new Error('Invalid runtime setting.');
@@ -104,13 +123,21 @@ export class TranscriptionRuntime {
     writeFileSync(this.file + '.next', JSON.stringify(settings));
     renameSync(this.file + '.next', this.file);
     this.settings = { ...settings };
+    this.chosen = true;
     this.gpuStatus = undefined;
   }
   inspectGpu(refresh = false) {
+    // Never cache this answer: files can return, and a GPU result for files that were
+    // deleted outside the app no longer applies.
+    if (!this.configured) {
+      if (!this.gpuChecking) this.gpuStatus = undefined;
+      return Promise.resolve({
+        available: false,
+        message: 'The GPU check runs once the speech setup files are found.',
+      });
+    }
     if (refresh && !this.gpuChecking) this.gpuStatus = undefined;
     return (this.gpuStatus ??= (async () => {
-      if (!this.configured)
-        return { available: false, message: 'Set up local speech recognition first.' };
       let result = { available: false, message: 'GPU check did not finish.' };
       this.gpuChecking = true;
       try {
@@ -146,10 +173,7 @@ export class TranscriptionRuntime {
     signal: AbortSignal,
     receive: (event: WorkerEvent) => void,
   ) {
-    if (!this.configured)
-      throw new Error(
-        'Set up local transcription in the Transcript window: choose Python, its speech libraries, and a downloaded faster-whisper model.',
-      );
+    if (!this.configured) throw new Error(this.problem);
     return this.execute({ ...this.settings, ...request }, signal, receive);
   }
   private async execute(

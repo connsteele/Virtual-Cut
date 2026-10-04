@@ -8,6 +8,7 @@ import type {
 import { Button } from './ui';
 import s from './TranscriptWindow.module.css';
 import { background } from './background';
+import { useWindowFocus } from './useWindowFocus';
 
 const size = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 const kind = (location: SpeechSetupLocation) =>
@@ -57,6 +58,7 @@ export function SpeechSetup({
   useEffect(() => {
     void refresh().catch((e) => setError(String(e)));
   }, [refresh]);
+  useWindowFocus(useCallback(() => background(refresh()), [refresh]));
   useEffect(() => {
     if (state?.state !== 'installing') return;
     let pending = false;
@@ -105,7 +107,10 @@ export function SpeechSetup({
               <Button disabled={busy} onClick={() => background(act('reveal-other'))}>
                 Open folder
               </Button>
-              <Button disabled={busy || installing} onClick={() => background(act('restore'))}>
+              <Button
+                disabled={busy || installing || !state.other.available}
+                onClick={() => background(act('restore'))}
+              >
                 Switch to{' '}
                 {state.other.kind === state.current.kind
                   ? 'other ' + state.other.kind
@@ -137,11 +142,13 @@ export function SpeechSetup({
         <>
           <p className={s.muted}>{state.version}</p>
           <p className={s.path}>{state.folder}</p>
-          <p>
-            Download: {size(state.downloadBytes)} · Installed: {size(state.installedBytes)}
-            <br />
-            Space needed: {size(state.requiredBytes)} · Available: {size(state.availableBytes)}
-          </p>
+          {state.state !== 'missing' && (
+            <p>
+              Download: {size(state.downloadBytes)} · Installed: {size(state.installedBytes)}
+              <br />
+              Space needed: {size(state.requiredBytes)} · Available: {size(state.availableBytes)}
+            </p>
+          )}
           <p role="status">{state.message}</p>
           {installing && (
             <>

@@ -194,6 +194,7 @@ export function registerTranscriptWindow(
     if (refresh != null && typeof refresh !== 'boolean') throw new Error('Invalid GPU check.');
     return {
       configured: projects.transcription.configured,
+      removed: projects.transcription.removed,
       settings: projects.transcription.settings,
       gpu: await projects.transcription.inspectGpu(refresh),
     };

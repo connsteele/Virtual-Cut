@@ -53,7 +53,10 @@ export function describeRuntime(settings: AsrRuntime): SpeechSetupLocation {
     folder: downloaded ? install : path.dirname(settings.python),
     python: settings.python,
     model: settings.model,
-    available: existsSync(settings.python) && existsSync(path.join(settings.model, 'model.bin')),
+    available:
+      existsSync(settings.python) &&
+      existsSync(path.join(settings.libraries, 'faster_whisper')) &&
+      existsSync(path.join(settings.model, 'model.bin')),
   };
 }
 const label = (location: SpeechSetupLocation | undefined) =>
@@ -147,11 +150,37 @@ export class SpeechSetup {
       return undefined;
     }
   }
+  /** The checked download is still on disk (it can be deleted or moved outside the app). */
+  private async candidatePresent() {
+    const candidate = this.candidate();
+    const files = [
+      path.join(this.state.folder, '.virtual-cut-speech-install.json'),
+      candidate.python,
+      path.join(candidate.libraries, 'faster_whisper'),
+      path.join(candidate.model, 'model.bin'),
+    ];
+    const found = await Promise.all(
+      files.map((file) =>
+        access(file).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    return found.every(Boolean);
+  }
   async status() {
     const previous = await this.previous();
     this.state.canRestore = !!previous;
     this.state.current = describeRuntime(this.runtime.settings);
     this.state.other = previous ? describeRuntime(previous) : undefined;
+    // Report a removed download without forgetting it, so it recovers if the files return.
+    if (['ready', 'activated'].includes(this.state.state) && !(await this.candidatePresent()))
+      return {
+        ...this.state,
+        state: 'missing' as const,
+        message: `This download's files were moved or deleted outside Virtual Cut. Choose a folder for a new download${this.state.other?.available ? ', or switch to the other setup' : ''}.`,
+      };
     return { ...this.state };
   }
   /**
@@ -441,6 +470,10 @@ export class SpeechSetup {
   async activate() {
     if (this.state.state !== 'ready' || this.controller)
       throw new Error('Finish installing before activating the setup.');
+    if (!(await this.candidatePresent()))
+      throw new Error(
+        "This download's files were moved or deleted outside Virtual Cut. Choose a folder for a new download.",
+      );
     const receipt = JSON.parse(
       await readFile(path.join(this.state.folder, '.virtual-cut-speech-install.json'), 'utf8'),
     );
@@ -474,6 +507,10 @@ export class SpeechSetup {
     const previous = JSON.parse(
       await readFile(path.join(this.profile, 'speech-previous-runtime.json'), 'utf8'),
     ) as AsrRuntime;
+    if (!describeRuntime(previous).available)
+      throw new Error(
+        "The other setup's files were moved or deleted, so the current setup stays in use.",
+      );
     const current = { ...this.runtime.settings };
     this.runtime.use(previous);
     await writeFile(
@@ -482,8 +519,9 @@ export class SpeechSetup {
     );
     const now = describeRuntime(previous),
       kept = describeRuntime(current);
-    this.state.message =
-      now.kind === kept.kind
+    this.state.message = !kept.available
+      ? `Now using the ${label(now)} setup. The previous ${label(kept)} setup's files are missing, so you can't switch back to it.`
+      : now.kind === kept.kind
         ? `Switched to the other ${label(now)} setup. Both setups and your transcripts are kept.`
         : `Now using the ${label(now)} setup. The ${label(kept)} setup and your transcripts are kept, so you can switch back.`;
     // Only an installed candidate changes between ready and active; a planned or

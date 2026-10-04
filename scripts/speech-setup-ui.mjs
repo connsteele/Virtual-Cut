@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, copyFile, writeFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, copyFile, writeFile, stat, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron, expect } from 'playwright/test';
 import { require, root, electronEnvironment } from './shared.mjs';
@@ -34,7 +34,24 @@ await mkdir(path.join(fakeInstall, 'libraries', 'faster_whisper'), { recursive: 
 await mkdir(path.join(fakeInstall, 'model'), { recursive: true });
 await writeFile(path.join(fakeInstall, 'python', 'python.exe'), '');
 await writeFile(path.join(fakeInstall, 'model', 'model.bin'), '');
+// A disposable manual setup is in use, so switching back to it is possible.
+const fakeManual = path.join(dir, 'manual-speech');
+await mkdir(path.join(fakeManual, 'Lib', 'site-packages', 'faster_whisper'), { recursive: true });
+await mkdir(path.join(fakeManual, 'model'), { recursive: true });
+await writeFile(path.join(fakeManual, 'python.exe'), '');
+await writeFile(path.join(fakeManual, 'model', 'model.bin'), '');
 await mkdir(path.join(dir, 'profile'), { recursive: true });
+await writeFile(
+  path.join(dir, 'profile', 'transcription-runtime.json'),
+  JSON.stringify({
+    python: path.join(fakeManual, 'python.exe'),
+    libraries: path.join(fakeManual, 'Lib', 'site-packages'),
+    model: path.join(fakeManual, 'model'),
+    gpuLibraries: '',
+    device: 'cpu',
+    threads: 4,
+  }),
+);
 await writeFile(
   path.join(dir, 'profile', 'speech-previous-runtime.json'),
   JSON.stringify({
@@ -49,6 +66,18 @@ await writeFile(
 const localAppData = path.join(dir, 'localappdata');
 let app;
 const errors = [];
+const capture = async (name) => {
+  const png = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()
+        .find((w) => w.webContents.getURL().endsWith('#transcript'))
+        .webContents.capturePage(undefined, { stayHidden: true })
+    )
+      .toPNG()
+      .toString('base64'),
+  );
+  await writeFile(path.join(dir, name), Buffer.from(png, 'base64'));
+};
 try {
   app = await electron.launch({
     executablePath: process.env.VIRTUAL_CUT_TEST_EXECUTABLE || require('electron'),
@@ -172,6 +201,34 @@ try {
     ),
     JSON.stringify(runtimeBefore),
   );
+  // Files deleted in Explorer while the window is open are noticed when it regains focus
+  // (VC-90 follow-up): the row and the reason say so, and switching away still works.
+  await setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }).click();
+  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText(fakeInstall);
+  await rm(path.join(fakeInstall, 'model', 'model.bin'));
+  await transcript.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText('files not found');
+  await expect(transcript.getByLabel('Speech setup files missing')).toContainText(
+    'The speech model was not found',
+  );
+  assert.equal(
+    await transcript.evaluate(
+      async () => (await window.virtualCut.transcript.runtime()).configured,
+    ),
+    false,
+  );
+  await transcript.getByLabel('Speech setup files missing').scrollIntoViewIfNeeded();
+  await capture('setup-removed.png');
+  await setup.getByRole('button', { name: 'Switch to manual setup', exact: true }).click();
+  await expect(
+    setup.getByText("The previous downloaded setup's files are missing", { exact: false }),
+  ).toBeVisible();
+  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
+  await expect(setup.getByLabel('Other setup: Downloaded setup')).toContainText('files not found');
+  await expect(
+    setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }),
+  ).toBeDisabled();
+  await expect(transcript.getByLabel('Speech setup files missing')).toHaveCount(0);
   for (const width of [900, 500]) {
     await app.evaluate(
       ({ BrowserWindow }, width) =>
@@ -188,16 +245,7 @@ try {
     await expect(
       setup.getByRole('button', { name: 'Download and install', exact: true }),
     ).toBeFocused();
-    const png = await app.evaluate(async ({ BrowserWindow }) =>
-      (
-        await BrowserWindow.getAllWindows()
-          .find((w) => w.webContents.getURL().endsWith('#transcript'))
-          .webContents.capturePage(undefined, { stayHidden: true })
-      )
-        .toPNG()
-        .toString('base64'),
-    );
-    await writeFile(path.join(dir, `setup-${width}.png`), Buffer.from(png, 'base64'));
+    await capture(`setup-${width}.png`);
   }
   await collectBeforeWindowClose(app);
   await transcript.close();
@@ -280,6 +328,7 @@ try {
         untouchedRuntime: true,
         compactKeyboard: true,
         reopenedPlan: true,
+        removedSetupNoticedOnFocus: true,
         orderlyCloseRemovedOnlyPartialSetup: true,
       },
       null,

@@ -150,8 +150,7 @@ export class ProjectService {
     const r = s.data.model.recordings.find((r) => r.id === sourceId);
     if (!r || !r.batchIds?.includes(batchId) || r.availability !== 'ready')
       throw new Error('Choose an inspected recording in this batch.');
-    if (!this.transcription.configured)
-      throw new Error('Set up the local speech runtime in the Transcript window first.');
+    if (!this.transcription.configured) throw new Error(this.transcription.problem);
     const effective = effectiveContext(s.data.model.contexts, batchId);
     const context = {
       gameId: effective.game?.id,
@@ -1036,7 +1035,7 @@ export class ProjectService {
       validateTranscriptionOptions(defaults.transcription);
       if (!this.transcription.configured)
         throw new Error(
-          'Set up local transcription in the Transcript window, or import now and transcribe later.',
+          `${this.transcription.problem} You can also import now and transcribe later.`,
         );
     }
     for (const value of [defaults.game, defaults.mic])

@@ -82,7 +82,7 @@ try {
         language: 'en',
         vocabulary: false,
       }),
-    /runtime/,
+    /Set up local transcription in the Transcript window/,
   );
   // Deterministic worker boundary for persistence/lifecycle tests; real recognition is measured separately.
   const libraries = path.join(dir, 'libraries'),
