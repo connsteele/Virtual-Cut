@@ -2,6 +2,14 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.12 — 6× preview and transcript position fix (October 4, 2026)
+
+J and L gain a 6× step (1×, 2×, 4×, 6×, 8×, 16×) for forward and reverse, with preview audio
+playing through 6× and pausing above it. The transcript window now follows a pause or seek made
+right after playback instead of sometimes staying on the previous page. The desktop test suite
+runs in about 6 minutes instead of 28, and FFmpeg and FFprobe start directly on Windows while
+still stopping with the app. See [the 0.4.12 review](docs/review-0.4.12.md).
+
 ## 0.4.11 — One speech engine (October 3, 2026)
 
 The speech setup panel now manages a single speech engine: one card with its status and location,
