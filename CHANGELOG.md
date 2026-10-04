@@ -2,6 +2,13 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.11 — One speech engine (October 3, 2026)
+
+The speech setup panel now manages a single speech engine: one card with its status and location,
+a download that is used as soon as it passes its check, an offer to delete a replaced downloaded
+engine, and your own Python installation under Advanced. The two-setup switch is gone. See
+[the 0.4.11 review](docs/review-0.4.11.md).
+
 ## 0.4.10 — Speech setup files removed outside the app (October 3, 2026)
 
 The Transcript window now notices speech setup files that were moved or deleted in Explorer: it
