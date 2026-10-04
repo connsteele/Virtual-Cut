@@ -2,6 +2,14 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.10 — Speech setup files removed outside the app (October 3, 2026)
+
+The Transcript window now notices speech setup files that were moved or deleted in Explorer: it
+rechecks whenever it regains focus, names the missing file, stops reporting an earlier GPU check
+as ready, and keeps Start transcription disabled with the reason shown. A deleted download no
+longer offers Use this setup, and a setup with missing files cannot be switched to. See
+[the 0.4.10 review](docs/review-0.4.10.md).
+
 ## 0.4.9 — M320 speech setup clarity (October 3, 2026)
 
 The local speech setup panel shows which setup is in use and where, lists the other setup you can
