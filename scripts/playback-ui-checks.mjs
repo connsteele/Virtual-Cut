@@ -72,7 +72,7 @@ try {
   const card = page.locator('[data-cut-clip]').first();
   await card.click({ position: { x: 20, y: 20 } });
   await page.getByRole('button', { name: 'Loop selected clip', exact: true }).click();
-  for (const rate of [1, 2, 4, 8, 16, 16]) {
+  for (const rate of [1, 2, 4, 6, 8, 16, 16]) {
     await key('l');
     await expect(status).toHaveText(`${rate}× forward`);
     await expect.poll(() => video.evaluate((v) => v.playbackRate)).toBe(rate);
@@ -82,7 +82,7 @@ try {
     'background-color',
     'rgb(4, 99, 95)',
   );
-  for (const rate of [1, 2, 4, 8, 16, 16]) {
+  for (const rate of [1, 2, 4, 6, 8, 16, 16]) {
     await key('j');
     await expect(status).toHaveText(`${rate}× reverse scan`);
   }

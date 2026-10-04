@@ -6,7 +6,10 @@ import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
 const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));
-const dir = await mkdtemp(path.join(scratch, 'regression-'));
+const dir = await mkdtemp(
+  path.join(process.env.VIRTUAL_CUT_TRANSPORT_OUTPUT || scratch, 'regression-'),
+);
+const temp = process.env.VIRTUAL_CUT_TRANSPORT_TEMP || 'G:/GPT/Temp';
 const file = path.join(dir, 'transport.vcut');
 await copyFile(fixture.file, file);
 const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -18,7 +21,7 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment({ TEMP: temp, TMP: temp }),
 });
 const page = await app.firstWindow(),
   errors = [],
@@ -125,7 +128,8 @@ try {
       .querySelector('video')
       .addEventListener('seeked', () => window.transportStats.completed++);
   });
-  for (const rate of [1, 2, 4, 8, 16]) {
+  const speeds = [1, 2, 4, 6, 8, 16];
+  for (const rate of speeds) {
     await pause();
     await seek(10);
     await page.evaluate(() => {
@@ -136,7 +140,7 @@ try {
         completed: 0,
       };
     });
-    for (let i = 0; i <= Math.log2(rate); i++) await key('l');
+    for (let i = 0; i <= speeds.indexOf(rate); i++) await key('l');
     await expect(status).toHaveText(new RegExp(`^${rate}× forward`));
     const start = await v.evaluate((v) => v.currentTime);
     await page.waitForTimeout(rate === 16 ? 6500 : 2500);
@@ -155,7 +159,9 @@ try {
       'Forward scan advances at the requested rate',
     );
     assert(data.audioSeeks <= 10, `Audio corrections must be bounded: ${JSON.stringify(data)}`);
-    if (rate > 4) assert(data.audioPaused);
+    // Preview audio follows forward playback through 6×.
+    if (rate > 6) assert(data.audioPaused);
+    else assert(!data.audioPaused, `Preview audio plays at ${rate}×`);
     if (rate === 16) {
       assert(data.status.includes('scan'), 'Heavy source should trigger adaptive scanning');
       assert(data.completed >= 4);
@@ -182,7 +188,7 @@ try {
       completed: 0,
     };
   });
-  for (let i = 0; i < 5; i++) await key('j');
+  for (let i = 0; i < speeds.length; i++) await key('j');
   await expect(status).toHaveText('16× reverse scan');
   await page.waitForTimeout(2500);
   const reverse = await page.evaluate(() => ({

@@ -29,6 +29,10 @@ import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
 import type { PlaybackDiagnostic, PlaybackTrace } from '../../electron/diagnostic-contracts';
 import s from './Workflow.module.css';
+/** J and L speed steps. Preview audio follows forward playback up to `audioLimit`. */
+const speeds = [1, 2, 4, 6, 8, 16],
+  audioLimit = 6;
+const faster = (rate: number) => speeds.find((step) => step > rate) ?? speeds.at(-1)!;
 export interface Transport {
   seek: (time: number) => void;
   command: (key: string) => void;
@@ -309,7 +313,7 @@ export function Player({
           v.paused ||
           v.seeking ||
           scan.current ||
-          v.playbackRate > 4
+          v.playbackRate > audioLimit
         ) {
           a.pause();
           continue;
@@ -337,7 +341,7 @@ export function Player({
       }
     };
     const seekAudio = () => {
-      if (scan.current || v.playbackRate > 4) {
+      if (scan.current || v.playbackRate > audioLimit) {
         sync();
         return;
       }
@@ -497,7 +501,7 @@ export function Player({
       return;
     }
     if (key === 'l') {
-      const rate = !v.paused || scan.current?.direction === 1 ? Math.min(16, speed.current * 2) : 1;
+      const rate = !v.paused || scan.current?.direction === 1 ? faster(speed.current) : 1;
       if (scan.current?.direction === 1) beginScan(1, rate);
       else forward(rate);
       return;
@@ -508,7 +512,7 @@ export function Player({
       return;
     }
     if (key === 'j') {
-      const rate = scan.current?.direction === -1 ? Math.min(16, speed.current * 2) : 1;
+      const rate = scan.current?.direction === -1 ? faster(speed.current) : 1;
       if (
         looping &&
         (v.currentTime - clockOffset < loopStart || v.currentTime - clockOffset >= loopEnd)
@@ -902,7 +906,7 @@ export function Player({
             primary={reversePlaying}
             onClick={() => command('j')}
             aria-label="Reverse · J"
-            title="J: reverse scan · 1× / 2× / 4× / 8× / 16× · silent, sampled frames"
+            title="J: reverse scan · 1× / 2× / 4× / 6× / 8× / 16× · silent, sampled frames"
           >
             <Rewind size={17} />
           </Button>
@@ -920,7 +924,7 @@ export function Player({
             primary={fastPlaying}
             onClick={() => command('l')}
             aria-label="Forward / faster · L"
-            title="L: forward / faster · 1× / 2× / 4× / 8× / 16× · stalled fast playback switches to sampled scanning; audio pauses above 4×"
+            title="L: forward / faster · 1× / 2× / 4× / 6× / 8× / 16× · stalled fast playback switches to sampled scanning; audio pauses above 6×"
           >
             <FastForward size={17} />
           </Button>
@@ -994,7 +998,9 @@ export function Player({
                 ))}
               </div>
               <span role="status" className={s.audioReady} title={audioStatus}>
-                {reversePlaying || status.includes('scan') || (fastPlaying && speed.current > 4)
+                {reversePlaying ||
+                status.includes('scan') ||
+                (fastPlaying && speed.current > audioLimit)
                   ? 'Audio paused while scanning'
                   : audioStatus ||
                     (monitored.some((t) => !t.previewUrl)

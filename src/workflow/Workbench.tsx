@@ -2849,7 +2849,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ['Ctrl+↑ / Ctrl+↓', 'Previous / next item in the current page'],
                 [
                   'J / K / L',
-                  'J: reverse scan · K: play/pause · L: forward/faster (1×, 2×, 4×, 8×, 16×)',
+                  'J: reverse scan · K: play/pause · L: forward/faster (1×, 2×, 4×, 6×, 8×, 16×)',
                 ],
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
