@@ -158,11 +158,18 @@ try {
   };
   [...wanted].forEach(addDependencies);
   const build = await run('build', process.execPath, ['scripts/build.mjs']);
-  if (profile === 'fast' || profile === 'all')
+  if (profile === 'fast' || profile === 'all') {
     await run('lint', process.execPath, [
       path.join(root, 'node_modules/eslint/bin/eslint.js'),
       '.',
     ]);
+    // The same files as npm run format:check, so formatting drift fails the fast gate.
+    await run('format', process.execPath, [
+      path.join(root, 'node_modules/prettier/bin/prettier.cjs'),
+      '--check',
+      ...manifest.scripts['format:check'].split(' ').slice(2),
+    ]);
+  }
   for (const name of known.filter((s) => wanted.has(s))) {
     const deps = dependencies[name] || [];
     const failedDependency = deps.find(

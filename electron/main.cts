@@ -67,6 +67,16 @@ if (requestedProfile) {
   app.setPath('userData', requestedProfile);
   app.setPath('sessionData', requestedProfile);
 }
+// A window that is never shown produces no frames, so Chromium acknowledges each
+// automated mouse event only after a one-second fallback (8 s for an 8-step drag).
+// Subscribing to frames keeps test windows hidden but drawing like visible ones; it
+// only takes effect once a page has loaded.
+if (backgroundTest)
+  app.on('browser-window-created', (_event, window) =>
+    window.webContents.on('did-finish-load', () =>
+      window.webContents.beginFrameSubscription(() => {}),
+    ),
+  );
 
 // Start before creating either renderer. Native dumps remain local and separate
 // from the redacted text report; no submit URL or automatic upload is configured.

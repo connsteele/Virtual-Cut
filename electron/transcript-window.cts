@@ -31,6 +31,8 @@ export function registerTranscriptWindow(
   let window: BrowserWindow | null = null;
   let preferredSource = '';
   let lastPosition = 0;
+  let pendingPosition: { projectId: string; sourceId: string; time: number } | undefined;
+  let positionTimer: ReturnType<typeof setTimeout> | undefined;
   let viewStore: ProjectService['store'] = null;
   let viewSessionId = randomUUID();
   const pending = new Map<
@@ -378,15 +380,24 @@ export function registerTranscriptWindow(
     } catch {
       return;
     }
-    if (
-      !window ||
-      projects.store?.data.project.id !== projectId ||
-      !Number.isFinite(time) ||
-      Date.now() - lastPosition < 120
-    )
-      return;
-    lastPosition = Date.now();
-    window.webContents.send('transcript:position-event', { projectId, sourceId, time });
+    if (!window || projects.store?.data.project.id !== projectId || !Number.isFinite(time)) return;
+    // At most one update per 120 ms, but the latest position is always delivered, so a
+    // pause or seek right after playback never leaves the transcript on a stale page.
+    pendingPosition = { projectId, sourceId, time };
+    if (positionTimer) return;
+    const wait = Math.max(0, lastPosition + 120 - Date.now());
+    positionTimer = setTimeout(() => {
+      positionTimer = undefined;
+      if (
+        !pendingPosition ||
+        !window ||
+        projects.store?.data.project.id !== pendingPosition.projectId
+      )
+        return;
+      lastPosition = Date.now();
+      window.webContents.send('transcript:position-event', pendingPosition);
+      pendingPosition = undefined;
+    }, wait);
   });
   handle('export', async (id, transcriptId, format, exportId) => {
     if (!['srt', 'json'].includes(format)) throw new Error('Choose SRT or JSON.');

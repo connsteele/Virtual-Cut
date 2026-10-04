@@ -117,9 +117,31 @@ try {
   if (process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE) {
     await copyFile(process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE, long);
   } else {
-    await launchTool(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=4:duration=140', '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '4', '-y', long], signal);
+    await launchTool(
+      ffmpeg,
+      [
+        '-v',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=320x180:rate=4:duration=140',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-g',
+        '4',
+        '-y',
+        long,
+      ],
+      signal,
+    );
   }
-  const { native, info } = await exercise(long, process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE ? 'copiedRealFixture' : 'longSynthetic');
+  const { native, info } = await exercise(
+    long,
+    process.env.VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE ? 'copiedRealFixture' : 'longSynthetic',
+  );
   const retained = await cache.request(
     ffmpeg,
     native,

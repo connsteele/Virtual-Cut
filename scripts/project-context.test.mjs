@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { effectiveContext, defaultContext, validateContexts } from '../dist-electron/project-context.js';
+import {
+  effectiveContext,
+  defaultContext,
+  validateContexts,
+} from '../dist-electron/project-context.js';
 import { mergeEdits, emptyModel, validateEdits } from '../dist-electron/project-edits.js';
 const project = {
   ...defaultContext('project'),
