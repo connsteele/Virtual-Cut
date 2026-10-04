@@ -226,8 +226,25 @@ export function useProjectWorkspace() {
       .catch((e) => {
         if (alive) setError(String(e));
       });
-    const timer = setInterval(() => {
-      if (!session.current || saving.current || working.current) return;
+    // Refresh when native state changes (jobs, exports, inspection, saves) and when the
+    // window regains focus, which also rechecks files moved outside the app. There is
+    // no polling timer (VC-98).
+    let refreshing = false,
+      again = false,
+      retry: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      if (!alive || !session.current) return;
+      if (saving.current || working.current) {
+        // A local write is applying its own snapshot; look again once it finishes.
+        clearTimeout(retry);
+        retry = setTimeout(refresh, 250);
+        return;
+      }
+      if (refreshing) {
+        again = true;
+        return;
+      }
+      refreshing = true;
       const id = session.current.project.id;
       void api
         .current()
@@ -243,8 +260,21 @@ export function useProjectWorkspace() {
         })
         .catch((e) => {
           if (alive) setError(String(e));
+        })
+        .finally(() => {
+          refreshing = false;
+          if (again) {
+            again = false;
+            refresh();
+          }
         });
-    }, 1000);
+    };
+    const offChanged = api.onChanged(refresh);
+    const visible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', visible);
     const off = api.onCloseRequested(() => {
       window.dispatchEvent(new Event('virtual-cut-pause-workspace'));
       void Promise.resolve(autosaving.current)
@@ -257,7 +287,10 @@ export function useProjectWorkspace() {
     });
     return () => {
       alive = false;
-      clearInterval(timer);
+      clearTimeout(retry);
+      offChanged();
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', visible);
       off();
       filmstripMemory.sync('', []);
     };

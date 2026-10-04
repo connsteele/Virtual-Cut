@@ -138,6 +138,8 @@ export interface ProjectApi {
   /** Inspected timestamps for one recording; null until inspection or after the file changes. */
   frameIndex(id: string, sourceId: string): Promise<import('./frame-index.js').FrameIndex | null>;
   onCloseRequested(callback: () => void): () => void;
+  /** Native project state changed (jobs, exports, inspection, saves); refresh the snapshot. */
+  onChanged(callback: () => void): () => void;
   finishClose(): Promise<void>;
   recent(): Promise<RecentProject[]>;
   create(name: string): Promise<ProjectSnapshot | null>;

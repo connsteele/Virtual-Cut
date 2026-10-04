@@ -375,6 +375,8 @@ export class ProjectService {
     this.filmstripCache.cancel(token, release === true);
   }
   store: ProjectStore | null = null;
+  /** Native changes the renderer did not request directly, such as job progress. */
+  onChange?: () => void;
   private grants = new Map<string, { access: VideoAccess; url: string }>();
   private active: { id: string; controller: AbortController; finished: Promise<void> } | null =
     null;
@@ -449,6 +451,7 @@ export class ProjectService {
       throw e;
     }
     this.store = next;
+    next.changed = () => this.onChange?.();
     for (const job of next
       .jobs()
       .filter((j) => j.kind === 'transcribe' && !['queued', 'running'].includes(j.state))) {

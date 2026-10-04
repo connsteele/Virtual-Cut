@@ -63,6 +63,8 @@ export class ProjectStore {
   private copies: SaveCopy[] = [];
   private recoveryNotice?: string;
   private checkedCopies = false;
+  /** Called after any durable native change so open windows can refresh (VC-98). */
+  changed?: () => void;
   constructor(
     readonly file: string,
     creation?: { name: string; destination: string; cache: string },
@@ -201,6 +203,7 @@ export class ProjectStore {
       .run(JSON.stringify(next));
     this.persisted = next;
     this.observed = structuredClone(this.data);
+    this.changed?.();
   }
   persist() {
     const body = JSON.stringify(this.data);
@@ -209,6 +212,7 @@ export class ProjectStore {
     this.persisted = structuredClone(this.data);
     this.observed = structuredClone(this.data);
     this.savedAt = Date.now();
+    this.changed?.();
   }
   async loadCopies() {
     const directory = this.file + '.saves';
@@ -456,6 +460,7 @@ export class ProjectStore {
     this.db
       .prepare('INSERT OR REPLACE INTO sources (id,body) VALUES (?,?)')
       .run(s.id, JSON.stringify(s));
+    this.changed?.();
   }
   /** Indexes inspected from a different file revision are stale and never returned. */
   frameIndex(sourceId: string): FrameIndex | null {
@@ -481,6 +486,7 @@ export class ProjectStore {
     this.transcripts.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);
     this.db.prepare('DELETE FROM sources WHERE id=?').run(id);
+    this.changed?.();
   }
   clearHistory() {
     this.journal = [];
@@ -497,6 +503,7 @@ export class ProjectStore {
     this.db
       .prepare('INSERT OR REPLACE INTO jobs (id,body) VALUES (?,?)')
       .run(j.id, JSON.stringify(j));
+    this.changed?.();
   }
   exports(): ExportRecord[] {
     return this.db
@@ -508,6 +515,7 @@ export class ProjectStore {
     this.db
       .prepare('INSERT OR REPLACE INTO exports (id,body) VALUES (?,?)')
       .run(record.plan.id, JSON.stringify(record));
+    this.changed?.();
   }
   discardExportPlans() {
     this.db.prepare("DELETE FROM exports WHERE json_extract(body, '$.state')='planned'").run();

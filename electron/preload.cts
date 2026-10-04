@@ -91,6 +91,11 @@ const api: VirtualCutApi = {
       ipcRenderer.on('workspace:closing', listener);
       return () => ipcRenderer.removeListener('workspace:closing', listener);
     },
+    onChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('workspace:changed', listener);
+      return () => ipcRenderer.removeListener('workspace:changed', listener);
+    },
     finishClose: () => ipcRenderer.invoke('workspace:finish-close'),
     recent: () => ipcRenderer.invoke('workspace:recent'),
     create: (name) => ipcRenderer.invoke('workspace:create', name),

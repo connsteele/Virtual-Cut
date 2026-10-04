@@ -255,7 +255,13 @@ function registerDesktopApi(): void {
   });
   type Calls = Omit<
     ProjectApi,
-    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch' | 'stageDrop' | 'frameIndex'
+    | 'onCloseRequested'
+    | 'onChanged'
+    | 'finishClose'
+    | 'selectBatch'
+    | 'deleteBatch'
+    | 'stageDrop'
+    | 'frameIndex'
   > & {
     'finish-close': ProjectApi['finishClose'];
     'select-batch': ProjectApi['selectBatch'];
@@ -703,6 +709,21 @@ app
       diagnostics,
     );
     void projects.logToolVersions();
+    // Change notifications replace renderer polling (VC-98): at most one every 250 ms,
+    // always followed by a trailing one so the final state is never missed.
+    let changeTimer: ReturnType<typeof setTimeout> | undefined,
+      changePending = false;
+    const announce = () => {
+      changeTimer = undefined;
+      if (!changePending) return;
+      changePending = false;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('workspace:changed');
+      changeTimer = setTimeout(announce, 250);
+    };
+    projects.onChange = () => {
+      changePending = true;
+      if (!changeTimer) announce();
+    };
     transcriptWindow = registerTranscriptWindow(
       projects,
       () => mainWindow,
