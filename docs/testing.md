@@ -63,6 +63,13 @@ floors pass. Seven selected final-package scripts plus build also pass. See
 [0.4.7 review/evidence](review-0.4.7.md) and [coverage](coverage.md) for original failures,
 exact reports and measurement boundaries.
 
+`scripts/cue-accuracy-study.mjs` scores spoken-cue recognition against labelled recordings
+(`G:\VC Audio Cues` by default: each recording with a `.txt` of what was said and when). It copies
+each recording, runs the app's own import, local recognition and cue logic, and reports cues found,
+timing error, Note wording, false triggers and per-phrase word error rate. It needs a local speech
+engine (`VIRTUAL_CUT_ASR_RUNTIME` pointing at a `transcription-runtime.json`, read only) and is not
+part of the automatic gates.
+
 M3 adds context inheritance, immutable transcript storage, corrections, cue actions, silence offsets, pagination/search, checkpoint recovery, cancellation/retry and separate-window IPC/layout checks. The maintained storage test uses a synthetic worker boundary; it is not recognition-accuracy evidence. Explicit real-model worker/native/sample scripts remain classified outside CI and need copied audio plus an installed runtime. Their measured results and known recognition errors are in [M3 review](m3-review.md). Python-worker execution is not included in Istanbul's JavaScript/TypeScript percentage.
 
 Use the repository's Node/npm dependencies. Native and desktop gates need FFmpeg and FFprobe on PATH (or the documented tool overrides); packaged checks require both binaries in `resources/tools` beside the executable. Fixture preparation runs under the repository Electron runtime; application checks run the packaged executable. Packaged tests do not silently substitute the installed application for a missing executable.

@@ -76,6 +76,8 @@ export const dependencies = {
 };
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
+  'cue-accuracy-study.mjs':
+    'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'transcription-device-study.mjs':
     'Real CPU/GPU and bounded speech-batch comparison on explicitly supplied disposable samples; requires local runtime.',
   'transcription-sample-study.mjs':
