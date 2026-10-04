@@ -1,0 +1,294 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Reverse cache study</title>
+<body style="margin: 0; background: #000">
+  <canvas id="screen" width="1600" height="900" style="width: 100%"></canvas>
+  <script>
+    // Study page for scripts/reverse-cache-study.mjs (not part of the app). Reads one MP4's video
+    // track with a minimal parser, decodes a keyframe interval at a time with WebCodecs, and shows
+    // the frames backwards from a cache while the next older interval decodes ahead.
+    const fs = require('node:fs');
+
+    function boxes(buf, start, end) {
+      const out = [];
+      for (let p = start; p + 8 <= end;) {
+        let size = buf.readUInt32BE(p);
+        const type = buf.toString('latin1', p + 4, p + 8);
+        let header = 8;
+        if (size === 1) {
+          size = Number(buf.readBigUInt64BE(p + 8));
+          header = 16;
+        } else if (size === 0) size = end - p;
+        out.push({ type, start: p, body: p + header, end: p + size });
+        p += size;
+      }
+      return out;
+    }
+    const child = (buf, box, type) => boxes(buf, box.body, box.end).find((b) => b.type === type);
+
+    /** Read the moov box (and nothing else) from a file. */
+    function readMoov(fd, fileSize) {
+      const head = Buffer.alloc(16);
+      for (let p = 0; p < fileSize;) {
+        fs.readSync(fd, head, 0, 16, p);
+        let size = head.readUInt32BE(0);
+        const type = head.toString('latin1', 4, 8);
+        if (size === 1) size = Number(head.readBigUInt64BE(8));
+        if (type === 'moov') {
+          const buf = Buffer.alloc(size);
+          fs.readSync(fd, buf, 0, size, p);
+          return buf;
+        }
+        p += size;
+      }
+      throw new Error('No moov box');
+    }
+
+    /** Samples, decoder configuration and timing of the first video track. */
+    function videoTrack(file) {
+      const fd = fs.openSync(file, 'r');
+      const moov = readMoov(fd, fs.fstatSync(fd).size);
+      const moovBox = boxes(moov, 0, moov.length)[0];
+      for (const trak of boxes(moov, moovBox.body, moovBox.end).filter((b) => b.type === 'trak')) {
+        const mdia = child(moov, trak, 'mdia');
+        const hdlr = child(moov, mdia, 'hdlr');
+        if (moov.toString('latin1', hdlr.body + 8, hdlr.body + 12) !== 'vide') continue;
+        const mdhd = child(moov, mdia, 'mdhd');
+        const timescale =
+          moov[mdhd.body] === 1
+            ? moov.readUInt32BE(mdhd.body + 20)
+            : moov.readUInt32BE(mdhd.body + 12);
+        const stbl = child(moov, child(moov, mdia, 'minf'), 'stbl');
+        const stsd = child(moov, stbl, 'stsd');
+        const entry = boxes(moov, stsd.body + 8, stsd.end)[0];
+        const width = moov.readUInt16BE(entry.body + 24),
+          height = moov.readUInt16BE(entry.body + 26);
+        const inner = boxes(moov, entry.body + 78, entry.end);
+        let codec, description;
+        const av1C = inner.find((b) => b.type === 'av1C'),
+          avcC = inner.find((b) => b.type === 'avcC');
+        if (av1C) {
+          const b1 = moov[av1C.body + 1],
+            b2 = moov[av1C.body + 2];
+          const profile = b1 >> 5,
+            level = b1 & 31,
+            tier = b2 >> 7 ? 'H' : 'M',
+            depth = b2 & 0x40 ? (b2 & 0x20 ? 12 : 10) : 8;
+          codec = `av01.${profile}.${String(level).padStart(2, '0')}${tier}.${String(depth).padStart(2, '0')}`;
+          description = moov.subarray(av1C.body, av1C.end);
+        } else if (avcC) {
+          const hex = (n) => n.toString(16).padStart(2, '0');
+          codec = `avc1.${hex(moov[avcC.body + 1])}${hex(moov[avcC.body + 2])}${hex(moov[avcC.body + 3])}`;
+          description = moov.subarray(avcC.body, avcC.end);
+        } else throw new Error('Unsupported video codec ' + entry.type);
+        const table = (type) => child(moov, stbl, type);
+        const stsz = table('stsz');
+        const fixed = moov.readUInt32BE(stsz.body + 4),
+          count = moov.readUInt32BE(stsz.body + 8);
+        const sizes = Array.from(
+          { length: count },
+          (_, i) => fixed || moov.readUInt32BE(stsz.body + 12 + i * 4),
+        );
+        const stco = table('stco') || table('co64');
+        const wide = stco.type === 'co64';
+        const chunks = Array.from({ length: moov.readUInt32BE(stco.body + 4) }, (_, i) =>
+          wide
+            ? Number(moov.readBigUInt64BE(stco.body + 8 + i * 8))
+            : moov.readUInt32BE(stco.body + 8 + i * 4),
+        );
+        const stsc = table('stsc');
+        const runs = Array.from({ length: moov.readUInt32BE(stsc.body + 4) }, (_, i) => ({
+          first: moov.readUInt32BE(stsc.body + 8 + i * 12) - 1,
+          per: moov.readUInt32BE(stsc.body + 12 + i * 12),
+        }));
+        const offsets = [];
+        for (let c = 0, s = 0, r = 0; c < chunks.length; c++) {
+          if (r + 1 < runs.length && runs[r + 1].first === c) r++;
+          let off = chunks[c];
+          for (let k = 0; k < runs[r].per && s < count; k++, s++) {
+            offsets.push(off);
+            off += sizes[s];
+          }
+        }
+        const stts = table('stts');
+        const times = [];
+        for (let i = 0, t = 0, n = moov.readUInt32BE(stts.body + 4); i < n; i++) {
+          const c = moov.readUInt32BE(stts.body + 8 + i * 8),
+            d = moov.readUInt32BE(stts.body + 12 + i * 8);
+          for (let k = 0; k < c; k++, t += d) times.push(t);
+        }
+        const ctts = table('ctts');
+        const shifts = new Array(count).fill(0);
+        if (ctts)
+          for (let i = 0, s = 0, n = moov.readUInt32BE(ctts.body + 4); i < n; i++) {
+            const c = moov.readUInt32BE(ctts.body + 8 + i * 8),
+              o = moov.readInt32BE(ctts.body + 12 + i * 8);
+            for (let k = 0; k < c; k++, s++) shifts[s] = o;
+          }
+        const stss = table('stss');
+        const keys = new Set(
+          stss
+            ? Array.from(
+                { length: moov.readUInt32BE(stss.body + 4) },
+                (_, i) => moov.readUInt32BE(stss.body + 8 + i * 4) - 1,
+              )
+            : sizes.map((_, i) => i),
+        );
+        const samples = sizes.map((size, i) => ({
+          offset: offsets[i],
+          size,
+          time: (times[i] + shifts[i]) / timescale,
+          dts: times[i] / timescale,
+          key: keys.has(i),
+        }));
+        return { fd, codec, description, width, height, samples };
+      }
+      throw new Error('No video track');
+    }
+
+    /** Decode samples [from, to) and resolve every `step`-th frame as a display-size bitmap,
+     * sorted by presentation time. Each decoded frame is released at once: a hardware decoder
+     * has a small output pool and stalls while its frames are held. */
+    function decodeRange(track, from, to, step) {
+      return new Promise((resolve, reject) => {
+        const pending = [];
+        let index = 0;
+        const output = (f) => {
+          if (index++ % step) {
+            f.close();
+            return;
+          }
+          const timestamp = f.timestamp;
+          pending.push(
+            createImageBitmap(f, { resizeWidth: 1600, resizeHeight: 900 }).then((bitmap) => {
+              f.close();
+              return { timestamp, bitmap };
+            }),
+          );
+        };
+        const decoder = new VideoDecoder({ output, error: reject });
+        decoder.configure({
+          codec: track.codec,
+          description: track.description,
+          hardwareAcceleration: 'prefer-hardware',
+          optimizeForLatency: true,
+        });
+        for (let i = from; i < to; i++) {
+          const s = track.samples[i];
+          const data = Buffer.alloc(s.size);
+          fs.readSync(track.fd, data, 0, s.size, s.offset);
+          decoder.decode(
+            new EncodedVideoChunk({
+              type: s.key ? 'key' : 'delta',
+              timestamp: Math.round(s.time * 1e6),
+              data,
+            }),
+          );
+        }
+        decoder
+          .flush()
+          .then(() => {
+            decoder.close();
+            return Promise.all(pending);
+          })
+          .then((frames) => resolve(frames.sort((a, b) => a.timestamp - b.timestamp)), reject);
+      });
+    }
+
+    /** Play backwards from `start` at `rate` for `seconds`; report painted frames and gaps. */
+    window.reverseFromCache = async (file, start, rate, seconds) => {
+      const track = (window.__track ??= videoTrack(file));
+      const keyIndexes = track.samples.map((s, i) => (s.key ? i : -1)).filter((i) => i >= 0);
+      const intervalFor = (time) => {
+        let k = 0;
+        for (let j = 0; j < keyIndexes.length; j++)
+          if (track.samples[keyIndexes[j]].dts <= time) k = j;
+        return k;
+      };
+      // Show every frame up to 2×; above that the display can't show them all, so keep fewer.
+      const step = Math.max(1, Math.floor(rate / 2)),
+        ahead = 1 + Math.floor(rate / 4);
+      const release = (p) => p.then(({ frames }) => frames.forEach((f) => f.bitmap.close()));
+      const cache = new Map();
+      const load = (k) => {
+        if (k < 0 || cache.has(k)) return cache.get(k);
+        const from = keyIndexes[k],
+          to = keyIndexes[k + 1] ?? track.samples.length;
+        const started = performance.now();
+        const p = decodeRange(track, from, to, step).then((frames) => ({
+          frames,
+          ms: performance.now() - started,
+        }));
+        cache.set(k, p);
+        return p;
+      };
+      const screen = document.getElementById('screen').getContext('2d');
+      const painted = [],
+        shown = new Set(),
+        decodeMs = [];
+      let waits = 0;
+      const began = performance.now();
+      let lastFrame = null;
+      while (performance.now() - began < seconds * 1000) {
+        const target = start - (rate * (performance.now() - began)) / 1000;
+        if (target <= 0) break;
+        const k = intervalFor(target);
+        const ready = await Promise.race([
+          load(k),
+          new Promise((r) => setTimeout(() => r(null), 0)),
+        ]);
+        for (let j = 1; j <= ahead; j++) load(k - j); // decode older intervals ahead of time
+        for (const old of [...cache.keys()])
+          if (old > k + 1) {
+            release(cache.get(old));
+            cache.delete(old);
+          }
+        if (!ready) {
+          waits++;
+          const done = await load(k);
+          decodeMs.push(done.ms);
+          continue;
+        }
+        if (!ready.counted) {
+          ready.counted = true;
+          decodeMs.push(ready.ms);
+        }
+        let frame = ready.frames[0];
+        for (const f of ready.frames) if (f.timestamp / 1e6 <= target) frame = f;
+        if (frame !== lastFrame) {
+          screen.drawImage(frame.bitmap, 0, 0);
+          lastFrame = frame;
+          painted.push(performance.now());
+          shown.add(frame.timestamp);
+        }
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      for (const p of cache.values()) release(p);
+      const elapsed = (performance.now() - began) / 1000;
+      const gaps = painted
+        .slice(1)
+        .map((t, i) => t - painted[i])
+        .sort((a, b) => a - b);
+      const pct = (q) =>
+        gaps.length
+          ? Math.round(gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * q))])
+          : null;
+      decodeMs.sort((a, b) => a - b);
+      return {
+        codec: track.codec,
+        size: `${track.width}x${track.height}`,
+        keptEveryNthFrame: step,
+        intervalsAhead: ahead,
+        paintedPerSecond: Number((painted.length / elapsed).toFixed(1)),
+        gapMedianMs: pct(0.5),
+        gapP95Ms: pct(0.95),
+        gapMaxMs: gaps.length ? Math.round(gaps.at(-1)) : null,
+        stutters: gaps.filter((g) => g > 50).length,
+        waitsForDecode: waits,
+        intervalDecodeMedianMs: decodeMs.length
+          ? Math.round(decodeMs[Math.floor(decodeMs.length / 2)])
+          : null,
+      };
+    };
+  </script>
+</body>

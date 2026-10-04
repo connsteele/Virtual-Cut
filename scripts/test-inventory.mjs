@@ -76,6 +76,12 @@ export const dependencies = {
 };
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
+  'playback-speed-study.mjs':
+    'Measures painted frames, gaps and decode load at each J/K/L speed on a copied project; manual, needs real footage.',
+  'proxy-study.mjs':
+    'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
+  'reverse-cache-study.mjs':
+    'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'cue-accuracy-study.mjs':
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'transcription-device-study.mjs':
