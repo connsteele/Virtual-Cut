@@ -12,9 +12,13 @@
 //   VIRTUAL_CUT_ASR_PYTHON, VIRTUAL_CUT_ASR_LIBRARIES, VIRTUAL_CUT_ASR_MODEL
 //   (optional VIRTUAL_CUT_ASR_GPU_LIBRARIES), or VIRTUAL_CUT_ASR_RUNTIME pointing at a
 //   transcription-runtime.json whose paths are read, never modified.
+// Recordings without a .txt are skipped, or, with VIRTUAL_CUT_CUE_UNLABELLED=1, transcribed and
+// listed (every cue found today and every extra cue the experimental rule would add, with the
+// phrase around it) for reviewing false triggers on real sessions.
 // Run with Electron's Node runtime:
 //   ELECTRON_RUN_AS_NODE=1 electron scripts/cue-accuracy-study.mjs [samples folder]
 import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -178,12 +182,45 @@ function proposedCues(transcript, segments, current) {
         kind: cue.kind,
         time: long(w[i]) ? w[i].end - 0.45 : w[i].start,
         heard: text,
+        phrase: segment.text.trim(),
         title: cue.text,
         proposed: true,
       });
     }
   }
   return [...current, ...extra].sort((a, b) => a.time - b.time);
+}
+
+/** Mean and peak loudness of the microphone track, in dBFS. */
+function loudness(file, micTrack) {
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.env.VIRTUAL_CUT_FFMPEG || 'ffmpeg',
+      [
+        '-hide_banner',
+        '-nostdin',
+        '-i',
+        file,
+        '-map',
+        `0:a:${micTrack - 1}`,
+        '-af',
+        'volumedetect',
+        '-f',
+        'null',
+        '-',
+      ],
+      { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    let log = '';
+    child.stderr.on('data', (d) => (log += d));
+    child.on('error', () => resolve(undefined));
+    child.on('close', () =>
+      resolve({
+        meanDb: Number(/mean_volume:\s*(-?[\d.]+)/.exec(log)?.[1]),
+        peakDb: Number(/max_volume:\s*(-?[\d.]+)/.exec(log)?.[1]),
+      }),
+    );
+  });
 }
 
 async function waitForJobs(service, limitMs) {
@@ -233,7 +270,8 @@ async function score(file, labels, dir) {
         paired: s.cuePartner ? true : s.cueKind?.startsWith('clip') ? false : undefined,
       }));
     const { cues, falseTriggers } = match(labels.entries, detected);
-    const proposed = match(labels.entries, proposedCues(transcript, segments, detected));
+    const withRule = proposedCues(transcript, segments, detected);
+    const proposed = match(labels.entries, withRule);
     // Recognition quality for every labelled entry. Each recognized word belongs to the latest
     // entry starting before it ends (the recognizer stretches words across silences, so word
     // ends are more reliable than starts).
@@ -258,11 +296,27 @@ async function score(file, labels, dir) {
       };
     });
     return {
+      durationSeconds: Number(snapshot.model.recordings[0].duration.toFixed(1)),
+      micLoudness: await loudness(copy, labels.micTrack),
       transcription: {
         elapsedMs: Date.now() - started,
         device: job.device || transcript.device,
         words: transcript.wordCount,
       },
+      found: detected.map((d) => ({
+        kind: d.kind,
+        time: Number(d.time.toFixed(2)),
+        heard: d.heard,
+        paired: d.paired,
+      })),
+      ruleAdds: withRule
+        .filter((d) => d.proposed)
+        .map((d) => ({
+          kind: d.kind,
+          time: Number(d.time.toFixed(2)),
+          heard: d.heard,
+          phrase: d.phrase,
+        })),
       cues,
       falseTriggers,
       proposed,
@@ -288,10 +342,37 @@ const markdown = (results) => {
     `Tolerance: a detected cue counts if it has the expected kind within ±${tolerance} s.`,
     '',
   );
+  const unlabelled = results.filter((r) => r.labels.unlabelled && !r.error);
+  if (unlabelled.length)
+    lines.push(
+      `Unlabelled recordings: ${unlabelled.length}, ` +
+        `${(unlabelled.reduce((a, r) => a + r.durationSeconds, 0) / 60).toFixed(1)} min. ` +
+        `Cues found today: ${unlabelled.reduce((a, r) => a + r.found.length, 0)}. ` +
+        `Extra cues from the experimental rule: ${unlabelled.reduce((a, r) => a + r.ruleAdds.length, 0)} ` +
+        '(each needs a human judgement: a real cue the app missed, or a false trigger).',
+      '',
+    );
   for (const r of results) {
     lines.push(`## ${r.recording}`, '');
     if (r.error) {
       lines.push(`Not scored: ${r.error}`, '');
+      continue;
+    }
+    const level = r.micLoudness
+      ? ` · mic mean ${r.micLoudness.meanDb} dB, peak ${r.micLoudness.peakDb} dB`
+      : '';
+    if (r.labels.unlabelled) {
+      lines.push(
+        `Unlabelled · ${(r.durationSeconds / 60).toFixed(1)} min · ${r.transcription.words} words${level} · ` +
+          `**${r.found.length}** cues today, **${r.ruleAdds.length}** more with the experimental rule`,
+        '',
+      );
+      for (const f of r.found)
+        lines.push(
+          `- today: ${f.time} s ${f.kind}${f.paired === false ? ' (unpaired)' : ''}: "${f.heard}"`,
+        );
+      for (const a of r.ruleAdds) lines.push(`- rule adds: ${a.time} s ${a.kind}: "${a.phrase}"`);
+      lines.push('');
       continue;
     }
     const found = r.cues.filter((c) => c.found).length;
@@ -342,7 +423,13 @@ for (const name of (await readdir(samples)).filter((n) => /\.(mp4|mkv|mov)$/i.te
   try {
     labels = parseLabels(await readFile(notes, 'utf8'));
   } catch {
-    continue;
+    if (process.env.VIRTUAL_CUT_CUE_UNLABELLED !== '1') continue;
+    labels = {
+      fps: 60,
+      micTrack: Number(process.env.VIRTUAL_CUT_CUE_MIC_TRACK || 2),
+      entries: [],
+      unlabelled: true,
+    };
   }
   const dir = await mkdtemp(path.join(run, 'recording-'));
   console.log(`Scoring ${name}…`);
