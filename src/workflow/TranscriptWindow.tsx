@@ -15,6 +15,7 @@ import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { SpeechSetup } from './SpeechSetup';
+import { background } from './background';
 
 const viewStorage = () => {
   try {
@@ -129,8 +130,8 @@ export function TranscriptWindow() {
         polling = false;
       }
     };
-    void poll();
-    const timer = setInterval(() => void poll(), 1200);
+    background(poll());
+    const timer = setInterval(() => background(poll()), 1200);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -422,8 +423,10 @@ export function TranscriptWindow() {
                 primary
                 disabled={busy || !runtime?.configured || !transcriptionReady}
                 onClick={() =>
-                  void action(() =>
-                    api.start(session.projectId, session.sourceId, session.batchId, options),
+                  background(
+                    action(() =>
+                      api.start(session.projectId, session.sourceId, session.batchId, options),
+                    ),
                   )
                 }
               >
@@ -461,7 +464,7 @@ export function TranscriptWindow() {
             </p>
             <div className={s.toolbar}>
               {(['python', 'engine', 'gpu', 'model'] as const).map((topic) => (
-                <Button key={topic} onClick={() => void action(() => api.setupHelp(topic))}>
+                <Button key={topic} onClick={() => background(action(() => api.setupHelp(topic)))}>
                   {topic === 'gpu'
                     ? 'GPU installation guide'
                     : `${topic[0].toUpperCase()}${topic.slice(1)} download / instructions`}
@@ -474,10 +477,12 @@ export function TranscriptWindow() {
               <Button
                 disabled={busy}
                 onClick={() =>
-                  void action(async () => {
-                    await api.configure(part);
-                    setRuntime(await api.runtime());
-                  })
+                  background(
+                    action(async () => {
+                      await api.configure(part);
+                      setRuntime(await api.runtime());
+                    }),
+                  )
                 }
               >
                 Choose {part === 'gpuLibraries' ? 'GPU runtime' : part}…
@@ -490,10 +495,12 @@ export function TranscriptWindow() {
               value={runtime?.settings.device || 'auto'}
               disabled={busy}
               onChange={(e) =>
-                void action(async () => {
-                  await api.configure('device', e.target.value as 'auto' | 'cpu' | 'cuda');
-                  setRuntime(await api.runtime());
-                })
+                background(
+                  action(async () => {
+                    await api.configure('device', e.target.value as 'auto' | 'cpu' | 'cuda');
+                    setRuntime(await api.runtime());
+                  }),
+                )
               }
             >
               <option value="auto">Automatic · prefer NVIDIA GPU</option>
@@ -527,7 +534,9 @@ export function TranscriptWindow() {
             {['running', 'queued'].includes(job.state) && (
               <Button
                 disabled={busy}
-                onClick={() => void action(() => api.job(session.projectId, job.id, 'pause'))}
+                onClick={() =>
+                  background(action(() => api.job(session.projectId, job.id, 'pause')))
+                }
               >
                 Pause
               </Button>
@@ -535,11 +544,13 @@ export function TranscriptWindow() {
             <Button
               disabled={busy}
               onClick={() =>
-                void action(() =>
-                  api.job(
-                    session.projectId,
-                    job.id,
-                    ['running', 'queued'].includes(job.state) ? 'cancel' : 'retry',
+                background(
+                  action(() =>
+                    api.job(
+                      session.projectId,
+                      job.id,
+                      ['running', 'queued'].includes(job.state) ? 'cancel' : 'retry',
+                    ),
                   ),
                 )
               }
@@ -577,15 +588,17 @@ export function TranscriptWindow() {
               title="Export original words and corrections as JSON"
               disabled={busy || selected.state !== 'complete'}
               onClick={() =>
-                void action(async () => {
-                  const file = await api.export(
-                    projectId,
-                    currentId,
-                    'json',
-                    exportId || undefined,
-                  );
-                  if (file) setNotice(`Saved ${file}`);
-                })
+                background(
+                  action(async () => {
+                    const file = await api.export(
+                      projectId,
+                      currentId,
+                      'json',
+                      exportId || undefined,
+                    );
+                    if (file) setNotice(`Saved ${file}`);
+                  }),
+                )
               }
             >
               <Download size={16} /> JSON
@@ -598,10 +611,17 @@ export function TranscriptWindow() {
               }
               disabled={busy || selected.state !== 'complete'}
               onClick={() =>
-                void action(async () => {
-                  const file = await api.export(projectId, currentId, 'srt', exportId || undefined);
-                  if (file) setNotice(`Saved ${file}`);
-                })
+                background(
+                  action(async () => {
+                    const file = await api.export(
+                      projectId,
+                      currentId,
+                      'srt',
+                      exportId || undefined,
+                    );
+                    if (file) setNotice(`Saved ${file}`);
+                  }),
+                )
               }
             >
               SRT
@@ -776,11 +796,13 @@ export function TranscriptWindow() {
                       busy={busy}
                       onSeek={(time) => {
                         setFollow(false);
-                        void action(() => api.seek(projectId, session.sourceId, time));
+                        background(action(() => api.seek(projectId, session.sourceId, time)));
                       }}
                       onCommand={(type, values) => {
                         setFollow(false);
-                        void action(() => command(segment, type, values.text, undefined, values));
+                        background(
+                          action(() => command(segment, type, values.text, undefined, values)),
+                        );
                       }}
                     />
                   )}
@@ -861,8 +883,10 @@ export function TranscriptWindow() {
                 primary
                 disabled={busy || selected.state !== 'complete'}
                 onClick={() =>
-                  void action(() =>
-                    command(selection.segment, 'correct', selection.text, selection.wordIndex),
+                  background(
+                    action(() =>
+                      command(selection.segment, 'correct', selection.text, selection.wordIndex),
+                    ),
                   )
                 }
               >
@@ -871,8 +895,10 @@ export function TranscriptWindow() {
               <Button
                 disabled={busy}
                 onClick={() =>
-                  void action(() =>
-                    command(selection.segment, 'restore', undefined, selection.wordIndex),
+                  background(
+                    action(() =>
+                      command(selection.segment, 'restore', undefined, selection.wordIndex),
+                    ),
                   )
                 }
               >

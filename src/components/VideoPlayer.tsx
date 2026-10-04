@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { FolderOpen, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import type { OpenedVideo } from '../../electron/contracts';
 import styles from './VideoPlayer.module.css';
+import { background } from '../workflow/background';
 
 export interface PlaybackBookmark {
   id: string;
@@ -132,7 +133,7 @@ export function VideoPlayer({
           return;
         if (event.key === ' ') {
           event.preventDefault();
-          void togglePlay();
+          background(togglePlay());
         }
         if (event.key.toLowerCase() === 'k') element.current?.pause();
         if (event.key === 'ArrowLeft') {
@@ -258,7 +259,7 @@ export function VideoPlayer({
           <button
             className={styles.play}
             disabled={!ready}
-            onClick={() => void togglePlay()}
+            onClick={() => background(togglePlay())}
             aria-label={playing ? 'Pause video' : 'Play video'}
           >
             {playing ? <Pause size={18} /> : <Play size={18} />}

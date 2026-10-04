@@ -7,6 +7,8 @@ import { Player, type Transport } from './Player';
 import { Button } from './ui';
 import { markerColor, time, type Recording } from './model';
 import s from './CompletedLibrary.module.css';
+import { background } from './background';
+
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 export function CompletedLibrary({
   workspace: w,
@@ -148,14 +150,16 @@ export function CompletedLibrary({
     }
   };
   const relink = (clip: RetainedClip) =>
-    void w
-      .run(() => window.virtualCut!.project.relinkExport(p.project.id, clip.exportId), true)
-      .then((value) => {
-        if (value) {
-          setFolder('');
-          void open(clip);
-        }
-      });
+    background(
+      w
+        .run(() => window.virtualCut!.project.relinkExport(p.project.id, clip.exportId), true)
+        .then((value) => {
+          if (value) {
+            setFolder('');
+            background(open(clip));
+          }
+        }),
+    );
   const record: Recording | undefined = selected
     ? {
         id: selected.exportId,
@@ -245,7 +249,7 @@ export function CompletedLibrary({
                 aria-disabled={loading === c.exportId}
                 aria-busy={loading === c.exportId}
                 onClick={() => {
-                  if (loading !== c.exportId) void open(c);
+                  if (loading !== c.exportId) background(open(c));
                 }}
               >
                 <strong>{c.name}</strong>
@@ -266,10 +270,16 @@ export function CompletedLibrary({
                   aria-label={`Show completed clip: ${c.name}`}
                   disabled={!c.available}
                   onClick={() =>
-                    void w.run(
-                      () =>
-                        window.virtualCut!.project.revealExport(p.project.id, c.exportId, 'video'),
-                      true,
+                    background(
+                      w.run(
+                        () =>
+                          window.virtualCut!.project.revealExport(
+                            p.project.id,
+                            c.exportId,
+                            'video',
+                          ),
+                        true,
+                      ),
                     )
                   }
                 >

@@ -3,6 +3,7 @@ import type { DroppedImport } from '../../electron/project-contracts';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { ImportPanel } from './ProjectPanel';
 import s from './Workflow.module.css';
+import { background } from './background';
 
 export function useMediaDrop(w: ReturnType<typeof useProjectWorkspace>, enabled: boolean) {
   const [hover, setHover] = useState(false),
@@ -28,13 +29,13 @@ export function useMediaDrop(w: ReturnType<typeof useProjectWorkspace>, enabled:
   useEffect(
     () => () => {
       generation.current++;
-      if (token.current) void window.virtualCut?.project.discardDrop(token.current);
+      if (token.current) background(window.virtualCut?.project.discardDrop(token.current));
       token.current = '';
     },
     [identity],
   );
   const close = () => {
-    if (token.current) void window.virtualCut?.project.discardDrop(token.current);
+    if (token.current) background(window.virtualCut?.project.discardDrop(token.current));
     token.current = '';
     setOffer(null);
   };
@@ -75,7 +76,7 @@ export function useMediaDrop(w: ReturnType<typeof useProjectWorkspace>, enabled:
         )
         .then((result) => {
           if (version !== generation.current) {
-            void window.virtualCut!.project.discardDrop(result.token);
+            background(window.virtualCut!.project.discardDrop(result.token));
             return;
           }
           token.current = result.token;

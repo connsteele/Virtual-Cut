@@ -87,6 +87,7 @@ import { frameIndexes, useFrameIndexes } from './frameIndexes';
 import type { MediaJob } from '../../electron/project-contracts';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
+import { background } from './background';
 function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
   const latest = new Map<number, MediaJob>();
   const mode = recording.monitor || 'game';
@@ -577,6 +578,30 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [destinationPlan, setDestinationPlan] = useState<DestinationPlan | null>(null),
     [planError, setPlanError] = useState(''),
     [checkingPlan, setCheckingPlan] = useState(false);
+  /** Open a planned clip's Review card, switching to its batch first when needed. */
+  async function editDestination(id: string) {
+    const clip = model.clips.find((c) => c.id === id);
+    if (!clip) return;
+    const batches = model.recordings.find((r) => r.id === clip.rid)?.batchIds || [];
+    if (project && !batches.includes(project.activeBatchId) && batches[0]) {
+      destinationReviewTarget.current = {
+        context: project.project.id + batches[0],
+        clipId: id,
+      };
+      const result = await workspace.run(
+        () => window.virtualCut!.project.selectBatch(project.project.id, batches[0]),
+        true,
+      );
+      if (!result) {
+        destinationReviewTarget.current = null;
+        return;
+      }
+    }
+    setPlanOpen(false);
+    setReviewFilter('All');
+    setFolderFilter('');
+    inspectReview(clip, 'name');
+  }
   async function checkDestinations() {
     if (!project) return;
     setPlanOpen(true);
@@ -951,14 +976,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         api.finishCommand(event.token, 'The project changed. Reopen the transcript.');
         return;
       }
-      void workspace
-        .run(() => api.apply(event.token), true)
-        .then((result) =>
-          api.finishCommand(
-            event.token,
-            result ? undefined : 'The editor could not apply this change. Check the main window.',
+      background(
+        workspace
+          .run(() => api.apply(event.token), true)
+          .then((result) =>
+            api.finishCommand(
+              event.token,
+              result ? undefined : 'The editor could not apply this change. Check the main window.',
+            ),
           ),
-        );
+      );
     });
     const stopTransport = api.onTransport((event) => {
       if (
@@ -1064,12 +1091,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       if (e.defaultPrevented || e.repeat) return;
       if (e.key === 'F11') {
         e.preventDefault();
-        void fullscreen();
+        background(fullscreen());
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        void workspace.checkpoint();
+        background(workspace.checkpoint());
         return;
       }
       const editing = (e.target as HTMLElement).closest(
@@ -1123,7 +1150,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
       if (e.ctrlKey && ['z', 'y'].includes(e.key.toLowerCase())) {
         e.preventDefault();
-        void history(e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo');
+        background(history(e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo'));
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey || !r.id || workspace.busy) return;
@@ -1506,7 +1533,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             <>
               <Button
                 disabled={workspace.blocking}
-                onClick={() => void workspace.checkpoint()}
+                onClick={() => background(workspace.checkpoint())}
                 title="Save a manual checkpoint (Ctrl+S)"
               >
                 Save
@@ -1516,24 +1543,24 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               </Button>
               <Button
                 disabled={workspace.blocking || (!project.canUndo && !workspace.hasPendingEdits)}
-                onClick={() => void history('undo')}
+                onClick={() => background(history('undo'))}
                 title="Undo (Ctrl+Z)"
               >
                 Undo
               </Button>
               <Button
                 disabled={workspace.blocking || !project.canRedo}
-                onClick={() => void history('redo')}
+                onClick={() => background(history('redo'))}
                 title="Redo (Ctrl+Shift+Z)"
               >
                 Redo
               </Button>
             </>
           )}
-          <Button onClick={openVideo} disabled={opening || workspace.blocking}>
+          <Button onClick={() => background(openVideo())} disabled={opening || workspace.blocking}>
             {opening ? 'Opening…' : project ? 'Import' : 'Open video'}
           </Button>
-          <Button onClick={fullscreen} aria-label="Fullscreen (F11)">
+          <Button onClick={() => background(fullscreen())} aria-label="Fullscreen (F11)">
             <Maximize size={16} />
           </Button>
           <Button
@@ -1564,7 +1591,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   <Button
                     disabled={!project || workspace.blocking}
                     onClick={() =>
-                      void workspace.flush().then(() => window.virtualCut?.transcript.open(rid))
+                      background(
+                        workspace.flush().then(() => window.virtualCut?.transcript.open(rid)),
+                      )
                     }
                   >
                     Transcript
@@ -2058,7 +2087,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </div>
                 <span className={s.spacer} />
                 {project && (
-                  <Button disabled={workspace.blocking} onClick={() => void checkDestinations()}>
+                  <Button
+                    disabled={workspace.blocking}
+                    onClick={() => background(checkDestinations())}
+                  >
                     Destination plan
                   </Button>
                 )}
@@ -2155,19 +2187,21 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                               : 'Open destination in Explorer (nearest existing parent for a planned folder)'
                           }
                           onClick={() =>
-                            void workspace.run(
-                              () =>
-                                location.external
-                                  ? window.virtualCut!.project.revealExport(
-                                      project.project.id,
-                                      location.exportId!,
-                                      'video',
-                                    )
-                                  : window.virtualCut!.project.revealDestination(
-                                      project.project.id,
-                                      location.folder,
-                                    ),
-                              true,
+                            background(
+                              workspace.run(
+                                () =>
+                                  location.external
+                                    ? window.virtualCut!.project.revealExport(
+                                        project.project.id,
+                                        location.exportId!,
+                                        'video',
+                                      )
+                                    : window.virtualCut!.project.revealDestination(
+                                        project.project.id,
+                                        location.folder,
+                                      ),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -2211,14 +2245,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                   title={clip.location.output}
                                   aria-label={`Show filed video: ${clip.name}`}
                                   onClick={() =>
-                                    void workspace.run(
-                                      () =>
-                                        window.virtualCut!.project.revealExport(
-                                          project!.project.id,
-                                          clip.location.exportId!,
-                                          'video',
-                                        ),
-                                      true,
+                                    background(
+                                      workspace.run(
+                                        () =>
+                                          window.virtualCut!.project.revealExport(
+                                            project!.project.id,
+                                            clip.location.exportId!,
+                                            'video',
+                                          ),
+                                        true,
+                                      ),
                                     )
                                   }
                                 >
@@ -2775,7 +2811,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         <div className={s.notice} role="alert">
           {workspace.error || project?.warning}
           {workspace.error && (
-            <Button onClick={() => void workspace.checkpoint()}>Retry saving</Button>
+            <Button onClick={() => background(workspace.checkpoint())}>Retry saving</Button>
           )}
         </div>
       )}
@@ -2921,31 +2957,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           model={model}
           error={planError}
           checking={checkingPlan}
-          onRefresh={() => void checkDestinations()}
+          onRefresh={() => background(checkDestinations())}
           onClose={() => setPlanOpen(false)}
-          onEdit={async (id) => {
-            const clip = model.clips.find((c) => c.id === id);
-            if (!clip) return;
-            const batches = model.recordings.find((r) => r.id === clip.rid)?.batchIds || [];
-            if (project && !batches.includes(project.activeBatchId) && batches[0]) {
-              destinationReviewTarget.current = {
-                context: project.project.id + batches[0],
-                clipId: id,
-              };
-              const result = await workspace.run(
-                () => window.virtualCut!.project.selectBatch(project.project.id, batches[0]),
-                true,
-              );
-              if (!result) {
-                destinationReviewTarget.current = null;
-                return;
-              }
-            }
-            setPlanOpen(false);
-            setReviewFilter('All');
-            setFolderFilter('');
-            inspectReview(clip, 'name');
-          }}
+          onEdit={(id) => background(editDestination(id))}
         />
       )}
       {folderIds.length > 0 && project && (

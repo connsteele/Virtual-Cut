@@ -22,6 +22,7 @@ import { Workspace, type ProjectSelection } from './components/Workspace';
 import type { PlaybackBookmark } from './components/VideoPlayer';
 import type { OpenedVideo } from '../electron/contracts';
 import { layouts, pages, preferenceKey, readPreferences, type LayoutId } from './workspace';
+import { background } from './workflow/background';
 
 const notesKey = 'virtual-cut.scratchpad.v1';
 type Drawer = 'notes' | 'agent' | null;
@@ -261,7 +262,7 @@ function FoundationApp({ onWorkflow }: { onWorkflow: () => void }) {
         <h1 className={styles['current-page']}>{page.label}</h1>
         <button
           className={styles['project-picker']}
-          onClick={chooseFolder}
+          onClick={() => background(chooseFolder())}
           disabled={choosing}
           title={project?.path ?? 'Choose a project folder'}
           aria-label={project ? `Change project folder: ${project.name}` : 'Select project folder'}
@@ -274,7 +275,11 @@ function FoundationApp({ onWorkflow }: { onWorkflow: () => void }) {
           <button className={styles['header-button']} onClick={onWorkflow}>
             Workflow preview
           </button>
-          <button className={styles['header-button']} onClick={openVideo} disabled={openingVideo}>
+          <button
+            className={styles['header-button']}
+            onClick={() => background(openVideo())}
+            disabled={openingVideo}
+          >
             <Film size={16} />
             <span>{openingVideo ? 'Opening…' : 'Open video'}</span>
           </button>
@@ -315,7 +320,7 @@ function FoundationApp({ onWorkflow }: { onWorkflow: () => void }) {
         onNotes={() => setDrawer('notes')}
         drawer={drawerContent}
         video={video}
-        onOpenVideo={openVideo}
+        onOpenVideo={() => background(openVideo())}
         openingVideo={openingVideo}
         playbackBookmark={playbackBookmark}
       />

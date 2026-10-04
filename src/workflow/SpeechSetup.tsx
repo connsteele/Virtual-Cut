@@ -3,6 +3,7 @@ import type { TranscriptApi } from '../../electron/transcript-contracts';
 import type { SpeechSetupAction, SpeechSetupState } from '../../electron/speech-setup-contracts';
 import { Button } from './ui';
 import s from './TranscriptWindow.module.css';
+import { background } from './background';
 
 const size = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 export function SpeechSetup({
@@ -71,11 +72,11 @@ export function SpeechSetup({
         Include NVIDIA acceleration libraries (compatible NVIDIA driver required)
       </label>
       <div className={s.toolbar}>
-        <Button disabled={busy || installing} onClick={() => void act('plan')}>
+        <Button disabled={busy || installing} onClick={() => background(act('plan'))}>
           Choose setup folder…
         </Button>
         {state?.canRestore && (
-          <Button disabled={busy || installing} onClick={() => void act('restore')}>
+          <Button disabled={busy || installing} onClick={() => background(act('restore'))}>
             Restore previous setup
           </Button>
         )}
@@ -98,7 +99,7 @@ export function SpeechSetup({
                 value={state.downloadedBytes}
               />
               <p className={s.muted}>{size(state.downloadedBytes)} downloaded</p>
-              <Button disabled={busy} onClick={() => void act('cancel')}>
+              <Button disabled={busy} onClick={() => background(act('cancel'))}>
                 Cancel setup
               </Button>
             </>
@@ -107,13 +108,13 @@ export function SpeechSetup({
             <Button
               primary
               disabled={busy || state.availableBytes < state.requiredBytes}
-              onClick={() => void act('start')}
+              onClick={() => background(act('start'))}
             >
               Download and install
             </Button>
           )}
           {state.state === 'ready' && (
-            <Button primary disabled={busy} onClick={() => void act('activate')}>
+            <Button primary disabled={busy} onClick={() => background(act('activate'))}>
               Use this setup
             </Button>
           )}

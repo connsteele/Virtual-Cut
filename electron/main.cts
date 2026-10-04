@@ -195,7 +195,8 @@ function registerDesktopApi(): void {
   });
   ipcMain.handle('diagnostics:copy', async (event) => {
     assertTrustedSender(event);
-    clipboard.writeText((await diagnostics.summary()).text);
+    // Electron's clipboard write is asynchronous; report a failure instead of claiming success.
+    await clipboard.writeText((await diagnostics.summary()).text);
   });
   ipcMain.handle('diagnostics:open', async (event) => {
     assertTrustedSender(event);
@@ -708,7 +709,7 @@ app
       path.join(process.resourcesPath, 'tools'),
       diagnostics,
     );
-    void projects.logToolVersions();
+    projects.logToolVersions().catch((e: unknown) => console.error(e));
     // Change notifications replace renderer polling (VC-98): at most one every 250 ms,
     // always followed by a trailing one so the final state is never missed.
     let changeTimer: ReturnType<typeof setTimeout> | undefined,
@@ -745,7 +746,8 @@ app
     registerDesktopApi();
     await createWindow();
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+      if (BrowserWindow.getAllWindows().length === 0)
+        createWindow().catch((e: unknown) => diagnostics.fatal(e));
     });
   })
   .catch((error: unknown) => {
@@ -769,10 +771,12 @@ app.on('before-quit', (event) => {
   if (shutdownStarted) return;
   shutdownStarted = true;
   // Finish owned partial-install cleanup before Electron terminates its native process.
-  void Promise.allSettled([transcriptWindow?.stopSetup()])
+  Promise.allSettled([transcriptWindow?.stopSetup()])
     .then(() =>
       Promise.race([diagnostics?.flush(), new Promise((resolve) => setTimeout(resolve, 700))]),
     )
+    // Quitting must not wait on, or be blocked by, a failed final log flush.
+    .catch(() => {})
     .finally(() => {
       logsFlushed = true;
       app.quit();

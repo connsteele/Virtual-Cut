@@ -14,6 +14,7 @@ import { CleanupFiles, ProjectStorage, storageSize as size } from './ProjectStor
 import s from './Workflow.module.css';
 import { ContextEditor, defaultContext } from './ContextEditor';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
+import { background } from './background';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 export function ProjectPanel({
@@ -113,10 +114,18 @@ export function ProjectPanel({
           </p>
         )}
         <div className={s.tools}>
-          <Button className={s.dangerButton} disabled={w.busy} onClick={() => void remove(false)}>
+          <Button
+            className={s.dangerButton}
+            disabled={w.busy}
+            onClick={() => background(remove(false))}
+          >
             Delete without cleanup
           </Button>
-          <Button className={s.dangerButton} disabled={w.busy} onClick={() => void remove(true)}>
+          <Button
+            className={s.dangerButton}
+            disabled={w.busy}
+            onClick={() => background(remove(true))}
+          >
             Delete with cleanup
           </Button>
           <Button disabled={w.busy} onClick={() => setDeletion(undefined)}>
@@ -144,23 +153,25 @@ export function ProjectPanel({
           primary
           disabled={!api || !name.trim() || w.busy}
           onClick={() =>
-            void open(async () => {
-              const created = await api!.create(name);
-              if (!created) return null;
-              await api!.save(created.project.id, created.model, {
-                ...created.model,
-                contexts: [newContext],
-              });
-              return api!.checkpoint(created.project.id);
-            })
+            background(
+              open(async () => {
+                const created = await api!.create(name);
+                if (!created) return null;
+                await api!.save(created.project.id, created.model, {
+                  ...created.model,
+                  contexts: [newContext],
+                });
+                return api!.checkpoint(created.project.id);
+              }),
+            )
           }
         >
           Create project
         </Button>
-        <Button disabled={!api || w.busy} onClick={() => void open(() => api!.open())}>
+        <Button disabled={!api || w.busy} onClick={() => background(open(() => api!.open()))}>
           Open project file…
         </Button>
-        <Button disabled={!api || w.busy} onClick={() => void open(() => api!.recover())}>
+        <Button disabled={!api || w.busy} onClick={() => background(open(() => api!.recover()))}>
           Recover from save…
         </Button>
       </div>
@@ -197,7 +208,7 @@ export function ProjectPanel({
               }
             />
           </details>
-          <Button disabled={w.busy} onClick={() => void w.sample().then(onClose)}>
+          <Button disabled={w.busy} onClick={() => background(w.sample().then(onClose))}>
             Close project · return to sample
           </Button>
         </section>
@@ -216,14 +227,14 @@ export function ProjectPanel({
             <Button
               disabled={w.busy || checkingDelete}
               title={p.file}
-              onClick={() => void open(() => api!.open(p.id))}
+              onClick={() => background(open(() => api!.open(p.id)))}
             >
               {p.name}
             </Button>
             <Button
               aria-label={`Delete project: ${p.name}`}
               disabled={w.busy || checkingDelete}
-              onClick={() => void prepareDelete(p.id)}
+              onClick={() => background(prepareDelete(p.id))}
             >
               <Trash2 size={16} />
             </Button>
@@ -369,20 +380,22 @@ export function ImportPanel({
           (notes && (!Number.isInteger(mic) || mic < 1 || mic > 64 || game === mic))
         }
         onClick={() =>
-          void w
-            .run(() =>
-              drop
-                ? window.virtualCut!.project.importDrop(
-                    p.project.id,
-                    p.activeBatchId,
-                    drop.token,
-                    audio,
-                  )
-                : window.virtualCut!.project.import(p.project.id, p.activeBatchId, kind, audio),
-            )
-            .then((value) => {
-              if (value) onClose();
-            })
+          background(
+            w
+              .run(() =>
+                drop
+                  ? window.virtualCut!.project.importDrop(
+                      p.project.id,
+                      p.activeBatchId,
+                      drop.token,
+                      audio,
+                    )
+                  : window.virtualCut!.project.import(p.project.id, p.activeBatchId, kind, audio),
+              )
+              .then((value) => {
+                if (value) onClose();
+              }),
+          )
         }
       >
         {drop
@@ -486,11 +499,15 @@ export function SaveHistory({
                         <span>Restore this state? Media jobs will pause.</span>
                         <Button
                           onClick={() =>
-                            void w
-                              .run(() => window.virtualCut!.project.restore(p.project.id, copy.id))
-                              .then((value) => {
-                                if (value) onClose();
-                              })
+                            background(
+                              w
+                                .run(() =>
+                                  window.virtualCut!.project.restore(p.project.id, copy.id),
+                                )
+                                .then((value) => {
+                                  if (value) onClose();
+                                }),
+                            )
                           }
                         >
                           Restore save
@@ -504,8 +521,10 @@ export function SaveHistory({
                           aria-label={`Open save folder: ${new Date(copy.created).toLocaleString()}`}
                           title="Open save folder"
                           onClick={() =>
-                            void w.run(() =>
-                              window.virtualCut!.project.revealSave(p.project.id, copy.id),
+                            background(
+                              w.run(() =>
+                                window.virtualCut!.project.revealSave(p.project.id, copy.id),
+                              ),
                             )
                           }
                         >
@@ -558,7 +577,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
         disabled={w.blocking}
         onChange={(e) => {
           const id = e.target.value;
-          void w.run(() => api.selectBatch(p.project.id, id));
+          background(w.run(() => api.selectBatch(p.project.id, id)));
         }}
       >
         {p.batches.map((b) => (
@@ -689,24 +708,26 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
               primary
               disabled={w.busy}
               onClick={() =>
-                void w
-                  .run(() =>
-                    api.deleteBatch(
-                      p.project.id,
-                      p.activeBatchId,
-                      targetId || undefined,
-                      deleteMode,
-                    ),
-                  )
-                  .then((value) => {
-                    if (value) {
-                      setDeleting(false);
-                      if (value.cleanup)
-                        setCleanupNotice(
-                          `Batch removed. ${value.cleanup.cacheFilesRemoved} preview files removed.${value.cleanup.cacheFilesRetained || value.cleanup.cacheCleanupIncomplete ? ' Some previews remain in use or could not be removed.' : ''}`,
-                        );
-                    }
-                  })
+                background(
+                  w
+                    .run(() =>
+                      api.deleteBatch(
+                        p.project.id,
+                        p.activeBatchId,
+                        targetId || undefined,
+                        deleteMode,
+                      ),
+                    )
+                    .then((value) => {
+                      if (value) {
+                        setDeleting(false);
+                        if (value.cleanup)
+                          setCleanupNotice(
+                            `Batch removed. ${value.cleanup.cacheFilesRemoved} preview files removed.${value.cleanup.cacheFilesRetained || value.cleanup.cacheCleanupIncomplete ? ' Some previews remain in use or could not be removed.' : ''}`,
+                          );
+                      }
+                    }),
+                )
               }
             >
               Delete batch
@@ -734,14 +755,16 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
             primary
             disabled={!name.trim() || w.busy}
             onClick={() =>
-              void w
-                .run(() => api.batch(p.project.id, name))
-                .then((value) => {
-                  if (value) {
-                    setCreating(false);
-                    setName('');
-                  }
-                })
+              background(
+                w
+                  .run(() => api.batch(p.project.id, name))
+                  .then((value) => {
+                    if (value) {
+                      setCreating(false);
+                      setName('');
+                    }
+                  }),
+              )
             }
           >
             Create batch
@@ -794,7 +817,9 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                         {['queued', 'running'].includes(j.state) && (
                           <Button
                             disabled={w.busy}
-                            onClick={() => void w.run(() => api.job(p.project.id, j.id, 'cancel'))}
+                            onClick={() =>
+                              background(w.run(() => api.job(p.project.id, j.id, 'cancel')))
+                            }
                           >
                             Cancel job
                           </Button>
@@ -802,7 +827,9 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                         {['failed', 'cancelled', 'interrupted'].includes(j.state) && (
                           <Button
                             disabled={w.busy}
-                            onClick={() => void w.run(() => api.job(p.project.id, j.id, 'retry'))}
+                            onClick={() =>
+                              background(w.run(() => api.job(p.project.id, j.id, 'retry')))
+                            }
                           >
                             Retry job
                           </Button>
@@ -864,13 +891,19 @@ export function RemoveRecordingButton({
               primary
               disabled={w.busy}
               onClick={() =>
-                void w
-                  .run(() =>
-                    window.virtualCut!.project.removeRecording(p.project.id, p.activeBatchId, r.id),
-                  )
-                  .then((value) => {
-                    if (value) setConfirm(false);
-                  })
+                background(
+                  w
+                    .run(() =>
+                      window.virtualCut!.project.removeRecording(
+                        p.project.id,
+                        p.activeBatchId,
+                        r.id,
+                      ),
+                    )
+                    .then((value) => {
+                      if (value) setConfirm(false);
+                    }),
+                )
               }
             >
               Remove recording
@@ -909,7 +942,7 @@ export function RecordingActions({
         disabled={w.blocking}
         aria-label={`Show source in Explorer: ${r.title}`}
         onClick={() =>
-          void w.run(() => window.virtualCut!.project.revealSource(p.project.id, r.id), true)
+          background(w.run(() => window.virtualCut!.project.revealSource(p.project.id, r.id), true))
         }
       >
         <FolderOpen size={15} />
@@ -943,7 +976,10 @@ export function RecordingTools({
         </p>
       )}
       <div className={s.tools}>
-        <Button disabled={w.busy} onClick={() => void w.run(() => api.relink(p.project.id, r.id))}>
+        <Button
+          disabled={w.busy}
+          onClick={() => background(w.run(() => api.relink(p.project.id, r.id)))}
+        >
           Relink original…
         </Button>
       </div>
@@ -985,7 +1021,7 @@ export function RecordingTools({
           </p>
           <Button
             disabled={w.busy || !tracks.length}
-            onClick={() => void w.run(() => api.audio(p.project.id, r.id))}
+            onClick={() => background(w.run(() => api.audio(p.project.id, r.id)))}
           >
             Retry audio preparation
           </Button>

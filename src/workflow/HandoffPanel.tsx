@@ -3,6 +3,7 @@ import { FolderOpen } from 'lucide-react';
 import type { ResolveHelperStatus } from '../../electron/project-contracts';
 import { Button } from './ui';
 import s from './Workflow.module.css';
+import { background } from './background';
 
 const labels = {
   missing: 'Not installed',
@@ -84,7 +85,7 @@ export function HandoffPanel() {
             disabled={
               busy || !status || status.state === 'customized' || status.state === 'installed'
             }
-            onClick={() => void act('install')}
+            onClick={() => background(act('install'))}
           >
             {status?.state === 'outdated'
               ? 'Update Resolve metadata helper…'
@@ -92,12 +93,12 @@ export function HandoffPanel() {
           </Button>
           <Button
             disabled={busy || !status || status.state === 'missing'}
-            onClick={() => void act('reveal')}
+            onClick={() => background(act('reveal'))}
           >
             <FolderOpen size={15} />
             Open helper location
           </Button>
-          <Button disabled={busy} onClick={() => void act('refresh')}>
+          <Button disabled={busy} onClick={() => background(act('refresh'))}>
             Refresh status
           </Button>
           {owned && (
@@ -116,7 +117,7 @@ export function HandoffPanel() {
               <Button disabled={busy} onClick={() => setRemoving(false)}>
                 Keep helper
               </Button>
-              <Button disabled={busy} onClick={() => void act('remove')}>
+              <Button disabled={busy} onClick={() => background(act('remove'))}>
                 Remove installed helper
               </Button>
             </div>

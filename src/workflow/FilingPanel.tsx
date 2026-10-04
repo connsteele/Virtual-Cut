@@ -5,6 +5,7 @@ import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Modal } from './ui';
 import { JobTime } from './JobTime';
 import s from './Workflow.module.css';
+import { background } from './background';
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 const range = (r?: { start: number; end: number }) =>
   r ? `In: ${r.start.toFixed(3)} · Out: ${r.end.toFixed(3)} s` : 'Unavailable';
@@ -77,7 +78,7 @@ export function FilingPanel({
               className={s.destinationLink}
               title="Open destination in Explorer"
               onClick={() =>
-                void w.run(() => window.virtualCut!.project.revealDestination(id, ''), true)
+                background(w.run(() => window.virtualCut!.project.revealDestination(id, ''), true))
               }
             >
               {plan?.root || p.project.destination}
@@ -112,9 +113,11 @@ export function FilingPanel({
                           className={s.destinationLink}
                           title="Open destination in Explorer (nearest existing parent if not created yet)"
                           onClick={() =>
-                            void w.run(
-                              () => window.virtualCut!.project.revealDestination(id, row.folder),
-                              true,
+                            background(
+                              w.run(
+                                () => window.virtualCut!.project.revealDestination(id, row.folder),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -164,14 +167,16 @@ export function FilingPanel({
               plan.rows.some((row) => row.issues.length)
             }
             onClick={() =>
-              void w
-                .run(() => window.virtualCut!.project.fileQueue(id, plan!.id, confirmed), true)
-                .then((value) => {
-                  if (value) {
-                    setQueueId(plan!.id);
-                    setShowProgress(true);
-                  }
-                })
+              background(
+                w
+                  .run(() => window.virtualCut!.project.fileQueue(id, plan!.id, confirmed), true)
+                  .then((value) => {
+                    if (value) {
+                      setQueueId(plan!.id);
+                      setShowProgress(true);
+                    }
+                  }),
+              )
             }
           >
             File {plan?.rows.length || 0} accepted clips
@@ -202,15 +207,17 @@ export function FilingPanel({
                         className={s.destinationLink}
                         title="Open filing destination in Explorer (nearest existing parent if not created yet)"
                         onClick={() =>
-                          void w.run(
-                            () =>
-                              e.state === 'verified'
-                                ? window.virtualCut!.project.revealExport(id, e.plan.id, 'video')
-                                : window.virtualCut!.project.revealDestination(
-                                    id,
-                                    e.filing!.folder,
-                                  ),
-                            true,
+                          background(
+                            w.run(
+                              () =>
+                                e.state === 'verified'
+                                  ? window.virtualCut!.project.revealExport(id, e.plan.id, 'video')
+                                  : window.virtualCut!.project.revealDestination(
+                                      id,
+                                      e.filing!.folder,
+                                    ),
+                              true,
+                            ),
                           )
                         }
                       >
@@ -234,9 +241,12 @@ export function FilingPanel({
                         <Button
                           aria-label={`Show filed clip: ${e.plan.name}`}
                           onClick={() =>
-                            void w.run(
-                              () => window.virtualCut!.project.revealExport(id, e.plan.id, 'video'),
-                              true,
+                            background(
+                              w.run(
+                                () =>
+                                  window.virtualCut!.project.revealExport(id, e.plan.id, 'video'),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -246,9 +256,11 @@ export function FilingPanel({
                         <Button
                           disabled={w.busy}
                           onClick={() =>
-                            void w.run(
-                              () => window.virtualCut!.project.job(id, e.plan.id, 'retry'),
-                              true,
+                            background(
+                              w.run(
+                                () => window.virtualCut!.project.job(id, e.plan.id, 'retry'),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -259,9 +271,11 @@ export function FilingPanel({
                           aria-label={`Cancel filing: ${e.plan.name}`}
                           disabled={w.busy}
                           onClick={() =>
-                            void w.run(
-                              () => window.virtualCut!.project.job(id, e.plan.id, 'cancel'),
-                              true,
+                            background(
+                              w.run(
+                                () => window.virtualCut!.project.job(id, e.plan.id, 'cancel'),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -279,16 +293,18 @@ export function FilingPanel({
               className={s.dangerButton}
               disabled={w.busy}
               onClick={() =>
-                void w.run(async () => {
-                  let result;
-                  for (const q of new Set(
-                    records
-                      .filter((e) => ['queued', 'running'].includes(e.state))
-                      .map((e) => e.filing!.queueId),
-                  ))
-                    result = await window.virtualCut!.project.cancelFiling(id, q);
-                  return result;
-                }, true)
+                background(
+                  w.run(async () => {
+                    let result;
+                    for (const q of new Set(
+                      records
+                        .filter((e) => ['queued', 'running'].includes(e.state))
+                        .map((e) => e.filing!.queueId),
+                    ))
+                      result = await window.virtualCut!.project.cancelFiling(id, q);
+                    return result;
+                  }, true),
+                )
               }
             >
               Cancel remaining filing

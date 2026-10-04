@@ -9,6 +9,21 @@ export default [
   ...tseslint.configs.recommended,
   { languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   {
+    // Type-aware promise checks (VC-102). `void` does not handle a rejection: start
+    // renderer actions with background() and give native fire-and-forget calls a catch.
+    files: ['src/**/*.{ts,tsx}', 'electron/**/*.{ts,cts}'],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.app.json', './tsconfig.electron.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': ['error', { ignoreVoid: false }],
+      '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
+  {
     files: ['src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {

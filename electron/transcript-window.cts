@@ -425,7 +425,7 @@ export function registerTranscriptWindow(
   return {
     stopSetup: () => speechSetup.cancel(),
     close: () => {
-      void speechSetup.cancel();
+      speechSetup.cancel().catch(() => {});
       window?.close();
     },
   };

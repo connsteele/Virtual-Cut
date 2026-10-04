@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { DiagnosticSummary } from '../../electron/diagnostic-contracts';
 import { Button, Modal } from './ui';
 import s from './Workflow.module.css';
+import { background } from './background';
 export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
   const [report, setReport] = useState<DiagnosticSummary | null>(null);
   const [message, setMessage] = useState('');
@@ -62,9 +63,9 @@ export function DiagnosticsPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
       <div className={s.toolbar}>
-        <Button onClick={() => void act('copy')}>Copy diagnostics</Button>
-        <Button onClick={() => void act('openLogs')}>Open logs</Button>
-        <Button onClick={() => void act('export')}>Save diagnostic report…</Button>
+        <Button onClick={() => background(act('copy'))}>Copy diagnostics</Button>
+        <Button onClick={() => background(act('openLogs'))}>Open logs</Button>
+        <Button onClick={() => background(act('export'))}>Save diagnostic report…</Button>
       </div>
       {message && <p role="status">{message}</p>}
       <details>

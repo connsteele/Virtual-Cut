@@ -418,7 +418,8 @@ export class Diagnostics {
     if (!this.timer) {
       this.timer = setTimeout(() => {
         this.timer = undefined;
-        void this.flush();
+        // flush() records its own write failures and never rejects.
+        this.flush().catch(() => {});
       }, 250);
       this.timer.unref();
     }
@@ -459,7 +460,7 @@ export class Diagnostics {
         if (this.queue.length && !this.timer) {
           this.timer = setTimeout(() => {
             this.timer = undefined;
-            void this.flush();
+            this.flush().catch(() => {});
           }, 250);
           this.timer.unref();
         }

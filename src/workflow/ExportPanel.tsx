@@ -5,6 +5,7 @@ import { JobTime } from './JobTime';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
+import { background } from './background';
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 const range = (r: { start: number; end: number }) =>
   `${r.start.toFixed(3)} → ${r.end.toFixed(3)} s`;
@@ -127,11 +128,16 @@ export function ExportPanel({
         primary
         disabled={!plan || preparing || !confirmed || w.busy}
         onClick={() =>
-          void w
-            .run(() => window.virtualCut!.project.exportClip(projectId, plan!.id, confirmed), true)
-            .then((value) => {
-              if (value) onQueued();
-            })
+          background(
+            w
+              .run(
+                () => window.virtualCut!.project.exportClip(projectId, plan!.id, confirmed),
+                true,
+              )
+              .then((value) => {
+                if (value) onQueued();
+              }),
+          )
         }
       >
         Choose output file…
@@ -211,14 +217,16 @@ export function ExportHistory({
                         <Button
                           aria-label={`Show video: ${e.plan.name}`}
                           onClick={() =>
-                            void w.run(
-                              () =>
-                                window.virtualCut!.project.revealExport(
-                                  p.project.id,
-                                  e.plan.id,
-                                  'video',
-                                ),
-                              true,
+                            background(
+                              w.run(
+                                () =>
+                                  window.virtualCut!.project.revealExport(
+                                    p.project.id,
+                                    e.plan.id,
+                                    'video',
+                                  ),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -227,14 +235,16 @@ export function ExportHistory({
                         </Button>
                         <Button
                           onClick={() =>
-                            void w.run(
-                              () =>
-                                window.virtualCut!.project.revealExport(
-                                  p.project.id,
-                                  e.plan.id,
-                                  'metadata',
-                                ),
-                              true,
+                            background(
+                              w.run(
+                                () =>
+                                  window.virtualCut!.project.revealExport(
+                                    p.project.id,
+                                    e.plan.id,
+                                    'metadata',
+                                  ),
+                                true,
+                              ),
                             )
                           }
                         >
@@ -246,14 +256,16 @@ export function ExportHistory({
                         <Button
                           disabled={w.busy}
                           onClick={() =>
-                            void w.run(
-                              () =>
-                                window.virtualCut!.project.job(
-                                  p.project.id,
-                                  e.plan.id,
-                                  ['queued', 'running'].includes(e.state) ? 'cancel' : 'retry',
-                                ),
-                              true,
+                            background(
+                              w.run(
+                                () =>
+                                  window.virtualCut!.project.job(
+                                    p.project.id,
+                                    e.plan.id,
+                                    ['queued', 'running'].includes(e.state) ? 'cancel' : 'retry',
+                                  ),
+                                true,
+                              ),
                             )
                           }
                         >

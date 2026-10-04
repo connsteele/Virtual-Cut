@@ -14,7 +14,7 @@ export function observeWindow(
   window.on('closed', () => diagnostics.record('window-closed', fields));
   window.on('unresponsive', () => {
     diagnostics.record('window-unresponsive', fields);
-    void diagnostics.flush();
+    diagnostics.flush().catch(() => {});
   });
   window.on('responsive', () => diagnostics.record('window-responsive', fields));
   window.webContents.on('render-process-gone', (_event, details) => {
@@ -23,7 +23,7 @@ export function observeWindow(
       reason: details.reason,
       exitCode: details.exitCode,
     });
-    void diagnostics.flush();
+    diagnostics.flush().catch(() => {});
   });
   window.webContents.on('preload-error', (_event, _path, error) => {
     diagnostics.record('preload-error', { ...fields, errorCode: errorCode(error) });
