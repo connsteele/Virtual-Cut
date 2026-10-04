@@ -109,14 +109,17 @@ try {
     const switched = await locSetup.restore();
     assert.equal(switched.current.kind, 'manual');
     assert.equal(switched.other.kind, 'downloaded');
-    assert.match(switched.message, /Now using the manual setup\. The downloaded setup/);
+    assert.match(
+      switched.message,
+      /Now using your own installation\. The downloaded engine is kept/,
+    );
     // Settings round-trip through JSON, which drops undefined optional keys.
     assert.equal(JSON.stringify(locRuntime.settings), JSON.stringify(manual));
     // The picker still starts beside the downloaded setup while it is the other one.
     assert.equal(await locSetup.suggestedFolder(), path.join(dir, 'speech-root'));
     const back = await locSetup.restore();
     assert.equal(back.current.kind, 'downloaded');
-    assert.match(back.message, /Now using the downloaded setup/);
+    assert.match(back.notice, /Now using the downloaded engine\. Your own installation is kept/);
     // Switching while a download is only planned leaves it planned, never "ready" to use.
     assert.equal((await locSetup.plan(dir, false)).state, 'planned');
     assert.equal((await locSetup.restore()).state, 'planned');
@@ -133,7 +136,7 @@ try {
     await rm(modelFile);
     assert.equal(locRuntime.configured, false);
     assert.match(locRuntime.removed, /speech model was not found/);
-    assert.match(locRuntime.problem, /moved or deleted\. Open Local transcription setup/);
+    assert.match(locRuntime.problem, /moved or deleted\. Open Speech engine/);
     const gone = await locRuntime.inspectGpu();
     assert.equal(gone.available, false);
     assert.match(gone.message, /once the speech setup files are found/);
@@ -144,8 +147,8 @@ try {
     // The intact manual setup can still be switched to; the missing one cannot come back.
     const away = await locSetup.restore();
     assert.equal(away.current.kind, 'manual');
-    assert.match(away.message, /previous downloaded setup's files are missing/);
-    await assert.rejects(locSetup.restore(), /other setup's files were moved or deleted/);
+    assert.match(away.notice, /previous engine's files are missing/);
+    await assert.rejects(locSetup.restore(), /previous engine's files were moved or deleted/);
     assert.equal(JSON.stringify(locRuntime.settings), JSON.stringify(manual));
     await writeFile(modelFile, '');
     assert.equal((await locSetup.status()).other.available, true);
@@ -197,11 +200,93 @@ try {
     await mkdir(path.join(folder, 'model'));
     await writeFile(path.join(folder, 'model', 'model.bin'), '');
     assert.equal((await candidateSetup.status()).state, 'ready');
-    await candidateSetup.activate();
-    assert.equal((await candidateSetup.status()).state, 'activated');
-    await rm(path.join(folder, 'python', 'python.exe'));
-    assert.equal((await candidateSetup.status()).state, 'missing');
-    assert.match(candidateRuntime.removed, /Python was not found/);
+    const used = await candidateSetup.activate();
+    assert.equal(used.state, 'activated');
+    // The engine it replaced never existed, so nothing is kept to switch back to.
+    assert.equal(used.message, 'The speech engine is installed and in use.');
+    assert.equal(used.other, undefined);
+    assert.equal(await exists(path.join(candidateProfile, 'speech-previous-runtime.json')), false);
+
+    // Deleting a kept downloaded engine (single-engine model, M328).
+    const fakeEngine = async (id, receipt = true) => {
+      const engineFolder = path.join(candidateRoot, 'Virtual Cut speech', `install-${id}`);
+      await mkdir(path.join(engineFolder, 'python'), { recursive: true });
+      await mkdir(path.join(engineFolder, 'libraries', 'faster_whisper'), { recursive: true });
+      await mkdir(path.join(engineFolder, 'model'), { recursive: true });
+      await writeFile(path.join(engineFolder, 'python', 'python.exe'), '');
+      await writeFile(path.join(engineFolder, 'model', 'model.bin'), 'x'.repeat(4096));
+      if (receipt)
+        await writeFile(
+          path.join(engineFolder, '.virtual-cut-speech-install.json'),
+          JSON.stringify({ owner: `install-${id}`, manifest: manifest.id, complete: true }),
+        );
+      return {
+        folder: engineFolder,
+        settings: {
+          python: path.join(engineFolder, 'python', 'python.exe'),
+          libraries: path.join(engineFolder, 'libraries'),
+          model: path.join(engineFolder, 'model'),
+          gpuLibraries: '',
+          device: 'auto',
+          threads: 4,
+        },
+      };
+    };
+    const keep = (settings) =>
+      writeFile(
+        path.join(candidateProfile, 'speech-previous-runtime.json'),
+        JSON.stringify(settings),
+      );
+    const old = await fakeEngine('33333333-3333-4333-8333-333333333333');
+    await keep(old.settings);
+    const withOld = await candidateSetup.status();
+    assert.equal(withOld.other.kind, 'downloaded');
+    assert.ok(withOld.otherBytes >= 4096, 'The kept engine reports its size');
+    const removed = await candidateSetup.removeOther();
+    assert.match(removed.notice, /Deleted the previous speech engine and freed/);
+    assert.equal(await exists(old.folder), false);
+    assert.equal(removed.other, undefined);
+    assert.equal(removed.current.folder, folder, 'The engine in use is untouched');
+    // Never delete your own installation, a folder Virtual Cut did not create, or the engine in use.
+    const own = {
+      python: path.join(dir, 'manual-speech', 'python.exe'),
+      libraries: path.join(dir, 'manual-speech', 'Lib', 'site-packages'),
+      model: path.join(dir, 'manual-speech', 'model'),
+      gpuLibraries: '',
+      device: 'auto',
+      threads: 4,
+    };
+    await keep(own);
+    await assert.rejects(candidateSetup.removeOther(), /no unused downloaded engine/);
+    await access(own.python);
+    const foreign = await fakeEngine('44444444-4444-4444-8444-444444444444', false);
+    await keep(foreign.settings);
+    await assert.rejects(candidateSetup.removeOther(), /not created by Virtual Cut/);
+    await access(foreign.folder);
+    await keep(candidateRuntime.settings);
+    await assert.rejects(candidateSetup.removeOther(), /still in use/);
+    await access(folder);
+
+    // A finished download is used straight away; the replaced engine is kept until deleted.
+    const auto = new SpeechSetup(candidateProfile, candidateRuntime);
+    await auto.plan(candidateRoot, false);
+    const next = await fakeEngine('55555555-5555-4555-8555-555555555555');
+    auto.install = async () => {
+      auto.owned = path.basename(next.folder);
+      auto.state.folder = next.folder;
+      auto.state.state = 'ready';
+    };
+    auto.manifest = manifest;
+    await auto.start();
+    await auto.task;
+    const installed = await auto.status();
+    assert.equal(installed.state, 'activated', installed.message);
+    assert.match(
+      installed.message,
+      /new speech engine is installed and in use\. The previous engine is kept until you delete it/,
+    );
+    assert.equal(candidateRuntime.settings.python, next.settings.python);
+    assert.equal(installed.other.folder, folder);
   }
   const plan = await installer.plan(dir, true);
   assert.equal(plan.state, 'planned');
@@ -317,17 +402,18 @@ try {
         );
       } while (state.state === 'installing');
     }
-    assert.equal(state.state, 'ready', state.message);
     result.coldInstallElapsedMs = process.env.VIRTUAL_CUT_REUSE_SETUP_CANDIDATE
       ? null
       : Math.round(performance.now() - installStarted);
-    assert.deepEqual(runtime.settings, initial, 'Installation must not automatically activate');
-    const pinned = installer.manifest.id;
-    installer.manifest.id = 'different-release';
-    await assert.rejects(installer.activate(), /no longer available/);
-    assert.deepEqual(runtime.settings, initial);
-    installer.manifest.id = pinned;
-    await installer.activate();
+    if (process.env.VIRTUAL_CUT_REUSE_SETUP_CANDIDATE) {
+      assert.equal(state.state, 'ready', state.message);
+      const pinned = installer.manifest.id;
+      installer.manifest.id = 'different-release';
+      await assert.rejects(installer.activate(), /no longer available/);
+      assert.deepEqual(runtime.settings, initial);
+      installer.manifest.id = pinned;
+      await installer.activate();
+    } else assert.equal(state.state, 'activated', state.message);
     const installed = { ...runtime.settings };
     assert.equal(runtime.configured, true);
     const gpu = await runtime.inspectGpu(true);

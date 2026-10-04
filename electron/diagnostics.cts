@@ -103,6 +103,7 @@ const words = new Set([
   'speechSetup',
   'install',
   'activate',
+  'remove',
   'start',
   'transport',
   'seek',

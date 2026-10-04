@@ -269,8 +269,8 @@ try {
       .find((w) => w.webContents.getURL().endsWith('#transcript'))
       .setSize(500, 600),
   );
-  await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
-  await view.getByText('Use an existing installation / manual setup', { exact: true }).click();
+  await view.getByRole('button', { name: 'Speech engine', exact: true }).click();
+  await view.getByText('Advanced: use my own Python installation', { exact: true }).click();
   await expect(
     view.getByRole('button', { name: 'GPU installation guide', exact: true }),
   ).toBeVisible();
@@ -288,7 +288,7 @@ try {
       .toString('base64'),
   );
   await writeFile(path.join(dir, 'setup-compact.png'), Buffer.from(image, 'base64'));
-  await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
+  await view.getByRole('button', { name: 'Speech engine', exact: true }).click();
   await view.getByLabel('Transcript filter').selectOption('all');
   await view.getByLabel('Search transcript').fill('word');
   await expect(phrases.locator('article')).toHaveCount(60);

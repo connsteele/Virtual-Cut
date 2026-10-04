@@ -114,18 +114,43 @@
   overflow-wrap: anywhere;
   font-size: 12px;
 }
-.setupLocations {
-  display: grid;
-  gap: 10px;
-  margin-block: 10px;
-}
-.setupLocation {
+.engine {
   border: 1px solid #38514c;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 10px 12px;
+  margin-block: 10px;
 }
-.setupLocation .path {
+.engine .path {
   margin: 4px 0 6px;
+}
+.engine .toolbar {
+  margin: 6px 0 0;
+}
+.engineHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.chip {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.chipReady {
+  background: #1f4a3f;
+  color: #9ee6c9;
+}
+.chipWarn {
+  background: #4a2f24;
+  color: #f2b8a0;
+}
+.advanced {
+  margin-block: 12px;
+}
+.advanced summary {
+  cursor: pointer;
 }
 .setupRow span {
   overflow-wrap: anywhere;

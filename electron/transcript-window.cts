@@ -210,12 +210,13 @@ export function registerTranscriptWindow(
         'restore',
         'reveal-current',
         'reveal-other',
+        'remove-other',
       ].includes(action) ||
       (includeGpu != null && typeof includeGpu !== 'boolean')
     )
       throw new Error('Unknown speech setup action.');
     if (
-      ['plan', 'start', 'activate', 'restore'].includes(action) &&
+      ['plan', 'start', 'activate', 'restore', 'remove-other'].includes(action) &&
       projects.store
         ?.jobs()
         .some((j) => j.kind === 'transcribe' && ['queued', 'running'].includes(j.state))
@@ -233,6 +234,7 @@ export function registerTranscriptWindow(
     if (action === 'cancel') return speechSetup.cancel();
     if (action === 'activate') return speechSetup.activate();
     if (action === 'restore') return speechSetup.restore();
+    if (action === 'remove-other') return speechSetup.removeOther();
     if (action === 'start') return speechSetup.start();
     const start = await speechSetup.suggestedFolder();
     // The suggested per-user folder may not exist yet; the picker opens inside it.
@@ -268,6 +270,7 @@ export function registerTranscriptWindow(
       throw new Error('Unknown speech setting.');
     if (part === 'device') projects.transcription.configure('device', device || 'cpu');
     else {
+      await speechSetup.beforeOwnInstallation();
       const result = await dialog.showOpenDialog(window || main()!, {
         title: {
           python: 'Choose Python 3.12 executable',

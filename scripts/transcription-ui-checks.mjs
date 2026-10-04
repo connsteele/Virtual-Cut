@@ -57,7 +57,7 @@ try {
   const alignment = await transcript.evaluate(() => {
     const recording = document.querySelector('select'),
       start = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Transcribe'),
-      settings = document.querySelector('[aria-label="Local transcription setup"]');
+      settings = document.querySelector('[aria-label="Speech engine"]');
     return [recording, start, settings].map((e) => e.getBoundingClientRect().bottom);
   });
   assert.ok(Math.max(...alignment) - Math.min(...alignment) < 2, 'Recording and its actions align');
@@ -300,9 +300,11 @@ try {
     await app.evaluate(({ dialog }, folder) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, empty);
-    await view.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
+    await view.getByRole('button', { name: 'Speech engine', exact: true }).click();
+    const advanced = view.locator('details', { hasText: 'Advanced: use my own Python' });
+    if (!(await advanced.evaluate((d) => d.open))) await advanced.locator('summary').click();
     await view.getByRole('button', { name: 'Choose GPU runtime…', exact: true }).click();
-    await expect(view.getByRole('region', { name: 'Local speech runtime' })).toContainText(empty);
+    await expect(view.getByRole('region', { name: 'Speech engine settings' })).toContainText(empty);
     await view.getByRole('button', { name: 'Transcribe', exact: true }).click();
     const status = view.getByRole('region', { name: 'Transcription device readiness' });
     const start = view.getByRole('button', { name: 'Start transcription', exact: true });
@@ -332,6 +334,7 @@ try {
     await app.evaluate(({ dialog }, folder) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, before.settings.gpuLibraries);
+    await view.getByText('Advanced: use my own Python installation', { exact: true }).click();
     await view.getByRole('button', { name: 'Choose GPU runtime…', exact: true }).click();
     await view.getByLabel('Processing device').selectOption('auto');
     await status.getByRole('button', { name: 'Check again', exact: true }).click();

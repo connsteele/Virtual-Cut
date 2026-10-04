@@ -13,6 +13,8 @@ export interface SpeechSetupState {
   /** The runtime transcription uses now, and the one a switch would return to. */
   current?: SpeechSetupLocation;
   other?: SpeechSetupLocation;
+  /** Disk space a kept, unused downloaded engine occupies (it can be deleted). */
+  otherBytes?: number;
   /** `missing`: a ready or active download whose files were moved or deleted outside the app. */
   state:
     'idle' | 'planned' | 'installing' | 'ready' | 'cancelled' | 'failed' | 'activated' | 'missing';
@@ -25,6 +27,8 @@ export interface SpeechSetupState {
   availableBytes: number;
   downloadedBytes: number;
   message: string;
+  /** The result of the action just taken (switching or deleting an engine). */
+  notice?: string;
   canRestore: boolean;
 }
 export type SpeechSetupAction =
@@ -33,7 +37,9 @@ export type SpeechSetupAction =
   | 'status'
   | 'cancel'
   | 'activate'
-  /** Switch to the other setup (the two swap places). */
+  /** Switch back to the previous engine (the two swap places). */
   | 'restore'
   | 'reveal-current'
-  | 'reveal-other';
+  | 'reveal-other'
+  /** Delete a kept downloaded engine that is no longer used. */
+  | 'remove-other';

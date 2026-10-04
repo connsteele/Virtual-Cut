@@ -148,6 +148,10 @@ export function TranscriptWindow() {
   }, [api]);
   // Setup files can be moved or deleted in Explorer; look again whenever this window returns.
   useWindowFocus(useCallback(() => background(api.runtime().then(setRuntime)), [api]));
+  const refreshRuntime = useCallback(
+    async (refresh?: boolean) => setRuntime(await api.runtime(refresh)),
+    [api],
+  );
   const selected =
     session?.transcripts.find((t) => t.id === transcriptId) ||
     session?.transcripts.find((t) => t.state === 'complete') ||
@@ -398,8 +402,8 @@ export function TranscriptWindow() {
               Transcribe
             </Button>
             <Button
-              title="Local transcription setup"
-              aria-label="Local transcription setup"
+              title="Speech engine"
+              aria-label="Speech engine"
               aria-expanded={setup}
               onClick={() => setSetup(!setup)}
             >
@@ -436,7 +440,7 @@ export function TranscriptWindow() {
                 Start transcription
               </Button>
               {!runtime?.configured && (
-                <Button onClick={() => setSetup(true)}>Set up local speech recognition</Button>
+                <Button onClick={() => setSetup(true)}>Set up the speech engine</Button>
               )}
               {runtime?.removed && (
                 <p className={s.error} role="alert">
@@ -448,84 +452,9 @@ export function TranscriptWindow() {
         </>
       )}
       {setup && (
-        <section className={s.card} aria-label="Local speech runtime">
-          <h2>Local speech recognition</h2>
-          <p>
-            {runtime?.configured
-              ? 'Runtime and model files found.'
-              : 'Download a local setup below, or choose an existing installation.'}{' '}
-            No audio is uploaded.
-          </p>
-          {runtime?.removed && (
-            <p className={s.error} role="alert" aria-label="Speech setup files missing">
-              {runtime.removed} It may have been moved or deleted. Download it again, switch to the
-              other setup, or choose the files below.
-            </p>
-          )}
-          <p role="status">{runtime?.gpu?.message}</p>
-          <SpeechSetup api={api} onActivated={async () => setRuntime(await api.runtime(true))} />
-          <details>
-            <summary>Use an existing installation / manual setup</summary>
-            <p>
-              To use your own installation, install Python 3.12, faster-whisper 1.2.1 with
-              CTranslate2 4.8.2, and a faster-whisper model, then choose their locations below.
-              Downloads only start when you explicitly request them.
-            </p>
-            <p>
-              NVIDIA acceleration also needs CUDA 12 cuBLAS and cuDNN 9. Automatic uses the GPU when
-              ready and falls back to CPU if its startup check fails. An explicit NVIDIA selection
-              reports a failure instead.
-            </p>
-            <div className={s.toolbar}>
-              {(['python', 'engine', 'gpu', 'model'] as const).map((topic) => (
-                <Button key={topic} onClick={() => background(action(() => api.setupHelp(topic)))}>
-                  {topic === 'gpu'
-                    ? 'GPU installation guide'
-                    : `${topic[0].toUpperCase()}${topic.slice(1)} download / instructions`}
-                </Button>
-              ))}
-            </div>
-          </details>
-          {(['python', 'libraries', 'model', 'gpuLibraries'] as const).map((part) => (
-            <div className={s.setupRow} key={part}>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  background(
-                    action(async () => {
-                      await api.configure(part);
-                      setRuntime(await api.runtime());
-                    }),
-                  )
-                }
-              >
-                Choose {part === 'gpuLibraries' ? 'GPU runtime' : part}…
-              </Button>
-              <span>{runtime?.settings[part]}</span>
-            </div>
-          ))}
-          <Field label="Recognition device">
-            <select
-              value={runtime?.settings.device || 'auto'}
-              disabled={busy}
-              onChange={(e) =>
-                background(
-                  action(async () => {
-                    await api.configure('device', e.target.value as 'auto' | 'cpu' | 'cuda');
-                    setRuntime(await api.runtime());
-                  }),
-                )
-              }
-            >
-              <option value="auto">Automatic · prefer NVIDIA GPU</option>
-              <option value="cpu">CPU · lower memory use</option>
-              <option value="cuda">NVIDIA CUDA · requires compatible CUDA libraries</option>
-            </select>
-          </Field>
-          <p className={s.muted}>
-            The worker exits after each job. The downloaded model remains on disk. Changing settings
-            applies to the next job.
-          </p>
+        <section className={s.card} aria-label="Speech engine settings">
+          <h2>Speech engine</h2>
+          <SpeechSetup api={api} runtime={runtime} onRuntimeChanged={refreshRuntime} />
         </section>
       )}
       {error && (

@@ -94,8 +94,8 @@ export class TranscriptionRuntime {
   get problem() {
     if (this.configured) return '';
     return this.removed
-      ? `${this.removed} It may have been moved or deleted. Open Local transcription setup in the Transcript window to download it again, switch setups or choose the files.`
-      : 'Set up local transcription in the Transcript window: download the local setup or choose an existing installation.';
+      ? `${this.removed} It may have been moved or deleted. Open Speech engine in the Transcript window to download it again or choose your own installation.`
+      : 'Set up local transcription in the Transcript window: download the speech engine or choose your own installation.';
   }
   configure(part: keyof AsrRuntime, value: string) {
     if (part === 'threads') throw new Error('Invalid runtime setting.');
@@ -150,7 +150,7 @@ export class TranscriptionRuntime {
           },
         );
       } catch (e) {
-        result.message = String(e);
+        result.message = `The GPU check could not run: ${e instanceof Error ? e.message : String(e)}`;
       } finally {
         this.gpuChecking = false;
       }

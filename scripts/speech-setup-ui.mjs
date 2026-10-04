@@ -67,15 +67,17 @@ const localAppData = path.join(dir, 'localappdata');
 let app;
 const errors = [];
 const capture = async (name) => {
-  const png = await app.evaluate(async ({ BrowserWindow }) =>
-    (
-      await BrowserWindow.getAllWindows()
-        .find((w) => w.webContents.getURL().endsWith('#transcript'))
-        .webContents.capturePage(undefined, { stayHidden: true })
-    )
+  // A hidden window returns its previous frame first, so capture twice.
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const contents = BrowserWindow.getAllWindows().find((w) =>
+      w.webContents.getURL().endsWith('#transcript'),
+    ).webContents;
+    await contents.capturePage(undefined, { stayHidden: true, stayAwake: true });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return (await contents.capturePage(undefined, { stayHidden: true, stayAwake: true }))
       .toPNG()
-      .toString('base64'),
-  );
+      .toString('base64');
+  });
   await writeFile(path.join(dir, name), Buffer.from(png, 'base64'));
 };
 try {
@@ -106,15 +108,27 @@ try {
   await main.getByRole('button', { name: 'Transcript', exact: true }).click();
   const transcript = await pending;
   transcript.on('pageerror', (e) => errors.push(e.message));
-  await transcript.getByRole('button', { name: 'Local transcription setup', exact: true }).click();
-  const setup = transcript.getByRole('region', { name: 'Download local speech setup' });
+  await transcript.getByRole('button', { name: 'Speech engine', exact: true }).click();
+  const setup = transcript.getByRole('region', { name: 'Speech engine settings' });
+  const engine = setup.getByLabel(/^Speech engine: /);
+  const advanced = setup.getByText('Advanced: use my own Python installation', { exact: true });
   await expect(setup).toBeVisible();
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toHaveCount(0);
-  // Both setups are listed with their folders before any download.
-  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
-  await expect(setup.getByLabel('Other setup: Downloaded setup')).toContainText(fakeInstall);
+  // One engine card. Your own installation is in use, so Advanced starts open, and the kept
+  // downloaded engine is offered for deletion rather than as a second "setup".
+  await expect(engine).toHaveAccessibleName('Speech engine: Ready');
+  await expect(engine).toContainText('Your own Python installation');
+  await expect(
+    setup.getByRole('button', { name: 'Use the downloaded engine again', exact: true }),
+  ).toBeVisible();
+  await expect(setup.getByLabel('Previous speech engine')).toContainText(fakeInstall);
+  await expect(
+    setup.getByRole('button', { name: /^Delete previous engine \(\d+\.\d\d GB\)$/ }),
+  ).toBeVisible();
+  for (const gone of ['In use', 'Other setup', 'Switch to downloaded setup'])
+    await expect(setup.getByText(gone, { exact: true })).toHaveCount(0);
   await app.evaluate(({ dialog }, dir) => {
     dialog.showOpenDialog = async (_window, options) => {
       globalThis.setupPickerStart = options.defaultPath;
@@ -128,10 +142,8 @@ try {
     window.virtualCut.transcript.speechSetup('status'),
   );
   assert.equal(plannedBefore.state, 'idle');
-  await setup
-    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
-    .click();
-  // First pick: beside the other downloaded setup, not wherever Windows last opened.
+  await setup.getByRole('button', { name: 'Download speech engine…', exact: true }).click();
+  // First pick: beside the kept downloaded engine, not wherever Windows last opened.
   assert.equal(
     await app.evaluate(() => globalThis.setupPickerStart),
     path.join(dir, 'speech-root'),
@@ -146,14 +158,12 @@ try {
   assert.equal(planned.downloadedBytes, 0);
   assert.ok(planned.downloadBytes > 3e9);
   await setup
-    .getByLabel('Include NVIDIA acceleration libraries (compatible NVIDIA driver required)')
+    .getByLabel('Include NVIDIA acceleration (compatible NVIDIA driver required)')
     .uncheck();
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toHaveCount(0);
-  await setup
-    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
-    .click();
+  await setup.getByRole('button', { name: 'Download speech engine…', exact: true }).click();
   const cpu = await transcript.evaluate(() => window.virtualCut.transcript.speechSetup('status'));
   assert.ok(cpu.downloadBytes < planned.downloadBytes);
   assert.deepEqual(
@@ -169,7 +179,7 @@ try {
     }
   });
   assert.equal(refused, true);
-  // Open folder only reveals the known setup folder (Explorer is stubbed in this test).
+  // Open folder only reveals the known engine folders (Explorer is stubbed in this test).
   await app.evaluate(({ shell }) => {
     shell.openPath = async (folder) => {
       globalThis.revealedSetup = folder;
@@ -177,21 +187,25 @@ try {
     };
   });
   await setup
-    .getByLabel('Other setup: Downloaded setup')
+    .getByLabel('Previous speech engine')
     .getByRole('button', { name: 'Open folder', exact: true })
     .click();
   await expect.poll(() => app.evaluate(() => globalThis.revealedSetup)).toBe(fakeInstall);
-  // The switch button names its target, the two setups trade places, and switching back restores.
-  await setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }).click();
-  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText(fakeInstall);
-  await expect(setup.getByText('Now using the downloaded setup.', { exact: false })).toBeVisible();
+  // Switching between the downloaded engine and your own installation lives under
+  // Advanced, and each button names what it returns to.
+  await setup.getByRole('button', { name: 'Use the downloaded engine again', exact: true }).click();
+  await expect(engine).toContainText('Virtual Cut speech engine');
+  await expect(engine).toContainText(fakeInstall);
+  await expect(setup.getByText('Now using the downloaded engine.', { exact: false })).toBeVisible();
+  await expect(setup.getByLabel('Previous speech engine')).toHaveCount(0);
   assert.equal(
     (await transcript.evaluate(async () => (await window.virtualCut.transcript.runtime()).settings))
       .python,
     path.join(fakeInstall, 'python', 'python.exe'),
   );
-  await setup.getByRole('button', { name: 'Switch to manual setup', exact: true }).click();
-  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
+  await advanced.click();
+  await setup.getByRole('button', { name: 'Use my own installation again', exact: true }).click();
+  await expect(engine).toContainText('Your own Python installation');
   // Settings round-trip through JSON, which drops undefined optional keys.
   assert.equal(
     JSON.stringify(
@@ -202,13 +216,13 @@ try {
     JSON.stringify(runtimeBefore),
   );
   // Files deleted in Explorer while the window is open are noticed when it regains focus
-  // (VC-90 follow-up): the row and the reason say so, and switching away still works.
-  await setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }).click();
-  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText(fakeInstall);
+  // (M327): the card and the reason say so, and switching away still works.
+  await setup.getByRole('button', { name: 'Use the downloaded engine again', exact: true }).click();
+  await expect(engine).toContainText(fakeInstall);
   await rm(path.join(fakeInstall, 'model', 'model.bin'));
   await transcript.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText('files not found');
-  await expect(transcript.getByLabel('Speech setup files missing')).toContainText(
+  await expect(engine).toHaveAccessibleName('Speech engine: Files missing');
+  await expect(setup.getByLabel('Speech engine files missing')).toContainText(
     'The speech model was not found',
   );
   assert.equal(
@@ -217,18 +231,25 @@ try {
     ),
     false,
   );
-  await transcript.getByLabel('Speech setup files missing').scrollIntoViewIfNeeded();
+  await transcript.evaluate(() =>
+    document.querySelector('[aria-label="Speech engine settings"]').scrollIntoView(),
+  );
   await capture('setup-removed.png');
-  await setup.getByRole('button', { name: 'Switch to manual setup', exact: true }).click();
+  await advanced.click();
+  await setup.getByRole('button', { name: 'Use my own installation again', exact: true }).click();
   await expect(
-    setup.getByText("The previous downloaded setup's files are missing", { exact: false }),
+    setup.getByText("The previous engine's files are missing", { exact: false }),
   ).toBeVisible();
-  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
-  await expect(setup.getByLabel('Other setup: Downloaded setup')).toContainText('files not found');
+  await expect(engine).toHaveAccessibleName('Speech engine: Ready');
   await expect(
-    setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }),
-  ).toBeDisabled();
-  await expect(transcript.getByLabel('Speech setup files missing')).toHaveCount(0);
+    setup.getByRole('button', { name: 'Use the downloaded engine again', exact: true }),
+  ).toHaveCount(0);
+  await expect(setup.getByLabel('Previous speech engine')).toHaveCount(0);
+  await expect(setup.getByLabel('Speech engine files missing')).toHaveCount(0);
+  await transcript.evaluate(() =>
+    document.querySelector('[aria-label="Speech engine settings"]').scrollIntoView(),
+  );
+  await capture('engine-card.png');
   for (const width of [900, 500]) {
     await app.evaluate(
       ({ BrowserWindow }, width) =>
@@ -252,21 +273,17 @@ try {
   const reopened = app.waitForEvent('window');
   await main.getByRole('button', { name: 'Transcript', exact: true }).click();
   const reopenedWindow = await reopened;
-  await reopenedWindow
-    .getByRole('button', { name: 'Local transcription setup', exact: true })
-    .click();
+  await reopenedWindow.getByRole('button', { name: 'Speech engine', exact: true }).click();
   await expect(
     reopenedWindow
-      .getByRole('region', { name: 'Download local speech setup' })
+      .getByRole('region', { name: 'Speech engine settings' })
       .getByRole('button', { name: 'Download and install', exact: true }),
   ).toBeVisible();
   await expect(
-    reopenedWindow.getByLabel(
-      'Include NVIDIA acceleration libraries (compatible NVIDIA driver required)',
-    ),
+    reopenedWindow.getByLabel('Include NVIDIA acceleration (compatible NVIDIA driver required)'),
   ).not.toBeChecked();
   await reopenedWindow
-    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
+    .getByRole('button', { name: 'Download speech engine…', exact: true })
     .click();
   const reopenedCpu = await reopenedWindow.evaluate(() =>
     window.virtualCut.transcript.speechSetup('status'),
