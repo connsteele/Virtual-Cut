@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
-const { recoverProjectCopy } = require('../dist-electron/project-recovery.cjs');
+const { recoverProjectCopy, PROJECT_VERSION } = require('../dist-electron/project-recovery.cjs');
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const edit = (store, text) => {
   const before = structuredClone(store.data.model),
@@ -124,7 +124,7 @@ if (process.argv[2] === '--crash') {
   await unlink(legacy + '.saves');
   store = new ProjectStore(legacy);
   assert.match(store.snapshot().recoveryNotice, /upgraded/);
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, PROJECT_VERSION);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM history').get().n, 0);
   await store.loadCopies();
   const migration = store.snapshot().saves.find((s) => s.kind === 'migration');

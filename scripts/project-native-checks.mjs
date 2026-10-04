@@ -110,8 +110,14 @@ try {
   assert.equal(r.audioTracks.length, 2);
   assert(r.poster);
   assert.equal(r.frames.length, 0, 'Dynamic filmstrip frames are not stored in the project');
-  assert(r.keys.length >= 8);
-  assert(r.frameTimes.length >= 239);
+  // Schema 5 keeps inspected indexes outside the editable model (VC-97).
+  assert.equal(r.frameTimes, undefined, 'frame timestamps are not stored in the project model');
+  assert.equal(r.keys, undefined, 'keyframe timestamps are not stored in the project model');
+  const index = await service.frameIndex(id, r.id);
+  assert(index.keys.length >= 8);
+  assert(index.frameTimes.length >= 239);
+  assert.equal(r.frameCount, index.frameTimes.length);
+  assert.equal(r.keyCount, index.keys.length);
   assert.equal(p.model.markers[rid][1].name, 'Original chapter name');
   assert.equal(p.model.markers[rid][1].time, 2.5);
   assert.equal(p.model.clips.length, 1, 'chapters must not create clip ranges');

@@ -5,7 +5,8 @@ import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
 const { DatabaseSync } = require('node:sqlite');
-const { compactSaveCopy } = require('../dist-electron/project-recovery.cjs');
+const { compactSaveCopy, PROJECT_VERSION } = require('../dist-electron/project-recovery.cjs');
+const { extractFrameIndexes, decodeTimes } = require('../dist-electron/frame-index.js');
 const base = testPath('save-policy');
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'native-'));
@@ -108,8 +109,18 @@ const oldBytes = (await stat(legacy)).size;
 compactSaveCopy(legacy);
 assert((await stat(legacy)).size < oldBytes / 2);
 const upgraded = new DatabaseSync(legacy, { readOnly: true });
-assert.equal(upgraded.prepare('SELECT body FROM project WHERE id=1').get().body, oldBody);
-assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, 4);
+// Schema 5 keeps the saved state and moves the inline frame index into its own table.
+const expected = JSON.parse(oldBody);
+const moved = extractFrameIndexes(expected.model);
+assert.equal(
+  upgraded.prepare('SELECT body FROM project WHERE id=1').get().body,
+  JSON.stringify(expected),
+);
+const savedIndex = upgraded
+  .prepare('SELECT frames FROM frame_indexes WHERE source_id=?')
+  .get('source');
+assert.deepEqual(decodeTimes(savedIndex.frames), moved.get('source').frameTimes);
+assert.equal(upgraded.prepare('PRAGMA user_version').get().user_version, PROJECT_VERSION);
 assert.equal(upgraded.prepare('SELECT COUNT(*) AS n FROM history').get().n, 0);
 upgraded.close();
 const damaged = path.join(dir, 'damaged.vcut');

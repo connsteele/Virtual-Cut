@@ -11,9 +11,8 @@ export function filmstripSource(project: string, r: Recording) {
     r.sourceStart,
     r.duration,
     r.availability,
-    r.keys?.length,
-    r.keys?.[0],
-    r.keys?.at(-1),
+    // Project models keep only the count; the keyframe arrays load on demand.
+    r.keyCount ?? r.keys?.length,
   ]);
 }
 

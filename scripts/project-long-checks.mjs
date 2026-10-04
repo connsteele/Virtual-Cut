@@ -56,7 +56,11 @@ try {
   assert.equal(r.height, 2160);
   assert.equal(r.codec, 'av1');
   assert(r.duration > 470);
-  assert(r.frameTimes.length > 28000);
+  const index = await page.evaluate(
+    ([project, source]) => window.virtualCut.project.frameIndex(project, source),
+    [p.project.id, r.id],
+  );
+  assert(index.frameTimes.length > 28000);
   await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
   await page.getByText('Source & audio', { exact: false }).click();
   await page
@@ -127,8 +131,8 @@ try {
     duration: r.duration,
     resolution: [r.width, r.height],
     codec: r.codec,
-    frameCount: r.frameTimes.length,
-    keyframes: r.keys.length,
+    frameCount: index.frameTimes.length,
+    keyframes: index.keys.length,
     audioTracks: r.audioTracks.length,
     inspectionAndGameAudioMs,
     seekMs,

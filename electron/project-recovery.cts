@@ -5,9 +5,10 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { validateEdits } from './project-edits.js';
+import { encodeTimes, extractFrameIndexes } from './frame-index.js';
 
 export const PROJECT_APP_ID = 1447253332;
-export const PROJECT_VERSION = 4;
+export const PROJECT_VERSION = 5;
 /** Closed copies need no journal files. Active/pending databases must still read their WAL. */
 export function openProjectReadOnly(file: string) {
   const pending = ['.lock', '-wal', '-shm'].some((suffix) => existsSync(file + suffix));
@@ -20,6 +21,50 @@ const sessionSchema = `CREATE TABLE project_session (
   opened_at TEXT NOT NULL, closed_at TEXT);
   INSERT INTO project_session VALUES (1,1,'',NULL);`;
 
+/** Schema 5: inspected frame/keyframe timestamps live outside the editable project model. */
+export function createFrameIndexSchema(db: DatabaseSync) {
+  db.exec(`CREATE TABLE IF NOT EXISTS frame_indexes (
+    source_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL,
+    frames BLOB NOT NULL, keys BLOB NOT NULL)`);
+}
+
+/** Model as validated and stored from schema 5, without inline legacy indexes. */
+function withoutFrameIndexes(model: unknown) {
+  const copy = structuredClone(model) as Parameters<typeof extractFrameIndexes>[0];
+  if (copy && Array.isArray(copy.recordings)) extractFrameIndexes(copy);
+  return copy;
+}
+
+/**
+ * Move inline indexes from the stored model into frame_indexes, keyed by the source
+ * fingerprint they were inspected from. The caller owns the transaction.
+ */
+export function moveFrameIndexes(db: DatabaseSync) {
+  const row = db.prepare('SELECT body FROM project WHERE id=1').get();
+  const data = JSON.parse(String(row?.body));
+  const found = extractFrameIndexes(data.model);
+  if (!found.size) return 0;
+  createFrameIndexSchema(db);
+  const fingerprints = new Map(
+    db
+      .prepare('SELECT id, body FROM sources')
+      .all()
+      .map((source) => [String(source.id), JSON.parse(String(source.body)).fingerprint]),
+  );
+  const put = db.prepare(
+    'INSERT OR REPLACE INTO frame_indexes (source_id, fingerprint, frames, keys) VALUES (?,?,?,?)',
+  );
+  for (const [id, index] of found)
+    put.run(
+      id,
+      String(fingerprints.get(id) ?? ''),
+      encodeTimes(index.frameTimes),
+      encodeTimes(index.keys),
+    );
+  db.prepare('UPDATE project SET body=? WHERE id=1').run(JSON.stringify(data));
+  return found.size;
+}
+
 /** Validate before any migration or recovery write. Future versions stay untouched. */
 export function inspectProject(db: DatabaseSync) {
   if (db.prepare('PRAGMA application_id').get()?.application_id !== PROJECT_APP_ID)
@@ -27,7 +72,7 @@ export function inspectProject(db: DatabaseSync) {
   const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
   if (version > PROJECT_VERSION)
     throw new Error('This project needs a newer Virtual Cut version. Open it with that version.');
-  if (![1, 2, 3, 4].includes(version))
+  if (![1, 2, 3, 4, 5].includes(version))
     throw new Error('This project uses an unsupported saved version.');
   if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
     throw new Error('Project integrity check failed.');
@@ -43,8 +88,10 @@ export function inspectProject(db: DatabaseSync) {
     data.revision < 0
   )
     throw new Error('Project data is invalid.');
-  // Validation may normalize fields, so leave the original stored model intact.
-  validateEdits(structuredClone(data.model));
+  // Validation may normalize fields, so leave the original stored model intact. Inline
+  // indexes from schema 4 and earlier move out during upgrade; they never count
+  // against the edit limits, so a long project can always open and migrate.
+  validateEdits(withoutFrameIndexes(data.model));
   for (const table of ['sources', 'jobs'])
     for (const row of db.prepare(`SELECT id, body FROM ${table}`).all()) {
       const value = JSON.parse(String(row.body));
@@ -52,8 +99,8 @@ export function inspectProject(db: DatabaseSync) {
     }
   for (const row of db.prepare('SELECT version, before, after FROM history').all()) {
     if (row.version !== 1) throw new Error('This project needs a newer edit-history version.');
-    validateEdits(JSON.parse(String(row.before)));
-    validateEdits(JSON.parse(String(row.after)));
+    validateEdits(withoutFrameIndexes(JSON.parse(String(row.before))));
+    validateEdits(withoutFrameIndexes(JSON.parse(String(row.after))));
   }
   if (db.prepare("SELECT name FROM sqlite_master WHERE name='exports'").get())
     for (const row of db.prepare('SELECT id, body FROM exports').all())
@@ -89,10 +136,15 @@ export function compactSaveCopy(file: string) {
         copy.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE');
         if (version === 1) createSessionSchema(copy);
         createTranscriptSchema(copy);
+        createFrameIndexSchema(copy);
+        const moved = moveFrameIndexes(copy);
         copy.exec(`DELETE FROM history; PRAGMA user_version=${PROJECT_VERSION}; COMMIT; VACUUM`);
         const checked = inspectProject(copy);
-        if (JSON.stringify(checked.data) !== JSON.stringify(data))
+        const expected = { ...data, model: withoutFrameIndexes(data.model) };
+        if (JSON.stringify(checked.data) !== JSON.stringify(expected))
           throw new Error('Compacted save did not retain its project state.');
+        if (Number(copy.prepare('SELECT COUNT(*) AS n FROM frame_indexes').get()?.n) < moved)
+          throw new Error('Compacted save did not retain its frame indexes.');
         for (const table of ['sources', 'jobs', 'exports']) {
           if (!source.prepare('SELECT name FROM sqlite_master WHERE name=?').get(table)) continue;
           if (
@@ -152,6 +204,8 @@ export function migrateProject(db: DatabaseSync, file: string) {
     if (version === 1) db.exec(sessionSchema);
     db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
     createTranscriptSchema(db);
+    createFrameIndexSchema(db);
+    moveFrameIndexes(db);
     db.exec('DELETE FROM history');
     db.exec(`PRAGMA user_version=${PROJECT_VERSION}; COMMIT`);
   } catch (e) {

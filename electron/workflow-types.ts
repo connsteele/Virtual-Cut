@@ -84,7 +84,15 @@ export interface Recording {
   base: number;
   duration: number;
   fps?: number;
+  /**
+   * Keyframe and per-frame timestamps. Project models never persist these (schema 5
+   * keeps them in the frame_indexes table); the renderer attaches them on demand, and
+   * sample and completed-output recordings carry them directly.
+   */
   keys?: number[];
+  /** Number of indexed keyframes and frames, kept in the model when the arrays are not. */
+  keyCount?: number;
+  frameCount?: number;
   position: number;
   sample: boolean;
   context: string;

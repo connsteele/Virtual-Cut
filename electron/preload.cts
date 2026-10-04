@@ -83,6 +83,7 @@ const api: VirtualCutApi = {
       ipcRenderer.invoke('workspace:destinationFolders', id, folder),
     filmstrip: (id, sourceId, times, token) =>
       ipcRenderer.invoke('workspace:filmstrip', id, sourceId, times, token),
+    frameIndex: (id, sourceId) => ipcRenderer.invoke('workspace:frameIndex', id, sourceId),
     cancelFilmstrip: (id, token, release) =>
       ipcRenderer.invoke('workspace:cancelFilmstrip', id, token, release),
     onCloseRequested: (callback) => {

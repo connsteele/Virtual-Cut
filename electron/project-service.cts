@@ -351,15 +351,24 @@ export class ProjectService {
       times.some((t) => !Number.isFinite(t) || t < 0 || t > r.duration)
     )
       throw new Error('Invalid filmstrip request.');
-    if (!r.keys?.length) throw new Error('Keyframe index is unavailable.');
+    // Completed outputs carry their session index; project sources keep theirs natively.
+    const keys = r.retained ? r.keys : store.frameIndex(sourceId)?.keys;
+    if (!keys?.length) throw new Error('Keyframe index is unavailable.');
     return this.filmstripCache.request(
       this.tool('ffmpeg'),
       source,
       r.sourceStart || 0,
-      r.keys,
+      keys,
       times,
       token,
     );
+  }
+  /** Frame and keyframe timestamps for one project recording, read on demand. */
+  frameIndex(id: string, sourceId: string) {
+    const store = this.require(id);
+    if (typeof sourceId !== 'string' || !sourceId || sourceId.length > 200)
+      throw new Error('Choose a recording.');
+    return store.frameIndex(sourceId);
   }
   cancelFilmstrip(id: string, token: string, release = false) {
     this.require(id);
@@ -1234,7 +1243,7 @@ export class ProjectService {
       end <= start
     )
       throw new Error('Give this clip a valid range within the recording.');
-    const keys = [...(recording.keys || [])].sort((a, b) => a - b);
+    const keys = [...(s.frameIndex(recording.id)?.keys || [])].sort((a, b) => a - b);
     const lower = keys.filter((t) => t <= start + 0.000001).at(-1),
       upper = keys.find((t) => t >= end - 0.000001) ?? input.duration;
     if (lower == null || upper <= lower)
@@ -1962,7 +1971,8 @@ export class ProjectService {
           throw new Error('Recording changed during inspection.');
         s.transaction(() => {
           const r = s.data.model.recordings.find((r) => r.id === source.id)!;
-          const { markers, ...facts } = info;
+          const { markers, frameTimes, keys, ...facts } = info;
+          s.putFrameIndex(source.id, source.fingerprint, { frameTimes, keys });
           const defaults = r.importAudio || { game: 1, mic: null };
           const existing = !!s.data.model.markerBaseline?.[source.id];
           const game = existing
@@ -1975,7 +1985,11 @@ export class ProjectService {
             : defaults.mic == null
               ? null
               : (info.audioTracks[defaults.mic - 1]?.index ?? null);
+          delete r.frameTimes;
+          delete r.keys;
           Object.assign(r, facts, {
+            frameCount: frameTimes.length,
+            keyCount: keys.length,
             availability: 'ready',
             error: '',
             gameTrack: game,

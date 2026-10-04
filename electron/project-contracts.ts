@@ -135,6 +135,8 @@ export interface ProjectApi {
     token: string,
   ): Promise<FilmstripFrame[]>;
   cancelFilmstrip(id: string, token: string, release?: boolean): Promise<void>;
+  /** Inspected timestamps for one recording; null until inspection or after the file changes. */
+  frameIndex(id: string, sourceId: string): Promise<import('./frame-index.js').FrameIndex | null>;
   onCloseRequested(callback: () => void): () => void;
   finishClose(): Promise<void>;
   recent(): Promise<RecentProject[]>;

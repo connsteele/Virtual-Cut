@@ -4,6 +4,7 @@ import { mergeEdits, editorial } from '../../electron/project-edits';
 import { reviewContent } from '../../electron/review-plan';
 import { loadModel, storedModel, modelKey, type Model } from './model';
 import { filmstripMemory } from './filmstripMemory';
+import { withoutFrameIndexes } from './frameIndexes';
 import { autosaveKey, autosaveSettings, autosaveDue, type AutosaveSettings } from './autosave';
 
 const changed = (a: Model, b: Model) =>
@@ -115,7 +116,11 @@ export function useProjectWorkspace() {
           const id = session.current.project.id;
           const sent = modelRef.current;
           // This synchronizes the live session and Undo, without saving to disk.
-          const value = await window.virtualCut!.project.save(id, base.current, sent);
+          const value = await window.virtualCut!.project.save(
+            id,
+            withoutFrameIndexes(base.current),
+            withoutFrameIndexes(sent),
+          );
           if (session.current?.project.id !== id) return;
           apply(value, false, sent);
           setError('');

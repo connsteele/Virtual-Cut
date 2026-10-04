@@ -12,6 +12,7 @@ import {
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
+const { PROJECT_VERSION } = require('../dist-electron/project-recovery.cjs');
 const root =
   process.env.VIRTUAL_CUT_ASR_TEST_OUTPUT || 'G:/GPT/Work/virtual-cut/m3-native-validation';
 await mkdir(root, { recursive: true });
@@ -168,7 +169,7 @@ try {
   old.db.exec('PRAGMA user_version=3');
   old.close();
   snapshot = await service.open(file);
-  assert.equal(service.store.db.prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(service.store.db.prepare('PRAGMA user_version').get().user_version, PROJECT_VERSION);
   assert.ok((await service.store.snapshot()).saves !== undefined);
   await service.close();
   await writeFile(

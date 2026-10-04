@@ -28,6 +28,7 @@ export const native = [
   'export-feedback-native.mjs',
   'filmstrip-checks.mjs',
   'review-planning-native.mjs',
+  'project-capacity-checks.mjs',
 ];
 export const desktop = [
   'speech-setup-ui.mjs',

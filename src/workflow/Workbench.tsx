@@ -83,6 +83,7 @@ import {
   type DestinationPlan,
 } from '../../electron/review-plan';
 import { clipColor } from './clipLayout';
+import { frameIndexes, useFrameIndexes } from './frameIndexes';
 import type { MediaJob } from '../../electron/project-contracts';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
@@ -750,6 +751,15 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const clips = model.clips.filter((c) => c.rid === r.id).sort((a, b) => a.start - b.start),
     c = mid ? undefined : clips.find((c) => c.id === cid);
   const e = model.sequence.find((e) => e.id === eid) || model.sequence[0];
+  // Frame-accurate stepping and snapping need the per-frame index of every recording a
+  // player can show: the Cut source, an expanded Review clip and the current select.
+  const expandedClip = expanded ? model.clips.find((x) => x.id === expanded) : undefined;
+  useFrameIndexes(project?.project.id, [
+    r,
+    model.recordings.find((x) => x.id === expandedClip?.rid),
+    model.recordings.find((x) => x.id === e?.rid),
+  ]);
+  const indexed = (recording: Recording) => frameIndexes.attach(project?.project.id, recording);
   useEffect(() => {
     try {
       localStorage.setItem('virtual-cut.scratchpad.v1', notes);
@@ -874,7 +884,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   }
   function addMarker(recordId = r.id, range = false) {
     if (project && !canEdit) return;
-    const recording = model.recordings.find((x) => x.id === recordId)!;
+    const recording = indexed(model.recordings.find((x) => x.id === recordId)!);
     const position = markerTime(recording, transport.current?.current() || 0),
       id = uid();
     setModel((m) => ({
@@ -1264,7 +1274,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         key={sequence ? eid : page === 'review' ? expanded : page}
         ref={transport}
         onActivityChange={workspace.setPlaybackActive}
-        recording={record}
+        recording={indexed(record)}
         onSourceOpen={onSourceOpen}
         projectId={project?.project.id}
         bounds={bounds}
@@ -1365,7 +1375,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       marks={(model.markers[recordId] || []).filter(
         (m) => !clip || markerIntersects(m, clip.start, clip.end),
       )}
-      recording={model.recordings.find((r) => r.id === recordId)!}
+      recording={indexed(model.recordings.find((r) => r.id === recordId)!)}
       terms={model.terms}
       canAdd={!project || canEdit}
       selectedId={mid}
@@ -1744,7 +1754,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   </label>
                   <span className={s.spacer} />
                   <span className={s.muted}>
-                    {r.keys?.length ? 'Keyframes indexed' : 'Keyframe indexing pending'}
+                    {(r.keyCount ?? r.keys?.length)
+                      ? 'Keyframes indexed'
+                      : 'Keyframe indexing pending'}
                   </span>
                 </div>
               </div>

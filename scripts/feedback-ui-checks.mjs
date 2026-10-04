@@ -267,7 +267,14 @@ try {
   await page.keyboard.press('ArrowRight');
   await expect
     .poll(async () => (await clipState()).end)
-    .toBe(p.model.recordings[0].frameTimes.find((t) => t > 3.000001));
+    .toBe(
+      (
+        await page.evaluate(
+          ([project, source]) => window.virtualCut.project.frameIndex(project, source),
+          [p.project.id, rid],
+        )
+      ).frameTimes.find((t) => t > 3.000001),
+    );
   await page.keyboard.press('Control+z');
   await expect.poll(async () => (await clipState()).end).toBe(3);
   await unfocus();

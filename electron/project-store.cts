@@ -25,7 +25,11 @@ import {
   createSessionSchema,
   compactSaveCopy,
   openProjectReadOnly,
+  createFrameIndexSchema,
+  moveFrameIndexes,
 } from './project-recovery.cjs';
+import { decodeTimes, encodeTimes, extractFrameIndexes } from './frame-index.js';
+import type { FrameIndex } from './frame-index.js' with { 'resolution-mode': 'import' };
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 
 export interface NativeSource {
@@ -117,10 +121,21 @@ export class ProjectStore {
         };
         this.write();
         createSessionSchema(this.db);
+        createFrameIndexSchema(this.db);
       } else {
         if (migrateProject(this.db, file))
           this.recoveryNotice =
             'Project upgraded. A verified copy of the previous saved version is available in Save history.';
+        // A current-format file should never hold inline indexes; move any that remain.
+        createFrameIndexSchema(this.db);
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+          moveFrameIndexes(this.db);
+          this.db.exec('COMMIT');
+        } catch (e) {
+          this.db.exec('ROLLBACK');
+          throw e;
+        }
         const row = this.db.prepare('SELECT body FROM project WHERE id=1').get();
         if (!row || typeof row.body !== 'string') throw new Error('Project data is missing.');
         this.data = JSON.parse(row.body) as Data;
@@ -269,6 +284,12 @@ export class ProjectStore {
       throw new Error('Choose an available save copy.');
     const check = openProjectReadOnly(path.join(this.file + '.saves', saveId));
     let saved: Data, sources: NativeSource[], jobs: MediaJob[];
+    const savedIndexes: {
+      source_id: string;
+      fingerprint: string;
+      frames: Uint8Array;
+      keys: Uint8Array;
+    }[] = [];
     const transcripts: {
       summary: import('./transcript-contracts.js').TranscriptSummary;
       segments: import('./transcript-contracts.js').TranscriptSegment[];
@@ -278,11 +299,29 @@ export class ProjectStore {
       saved = JSON.parse(String(check.prepare('SELECT body FROM project WHERE id=1').get()?.body));
       if (saved.project.id !== this.data.project.id)
         throw new Error('This save belongs to another project.');
+      const inline = extractFrameIndexes(saved.model);
       saved.model = validateEdits(saved.model);
       sources = check
         .prepare('SELECT body FROM sources')
         .all()
         .map((row) => JSON.parse(String(row.body)));
+      if (check.prepare("SELECT name FROM sqlite_master WHERE name='frame_indexes'").get())
+        for (const row of check
+          .prepare('SELECT source_id, fingerprint, frames, keys FROM frame_indexes')
+          .all())
+          savedIndexes.push({
+            source_id: String(row.source_id),
+            fingerprint: String(row.fingerprint),
+            frames: row.frames as Uint8Array,
+            keys: row.keys as Uint8Array,
+          });
+      for (const [id, index] of inline)
+        savedIndexes.push({
+          source_id: id,
+          fingerprint: sources.find((source) => source.id === id)?.fingerprint ?? '',
+          frames: encodeTimes(index.frameTimes),
+          keys: encodeTimes(index.keys),
+        });
       jobs = check
         .prepare('SELECT body FROM jobs')
         .all()
@@ -314,12 +353,26 @@ export class ProjectStore {
       check.close();
     }
     await this.checkpoint('manual');
+    // Keep a current index for a restored source whose file has not changed.
+    const currentIndexes = this.db
+      .prepare('SELECT source_id, fingerprint, frames, keys FROM frame_indexes')
+      .all();
     this.transaction(() => {
       saved.project.file = this.file;
       saved.revision = this.data.revision + 1;
       this.data = saved;
-      this.db.exec('DELETE FROM sources; DELETE FROM jobs; DELETE FROM history;');
+      this.db.exec(
+        'DELETE FROM sources; DELETE FROM jobs; DELETE FROM history; DELETE FROM frame_indexes;',
+      );
       sources.forEach((source) => this.putSource(source));
+      const putIndex = this.db.prepare(
+        'INSERT OR REPLACE INTO frame_indexes (source_id, fingerprint, frames, keys) VALUES (?,?,?,?)',
+      );
+      for (const row of currentIndexes)
+        if (sources.some((s) => s.id === row.source_id && s.fingerprint === row.fingerprint))
+          putIndex.run(row.source_id, row.fingerprint, row.frames, row.keys);
+      for (const row of savedIndexes)
+        putIndex.run(row.source_id, row.fingerprint, row.frames, row.keys);
       for (const transcript of transcripts) {
         this.transcripts.put(transcript.summary);
         for (const segment of transcript.segments)
@@ -404,7 +457,27 @@ export class ProjectStore {
       .prepare('INSERT OR REPLACE INTO sources (id,body) VALUES (?,?)')
       .run(s.id, JSON.stringify(s));
   }
+  /** Indexes inspected from a different file revision are stale and never returned. */
+  frameIndex(sourceId: string): FrameIndex | null {
+    const source = this.sources().find((s) => s.id === sourceId);
+    const row = this.db
+      .prepare('SELECT fingerprint, frames, keys FROM frame_indexes WHERE source_id=?')
+      .get(sourceId);
+    if (!source || !row || row.fingerprint !== source.fingerprint) return null;
+    return {
+      frameTimes: decodeTimes(row.frames as Uint8Array),
+      keys: decodeTimes(row.keys as Uint8Array),
+    };
+  }
+  putFrameIndex(sourceId: string, fingerprint: string, index: FrameIndex) {
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO frame_indexes (source_id, fingerprint, frames, keys) VALUES (?,?,?,?)',
+      )
+      .run(sourceId, fingerprint, encodeTimes(index.frameTimes), encodeTimes(index.keys));
+  }
   removeSource(id: string) {
+    this.db.prepare('DELETE FROM frame_indexes WHERE source_id=?').run(id);
     this.transcripts.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);
     this.db.prepare('DELETE FROM sources WHERE id=?').run(id);

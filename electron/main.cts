@@ -248,9 +248,14 @@ function registerDesktopApi(): void {
     assertTrustedSender(event);
     projects.cancelFilmstrip(id, token, release);
   });
+  // A read-only lookup; it must not wait behind queued saves or media operations.
+  ipcMain.handle('workspace:frameIndex', (event, id, sourceId) => {
+    assertTrustedSender(event);
+    return projects.frameIndex(id, sourceId);
+  });
   type Calls = Omit<
     ProjectApi,
-    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch' | 'stageDrop'
+    'onCloseRequested' | 'finishClose' | 'selectBatch' | 'deleteBatch' | 'stageDrop' | 'frameIndex'
   > & {
     'finish-close': ProjectApi['finishClose'];
     'select-batch': ProjectApi['selectBatch'];
