@@ -1,4 +1,4 @@
-import { createReadStream, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import {
   access,
   mkdir,
@@ -11,10 +11,11 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { AsrRuntime } from './transcript-contracts.js' with { 'resolution-mode': 'import' };
-import type { SpeechSetupState } from './speech-setup-contracts.js' with {
+import type { SpeechSetupLocation, SpeechSetupState } from './speech-setup-contracts.js' with {
   'resolution-mode': 'import',
 };
 import type { TranscriptionRuntime } from './transcription-runtime.cjs';
@@ -37,6 +38,26 @@ interface Manifest {
   artifacts: Artifact[];
 }
 const integration = path.resolve(__dirname, '..', 'integrations', 'transcription');
+
+/** Recognize a runtime this installer created; anything else is a manual setup. */
+export function describeRuntime(settings: AsrRuntime): SpeechSetupLocation {
+  const install = path.dirname(path.dirname(settings.python));
+  const downloaded =
+    /^install-[0-9a-f-]{36}$/.test(path.basename(install)) &&
+    path.basename(path.dirname(install)) === 'Virtual Cut speech' &&
+    settings.python === path.join(install, 'python', 'python.exe') &&
+    settings.libraries === path.join(install, 'libraries') &&
+    settings.model === path.join(install, 'model');
+  return {
+    kind: downloaded ? 'downloaded' : 'manual',
+    folder: downloaded ? install : path.dirname(settings.python),
+    python: settings.python,
+    model: settings.model,
+    available: existsSync(settings.python) && existsSync(path.join(settings.model, 'model.bin')),
+  };
+}
+const label = (location: SpeechSetupLocation | undefined) =>
+  location?.kind === 'downloaded' ? 'downloaded' : 'manual';
 
 export async function verifyArtifact(file: string, artifact: Pick<Artifact, 'sha256' | 'bytes'>) {
   const hash = createHash('sha256');
@@ -117,14 +138,38 @@ export class SpeechSetup {
     );
     await rename(file + '.next', file);
   }
-  async status() {
+  private async previous(): Promise<AsrRuntime | undefined> {
     try {
-      await readFile(path.join(this.profile, 'speech-previous-runtime.json'));
-      this.state.canRestore = true;
+      return JSON.parse(
+        await readFile(path.join(this.profile, 'speech-previous-runtime.json'), 'utf8'),
+      ) as AsrRuntime;
     } catch {
-      this.state.canRestore = false;
+      return undefined;
     }
+  }
+  async status() {
+    const previous = await this.previous();
+    this.state.canRestore = !!previous;
+    this.state.current = describeRuntime(this.runtime.settings);
+    this.state.other = previous ? describeRuntime(previous) : undefined;
     return { ...this.state };
+  }
+  /**
+   * Where the folder picker starts: beside a downloaded setup (in use first), then the
+   * last folder chosen here, then a per-user location shared by every app version.
+   */
+  async suggestedFolder() {
+    const previous = await this.previous();
+    for (const location of [
+      describeRuntime(this.runtime.settings),
+      previous && describeRuntime(previous),
+    ])
+      if (location?.kind === 'downloaded') return path.dirname(path.dirname(location.folder));
+    if (this.root) return this.root;
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+      'Virtual Cut',
+    );
   }
   async plan(folder: string, includeGpu: boolean) {
     if (this.controller) throw new Error('Wait for the current setup or cancel it.');
@@ -412,13 +457,14 @@ export class SpeechSetup {
       access(path.join(candidate.model, 'model.bin')),
     ]);
     await mkdir(this.profile, { recursive: true });
+    const replaced = describeRuntime(this.runtime.settings);
     await writeFile(
       path.join(this.profile, 'speech-previous-runtime.json'),
       JSON.stringify(this.runtime.settings),
     );
     this.runtime.use(candidate);
     this.state.state = 'activated';
-    this.state.message = 'New setup is active. The previous setup is still available.';
+    this.state.message = `Now using the downloaded setup. Your ${label(replaced)} setup is kept, so you can switch back.`;
     await this.rememberCandidate();
     this.report('activate');
     return this.status();
@@ -434,8 +480,15 @@ export class SpeechSetup {
       path.join(this.profile, 'speech-previous-runtime.json'),
       JSON.stringify(current),
     );
-    this.state.message = 'Previous setup restored. Downloaded software and transcripts are kept.';
-    if (this.state.folder) {
+    const now = describeRuntime(previous),
+      kept = describeRuntime(current);
+    this.state.message =
+      now.kind === kept.kind
+        ? `Switched to the other ${label(now)} setup. Both setups and your transcripts are kept.`
+        : `Now using the ${label(now)} setup. The ${label(kept)} setup and your transcripts are kept, so you can switch back.`;
+    // Only an installed candidate changes between ready and active; a planned or
+    // failed download stays as it was.
+    if (this.state.folder && ['ready', 'activated'].includes(this.state.state)) {
       this.state.state =
         this.runtime.settings.python === this.candidate().python ? 'activated' : 'ready';
       await this.rememberCandidate();

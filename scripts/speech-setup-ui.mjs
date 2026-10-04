@@ -22,6 +22,31 @@ await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'run-'));
 const project = path.join(dir, 'setup-review.vcut');
 await copyFile(fixture.file, project);
+// A disposable downloaded setup stands in as the "other" setup; no real runtime is touched.
+const fakeInstall = path.join(
+  dir,
+  'speech-root',
+  'Virtual Cut speech',
+  'install-00000000-0000-4000-8000-000000000000',
+);
+await mkdir(path.join(fakeInstall, 'python'), { recursive: true });
+await mkdir(path.join(fakeInstall, 'libraries', 'faster_whisper'), { recursive: true });
+await mkdir(path.join(fakeInstall, 'model'), { recursive: true });
+await writeFile(path.join(fakeInstall, 'python', 'python.exe'), '');
+await writeFile(path.join(fakeInstall, 'model', 'model.bin'), '');
+await mkdir(path.join(dir, 'profile'), { recursive: true });
+await writeFile(
+  path.join(dir, 'profile', 'speech-previous-runtime.json'),
+  JSON.stringify({
+    python: path.join(fakeInstall, 'python', 'python.exe'),
+    libraries: path.join(fakeInstall, 'libraries'),
+    model: path.join(fakeInstall, 'model'),
+    gpuLibraries: path.join(fakeInstall, 'libraries'),
+    device: 'auto',
+    threads: 4,
+  }),
+);
+const localAppData = path.join(dir, 'localappdata');
 let app;
 const errors = [];
 try {
@@ -33,7 +58,11 @@ try {
       '--background-test',
     ],
     cwd: root,
-    env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+    env: electronEnvironment({
+      TEMP: process.env.TEMP || 'G:/GPT/Temp',
+      TMP: process.env.TMP || 'G:/GPT/Temp',
+      LOCALAPPDATA: localAppData,
+    }),
   });
   const main = await app.firstWindow();
   main.setDefaultTimeout(20000);
@@ -54,8 +83,14 @@ try {
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toHaveCount(0);
+  // Both setups are listed with their folders before any download.
+  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
+  await expect(setup.getByLabel('Other setup: Downloaded setup')).toContainText(fakeInstall);
   await app.evaluate(({ dialog }, dir) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+    dialog.showOpenDialog = async (_window, options) => {
+      globalThis.setupPickerStart = options.defaultPath;
+      return { canceled: false, filePaths: [dir] };
+    };
   }, dir);
   const runtimeBefore = await transcript.evaluate(
     async () => (await window.virtualCut.transcript.runtime()).settings,
@@ -64,7 +99,14 @@ try {
     window.virtualCut.transcript.speechSetup('status'),
   );
   assert.equal(plannedBefore.state, 'idle');
-  await setup.getByRole('button', { name: 'Choose setup folder…', exact: true }).click();
+  await setup
+    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
+    .click();
+  // First pick: beside the other downloaded setup, not wherever Windows last opened.
+  assert.equal(
+    await app.evaluate(() => globalThis.setupPickerStart),
+    path.join(dir, 'speech-root'),
+  );
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toBeEnabled();
@@ -80,7 +122,9 @@ try {
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toHaveCount(0);
-  await setup.getByRole('button', { name: 'Choose setup folder…', exact: true }).click();
+  await setup
+    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
+    .click();
   const cpu = await transcript.evaluate(() => window.virtualCut.transcript.speechSetup('status'));
   assert.ok(cpu.downloadBytes < planned.downloadBytes);
   assert.deepEqual(
@@ -96,6 +140,38 @@ try {
     }
   });
   assert.equal(refused, true);
+  // Open folder only reveals the known setup folder (Explorer is stubbed in this test).
+  await app.evaluate(({ shell }) => {
+    shell.openPath = async (folder) => {
+      globalThis.revealedSetup = folder;
+      return '';
+    };
+  });
+  await setup
+    .getByLabel('Other setup: Downloaded setup')
+    .getByRole('button', { name: 'Open folder', exact: true })
+    .click();
+  await expect.poll(() => app.evaluate(() => globalThis.revealedSetup)).toBe(fakeInstall);
+  // The switch button names its target, the two setups trade places, and switching back restores.
+  await setup.getByRole('button', { name: 'Switch to downloaded setup', exact: true }).click();
+  await expect(setup.getByLabel('In use: Downloaded setup')).toContainText(fakeInstall);
+  await expect(setup.getByText('Now using the downloaded setup.', { exact: false })).toBeVisible();
+  assert.equal(
+    (await transcript.evaluate(async () => (await window.virtualCut.transcript.runtime()).settings))
+      .python,
+    path.join(fakeInstall, 'python', 'python.exe'),
+  );
+  await setup.getByRole('button', { name: 'Switch to manual setup', exact: true }).click();
+  await expect(setup.getByLabel('In use: Manual setup')).toBeVisible();
+  // Settings round-trip through JSON, which drops undefined optional keys.
+  assert.equal(
+    JSON.stringify(
+      await transcript.evaluate(
+        async () => (await window.virtualCut.transcript.runtime()).settings,
+      ),
+    ),
+    JSON.stringify(runtimeBefore),
+  );
   for (const width of [900, 500]) {
     await app.evaluate(
       ({ BrowserWindow }, width) =>
@@ -141,7 +217,9 @@ try {
       'Include NVIDIA acceleration libraries (compatible NVIDIA driver required)',
     ),
   ).not.toBeChecked();
-  await reopenedWindow.getByRole('button', { name: 'Choose setup folder…', exact: true }).click();
+  await reopenedWindow
+    .getByRole('button', { name: 'Choose folder for a new download…', exact: true })
+    .click();
   const reopenedCpu = await reopenedWindow.evaluate(() =>
     window.virtualCut.transcript.speechSetup('status'),
   );

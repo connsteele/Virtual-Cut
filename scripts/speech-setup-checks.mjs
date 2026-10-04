@@ -49,6 +49,65 @@ try {
   );
   await assert.rejects(installer.activate(), /Finish installing/);
   await assert.rejects(installer.restore());
+  // Setup locations, picker start and switching (separate profile; no download).
+  {
+    const locProfile = path.join(dir, 'locations-profile');
+    const locRuntime = new TranscriptionRuntime(locProfile);
+    const manual = { ...locRuntime.settings };
+    const locSetup = new SpeechSetup(locProfile, locRuntime);
+    const fresh = await locSetup.status();
+    assert.equal(fresh.current.kind, 'manual');
+    assert.equal(fresh.other, undefined);
+    const savedLocal = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = path.join(dir, 'localappdata');
+    assert.equal(await locSetup.suggestedFolder(), path.join(dir, 'localappdata', 'Virtual Cut'));
+    process.env.LOCALAPPDATA = savedLocal;
+    const install = path.join(
+      dir,
+      'speech-root',
+      'Virtual Cut speech',
+      'install-11111111-1111-4111-8111-111111111111',
+    );
+    await mkdir(path.join(install, 'python'), { recursive: true });
+    await mkdir(path.join(install, 'model'), { recursive: true });
+    await writeFile(path.join(install, 'python', 'python.exe'), '');
+    await writeFile(path.join(install, 'model', 'model.bin'), '');
+    const downloaded = {
+      python: path.join(install, 'python', 'python.exe'),
+      libraries: path.join(install, 'libraries'),
+      model: path.join(install, 'model'),
+      gpuLibraries: '',
+      device: 'auto',
+      threads: 4,
+    };
+    locRuntime.use(downloaded);
+    await mkdir(locProfile, { recursive: true });
+    await writeFile(path.join(locProfile, 'speech-previous-runtime.json'), JSON.stringify(manual));
+    const both = await locSetup.status();
+    assert.equal(both.current.kind, 'downloaded');
+    assert.equal(both.current.folder, install);
+    assert.equal(both.current.available, true);
+    assert.equal(both.other.kind, 'manual');
+    assert.equal(await locSetup.suggestedFolder(), path.join(dir, 'speech-root'));
+    const switched = await locSetup.restore();
+    assert.equal(switched.current.kind, 'manual');
+    assert.equal(switched.other.kind, 'downloaded');
+    assert.match(switched.message, /Now using the manual setup\. The downloaded setup/);
+    // Settings round-trip through JSON, which drops undefined optional keys.
+    assert.equal(JSON.stringify(locRuntime.settings), JSON.stringify(manual));
+    // The picker still starts beside the downloaded setup while it is the other one.
+    assert.equal(await locSetup.suggestedFolder(), path.join(dir, 'speech-root'));
+    const back = await locSetup.restore();
+    assert.equal(back.current.kind, 'downloaded');
+    assert.match(back.message, /Now using the downloaded setup/);
+    // Switching while a download is only planned leaves it planned, never "ready" to use.
+    assert.equal((await locSetup.plan(dir, false)).state, 'planned');
+    assert.equal((await locSetup.restore()).state, 'planned');
+    assert.equal((await locSetup.restore()).state, 'planned');
+    // A look-alike path outside the installer's layout is never treated as downloaded.
+    locRuntime.use({ ...downloaded, model: path.join(dir, 'elsewhere') });
+    assert.equal((await locSetup.status()).current.kind, 'manual');
+  }
   const plan = await installer.plan(dir, true);
   assert.equal(plan.state, 'planned');
   assert.ok(plan.folder.startsWith(path.join(dir, 'Virtual Cut speech') + path.sep));

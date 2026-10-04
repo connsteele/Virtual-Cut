@@ -114,6 +114,19 @@
   overflow-wrap: anywhere;
   font-size: 12px;
 }
+.setupLocations {
+  display: grid;
+  gap: 10px;
+  margin-block: 10px;
+}
+.setupLocation {
+  border: 1px solid #38514c;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.setupLocation .path {
+  margin: 4px 0 6px;
+}
 .setupRow span {
   overflow-wrap: anywhere;
   font-size: 12px;

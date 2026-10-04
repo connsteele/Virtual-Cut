@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Diagnostics, failureFields } from './diagnostics.cjs';
@@ -200,7 +200,16 @@ export function registerTranscriptWindow(
   });
   handle('speechSetup', async (action, includeGpu) => {
     if (
-      !['plan', 'start', 'status', 'cancel', 'activate', 'restore'].includes(action) ||
+      ![
+        'plan',
+        'start',
+        'status',
+        'cancel',
+        'activate',
+        'restore',
+        'reveal-current',
+        'reveal-other',
+      ].includes(action) ||
       (includeGpu != null && typeof includeGpu !== 'boolean')
     )
       throw new Error('Unknown speech setup action.');
@@ -212,13 +221,25 @@ export function registerTranscriptWindow(
     )
       throw new Error('Pause or finish transcription before changing its local runtime.');
     if (action === 'status') return speechSetup.status();
+    if (action === 'reveal-current' || action === 'reveal-other') {
+      // Only the two known runtime folders can be opened, never a renderer-supplied path.
+      const state = await speechSetup.status();
+      const location = action === 'reveal-current' ? state.current : state.other;
+      if (!location || (await shell.openPath(location.folder)))
+        throw new Error('That setup folder is not available.');
+      return state;
+    }
     if (action === 'cancel') return speechSetup.cancel();
     if (action === 'activate') return speechSetup.activate();
     if (action === 'restore') return speechSetup.restore();
     if (action === 'start') return speechSetup.start();
+    const start = await speechSetup.suggestedFolder();
+    // The suggested per-user folder may not exist yet; the picker opens inside it.
+    await mkdir(start, { recursive: true }).catch(() => {});
     const result = await dialog.showOpenDialog(window || main()!, {
       title: 'Choose storage for local speech software and model',
-      properties: ['openDirectory'],
+      defaultPath: start,
+      properties: ['openDirectory', 'createDirectory'],
     });
     return result.canceled || !result.filePaths[0]
       ? speechSetup.status()

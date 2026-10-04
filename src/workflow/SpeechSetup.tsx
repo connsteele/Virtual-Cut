@@ -1,11 +1,45 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { TranscriptApi } from '../../electron/transcript-contracts';
-import type { SpeechSetupAction, SpeechSetupState } from '../../electron/speech-setup-contracts';
+import type {
+  SpeechSetupAction,
+  SpeechSetupLocation,
+  SpeechSetupState,
+} from '../../electron/speech-setup-contracts';
 import { Button } from './ui';
 import s from './TranscriptWindow.module.css';
 import { background } from './background';
 
 const size = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+const kind = (location: SpeechSetupLocation) =>
+  location.kind === 'downloaded' ? 'Downloaded setup' : 'Manual setup';
+function SetupLocation({
+  heading,
+  location,
+  children,
+}: {
+  heading: string;
+  location: SpeechSetupLocation;
+  children: ReactNode;
+}) {
+  return (
+    <div className={s.setupLocation} aria-label={`${heading}: ${kind(location)}`}>
+      <div>
+        <span className={s.muted}>{heading}</span> <strong>{kind(location)}</strong>
+        {!location.available && <span className={s.error}> · files not found</span>}
+      </div>
+      {location.kind === 'downloaded' ? (
+        <p className={s.path}>{location.folder}</p>
+      ) : (
+        <p className={s.path}>
+          Python {location.python}
+          <br />
+          Model {location.model}
+        </p>
+      )}
+      <div className={s.toolbar}>{children}</div>
+    </div>
+  );
+}
 export function SpeechSetup({
   api,
   onActivated,
@@ -59,6 +93,29 @@ export function SpeechSetup({
         Downloading needs an internet connection; transcription runs locally. No account or audio
         upload is needed.
       </p>
+      {state?.current && (
+        <div className={s.setupLocations}>
+          <SetupLocation heading="In use" location={state.current}>
+            <Button disabled={busy} onClick={() => background(act('reveal-current'))}>
+              Open folder
+            </Button>
+          </SetupLocation>
+          {state.other && (
+            <SetupLocation heading="Other setup" location={state.other}>
+              <Button disabled={busy} onClick={() => background(act('reveal-other'))}>
+                Open folder
+              </Button>
+              <Button disabled={busy || installing} onClick={() => background(act('restore'))}>
+                Switch to{' '}
+                {state.other.kind === state.current.kind
+                  ? 'other ' + state.other.kind
+                  : state.other.kind}{' '}
+                setup
+              </Button>
+            </SetupLocation>
+          )}
+        </div>
+      )}
       <label>
         <input
           type="checkbox"
@@ -73,13 +130,8 @@ export function SpeechSetup({
       </label>
       <div className={s.toolbar}>
         <Button disabled={busy || installing} onClick={() => background(act('plan'))}>
-          Choose setup folder…
+          Choose folder for a new download…
         </Button>
-        {state?.canRestore && (
-          <Button disabled={busy || installing} onClick={() => background(act('restore'))}>
-            Restore previous setup
-          </Button>
-        )}
       </div>
       {state && state.state !== 'idle' && (
         <>
