@@ -2,7 +2,8 @@ import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 
 const scratch = testPath('filmstrip');

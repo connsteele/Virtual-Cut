@@ -391,6 +391,7 @@ export function registerTranscriptWindow(
       if (
         !pendingPosition ||
         !window ||
+        window.isDestroyed() ||
         projects.store?.data.project.id !== pendingPosition.projectId
       )
         return;

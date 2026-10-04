@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdtemp, copyFile } from 'node:fs/promises';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
 const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));

@@ -2,7 +2,8 @@ import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 const scratch = testPath('filmstrip');
 const f = JSON.parse(await readFile(path.join(scratch, 'latest-native.json'), 'utf8'));
@@ -35,10 +36,17 @@ const order = () => cards.evaluateAll((els) => els.map((el) => el.dataset.record
 const frames = page.locator('[data-frame-time]');
 const state = () => page.evaluate(() => window.virtualCut.project.current());
 async function capture(name) {
+  // Screenshots are evidence of the thumbnails, so wait until every filmstrip has finished
+  // loading and every image has decoded.
+  if (name !== 'failure')
+    await expect(page.getByText('Loading filmstrip…')).toHaveCount(0, { timeout: 15000 });
+  await page.evaluate(() =>
+    Promise.all([...document.images].map((image) => image.decode().catch(() => {}))),
+  );
   const data = await app.evaluate(async ({ BrowserWindow }) => {
     const wc = BrowserWindow.getAllWindows()[0].webContents;
     await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
-    await new Promise((r) => setTimeout(r, 1600));
+    await new Promise((r) => setTimeout(r, 150));
     return (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true }))
       .toPNG()
       .toString('base64');

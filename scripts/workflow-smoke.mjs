@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { assertBuilt, electronEnvironment, require, root } from './shared.mjs';
 import { verifyIteration03 } from './iteration-03-checks.mjs';
 

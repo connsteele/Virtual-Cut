@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile, utimes } from 'node:fs/pr
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment, stopChild } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 

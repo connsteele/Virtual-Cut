@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { expect } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 
 export async function verifyIteration03({ page, app, capture, go, videoReady, stateKey }) {
   const saved = await page.evaluate((key) => localStorage.getItem(key), stateKey);

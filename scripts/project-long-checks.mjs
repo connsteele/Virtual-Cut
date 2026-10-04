@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 const source =
   process.env.VIRTUAL_CUT_LONG_FIXTURE ||

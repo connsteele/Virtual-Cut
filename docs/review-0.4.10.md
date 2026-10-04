@@ -37,8 +37,8 @@ model of the setup in use while the Transcript window is open, then confirms the
 note, the disabled switch and the switch-back message after a focus change.
 
 Commit `0557597`. Full desktop suite passed, 49 of 49 checks:
-`G:\Claude\Virtual Cut\test-runs\run-mGXqCI`.
+`G:\Claude\Virtual Cut\test-runs\run-mGXqCI`. The runner later removed that folder (it keeps the five most recent runs); the result is recorded here and in the commit message.
 
 Build: `G:\Claude\Virtual Cut\builds\Virtual-Cut-0.4.10-win-x64-2026-10-04T04-51-32-747Z\Virtual Cut.exe`.
 Packaged setup, transcript UI and smoke checks passed:
-`G:\Claude\Virtual Cut\packaged-checks\run-Fd2VYF\report.json`.
+`G:\Claude\Virtual Cut\packaged-checks\run-Fd2VYF\report.json` (preserved copy: `G:\Claude\Virtual Cut\evidence\0.4.10\packaged-checks\run-Fd2VYF`).

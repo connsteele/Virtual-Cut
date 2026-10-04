@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, copyFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 const base = process.env.VIRTUAL_CUT_TEST_ROOT;
 assert(base, 'Run with the test suite so all media is disposable.');
@@ -116,9 +117,12 @@ try {
       rid: fixture.rid,
       time,
     });
+  // Positions sent within the 120 ms update limit still end on the latest one, so a pause
+  // or seek right after playback never leaves the transcript on a stale page.
+  await position(0.5);
   await position(12.2);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 3');
-  await new Promise((r) => setTimeout(r, 150));
+  await position(12.2);
   await position(0.5);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
   const storeModule = process.env.VIRTUAL_CUT_TEST_EXECUTABLE

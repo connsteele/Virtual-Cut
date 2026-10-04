@@ -6,13 +6,33 @@ The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Curre
 
 | Command                                                       | Gate                                                                                                                                                             |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm test`                                                    | Build/type checks, lint, eleven fast synthetic test files                                                                                                        |
-| `npm run test:native`                                         | Build and sixteen native media/persistence/export/filmstrip/review/transcript/setup scripts, using Electron's SQLite runtime                                     |
+| `npm test`                                                    | Build/type checks, lint, Prettier format check, eleven fast synthetic test files                                                                                 |
+| `npm run test:native`                                         | Build and seventeen native media/persistence/export/filmstrip/review/transcript/setup scripts, using Electron's SQLite runtime                                   |
 | `npm run test:desktop`                                        | Fast, native prerequisites and twenty actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
 | `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                                  |
 | `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                       |
 
 The Windows GitHub workflow runs build/lint/fast checks followed by measured native/desktop coverage with synthetic media. Packaged and human hardware/Resolve checks are separate. The workflow uses the official [checkout](https://github.com/actions/checkout), [Node setup](https://github.com/actions/setup-node), and [artifact upload](https://github.com/actions/upload-artifact) actions. A first hosted run is still required after publishing the branch.
+
+## Speed
+
+The full desktop gate took about 28 minutes until October 2026, and now takes about 6.
+Desktop checks run with `--background-test`, so their windows are never shown. A window that
+is never shown draws no frames, and Chromium then acknowledged each automated mouse event only
+after a one-second fallback: an 8-step drag took 8 s and a click 2 s. In that mode the app
+subscribes to frames once each page loads (`electron/main.cts`), so the windows stay hidden but
+draw like visible ones. This costs at most about 18% of one core during a full-window redraw on
+every frame; normal launches are unaffected.
+
+Desktop checks import `expect` from `scripts/desktop-expect.mjs`. It is Playwright's `expect`,
+except that `expect.poll` retries every 100 ms instead of backing off to once per second, so a
+condition that turns true at 1.05 s is no longer seen only at 1.85 s. Assertions and timeouts are
+unchanged.
+
+Fixed waits remain only where the wait is the assertion: proving that nothing saves during
+continuous seeking, a held scrub, playback or reverse scanning takes longer than the two-second
+settle delay. To find where a check spends its time, run it with `DEBUG=pw:api`, which logs
+every Playwright action with a timestamp.
 
 ## Prerequisites and evidence
 

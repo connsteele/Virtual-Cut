@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises'
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { _electron as electron, expect } from 'playwright/test';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
 import { root, require, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 
@@ -309,14 +310,13 @@ if (process.argv.includes('--reopen')) {
     await expect(page.getByRole('banner').getByRole('status')).toHaveText('Unsaved changes');
     await page.evaluate(() => clearInterval(window.seekTest));
     await seek(4.25);
-    await page.waitForTimeout(2400);
+    // The deferred edit lands with the settled save, together with the final position.
+    await expect
+      .poll(async () => (await state()).model.clips.find((c) => c.id === 'clip-1').name)
+      .toBe('Saved after seeking');
     await expect
       .poll(async () => (await state()).model.recordings.find((r) => r.id === f.rid).position)
       .toBeCloseTo(4.25, 2);
-    assert.equal(
-      (await state()).model.clips.find((c) => c.id === 'clip-1').name,
-      'Saved after seeking',
-    );
     evidence.savesIn33Seconds = during.revision - before.revision;
     // Holding the scrub pointer still is not an idle transport.
     const settled = await state();
@@ -326,8 +326,9 @@ if (process.argv.includes('--reopen')) {
     await page.waitForTimeout(2800);
     assert.equal((await state()).revision, settled.revision, 'Held scrub does not save');
     await page.mouse.up();
-    await page.waitForTimeout(2400);
-    assert((await state()).revision > settled.revision, 'Released scrub saves after settling');
+    await expect
+      .poll(async () => (await state()).revision, 'Released scrub saves after settling')
+      .toBeGreaterThan(settled.revision);
     await seek(1);
     await page.waitForTimeout(2400);
     const beforePlaying = await state();
@@ -340,8 +341,9 @@ if (process.argv.includes('--reopen')) {
       'Forward playback does not save',
     );
     await page.locator('video').evaluate((v) => v.pause());
-    await page.waitForTimeout(2400);
-    assert((await state()).revision > beforePlaying.revision, 'Paused playback saves');
+    await expect
+      .poll(async () => (await state()).revision, 'Paused playback saves')
+      .toBeGreaterThan(beforePlaying.revision);
     await seek(7);
     await page.waitForTimeout(2400);
     const beforeReverse = await state();

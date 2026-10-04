@@ -70,7 +70,9 @@ if (requestedProfile) {
 // A window that is never shown produces no frames, so Chromium acknowledges each
 // automated mouse event only after a one-second fallback (8 s for an 8-step drag).
 // Subscribing to frames keeps test windows hidden but drawing like visible ones; it
-// only takes effect once a page has loaded.
+// only takes effect once a page has loaded. Frames are copied only when the page
+// changes, at most 30 per second: a full-window redraw on every frame measured about
+// 18% of one core in the main process (asking for only the changed area cost more).
 if (backgroundTest)
   app.on('browser-window-created', (_event, window) =>
     window.webContents.on('did-finish-load', () =>

@@ -164,10 +164,13 @@ try {
       '.',
     ]);
     // The same files as npm run format:check, so formatting drift fails the fast gate.
+    const formatCheck = manifest.scripts['format:check'];
+    if (!formatCheck?.startsWith('prettier --check '))
+      throw new Error('Keep format:check as "prettier --check <paths>" for the fast gate.');
     await run('format', process.execPath, [
       path.join(root, 'node_modules/prettier/bin/prettier.cjs'),
       '--check',
-      ...manifest.scripts['format:check'].split(' ').slice(2),
+      ...formatCheck.slice('prettier --check '.length).split(' '),
     ]);
   }
   for (const name of known.filter((s) => wanted.has(s))) {

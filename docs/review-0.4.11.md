@@ -39,8 +39,8 @@ check covers the single card, Advanced opening by itself, both switch buttons, t
 missing files noticed on focus, and 900 and 500 px layouts.
 
 Commit `9694245`. Full desktop suite passed, 49 of 49 checks:
-`G:\Claude\Virtual Cut\test-runs\run-ofaRV4`.
+`G:\Claude\Virtual Cut\test-runs\run-ofaRV4`. The runner later removed that folder (it keeps the five most recent runs); the result is recorded here and in the commit message.
 
 Build: `G:\Claude\Virtual Cut\builds\Virtual-Cut-0.4.11-win-x64-2026-10-04T06-01-24-374Z\Virtual Cut.exe`.
 Packaged engine, transcript UI and smoke checks passed:
-`G:\Claude\Virtual Cut\packaged-checks\run-rxe3KY\report.json`.
+`G:\Claude\Virtual Cut\packaged-checks\run-rxe3KY\report.json` (preserved copy: `G:\Claude\Virtual Cut\evidence\0.4.11\packaged-checks\run-rxe3KY`).
