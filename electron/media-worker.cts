@@ -1,5 +1,7 @@
-/** A short-lived guardian. If the Electron parent crashes/disconnects, the
- * tool is stopped too. No media-tool command is accepted from the renderer. */
+/** A short-lived guardian, used outside Windows. If the Electron parent crashes or
+ * disconnects, the tool is stopped too. On Windows, media tools run directly because
+ * Windows stops them with Virtual Cut (see launchTool). No media-tool command is
+ * accepted from the renderer. */
 import { spawn } from 'node:child_process';
 const request = JSON.parse(process.argv[2]) as { tool: string; args: string[] };
 const child = spawn(request.tool, request.args, {

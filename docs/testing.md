@@ -29,6 +29,12 @@ except that `expect.poll` retries every 100 ms instead of backing off to once pe
 condition that turns true at 1.05 s is no longer seen only at 1.85 s. Assertions and timeouts are
 unchanged.
 
+Media tools (FFmpeg/FFprobe) run directly on Windows instead of through a guardian Electron
+process, saving about 40 ms and 40 MB per call. They rely on Windows stopping them when Virtual
+Cut exits or crashes, because Node places each child in a kill-on-close job.
+`export-native-checks.mjs` guards that assumption: it force-kills a process that started a long
+FFmpeg through the app's launcher and requires FFmpeg to stop.
+
 Fixed waits remain only where the wait is the assertion: proving that nothing saves during
 continuous seeking, a held scrub, playback or reverse scanning takes longer than the two-second
 settle delay. To find where a check spends its time, run it with `DEBUG=pw:api`, which logs

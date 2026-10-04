@@ -2,6 +2,7 @@ import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, stat, writeFile, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 const require = createRequire(import.meta.url);
@@ -28,6 +29,66 @@ const command = (tool, args) =>
     p.on('error', reject);
     p.on('exit', (code) => (code === 0 ? resolve(output) : reject(Error(error))));
   });
+// On Windows, media tools run directly and rely on Windows stopping them when Virtual Cut
+// exits or crashes (Node places each child in a kill-on-close job). Force-kill a process that
+// started a long FFmpeg through the app's own launcher and require the tool to stop too.
+async function toolStopsWithParent() {
+  const packaged = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
+  const modules = packaged
+    ? path.join(path.dirname(packaged), 'resources/app/dist-electron')
+    : path.resolve('dist-electron');
+  const marker = `virtual-cut-lifetime-${randomUUID()}`;
+  const launcher = path.join(dir, 'lifetime-launcher.cjs');
+  await writeFile(
+    launcher,
+    `const { launchTool } = require(${JSON.stringify(path.join(modules, 'media-inspection.cjs'))});
+const args = ['-hide_banner', '-v', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=5',
+  '-t', '60', '-metadata', 'title=${marker}', '-f', 'null', '-'];
+launchTool(process.argv[2], args, new AbortController().signal).catch(() => {});
+console.log('launched');
+setInterval(() => {}, 1000);
+`,
+  );
+  const parent = spawn(
+    packaged || process.execPath,
+    [launcher, process.env.VIRTUAL_CUT_FFMPEG || 'ffmpeg'],
+    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  await new Promise((resolve, reject) => {
+    parent.stdout.once('data', resolve);
+    parent.once('exit', () => reject(new Error('The tool launcher exited early.')));
+  });
+  const running = async () =>
+    Number(
+      await command('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `@(Get-CimInstance Win32_Process -Filter "Name = 'ffmpeg.exe' AND CommandLine LIKE '%${marker}%'").Count`,
+      ]),
+    );
+  const until = async (count) => {
+    for (const end = Date.now() + 8000; Date.now() < end;) {
+      if ((await running()) === count) return true;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  };
+  try {
+    assert(await until(1), 'The long FFmpeg started through launchTool');
+    parent.kill();
+    assert(await until(0), 'FFmpeg stops when the process that started it is killed');
+  } finally {
+    parent.kill();
+    await command('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Get-CimInstance Win32_Process -Filter "Name = 'ffmpeg.exe' AND CommandLine LIKE '%${marker}%'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`,
+    ]).catch(() => {});
+  }
+  return 'stopped with its parent';
+}
 const source = path.join(dir, 'bframes.mkv');
 // A synchronized white flash / tone burst every two seconds, plus a distinct
 // microphone signal. Packet checks use the original independent streams.
@@ -321,6 +382,7 @@ try {
     await Promise.all([source, offset, vfr].map((file) => fileHash(file))),
     originalHashes,
   );
+  if (process.platform === 'win32') results.push({ toolLifetime: await toolStopsWithParent() });
   await writeFile(path.join(dir, 'results.json'), JSON.stringify(results, null, 2));
   await writeFile(
     path.join(root, 'latest-native.json'),

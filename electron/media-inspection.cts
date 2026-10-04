@@ -47,21 +47,27 @@ export function launchTool(
       reject(new Error('Cancelled'));
       return;
     }
-    const worker: ChildProcess = spawn(
-      process.execPath,
-      [path.join(__dirname, 'media-worker.cjs'), JSON.stringify({ tool, args })],
-      {
-        windowsHide: true,
-        env: {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: '1',
-          ...(process.env.VIRTUAL_CUT_MEDIA_TEMP
-            ? { TEMP: process.env.VIRTUAL_CUT_MEDIA_TEMP, TMP: process.env.VIRTUAL_CUT_MEDIA_TEMP }
-            : {}),
-        },
-        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      },
-    );
+    const env = {
+      ...process.env,
+      ...(process.env.VIRTUAL_CUT_MEDIA_TEMP
+        ? { TEMP: process.env.VIRTUAL_CUT_MEDIA_TEMP, TMP: process.env.VIRTUAL_CUT_MEDIA_TEMP }
+        : {}),
+    };
+    // Windows puts every child of this process in a job object that is closed, killing
+    // the tool, when Virtual Cut exits or crashes, so the tool runs directly. Elsewhere a
+    // short-lived guardian process stops the tool if Electron goes away.
+    const guarded = process.platform !== 'win32';
+    const worker: ChildProcess = guarded
+      ? spawn(
+          process.execPath,
+          [path.join(__dirname, 'media-worker.cjs'), JSON.stringify({ tool, args })],
+          {
+            windowsHide: true,
+            env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+            stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+          },
+        )
+      : spawn(tool, args, { windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '',
       error = '',
       pending = '',
@@ -76,7 +82,8 @@ export function launchTool(
       }
     };
     const cancel = () => {
-      if (worker.connected) worker.send({ cancel: true });
+      if (!guarded) worker.kill();
+      else if (worker.connected) worker.send({ cancel: true });
     };
     signal.addEventListener('abort', cancel);
     const timeout = setTimeout(cancel, 30 * 60 * 1000);
@@ -100,7 +107,11 @@ export function launchTool(
     worker.stderr!.on('data', (data: Buffer) => {
       error = (error + data.toString()).slice(-8000);
     });
-    worker.on('error', reject);
+    worker.on('error', (e) => {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', cancel);
+      reject(e);
+    });
     worker.on('close', (code) => {
       clearTimeout(timeout);
       signal.removeEventListener('abort', cancel);
