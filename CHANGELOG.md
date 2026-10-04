@@ -2,6 +2,14 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.9 — M320 speech setup clarity (October 3, 2026)
+
+The local speech setup panel shows which setup is in use and where, lists the other setup you can
+switch to with a button that names it, and gives accurate messages after switching. The folder
+picker starts beside your downloaded setup, or in `%LOCALAPPDATA%\Virtual Cut` on a first setup.
+Switching while a download is only planned no longer offers to use that unfinished folder. See
+[the 0.4.9 review](docs/review-0.4.9.md).
+
 ## 0.4.8 — M3 engineering iteration (October 3, 2026)
 
 Long projects keep saving and reopening: inspected frame and keyframe timestamps move out of
