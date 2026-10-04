@@ -1,6 +1,6 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.7 has eleven fast, sixteen native and twenty desktop scripts (47 total). New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.8 has eleven fast, seventeen native and twenty desktop scripts (48 total); `project-capacity-checks.mjs` guards long-project save/reopen and snapshot cost. `npm run lint` includes type-aware promise checks. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Current measured results and module gates are in [coverage](coverage.md); version-specific sections below preserve historical evidence. Closeout expands the existing deletion test with ownership/schema rejection, pending writes, lock contention, unavailable peers, linked ancestors and referenced-project protection. Storage tests report unavailable or linked locations honestly. These use disposable files and do not alter app behavior.
 

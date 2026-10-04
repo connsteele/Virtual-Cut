@@ -18,6 +18,8 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0008](0008-utterance-recognition-adapters.md) | Keep utterance recognition; alignment and speakers as optional adapters     | Accepted |
 | [0009](0009-resolve-handoff.md)                | Explicit Resolve helper for marker metadata; transcript import stays manual | Accepted |
 | [0010](0010-floating-transcript-window.md)     | Transcript in a separate floating window, no docking                        | Accepted |
+| [0011](0011-frame-indexes-outside-model.md)    | Frame and keyframe indexes live outside the editable project model          | Accepted |
+| [0012](0012-change-notifications.md)           | Native change notifications instead of renderer polling                     | Accepted |
 
 ## Adding a record
 

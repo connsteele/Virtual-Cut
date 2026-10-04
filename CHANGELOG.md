@@ -2,6 +2,16 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.8 — M3 engineering iteration (October 3, 2026)
+
+Long projects keep saving and reopening: inspected frame and keyframe timestamps move out of
+the editable project into their own table (saved format 5, with a verified pre-upgrade copy).
+A 16-hour project that previously could not open now opens, saves and reopens, and the
+project snapshot takes about 1 ms instead of hundreds. The app refreshes on native change
+notifications and window focus instead of polling every second. Promise error handling is
+enforced by lint, which also fixed Copy diagnostics reporting success before the clipboard
+write finished. The hosted CI workflow can start jobs again. See [the 0.4.8 review](docs/review-0.4.8.md).
+
 ## 0.4.7 — M3 review (October 3, 2026)
 
 **Latest review: 0.4.7.** Optional local speech setup now downloads and verifies the

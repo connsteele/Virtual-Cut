@@ -118,6 +118,28 @@ This reduces a naming ambiguity but does not prove acoustic recognition accuracy
 The consolidated [0.4.6 review](review-0.4.6.md) separates new UI/speech checks from
 previous passes and the remaining M3 production work.
 
+## Project capacity and change notifications — 0.4.8 (VC-96/97/98/102)
+
+Saved format 5 moves inspected per-frame and keyframe timestamps out of the editable model
+into a `frame_indexes` table (exact doubles, keyed by the source fingerprint they were
+inspected from). The model keeps `frameCount`/`keyCount`. Before, the model grew about
+2.6 MB per hour of 60 fps footage; around 16 hours the 32 MiB edit limit rejected saves and,
+because open-time validation used the same limit, the project could not reopen. Opening a
+format 4 project makes the existing verified pre-upgrade copy, then moves the indexes in one
+transaction. Open-time validation ignores legacy inline indexes so oversized projects can
+still open and migrate. Rolling-save compaction and restore carry indexes; restore keeps a
+current index for an unchanged source. Inspection writes the table; filmstrips and clip
+planning read it. The renderer loads indexes for recordings a player shows (Cut, an expanded
+Review clip, the current select), keeps four, and strips them from save payloads.
+
+The renderer no longer polls the full snapshot every second. The store reports durable
+native changes; main throttles them into `workspace:changed` (at most one per 250 ms with a
+trailing one). The renderer refreshes on that event and on focus/visibility, which also
+rechecks moved files. `project-capacity-checks.mjs` builds format 4 projects with 1, 10 and
+16 hours of indexes; it failed before the change and passes after (16 h snapshot median
+about 1 ms). Type-aware promise lint (`ignoreVoid: false`) now runs with `npm run lint`;
+renderer actions start through `background()`. See [0.4.8 review](review-0.4.8.md).
+
 ## References
 
 - [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
