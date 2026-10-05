@@ -2,6 +2,14 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.14 — Filmstrips without the loading flash (October 5, 2026)
+
+Sprint 1. Zooming and panning a recording that has its filmstrip file no longer flash
+"Loading filmstrip…": new tiles fill in over the nearest thumbnails already loaded, and the text
+appears only if tiles take longer than 300 ms. Recording cards show "Making filmstrip…" until
+their filmstrip is ready, and the bottom bar shows the app version. See
+[the 0.4.14 review](docs/review-0.4.14.md).
+
 ## 0.4.13 — Filmstrips made at import (October 5, 2026)
 
 Each recording's filmstrip is now made once, in one keyframe-only pass that runs in the background
