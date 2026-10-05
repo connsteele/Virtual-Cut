@@ -2,6 +2,15 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.13 — Filmstrips made at import (October 5, 2026)
+
+Each recording's filmstrip is now made once, in one keyframe-only pass that runs in the background
+after import whenever no other job is waiting, and kept in the project's preview cache (about
+12–24 MB per hour of footage). Zooming and panning then show thumbnails without decoding. Any job
+you start goes ahead of filmstrip making. Changing, removing or relinking one recording no longer
+clears every other recording's thumbnails. See
+[the 0.4.13 review](docs/review-0.4.13.md).
+
 ## 0.4.12 — 6× preview and transcript position fix (October 4, 2026)
 
 J and L gain a 6× step (1×, 2×, 4×, 6×, 8×, 16×) for forward and reverse, with preview audio
