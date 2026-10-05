@@ -440,29 +440,6 @@ export function TranscriptWindow() {
               </select>
             )}
             {selected && (
-              <div className={s.find}>
-                <Search size={16} aria-hidden />
-                <input
-                  aria-label="Search transcript"
-                  placeholder="Search speech and corrections"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPageIndex(0);
-                    setFollow(false);
-                  }}
-                />
-                <label title="Show the original recognition instead of corrections">
-                  <input
-                    type="checkbox"
-                    checked={original}
-                    onChange={(e) => setOriginal(e.target.checked)}
-                  />
-                  Original
-                </label>
-              </div>
-            )}
-            {selected && (
               <Button
                 aria-label="Follow playback"
                 aria-pressed={follow}
@@ -554,23 +531,47 @@ export function TranscriptWindow() {
             </Button>
           </div>
           {selected && (
-            <div className={s.filters} role="group" aria-label="Transcript filter">
-              {filters.map(([value, label]) => (
-                <button
-                  key={value}
-                  className={s.filter}
-                  data-filter={value}
-                  aria-pressed={filter === value}
-                  onClick={() => {
-                    setFilter(value);
+            <div className={s.filterRow}>
+              {/* Search sits left of the filter chips (Connor, M336). */}
+              <div className={s.find}>
+                <Search size={16} aria-hidden />
+                <input
+                  aria-label="Search transcript"
+                  placeholder="Search"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
                     setPageIndex(0);
                     setFollow(false);
                   }}
-                >
-                  {label}
-                  <span>{counts?.[value] ?? '–'}</span>
-                </button>
-              ))}
+                />
+                <label title="Show the original recognition instead of corrections">
+                  <input
+                    type="checkbox"
+                    checked={original}
+                    onChange={(e) => setOriginal(e.target.checked)}
+                  />
+                  Original
+                </label>
+              </div>
+              <div className={s.filters} role="group" aria-label="Transcript filter">
+                {filters.map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={s.filter}
+                    data-filter={value}
+                    aria-pressed={filter === value}
+                    onClick={() => {
+                      setFilter(value);
+                      setPageIndex(0);
+                      setFollow(false);
+                    }}
+                  >
+                    {label}
+                    <span>{counts?.[value] ?? '–'}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {startOpen && (

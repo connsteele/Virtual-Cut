@@ -63,7 +63,8 @@
   min-width: 200px;
   margin: 0;
 }
-/* One toolbar row (VC-114 stage 2a): recording, transcript, search, Follow, Export, engine, Transcribe. */
+/* One toolbar row (VC-114 stage 2a): recording, transcript, Follow, Export, engine, Transcribe.
+   Search sits on the row below, left of the filter chips. */
 .tools {
   display: flex;
   flex-wrap: wrap;
@@ -71,18 +72,26 @@
   gap: 6px;
   margin: 0 0 10px;
 }
-/* Small starting widths that grow, so the row fits the default 760 px window and wraps only
-   when the window is narrower. */
+/* Starting widths that grow, so the row fits the default 760 px window and wraps only when the
+   window is narrower. */
 .window .tools > select {
-  flex: 1 1 100px;
-  width: 100px;
-  max-width: 150px;
+  flex: 1 1 120px;
+  width: 120px;
+  max-width: 240px;
   padding: 7px 8px;
   text-overflow: ellipsis;
 }
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3c504d;
+}
 .find {
-  flex: 3 1 120px;
-  min-width: 0;
+  flex: 0 1 260px;
+  min-width: 180px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -135,8 +144,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #3c504d;
 }
 .filter {
   border: 1px solid #3c504d;

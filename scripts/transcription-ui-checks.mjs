@@ -142,16 +142,17 @@ try {
   await expect(phrases.locator('article').first()).toContainText('Cai');
   await transcript.getByLabel('Search transcript').fill('');
   // An isolated floating renderer cannot use broad workspace/file access.
-  // One toolbar row, with transcript selection beside search (VC-114 stage 2a, VC-92).
+  // One toolbar row (VC-114 stage 2a, VC-92); search sits left of the filter chips (M336).
   const tools = transcript.getByRole('toolbar', { name: 'Transcript tools' });
   await expect(tools.getByLabel('Select transcript', { exact: true })).toBeVisible();
+  const searchBox = transcript.getByLabel('Search transcript');
+  await expect(searchBox).toHaveAttribute('placeholder', 'Search');
   assert(
-    await tools.evaluate((bar) =>
-      bar
-        .querySelector('[aria-label="Select transcript"]')
-        .nextElementSibling.contains(bar.querySelector('[aria-label="Search transcript"]')),
+    await searchBox.evaluate(
+      (input) =>
+        input.closest('div').nextElementSibling?.getAttribute('aria-label') === 'Transcript filter',
     ),
-    'Transcript selection sits beside search',
+    'Search sits left of the filter chips',
   );
   await transcript.screenshot({ path: path.join(dir, 'transcript-toolbar.png') });
   await transcript.locator('[data-filter="pending"]').click();
