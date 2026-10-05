@@ -215,7 +215,12 @@ try {
   await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
   // Unrelated keys after pointer scrubbing must not create a whole-timeline highlight.
   const track = page.getByTestId('scrub-surface');
-  await track.click({ position: { x: 30, y: 12 } });
+  // Park the playhead at 2 s, clear of the trim targets below (0.5, 4 and 6 s): trims snap to it
+  // within 10 px, and in a narrow window a fixed 30 px click landed within reach of 0.5 s.
+  const trackBox = await track.boundingBox();
+  await track.click({
+    position: { x: (2 / p.model.recordings[0].duration) * trackBox.width, y: 12 },
+  });
   await page.keyboard.press('e');
   assert.equal(await track.evaluate((el) => getComputedStyle(el).outlineStyle), 'none');
   await page.keyboard.press('ArrowRight');

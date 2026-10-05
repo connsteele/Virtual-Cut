@@ -108,12 +108,21 @@ try {
   await page.evaluate(() => {
     let n = 0;
     window.seeks = setInterval(() => {
+      // Each seek also moves the page clock on by up to 1.5 s of any pending advance.
+      const step = Math.min(1500, window.pendingClock || 0);
+      window.pendingClock -= step;
+      window.clockOffset += step;
       const v = document.querySelector('video');
       if (v) v.currentTime = 1 + (++n % 30) / 10;
     }, 120);
   });
   await page.waitForTimeout(500);
-  await advance(61000);
+  // Every seek refreshes the last-interaction time. One 61 s jump would make it look 61 s old
+  // until the next seek event, a gap real use never has, so the page clock (where the autosave
+  // timer runs) moves in 1.5 s steps alongside the seeks.
+  await app.evaluate(() => (globalThis.clockOffset += 61000));
+  await page.evaluate(() => (window.pendingClock = 61000));
+  await page.waitForFunction(() => window.pendingClock === 0);
   await page.waitForTimeout(3000);
   assert.equal(
     disk().clips.find((c) => c.id === cid).name,

@@ -67,17 +67,21 @@ setInterval(() => {}, 1000);
         `@(Get-CimInstance Win32_Process -Filter "Name = 'ffmpeg.exe' AND CommandLine LIKE '%${marker}%'").Count`,
       ]),
     );
+  let seen;
   const until = async (count) => {
     for (const end = Date.now() + 8000; Date.now() < end;) {
-      if ((await running()) === count) return true;
+      if ((seen = await running()) === count) return true;
       await new Promise((r) => setTimeout(r, 200));
     }
     return false;
   };
   try {
-    assert(await until(1), 'The long FFmpeg started through launchTool');
+    assert(await until(1), `The long FFmpeg started through launchTool (found ${seen})`);
     parent.kill();
-    assert(await until(0), 'FFmpeg stops when the process that started it is killed');
+    assert(
+      await until(0),
+      `FFmpeg stops when the process that started it is killed (found ${seen})`,
+    );
   } finally {
     parent.kill();
     await command('powershell.exe', [

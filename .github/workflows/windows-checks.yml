@@ -24,7 +24,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Install synthetic media prerequisites
-        run: choco install ffmpeg --yes --no-progress
+        run: |
+          choco install ffmpeg --yes --no-progress
+          # Chocolatey's ffmpeg.exe is a shim that runs the real FFmpeg as a second process with
+          # the same command line. Put the real binaries first so checks see one process per tool.
+          $bin = Split-Path (Get-ChildItem "$env:ChocolateyInstall\lib\ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "VIRTUAL_CUT_FFMPEG=$bin\ffmpeg.exe"
+          Add-Content -Path $env:GITHUB_ENV -Value "VIRTUAL_CUT_FFPROBE=$bin\ffprobe.exe"
       - name: Measure native and desktop coverage with regression gates
         run: npm run test:coverage
       - name: Keep reports and bounded logs
