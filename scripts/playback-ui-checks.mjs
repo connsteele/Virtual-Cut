@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { root, require, electronEnvironment } from './shared.mjs';
+import { root, require, electronEnvironment, stopChild } from './shared.mjs';
 const checks = testPath('m2-followup');
 const fixture = JSON.parse(await readFile(testPath('m1-feedback/latest-native.json'), 'utf8'));
 await mkdir(checks, { recursive: true });
@@ -46,15 +46,31 @@ async function go(name) {
     .getByRole('button', { name, exact: true })
     .click();
 }
+// A hidden window that stops painting leaves capturePage waiting forever, and the suite then
+// reports only its 600 s timeout. Bound the calls that have no timeout of their own.
+const within = (promise, ms, what) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${what} did not finish within ${ms / 1000} s`)),
+        ms,
+      ).unref(),
+    ),
+  ]);
 async function capture(name) {
-  const image = await app.evaluate(async ({ BrowserWindow }) => {
-    const wc = BrowserWindow.getAllWindows()[0].webContents;
-    await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
-    await new Promise((r) => setTimeout(r, 150));
-    return (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true }))
-      .toPNG()
-      .toString('base64');
-  });
+  const image = await within(
+    app.evaluate(async ({ BrowserWindow }) => {
+      const wc = BrowserWindow.getAllWindows()[0].webContents;
+      await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
+      await new Promise((r) => setTimeout(r, 150));
+      return (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true }))
+        .toPNG()
+        .toString('base64');
+    }),
+    20000,
+    `Screenshot ${name}`,
+  );
   await writeFile(path.join(dir, name + '.png'), Buffer.from(image, 'base64'));
 }
 try {
@@ -284,5 +300,8 @@ try {
   );
   console.log('Playback and marker UI checks passed:', dir);
 } finally {
-  await app.close();
+  await within(app.close(), 20000, 'Closing the app').catch(async (e) => {
+    console.error(e.message);
+    await stopChild(app.process());
+  });
 }
