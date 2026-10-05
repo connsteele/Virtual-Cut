@@ -1959,6 +1959,40 @@
   width: 100%;
   border-collapse: collapse;
 }
+/* Help dialog (VC-93): the spoken-cue topic. */
+.help {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  line-height: 1.6;
+}
+.help h3 {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.help p {
+  margin: 0;
+}
+.help ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+.help thead th {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.help td {
+  vertical-align: top;
+}
 .shortcutTable th,
 .shortcutTable td {
   padding: 8px;

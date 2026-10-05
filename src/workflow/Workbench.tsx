@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleHelp,
   FolderOpen,
   FolderPlus,
   FolderTree,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { RecordingFilmstrip, RecordingTranscription } from './RecordingJobs';
+import { HelpContent } from './HelpPanel';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import {
@@ -632,7 +634,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const [reviewGrouping, setReviewGrouping] = useState<ReviewGrouping>('folders');
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
-    [shortcutsOpen, setShortcutsOpen] = useState(false);
+    [shortcutsOpen, setShortcutsOpen] = useState(false),
+    [helpOpen, setHelpOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [handleMode, setHandleMode] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(
@@ -2896,6 +2899,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           </p>
         </Modal>
       )}
+      {helpOpen && (
+        <Modal title="Help" onClose={() => setHelpOpen(false)}>
+          <HelpContent />
+        </Modal>
+      )}
       {projectsOpen && (
         <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
       )}
@@ -2957,7 +2965,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         </nav>
         <div className={s.tools}>
           <Button onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</Button>
-          <span className={s.muted}>F11 · Fullscreen</span>
+          <Button aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>
+            <CircleHelp size={14} /> Help
+          </Button>
           {version && (
             <span className={s.muted} data-app-version>
               Virtual Cut {version}

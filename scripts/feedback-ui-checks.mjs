@@ -523,6 +523,26 @@ try {
   );
   await page.getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Backspace');
+  await expect(page.getByRole('dialog')).toContainText('F11');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // Help replaces the F11 hint in the bottom bar and lists the spoken cues (VC-93).
+  await expect(page.getByText('F11 · Fullscreen', { exact: true })).toHaveCount(0);
+  const help = page.getByRole('button', { name: 'Help', exact: true });
+  await help.click();
+  const helpDialog = page.getByRole('dialog', { name: 'Help' });
+  await expect(helpDialog).toContainText('Spoken cues');
+  await expect(helpDialog.locator('tbody th')).toHaveText([
+    'Marker',
+    'Note',
+    'Split',
+    'Clip start · Clip end',
+  ]);
+  await expect(helpDialog).toContainText('Game dialogue is never scanned for cues');
+  await page.screenshot({ path: path.join(dir, 'help.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(help).toBeFocused();
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(checksRoot, 'latest-ui.json'),
