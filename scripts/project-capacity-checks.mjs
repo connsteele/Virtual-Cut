@@ -149,6 +149,11 @@ for (const count of hours) {
   store.close();
   store = new ProjectStore(file);
   sameIndex(store.frameIndex('r0'), indexes.r0, `${count} h reopened after restore`);
+  // The pre-upgrade copy is never compacted, so restoring it moves its inline indexes out.
+  const preUpgrade = (await readdir(file + '.saves')).find((n) => /^migration-v4-v\d+-/.test(n));
+  await store.restore(preUpgrade);
+  assert.ok(store.data.model.recordings.every((r) => r.frameTimes === undefined));
+  sameIndex(store.frameIndex('r0'), indexes.r0, `${count} h restored pre-upgrade copy`);
   store.close();
 
   results.push({ hours: count, legacyBytes, modelChars, snapshotMs, median: median(snapshotMs) });
