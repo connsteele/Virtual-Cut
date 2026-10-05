@@ -42,8 +42,10 @@ export class FilmstripMemory {
   private valid = new Set<string>();
   private entries = new Map<string, Entry>();
   private bytes = 0;
-  // Sources whose tiles come from a tile file, so requests return without decoding.
+  // Sources whose tiles come from a tile file, so requests return without decoding: seen in a
+  // response, or reported ready by the project before the first request.
   private stored = new Set<string>();
+  private ready = new Set<string>();
   private revision = 0;
   private listeners = new Set<() => void>();
   subscribe = (fn: () => void) => {
@@ -63,9 +65,14 @@ export class FilmstripMemory {
     this.bytes -= entry.cost;
     this.entries.delete(id);
   }
-  sync(project: string, recordings: Recording[]) {
+  sync(project: string, recordings: Recording[], filmstrips: Record<string, string> = {}) {
     const next = new Set(
       recordings.filter((r) => r.availability === 'ready').map((r) => filmstripSource(project, r)),
+    );
+    this.ready = new Set(
+      recordings
+        .filter((r) => r.availability === 'ready' && filmstrips[r.id] === 'ready')
+        .map((r) => filmstripSource(project, r)),
     );
     let changed = this.project !== project;
     this.project = project;
@@ -90,7 +97,21 @@ export class FilmstripMemory {
     this.changed();
   }
   isStored(source: string) {
-    return this.stored.has(source);
+    return this.stored.has(source) || this.ready.has(source);
+  }
+  /** The loaded frame nearest `at`, shown while the exact tile for a new zoom or pan arrives. */
+  nearest(source: string, at: number, within: number) {
+    let best: FilmstripFrame | undefined,
+      distance = within;
+    for (const entry of this.entries.values()) {
+      if (entry.source !== source) continue;
+      const d = Math.abs(entry.frame.time - at);
+      if (d <= distance) {
+        best = entry.frame;
+        distance = d;
+      }
+    }
+    return best;
   }
   get(source: string, at: number) {
     return this.entries.get(key(source, at))?.frame;

@@ -9,6 +9,15 @@ export function jobLabel(job: MediaJob) {
 }
 
 /** Uses the existing project job snapshot; no additional polling or media work. */
+/** "Making filmstrip…" on a recording's card until its tile file is ready. */
+export function RecordingFilmstrip({ state }: { state?: 'ready' | 'making' | 'waiting' }) {
+  if (state !== 'making' && state !== 'waiting') return null;
+  return (
+    <div className={s.recordingTranscription} data-filmstrip-status={state}>
+      <small>Making filmstrip…</small>
+    </div>
+  );
+}
 export function RecordingTranscription({ jobs, sourceId }: { jobs: MediaJob[]; sourceId: string }) {
   const latest = new Map<string, MediaJob>();
   for (const job of jobs) {

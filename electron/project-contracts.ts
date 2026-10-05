@@ -72,6 +72,8 @@ export interface ProjectSnapshot {
   warning?: string;
   recoveryNotice?: string;
   destinations?: import('./review-plan.js').DestinationPlan;
+  /** Filmstrip tile files by recording id: ready, being made, or waiting their turn. */
+  filmstrips?: Record<string, 'ready' | 'making' | 'waiting'>;
   cleanup?: {
     cacheFilesRemoved: number;
     cacheFilesRetained: number;

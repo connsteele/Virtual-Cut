@@ -25,6 +25,8 @@ export function useFilmstrip(
   const timesKey = JSON.stringify(tiles.map((t) => t.requested));
   const identity = `${source}:${timesKey}`;
   const [error, setError] = useState('');
+  // "Loading filmstrip…" appears only when tiles take longer than this to arrive.
+  const [slow, setSlow] = useState('');
   useEffect(() => {
     if (!recording.retained) return;
     retainedMemory.retain(projectId || '', recording);
@@ -78,18 +80,35 @@ export function useFilmstrip(
     hidden,
     overview,
   ]);
-  const frames = tiles.map((tile) => (ready ? memory.get(source, tile.requested) : undefined));
-  const complete = frames.length > 0 && frames.every(Boolean);
+  const exact = tiles.map((tile) => (ready ? memory.get(source, tile.requested) : undefined));
+  const complete = exact.length > 0 && exact.every(Boolean);
+  // While a new zoom or pan loads, show the nearest frame already in memory rather than a gap.
+  const frames = exact.map(
+    (frame, i) =>
+      frame ||
+      (ready
+        ? memory.nearest(source, tiles[i].requested, 2 * (tiles[i].right - tiles[i].left))
+        : undefined),
+  );
+  useEffect(() => {
+    if (complete) return;
+    const timer = setTimeout(() => setSlow(identity), 300);
+    return () => clearTimeout(timer);
+  }, [complete, identity]);
   return {
     native,
     tiles,
     frames,
+    exact,
+    loading: native && ready && !hidden && !complete,
     status: complete
       ? ''
       : error === identity
         ? 'Filmstrip unavailable. Try changing the zoom to retry.'
         : suspended
           ? 'Filmstrip updates when paused'
-          : 'Loading filmstrip…',
+          : slow === identity
+            ? 'Loading filmstrip…'
+            : '',
   };
 }

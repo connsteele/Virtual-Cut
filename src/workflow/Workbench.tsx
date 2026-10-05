@@ -23,7 +23,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { Brand } from '../components/Brand';
-import { RecordingTranscription } from './RecordingJobs';
+import { RecordingFilmstrip, RecordingTranscription } from './RecordingJobs';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import {
@@ -574,6 +574,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const { model, setModel, snapshot: project } = workspace;
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  // Shown in the bottom bar so it is clear which build is running.
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    window.virtualCut
+      ?.getAppInfo()
+      .then((info) => setVersion(info.version))
+      .catch(() => {});
+  }, []);
   const [planOpen, setPlanOpen] = useState(false),
     [destinationPlan, setDestinationPlan] = useState<DestinationPlan | null>(null),
     [planError, setPlanError] = useState(''),
@@ -1697,6 +1705,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       · {(model.markers[x.id] || []).length} markers
                     </span>
                     <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
+                    <RecordingFilmstrip state={project?.filmstrips?.[x.id]} />
                     <RecordingActions recording={x} workspace={workspace} />
                   </div>
                 ))}
@@ -1994,6 +2003,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                               : x.availability || 'Session video'}
                         </span>
                         <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
+                        <RecordingFilmstrip state={project?.filmstrips?.[x.id]} />
                         <RecordingActions recording={x} workspace={workspace} />
                       </div>
                     ))}
@@ -2948,6 +2958,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         <div className={s.tools}>
           <Button onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</Button>
           <span className={s.muted}>F11 · Fullscreen</span>
+          {version && (
+            <span className={s.muted} data-app-version>
+              Virtual Cut {version}
+            </span>
+          )}
         </div>
       </footer>
       {diagnosticsOpen && <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />}

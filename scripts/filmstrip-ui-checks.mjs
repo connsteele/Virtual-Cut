@@ -39,7 +39,7 @@ async function capture(name) {
   // Screenshots are evidence of the thumbnails, so wait until every filmstrip has finished
   // loading and every image has decoded.
   if (name !== 'failure')
-    await expect(page.getByText('Loading filmstrip…')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('[data-filmstrip-loading]')).toHaveCount(0, { timeout: 15000 });
   await page.evaluate(() =>
     Promise.all([...document.images].map((image) => image.decode().catch(() => {}))),
   );
@@ -149,6 +149,56 @@ try {
   await page.locator('video').evaluate((v) => v.pause());
   await expect.poll(() => frames.count()).toBeGreaterThan(0);
   await capture('cut-filmstrip-compact');
+  // M331: with no job waiting, every recording gets its tile file; cards then lose their
+  // "Making filmstrip…" mark, and zooming and panning never show "Loading filmstrip…".
+  await expect
+    .poll(
+      async () => {
+        const s = await state();
+        return s.model.recordings.every((r) => s.filmstrips?.[r.id] === 'ready');
+      },
+      { timeout: 30000 },
+    )
+    .toBe(true);
+  await go('Media');
+  await expect(page.locator('[data-filmstrip-status]')).toHaveCount(0);
+  const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  await expect(page.locator('[data-app-version]')).toHaveText(`Virtual Cut ${version}`);
+  await go('Cut');
+  await expect(page.locator('[data-filmstrip-loading]')).toHaveCount(0, { timeout: 15000 });
+  await page.evaluate(() => {
+    window.__stripFlashes = 0;
+    window.__stripObserver = new MutationObserver(() => {
+      if (
+        [...document.querySelectorAll('[role="status"]')].some((el) =>
+          el.textContent?.includes('Loading filmstrip'),
+        )
+      )
+        window.__stripFlashes++;
+    });
+    window.__stripObserver.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
+  const steps = [
+    'Zoom in timeline',
+    'Zoom in timeline',
+    'Pan timeline right',
+    'Pan timeline right',
+    'Pan timeline left',
+    'Zoom out timeline',
+  ];
+  for (const name of steps) {
+    await page.getByRole('button', { name, exact: true }).click();
+    await expect(page.locator('[data-filmstrip-loading]')).toHaveCount(0, { timeout: 15000 });
+  }
+  assert.equal(
+    await page.evaluate(() => (window.__stripObserver.disconnect(), window.__stripFlashes)),
+    0,
+    'Loading filmstrip… never shows for a recording with a tile file',
+  );
   assert.deepEqual(errors, []);
   console.log(`Filmstrip UI checks passed: ${dir}`);
 } catch (e) {

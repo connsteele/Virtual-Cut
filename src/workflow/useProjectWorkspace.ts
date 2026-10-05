@@ -88,7 +88,7 @@ export function useProjectWorkspace() {
       });
     base.current = value.model;
     session.current = value;
-    filmstripMemory.sync(value.project.id, value.model.recordings);
+    filmstripMemory.sync(value.project.id, value.model.recordings, value.filmstrips);
     setSnapshot(value);
     modelRef.current = next;
     rawSetModel(next);

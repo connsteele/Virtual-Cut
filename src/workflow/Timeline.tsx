@@ -738,6 +738,7 @@ export function Timeline({
           className={s.filmstrip}
           data-seek-surface="filmstrip"
           data-waveform-mode={waveMode}
+          data-filmstrip-loading={filmstrip.loading || undefined}
           hidden={!filmstrip.native && !recording.frames.length && waveMode === 'off'}
         >
           {width > 0 && filmstrip.native && filmstrip.status && waveMode !== 'replace' && (
@@ -757,10 +758,10 @@ export function Timeline({
                   left: `${(100 * (filmstrip.tiles[i].left - start)) / span}%`,
                   width: `${(100 * (filmstrip.tiles[i].right - filmstrip.tiles[i].left)) / span}%`,
                 }}
-                data-frame-time={filmstrip.frames[i]?.time}
+                data-frame-time={filmstrip.exact[i]?.time}
                 title={
-                  filmstrip.frames[i]
-                    ? `Keyframe ${time(filmstrip.frames[i].time)} · tile center ${time(filmstrip.frames[i].requested)}`
+                  filmstrip.exact[i]
+                    ? `Keyframe ${time(filmstrip.exact[i]!.time)} · tile center ${time(filmstrip.exact[i]!.requested)}`
                     : undefined
                 }
               >

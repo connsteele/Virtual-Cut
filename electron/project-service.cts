@@ -647,6 +647,7 @@ export class ProjectService {
       r.frames = [];
       r.poster = existsSync(poster) ? await this.grant(poster) : '';
     }
+    snapshot.filmstrips = this.filmstripStates(store);
     if (!existsSync(store.data.project.destination))
       snapshot.warning =
         'The destination folder is offline. Your saved project is still available.';
@@ -1788,9 +1789,26 @@ export class ProjectService {
       })
       .finally(() => {
         this.filmstripBuild = null;
+        this.onChange?.();
         setImmediate(() => this.makeFilmstrips());
       });
     this.filmstripBuild = { sourceId: source.id, controller, finished };
+    this.onChange?.();
+  }
+  private filmstripStates(store: ProjectStore) {
+    const states: Record<string, 'ready' | 'making' | 'waiting'> = {};
+    const sources = new Map(store.sources().map((x) => [x.id, x]));
+    for (const r of store.data.model.recordings) {
+      const source = sources.get(r.id);
+      if (!source || r.availability !== 'ready' || r.retained) continue;
+      const file = filmstripFile(store.data.project.cache, source);
+      if (this.filmstripSettled.has(file) || existsSync(file)) {
+        this.filmstripSettled.add(file);
+        states[r.id] = 'ready';
+      } else if (this.filmstripBuild?.sourceId === r.id) states[r.id] = 'making';
+      else if (!this.filmstripFailed.has(file)) states[r.id] = 'waiting';
+    }
+    return states;
   }
   private async makeFilmstrip(
     s: ProjectStore,

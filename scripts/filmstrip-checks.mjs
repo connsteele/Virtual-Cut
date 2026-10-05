@@ -343,6 +343,11 @@ try {
       1,
       'The filmstrip pass wrote one tile file after import',
     );
+    assert.equal(
+      (await service.snapshot()).filmstrips?.[r.id],
+      'ready',
+      'The snapshot reports the tile file as ready',
+    );
     const frames = await service.filmstrip(p.project.id, r.id, [1, 2, 3], randomUUID());
     assert.equal(frames.length, 3);
     assert(
