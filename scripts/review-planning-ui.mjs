@@ -364,6 +364,8 @@ try {
     path.join(dir, 'diagnostics.txt'),
   );
   await modal().getByRole('button', { name: 'Copy diagnostics' }).click();
+  // Copying finishes in the main process after the click returns.
+  await expect.poll(() => app.evaluate(() => typeof globalThis.copiedDiagnostics)).toBe('string');
   const copied = await app.evaluate(() => globalThis.copiedDiagnostics);
   assert(copied.includes('session-start'));
   const toolVersions = copied
@@ -376,7 +378,7 @@ try {
   assert(!copied.includes('Confidential context'));
   assert(!copied.includes(fixture.source));
   await modal().getByRole('button', { name: 'Open logs', exact: true }).click();
-  assert((await app.evaluate(() => globalThis.openedLogs)).endsWith('diagnostics'));
+  await expect.poll(() => app.evaluate(() => globalThis.openedLogs || '')).toMatch(/diagnostics$/);
   await modal().getByRole('button', { name: 'Save diagnostic report…' }).click();
   await expect(modal()).toContainText('Diagnostic report saved.');
   assert((await readFile(path.join(dir, 'diagnostics.txt'), 'utf8')).includes('session-start'));

@@ -249,7 +249,7 @@ try {
     };
   });
   await doneCard.getByRole('button', { name: 'Show filed video: Second', exact: true }).click();
-  assert.equal(await app.evaluate(() => globalThis.revealedFile), relinkFile);
+  await expect.poll(() => app.evaluate(() => globalThis.revealedFile)).toBe(relinkFile);
   await capture('review-filed-location-wide');
   await doneTree.getByRole('button', { name: 'All destinations', exact: true }).click();
   await page.getByRole('button', { name: /^All \d/ }).click();
@@ -312,11 +312,10 @@ try {
     .locator('[data-review-group="Recovery"]')
     .getByTitle(/^Open destination in Explorer/)
     .click();
-  assert.equal(
-    await app.evaluate(() => globalThis.revealedDestination),
-    path.join((await current()).project.destination, 'Recovery'),
-    'The folder header opens its current destination through the native bridge',
-  );
+  // The folder header opens its current destination through the native bridge.
+  await expect
+    .poll(() => app.evaluate(() => globalThis.revealedDestination))
+    .toBe(path.join((await current()).project.destination, 'Recovery'));
   await card.getByRole('button', { name: 'Release hold', exact: true }).click();
   await card.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: /^File queue ·/ }).click();
@@ -325,10 +324,9 @@ try {
     .getByRole('table', { name: 'Filing plan' })
     .getByTitle(/^Open destination in Explorer/)
     .click();
-  assert.equal(
-    await app.evaluate(() => globalThis.revealedDestination),
-    path.join((await current()).project.destination, 'Recovery'),
-  );
+  await expect
+    .poll(() => app.evaluate(() => globalThis.revealedDestination))
+    .toBe(path.join((await current()).project.destination, 'Recovery'));
   for (const dimensions of [
     [1600, 1000],
     [1100, 720],
@@ -461,7 +459,7 @@ try {
     .getByRole('region', { name: 'Handoff to Resolve', exact: true })
     .getByRole('button', { name: 'Open helper location', exact: true })
     .click();
-  assert.equal(await app.evaluate(() => globalThis.helperRevealed), helper);
+  await expect.poll(() => app.evaluate(() => globalThis.helperRevealed)).toBe(helper);
   await expect(
     page
       .getByRole('region', { name: 'Handoff to Resolve', exact: true })

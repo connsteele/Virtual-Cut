@@ -145,10 +145,9 @@ try {
   assert.equal(plannedBefore.state, 'idle');
   await setup.getByRole('button', { name: 'Download speech engine…', exact: true }).click();
   // First pick: beside the kept downloaded engine, not wherever Windows last opened.
-  assert.equal(
-    await app.evaluate(() => globalThis.setupPickerStart),
-    path.join(dir, 'speech-root'),
-  );
+  await expect
+    .poll(() => app.evaluate(() => globalThis.setupPickerStart))
+    .toBe(path.join(dir, 'speech-root'));
   await expect(
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toBeEnabled();

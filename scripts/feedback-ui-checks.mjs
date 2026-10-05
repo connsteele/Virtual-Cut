@@ -377,8 +377,9 @@ try {
     .getByRole('button', { name: /^Open save folder:/ })
     .first()
     .click();
-  const revealed = await app.evaluate(() => globalThis.revealedSave);
-  assert.equal(path.dirname(revealed), fixture.file + '.saves');
+  await expect
+    .poll(async () => path.dirname((await app.evaluate(() => globalThis.revealedSave)) || ''))
+    .toBe(fixture.file + '.saves');
   await capture('save-history');
   await page.getByRole('button', { name: 'Restore…', exact: true }).first().click();
   await page.getByRole('button', { name: 'Restore save', exact: true }).click();

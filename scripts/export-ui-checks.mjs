@@ -86,7 +86,6 @@ try {
     .toBe('verified');
   await expect(history.getByRole('button', { name: /Show video:/ }).last()).toBeVisible();
   await capture('export-history-compact');
-  let revealed = '';
   await app.evaluate(({ shell }) => {
     shell.showItemInFolder = (file) => {
       globalThis.__exportRevealed = file;
@@ -98,8 +97,9 @@ try {
     .filter({ hasText: 'bframes' })
     .first();
   await row.getByRole('button', { name: 'Metadata', exact: true }).click();
-  revealed = await app.evaluate(() => globalThis.__exportRevealed);
-  assert.equal(revealed, output + '.vcut.json');
+  await expect
+    .poll(() => app.evaluate(() => globalThis.__exportRevealed))
+    .toBe(output + '.vcut.json');
   await history.getByRole('button', { name: 'Close dialog' }).click();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 960));
   const navigation = page.getByRole('navigation', { name: 'Workspace pages' });
