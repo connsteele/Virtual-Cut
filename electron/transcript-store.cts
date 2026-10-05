@@ -162,15 +162,28 @@ export class TranscriptStore {
     if (!['all', 'cues', 'pending', 'accepted', 'rejected'].includes(mode))
       throw new Error('Invalid cue filter.');
     const cueIds: number[] = [];
-    if (mode !== 'all') {
+    const counts = {
+      all: Number(
+        this.db
+          .prepare('SELECT count(*) AS n FROM transcript_segments WHERE transcript_id=?')
+          .get(id)?.n || 0,
+      ),
+      cues: 0,
+      pending: 0,
+      accepted: 0,
+      rejected: 0,
+    };
+    // Only microphone transcripts can hold cues, so game dialogue skips the scan.
+    if (transcript.role === 'mic')
       for (const original of this.segments(id)) {
         const segment = { ...original, text: correctedText(model, id, original) };
         if (!cueCandidate(transcript, segment)) continue;
         const status =
           reviewedCue(model.cueDecisions || [], transcript, segment)?.status || 'pending';
+        counts.cues++;
+        counts[status]++;
         if (mode === 'cues' || mode === status) cueIds.push(segment.id);
       }
-    }
     // Bound each IPC response. Literal substring matching also treats % and _ literally.
     const filter = `transcript_id=? AND (instr(lower(json_extract(body,'$.text')),lower(?))>0 OR ordinal IN (SELECT value FROM json_each(?))) AND (?='all' OR ordinal IN (SELECT value FROM json_each(?)))`;
     const matches = JSON.stringify(editedMatches);
@@ -199,6 +212,7 @@ export class TranscriptStore {
       transcript,
       segments,
       total,
+      counts,
       followStart: page === 0 ? 0 : segments[0]?.start,
       followEnd: next ? JSON.parse(String(next.body)).start : undefined,
     };

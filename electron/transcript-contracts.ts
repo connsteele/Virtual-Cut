@@ -90,7 +90,10 @@ export interface TranscriptPage {
   transcript: TranscriptSummary;
   segments: TranscriptSegment[];
   total: number;
+  /** Phrases per filter across the whole transcript, ignoring search (the filter chips). */
+  counts?: Record<TranscriptFilter, number>;
 }
+export type TranscriptFilter = 'all' | 'cues' | 'pending' | 'accepted' | 'rejected';
 export interface AsrRuntime {
   python: string;
   libraries: string;

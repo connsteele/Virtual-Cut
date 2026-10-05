@@ -47,7 +47,6 @@
   width: 100%;
 }
 .toolbar,
-.search,
 .phraseHeading,
 .pagination {
   display: flex;
@@ -63,6 +62,107 @@
   flex: 1;
   min-width: 200px;
   margin: 0;
+}
+/* One toolbar row (VC-114 stage 2a): recording, transcript, search, Follow, Export, engine, Transcribe. */
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+/* Small starting widths that grow, so the row fits the default 760 px window and wraps only
+   when the window is narrower. */
+.window .tools > select {
+  flex: 1 1 100px;
+  width: 100px;
+  max-width: 150px;
+  padding: 7px 8px;
+  text-overflow: ellipsis;
+}
+.find {
+  flex: 3 1 120px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  background: #111b1a;
+  border: 1px solid #3c504d;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.window .find input:not([type='checkbox']) {
+  flex: 1;
+  min-width: 50px;
+  border: 0;
+  padding: 7px 0;
+  background: transparent;
+}
+.find input:not([type='checkbox']):focus {
+  outline: none;
+}
+.find:focus-within {
+  border-color: var(--teal-light);
+}
+.find label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menuAnchor {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: #1b2725;
+  border: 1px solid #38514c;
+  border-radius: 9px;
+  box-shadow: 0 8px 28px #0009;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3c504d;
+}
+.filter {
+  border: 1px solid #3c504d;
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter:hover {
+  background: #294842;
+}
+.filter[aria-pressed='true'] {
+  background: #1f4a3f;
+  border-color: #2e6f6a;
+  color: #9ee6c9;
+}
+.filter span {
+  margin-left: 5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.filter[aria-pressed='true'] span {
+  color: inherit;
 }
 .segments {
   margin-top: 8px;
@@ -156,17 +256,6 @@
   overflow-wrap: anywhere;
   font-size: 12px;
   color: var(--muted);
-}
-.search {
-  border-bottom: 1px solid #3c504d;
-  padding-bottom: 12px;
-}
-.search > input {
-  flex: 1;
-  min-width: 50px;
-}
-.search label {
-  white-space: nowrap;
 }
 .muted {
   color: var(--muted);

@@ -165,12 +165,12 @@ try {
   }
   await position(12.3);
   await new Promise((resolve) => setTimeout(resolve, 150));
-  await view.getByLabel('Transcript filter').selectOption('pending');
+  await view.locator('[data-filter="pending"]').click();
   await expect(phrases.locator('article')).toHaveCount(4);
   await new Promise((resolve) => setTimeout(resolve, 450));
   await expect(phrases.locator('article')).toHaveCount(4);
-  await expect(view.getByLabel('Transcript filter')).toHaveValue('pending');
-  await view.getByLabel('Transcript filter').selectOption('all');
+  await expect(view.locator('[data-filter="pending"]')).toHaveAttribute('aria-pressed', 'true');
+  await view.locator('[data-filter="all"]').click();
   await view.getByRole('button', { name: 'Follow playback', exact: true }).click();
   await app.evaluate((_electron, file) => {
     const require = process.getBuiltinModule('module').createRequire(file);
@@ -185,7 +185,7 @@ try {
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 2');
   assert.equal(await main.locator('video').evaluate((video) => video.paused), false);
   await view.keyboard.press('k');
-  await view.getByLabel('Transcript filter').selectOption('pending');
+  await view.locator('[data-filter="pending"]').click();
   await expect(phrases.locator('article')).toHaveCount(4);
   await expect(view.getByLabel('Cue title 95')).toHaveValue('opening');
   await phrases
@@ -266,7 +266,7 @@ try {
   await expect(view.getByText('No matching cues.')).toBeVisible();
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-a').end, 15);
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-b').end, 11);
-  await view.getByLabel('Transcript filter').selectOption('accepted');
+  await view.locator('[data-filter="accepted"]').click();
   await expect(phrases.locator('article')).toHaveCount(4);
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
@@ -293,7 +293,7 @@ try {
   );
   await writeFile(path.join(dir, 'setup-compact.png'), Buffer.from(image, 'base64'));
   await view.getByRole('button', { name: 'Speech engine', exact: true }).click();
-  await view.getByLabel('Transcript filter').selectOption('all');
+  await view.locator('[data-filter="all"]').click();
   await view.getByLabel('Search transcript').fill('word');
   await expect(phrases.locator('article')).toHaveCount(60);
   await view.getByRole('button', { name: 'Next transcript page', exact: true }).click();

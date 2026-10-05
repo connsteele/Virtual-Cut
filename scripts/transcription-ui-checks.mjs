@@ -59,9 +59,20 @@ try {
     const recording = document.querySelector('select'),
       start = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Transcribe'),
       settings = document.querySelector('[aria-label="Speech engine"]');
-    return [recording, start, settings].map((e) => e.getBoundingClientRect().bottom);
+    // One toolbar row: the controls share a vertical centre (VC-114 stage 2a).
+    return [recording, start, settings].map((e) => {
+      const r = e.getBoundingClientRect();
+      return (r.top + r.bottom) / 2;
+    });
   });
-  assert.ok(Math.max(...alignment) - Math.min(...alignment) < 2, 'Recording and its actions align');
+  const widths = await transcript.evaluate(() => {
+    const bar = document.querySelector('[role="toolbar"]');
+    return `${Math.round(bar.clientWidth)} px: ${[...bar.children].map((c) => Math.round(c.getBoundingClientRect().width)).join(' + ')}`;
+  });
+  assert.ok(
+    Math.max(...alignment) - Math.min(...alignment) < 2,
+    `Recording and its actions share one row (${alignment.join(', ')}; ${widths})`,
+  );
   const leadingGap = await transcript.evaluate(() => {
     const help = document.querySelector('details summary').parentElement;
     const first = document.querySelector('[aria-label="Transcript phrases"] article');
@@ -131,8 +142,22 @@ try {
   await expect(phrases.locator('article').first()).toContainText('Cai');
   await transcript.getByLabel('Search transcript').fill('');
   // An isolated floating renderer cannot use broad workspace/file access.
-  await transcript.getByLabel('Transcript filter').selectOption('pending');
+  // One toolbar row, with transcript selection beside search (VC-114 stage 2a, VC-92).
+  const tools = transcript.getByRole('toolbar', { name: 'Transcript tools' });
+  await expect(tools.getByLabel('Select transcript', { exact: true })).toBeVisible();
+  assert(
+    await tools.evaluate((bar) =>
+      bar
+        .querySelector('[aria-label="Select transcript"]')
+        .nextElementSibling.contains(bar.querySelector('[aria-label="Search transcript"]')),
+    ),
+    'Transcript selection sits beside search',
+  );
+  await transcript.screenshot({ path: path.join(dir, 'transcript-toolbar.png') });
+  await transcript.locator('[data-filter="pending"]').click();
   await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(transcript.locator('[data-filter="pending"] span')).toHaveText('1');
+  await expect(transcript.locator('[data-filter="accepted"] span')).toHaveText('0');
   const notesBefore = await page.evaluate(
     async () => (await window.virtualCut.project.current()).model.notes.length,
   );
@@ -143,9 +168,11 @@ try {
     )
     .toBe(notesBefore + 1);
   await expect(transcript.getByText('No matching cues.')).toBeVisible();
-  await transcript.getByLabel('Transcript filter').selectOption('accepted');
+  await expect(transcript.locator('[data-filter="pending"] span')).toHaveText('0');
+  await expect(transcript.locator('[data-filter="accepted"] span')).toHaveText('1');
+  await transcript.locator('[data-filter="accepted"]').click();
   await expect(phrases.locator('article')).toHaveCount(1);
-  await transcript.getByLabel('Transcript filter').selectOption('pending');
+  await transcript.locator('[data-filter="pending"]').click();
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(
     transcript.getByRole('button', { name: 'Accept timed note', exact: true }),
@@ -155,7 +182,7 @@ try {
       page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),
     )
     .toBe(notesBefore);
-  await transcript.getByLabel('Transcript filter').selectOption('all');
+  await transcript.locator('[data-filter="all"]').click();
   const exported = path.join(dir, 'transcript.json');
   await app.evaluate(({ dialog }, file) => {
     globalThis.transcriptSaveDialogs = [];
@@ -164,7 +191,20 @@ try {
       return { canceled: false, filePath: file };
     };
   }, exported);
-  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  // Export is one menu holding the format and, when completed clips exist, the timing.
+  const openExport = async () => {
+    const toggle = transcript.getByRole('button', { name: 'Export', exact: true });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  };
+  const exportJson = async (timing) => {
+    await openExport();
+    await transcript.getByLabel('Export format').selectOption('json');
+    if (timing !== undefined)
+      await transcript.getByLabel('Export transcript timing').selectOption(timing);
+    await transcript.getByRole('button', { name: 'Export transcript', exact: true }).click();
+    await expect(transcript.getByRole('dialog', { name: 'Export transcript' })).toHaveCount(0);
+  };
+  await exportJson();
   await expect.poll(async () => !!(await readFile(exported, 'utf8').catch(() => ''))).toBe(true);
   const exportedText = await readFile(exported, 'utf8');
   assert(
@@ -178,8 +218,7 @@ try {
     async () => (await window.virtualCut.transcript.session()).outputs,
   );
   assert(outputs.length, 'Fixture provides a verified completed output');
-  await transcript.getByLabel('Export transcript timing').selectOption(outputs[0].id);
-  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  await exportJson(outputs[0].id);
   await expect
     .poll(async () => JSON.parse(await readFile(exported, 'utf8')).scope.exportId)
     .toBe(outputs[0].id);
@@ -195,10 +234,13 @@ try {
   await app.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
   }, companion);
-  await transcript.getByRole('button', { name: 'JSON', exact: true }).click();
+  await exportJson(outputs[0].id);
   await expect(transcript.getByRole('alert')).toContainText('Video companions are preserved');
   assert.equal(await readFile(companion, 'utf8'), companionBefore);
+  await openExport();
   await transcript.getByLabel('Export transcript timing').selectOption('');
+  await transcript.keyboard.press('Escape');
+  await expect(transcript.getByRole('dialog', { name: 'Export transcript' })).toHaveCount(0);
   assert.match(
     await transcript.evaluate(() =>
       window.virtualCut.project

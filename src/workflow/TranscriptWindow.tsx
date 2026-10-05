@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Settings, Download, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Search, Settings, ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import type {
   TranscriptApi,
   TranscriptCommand,
+  TranscriptFilter,
   TranscriptPage,
   TranscriptSegment,
   TranscriptSession,
@@ -30,6 +31,13 @@ const time = (seconds: number) => {
     ms = Math.floor((seconds - total) * 1000);
   return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
 };
+const filters: [TranscriptFilter, string][] = [
+  ['all', 'All'],
+  ['pending', 'Needs review'],
+  ['cues', 'Cues'],
+  ['accepted', 'Accepted'],
+  ['rejected', 'Rejected'],
+];
 export function TranscriptWindow() {
   const api = window.virtualCut!.transcript;
   const [session, setSession] = useState<TranscriptSession | null>(null);
@@ -39,12 +47,15 @@ export function TranscriptWindow() {
     [pageIndex, setPageIndex] = useState(0),
     [search, setSearch] = useState('');
   const [loadedPageKey, setLoadedPageKey] = useState('');
-  const [filter, setFilter] = useState<'all' | 'cues' | 'pending' | 'accepted' | 'rejected'>('all');
+  const [filter, setFilter] = useState<TranscriptFilter>('all');
   const [follow, setFollow] = useState(true);
   const [focusedWord, setFocusedWord] = useState<{ segment: number; word?: number }>();
   const [options, setOptions] = useState(initialTranscriptionOptions);
   const [transcriptionReady, setTranscriptionReady] = useState(false);
-  const [exportId, setExportId] = useState('');
+  const [exportId, setExportId] = useState(''),
+    [exportFormat, setExportFormat] = useState<'srt' | 'json'>('srt'),
+    [exportOpen, setExportOpen] = useState(false);
+  const exportMenu = useRef<HTMLDivElement>(null);
   const [runtime, setRuntime] = useState<Awaited<ReturnType<TranscriptApi['runtime']>>>();
   const [setup, setSetup] = useState(false),
     [startOpen, setStartOpen] = useState(false),
@@ -180,6 +191,8 @@ export function TranscriptWindow() {
       : undefined;
   const usablePage =
     loadedPageKey === pageKey && page?.transcript.id === currentId ? page : undefined;
+  // Chip counts cover the whole transcript, so the previous page's counts stay while loading.
+  const counts = page?.transcript.id === currentId ? page.counts : undefined;
   // Position updates share one lookup. Only a reader/context change invalidates it.
   followOwner.current =
     follow &&
@@ -240,6 +253,7 @@ export function TranscriptWindow() {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelection(undefined);
+        setExportOpen(false);
         return;
       }
       if (
@@ -262,6 +276,14 @@ export function TranscriptWindow() {
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
   }, [api, session]);
+  useEffect(() => {
+    if (!exportOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!exportMenu.current?.contains(event.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [exportOpen]);
   useEffect(() => {
     if (
       !follow ||
@@ -382,34 +404,175 @@ export function TranscriptWindow() {
         <p>Open a project in the main window to read or generate transcripts.</p>
       ) : (
         <>
-          <div className={s.toolbar}>
-            <Field label="Recording">
+          <div className={s.tools} role="toolbar" aria-label="Transcript tools">
+            <select
+              aria-label="Recording"
+              title="Recording"
+              value={session.sourceId}
+              onChange={(e) => {
+                setSourceId(e.target.value);
+                setSelection(undefined);
+              }}
+            >
+              {session.recordings.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+            {selected && (
               <select
-                value={session.sourceId}
+                aria-label="Select transcript"
+                title="Transcript"
+                value={currentId}
                 onChange={(e) => {
-                  setSourceId(e.target.value);
+                  setTranscriptId(e.target.value);
+                  setPageIndex(0);
                   setSelection(undefined);
                 }}
               >
-                {session.recordings.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.title}
+                {session.transcripts.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.role === 'mic' ? 'Microphone notes' : 'Game dialogue'} ·{' '}
+                    {t.language || 'Auto'} · {t.state} · {new Date(t.created).toLocaleString()}
                   </option>
                 ))}
               </select>
-            </Field>
-            <Button onClick={() => setStartOpen(!startOpen)} disabled={!session.sourceId}>
-              Transcribe
-            </Button>
+            )}
+            {selected && (
+              <div className={s.find}>
+                <Search size={16} aria-hidden />
+                <input
+                  aria-label="Search transcript"
+                  placeholder="Search speech and corrections"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPageIndex(0);
+                    setFollow(false);
+                  }}
+                />
+                <label title="Show the original recognition instead of corrections">
+                  <input
+                    type="checkbox"
+                    checked={original}
+                    onChange={(e) => setOriginal(e.target.checked)}
+                  />
+                  Original
+                </label>
+              </div>
+            )}
+            {selected && (
+              <Button
+                aria-label="Follow playback"
+                aria-pressed={follow}
+                onClick={() => {
+                  setFollow(!follow);
+                  if (!follow) {
+                    setFilter('all');
+                    setSearch('');
+                    setSelection(undefined);
+                  }
+                }}
+              >
+                Follow
+              </Button>
+            )}
+            {selected && (
+              <div className={s.menuAnchor} ref={exportMenu}>
+                <Button
+                  aria-haspopup="dialog"
+                  aria-expanded={exportOpen}
+                  title="Export this transcript as SRT or JSON"
+                  disabled={selected.state !== 'complete'}
+                  onClick={() => setExportOpen(!exportOpen)}
+                >
+                  Export <ChevronDown size={14} />
+                </Button>
+                {exportOpen && (
+                  <section className={s.menu} role="dialog" aria-label="Export transcript">
+                    <Field label="Format">
+                      <select
+                        aria-label="Export format"
+                        value={exportFormat}
+                        onChange={(e) => setExportFormat(e.target.value as 'srt' | 'json')}
+                      >
+                        <option value="srt">SRT · corrected phrases for subtitles</option>
+                        <option value="json">JSON · original words and corrections</option>
+                      </select>
+                    </Field>
+                    {!!session.outputs.length && (
+                      <Field label="Timing">
+                        <select
+                          aria-label="Export transcript timing"
+                          value={exportId}
+                          onChange={(e) => setExportId(e.target.value)}
+                        >
+                          <option value="">Whole source</option>
+                          {session.outputs.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              Completed clip · {o.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
+                    <Button
+                      primary
+                      disabled={busy}
+                      onClick={() => {
+                        setExportOpen(false);
+                        background(
+                          action(async () => {
+                            const file = await api.export(
+                              projectId,
+                              currentId,
+                              exportFormat,
+                              exportId || undefined,
+                            );
+                            if (file) setNotice(`Saved ${file}`);
+                          }),
+                        );
+                      }}
+                    >
+                      Export transcript
+                    </Button>
+                  </section>
+                )}
+              </div>
+            )}
             <Button
               title="Speech engine"
               aria-label="Speech engine"
               aria-expanded={setup}
               onClick={() => setSetup(!setup)}
             >
-              <Settings size={20} />
+              <Settings size={18} />
+            </Button>
+            <Button primary onClick={() => setStartOpen(!startOpen)} disabled={!session.sourceId}>
+              Transcribe
             </Button>
           </div>
+          {selected && (
+            <div className={s.filters} role="group" aria-label="Transcript filter">
+              {filters.map(([value, label]) => (
+                <button
+                  key={value}
+                  className={s.filter}
+                  data-filter={value}
+                  aria-pressed={filter === value}
+                  onClick={() => {
+                    setFilter(value);
+                    setPageIndex(0);
+                    setFollow(false);
+                  }}
+                >
+                  {label}
+                  <span>{counts?.[value] ?? '–'}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {startOpen && (
             <section className={s.card} aria-label="Start transcription">
               <TranscriptionOptions
@@ -508,133 +671,6 @@ export function TranscriptWindow() {
         ))}
       {selected && session && (
         <>
-          <div className={s.toolbar}>
-            <Field label="Select transcript">
-              <select
-                aria-label="Select transcript"
-                value={currentId}
-                onChange={(e) => {
-                  setTranscriptId(e.target.value);
-                  setPageIndex(0);
-                  setSelection(undefined);
-                }}
-              >
-                {session.transcripts.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.role === 'mic' ? 'Microphone notes' : 'Game dialogue'} ·{' '}
-                    {t.language || 'Auto'} · {t.state} · {new Date(t.created).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Button
-              title="Export original words and corrections as JSON"
-              disabled={busy || selected.state !== 'complete'}
-              onClick={() =>
-                background(
-                  action(async () => {
-                    const file = await api.export(
-                      projectId,
-                      currentId,
-                      'json',
-                      exportId || undefined,
-                    );
-                    if (file) setNotice(`Saved ${file}`);
-                  }),
-                )
-              }
-            >
-              <Download size={16} /> JSON
-            </Button>
-            <Button
-              title={
-                exportId
-                  ? 'Export corrected phrases with completed-clip timing'
-                  : 'Export corrected phrases with source timing'
-              }
-              disabled={busy || selected.state !== 'complete'}
-              onClick={() =>
-                background(
-                  action(async () => {
-                    const file = await api.export(
-                      projectId,
-                      currentId,
-                      'srt',
-                      exportId || undefined,
-                    );
-                    if (file) setNotice(`Saved ${file}`);
-                  }),
-                )
-              }
-            >
-              SRT
-            </Button>
-          </div>
-          <div className={s.toolbar}>
-            <Field label="Show">
-              <select
-                aria-label="Transcript filter"
-                value={filter}
-                onChange={(e) => {
-                  setFilter(e.target.value as typeof filter);
-                  setPageIndex(0);
-                  setFollow(false);
-                }}
-              >
-                <option value="all">Full transcript</option>
-                <option value="pending">Cues · needs review</option>
-                <option value="cues">All cues</option>
-                <option value="accepted">Accepted cues</option>
-                <option value="rejected">Rejected cues</option>
-              </select>
-            </Field>
-            <Button
-              aria-pressed={follow}
-              onClick={() => {
-                setFollow(!follow);
-                if (!follow) {
-                  setFilter('all');
-                  setSearch('');
-                  setSelection(undefined);
-                }
-              }}
-            >
-              Follow playback
-            </Button>
-          </div>
-          {!!session.outputs.length && (
-            <Field label="Export transcript timing">
-              <select value={exportId} onChange={(e) => setExportId(e.target.value)}>
-                <option value="">Whole source</option>
-                {session.outputs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    Completed clip · {o.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <div className={s.search}>
-            <Search size={18} />
-            <input
-              aria-label="Search transcript"
-              placeholder="Search original speech and corrections"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPageIndex(0);
-                setFollow(false);
-              }}
-            />
-            <label>
-              <input
-                type="checkbox"
-                checked={original}
-                onChange={(e) => setOriginal(e.target.checked)}
-              />{' '}
-              Original
-            </label>
-          </div>
           <details className={s.help}>
             <summary>
               {selected.wordCount} words ·{' '}

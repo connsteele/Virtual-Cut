@@ -756,6 +756,11 @@ test('cue filters cover every page, corrections and review state; playback pages
       store.page('speech', 0, '', [], { cueDecisions: [decision] }, 'rejected').total,
       1,
     );
+    // Filter chips count the whole transcript, whatever the page, filter or search.
+    assert.deepEqual(
+      store.page('speech', 2, 'ordinary', [], { cueDecisions: [decision] }, 'all').counts,
+      { all: 125, cues: 2, pending: 1, accepted: 0, rejected: 1 },
+    );
     assert.equal(store.pageAt('speech', 124), 2);
     assert.equal(store.pageAt('speech', 61), 1);
     assert.equal(store.pageAt('speech', 0), 0);
