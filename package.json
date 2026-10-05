@@ -36,7 +36,8 @@
     "test:native": "node scripts/test-suite.mjs native",
     "test:desktop": "node scripts/test-suite.mjs desktop",
     "test:packaged": "node scripts/test-suite.mjs packaged",
-    "test:coverage": "node scripts/test-suite.mjs desktop --coverage"
+    "test:coverage": "node scripts/test-suite.mjs desktop --coverage",
+    "deliver": "node scripts/deliver.mjs"
   },
   "dependencies": {
     "lucide-react": "1.48.0",
