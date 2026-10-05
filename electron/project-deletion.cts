@@ -179,7 +179,7 @@ export async function planProjectDeletion(
       ),
     ];
     const suffix =
-      /^-(?:frame-[0-7](?:\.partial)?\.jpg|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
+      /^-(?:frame-[0-7](?:\.partial)?\.jpg|filmstrip(?:\.partial)?\.bin|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
     for (const entry of await readdir(data.project.cache, { withFileTypes: true }).catch(
       () => [],
     )) {

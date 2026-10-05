@@ -42,6 +42,8 @@ export class FilmstripMemory {
   private valid = new Set<string>();
   private entries = new Map<string, Entry>();
   private bytes = 0;
+  // Sources whose tiles come from a tile file, so requests return without decoding.
+  private stored = new Set<string>();
   private revision = 0;
   private listeners = new Set<() => void>();
   subscribe = (fn: () => void) => {
@@ -74,6 +76,7 @@ export class FilmstripMemory {
         changed = true;
       }
     }
+    for (const source of this.stored) if (!next.has(source)) this.stored.delete(source);
     if (changed) this.changed();
   }
   retain(project: string, recording: Recording) {
@@ -85,6 +88,9 @@ export class FilmstripMemory {
       if (entry.source === source && !entry.overview) this.remove(id);
     }
     this.changed();
+  }
+  isStored(source: string) {
+    return this.stored.has(source);
   }
   get(source: string, at: number) {
     return this.entries.get(key(source, at))?.frame;
@@ -101,6 +107,7 @@ export class FilmstripMemory {
   }
   put(source: string, frames: FilmstripFrame[], overview: boolean, visible: number[]) {
     if (!this.valid.has(source)) return;
+    if (frames.some((f) => f.stored)) this.stored.add(source);
     for (const frame of frames) {
       const id = key(source, frame.requested);
       if (this.entries.has(id)) continue;

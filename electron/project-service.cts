@@ -34,7 +34,7 @@ import {
 } from './project-deletion.cjs';
 import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
-import { FilmstripCache } from './filmstrip.cjs';
+import { FilmstripCache, filmstripFile, sweepKeyframes, writeTileFile } from './filmstrip.cjs';
 import { inspectRetainedOutput } from './retained-preview.cjs';
 import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
   'resolution-mode': 'import',
@@ -269,7 +269,22 @@ export class ProjectService {
   }
   private filingPlans = new Map<string, { plan: FilingPlan; records: ExportRecord[] }>();
   private destinationCache: { key: string; at: number; plan: DestinationPlan } | null = null;
-  private filmstripCache = new FilmstripCache();
+  private filmstripCache = Object.assign(new FilmstripCache(), {
+    onMissing: (sourceId: string) => this.wantFilmstrip(sourceId),
+  });
+  // Filmstrips are made in the background, one recording at a time, only while no job is queued;
+  // any job that starts stops the current pass, which is retried later.
+  private filmstripBuild: {
+    sourceId: string;
+    controller: AbortController;
+    finished: Promise<void>;
+  } | null = null;
+  // Recordings opened without a tile file go first.
+  private filmstripNext = new Set<string>();
+  // Tile files known to exist.
+  private filmstripSettled = new Set<string>();
+  // Tile files whose pass failed; retried when the project is next opened.
+  private filmstripFailed = new Set<string>();
   private retainedDetails = new Map<string, Awaited<ReturnType<typeof inspectRetainedOutput>>>();
   private retainedDetailsProject = '';
   private retainedPreview?: {
@@ -280,7 +295,8 @@ export class ProjectService {
   releaseRetained(id?: string, token?: string) {
     if (id) this.require(id);
     if (token && this.retainedPreview?.token !== token) return;
-    if (this.retainedPreview) this.filmstripCache.clear();
+    const retained = this.retainedPreview?.value?.source.id;
+    if (retained) this.filmstripCache.forget(retained);
     this.retainedPreview?.controller.abort();
     this.retainedPreview = undefined;
   }
@@ -360,6 +376,7 @@ export class ProjectService {
       keys,
       times,
       token,
+      r.retained ? undefined : filmstripFile(store.data.project.cache, source),
     );
   }
   /** Frame and keyframe timestamps for one project recording, read on demand. */
@@ -483,6 +500,7 @@ export class ProjectService {
       !next.jobs().some((j) => j.sourceId === selected.id && j.state === 'interrupted')
     )
       this.queueAudio(selected.id);
+    this.pump();
     return this.snapshot();
   }
   async close() {
@@ -490,6 +508,10 @@ export class ProjectService {
     try {
       this.releaseRetained();
       this.retainedDetails.clear();
+      await this.stopFilmstrips();
+      this.filmstripNext.clear();
+      this.filmstripSettled.clear();
+      this.filmstripFailed.clear();
       await this.filmstripCache.close();
       this.active?.controller.abort();
       await this.active?.finished;
@@ -564,7 +586,7 @@ export class ProjectService {
       }
       if (previous !== r.availability) {
         this.releaseRetained();
-        this.filmstripCache.clear();
+        this.filmstripCache.forget(s.id);
         dirty = true;
         this.grants.delete(s.file);
       }
@@ -754,6 +776,7 @@ export class ProjectService {
   async restore(id: string, saveId: string) {
     this.releaseRetained();
     this.retainedDetails.clear();
+    await this.stopFilmstrips();
     this.filmstripCache.clear();
     const store = this.require(id);
     this.switching = true;
@@ -814,7 +837,8 @@ export class ProjectService {
   async removeRecording(id: string, batchId: string, sourceId: string) {
     this.releaseRetained();
     this.retainedDetails.clear();
-    this.filmstripCache.clear();
+    if (this.filmstripBuild?.sourceId === sourceId) await this.stopFilmstrips();
+    this.filmstripCache.forget(sourceId);
     const s = this.require(id);
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
     const recording = s.data.model.recordings.find((r) => r.id === sourceId);
@@ -889,7 +913,6 @@ export class ProjectService {
   ) {
     this.releaseRetained();
     this.retainedDetails.clear();
-    this.filmstripCache.clear();
     const s = this.require(id);
     if (!['preserve', 'remove'].includes(mode)) throw new Error('Choose how to remove this batch.');
     if (!s.data.batches.some((b) => b.id === batchId)) throw new Error('Batch not found.');
@@ -906,6 +929,9 @@ export class ProjectService {
         : [],
     );
     const native = s.sources().filter((source) => removed.has(source.id));
+    if (this.filmstripBuild && removed.has(this.filmstripBuild.sourceId))
+      await this.stopFilmstrips();
+    for (const sourceId of removed) this.filmstripCache.forget(sourceId);
     const originals = new Set(
       (
         await Promise.all(
@@ -973,7 +999,7 @@ export class ProjectService {
             )
             .map((source) => `${source.id}-${source.fingerprint}`);
           const suffix =
-            /^-(?:frame-[0-7](?:\.partial)?\.jpg|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
+            /^-(?:frame-[0-7](?:\.partial)?\.jpg|filmstrip(?:\.partial)?\.bin|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
           for (const entry of await readdir(cache, { withFileTypes: true })) {
             if (!entry.isFile() || entry.isSymbolicLink()) continue;
             const prefix = prefixes.find(
@@ -1664,7 +1690,8 @@ export class ProjectService {
   async relink(id: string, sourceId: string, file: string) {
     this.releaseRetained();
     this.retainedDetails.clear();
-    this.filmstripCache.clear();
+    if (this.filmstripBuild?.sourceId === sourceId) await this.stopFilmstrips();
+    this.filmstripCache.forget(sourceId);
     const s = this.require(id),
       old = s.sources().find((x) => x.id === sourceId);
     if (!old) throw new Error('Recording not found.');
@@ -1693,13 +1720,102 @@ export class ProjectService {
   private pump() {
     if (this.active || this.switching || !this.store) return;
     const job = [...this.store.jobs()].reverse().find((j) => j.state === 'queued');
-    if (!job) return;
+    if (!job) {
+      this.makeFilmstrips();
+      return;
+    }
+    this.filmstripBuild?.controller.abort();
     const controller = new AbortController();
     const finished = this.run(job, controller.signal).finally(() => {
       this.active = null;
       this.pump();
     });
     this.active = { id: job.id, controller, finished };
+  }
+  private wantFilmstrip(sourceId: string) {
+    const source = this.store?.sources().find((x) => x.id === sourceId);
+    if (!source) return;
+    this.filmstripSettled.delete(filmstripFile(this.store!.data.project.cache, source));
+    this.filmstripNext.add(sourceId);
+    this.makeFilmstrips();
+  }
+  private async stopFilmstrips() {
+    const build = this.filmstripBuild;
+    build?.controller.abort();
+    await build?.finished;
+  }
+  private makeFilmstrips() {
+    const s = this.store;
+    if (
+      !s ||
+      this.active ||
+      this.switching ||
+      this.filmstripBuild ||
+      s.jobs().some((j) => j.state === 'queued')
+    )
+      return;
+    const sources = s.sources();
+    const ready = new Set(
+      s.data.model.recordings
+        .filter((r) => r.availability === 'ready' && !r.retained)
+        .map((r) => r.id),
+    );
+    let source: NativeSource | undefined;
+    for (const id of [...this.filmstripNext, ...sources.map((x) => x.id)]) {
+      const candidate = sources.find((x) => x.id === id);
+      if (!candidate || !ready.has(id)) continue;
+      const file = filmstripFile(s.data.project.cache, candidate);
+      if (this.filmstripSettled.has(file) || this.filmstripFailed.has(file)) continue;
+      if (existsSync(file)) {
+        this.filmstripSettled.add(file);
+        continue;
+      }
+      source = candidate;
+      break;
+    }
+    if (!source) return;
+    this.filmstripNext.delete(source.id);
+    const file = filmstripFile(s.data.project.cache, source),
+      controller = new AbortController();
+    const finished = this.makeFilmstrip(s, source, file, controller.signal)
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        this.filmstripFailed.add(file);
+        this.diagnostics?.record('operation-failed', {
+          kind: 'filmstrip',
+          errorCode: errorCode(e),
+        });
+      })
+      .finally(() => {
+        this.filmstripBuild = null;
+        setImmediate(() => this.makeFilmstrips());
+      });
+    this.filmstripBuild = { sourceId: source.id, controller, finished };
+  }
+  private async makeFilmstrip(
+    s: ProjectStore,
+    source: NativeSource,
+    file: string,
+    signal: AbortSignal,
+  ) {
+    const keys = s.frameIndex(source.id)?.keys;
+    if (!keys?.length) throw new Error('Keyframe index is unavailable.');
+    const free = await import('node:fs/promises').then((fs) => fs.statfs(s.data.project.cache));
+    if (free.bavail * free.bsize < 256 * 1024 * 1024)
+      throw new Error('Not enough free space in the preview cache.');
+    const offset = s.data.model.recordings.find((r) => r.id === source.id)?.sourceStart || 0;
+    const set = await sweepKeyframes(this.tool('ffmpeg'), source, offset, keys, signal);
+    const info = await stat(source.file);
+    signal.throwIfAborted();
+    if (
+      this.store !== s ||
+      !s.sources().some((x) => x.id === source.id && x.fingerprint === source.fingerprint) ||
+      info.size !== source.bytes ||
+      info.mtimeMs !== source.modified
+    )
+      throw new Error('The recording changed while its filmstrip was made.');
+    await writeTileFile(file, source, offset, set);
+    this.filmstripSettled.add(file);
   }
   private async run(job: MediaJob, signal: AbortSignal) {
     const began = performance.now();

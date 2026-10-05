@@ -18,7 +18,7 @@ export async function projectStorageUsage(
     manual: 'Manual saves',
     migration: 'Before-upgrade saves',
     saveOther: 'Other save-folder files',
-    images: 'Thumbnail previews',
+    images: 'Thumbnails and filmstrips',
     audio: 'Audio previews',
     cacheOther: 'Other cache files',
     exports: 'Completed videos',
@@ -92,7 +92,7 @@ export async function projectStorageUsage(
     true,
   );
   await folder(project.cache, (name) =>
-    /-frame-\d+(?:\.partial)?\.jpg$/i.test(name)
+    /-(?:frame-\d+(?:\.partial)?\.jpg|filmstrip(?:\.partial)?\.bin)$/i.test(name)
       ? 'images'
       : /-audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(m4a|f32)$/i.test(name)
         ? 'audio'

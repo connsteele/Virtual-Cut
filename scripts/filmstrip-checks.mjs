@@ -14,7 +14,14 @@ import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { require } from './shared.mjs';
 
-const { FilmstripCache, nearestKey } = require('../dist-electron/filmstrip.cjs');
+const {
+  FilmstripCache,
+  nearestKey,
+  sweepKeyframes,
+  filmstripFile,
+  writeTileFile,
+  readTileFile,
+} = require('../dist-electron/filmstrip.cjs');
 const { identify, inspectMedia, launchTool } = require('../dist-electron/media-inspection.cjs');
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const root = testPath('filmstrip');
@@ -97,7 +104,7 @@ async function exercise(file, label, times) {
   );
   assert.equal(latest.length, 1, 'Decoder recovers after cancel');
   cache.clear();
-  assert.deepEqual(cache.stats(), { entries: 0, bytes: 0 });
+  assert.deepEqual(cache.stats(), { entries: 0, bytes: 0, stored: 0, storedBytes: 0 });
   results[label] = {
     duration: info.duration,
     sourceStart: info.sourceStart,
@@ -230,13 +237,78 @@ try {
   }
   assert(cache.stats().entries <= 192 && cache.stats().bytes <= 8 * 1024 * 1024);
   results.cacheBounds = cache.stats();
+  // One keyframe pass per recording, kept in a tile file and served from it (VC-133).
+  const sweepStart = performance.now();
+  const set = await sweepKeyframes(ffmpeg, native, info.sourceStart, info.keys, signal);
+  const sweepMs = Math.round(performance.now() - sweepStart);
+  assert.equal(set.tiles.length, info.keys.length, 'One thumbnail per keyframe');
+  set.times.forEach((t, i) => assert(Math.abs(t - info.keys[i]) < 0.002));
+  assert(set.tiles.every((t) => t[0] === 0xff && t[1] === 0xd8 && t.length > 100));
+  const tiles = path.join(dir, 'tiles');
+  await mkdir(tiles);
+  const tileFile = filmstripFile(tiles, native);
+  await writeTileFile(tileFile, native, info.sourceStart, set);
+  assert.deepEqual(await readdir(tiles), [path.basename(tileFile)], 'No partial file is left');
+  const stored = await cache.request(
+    'nonexistent-decoder-must-not-run',
+    native,
+    info.sourceStart,
+    info.keys,
+    [1, 10, 20, 100],
+    randomUUID(),
+    tileFile,
+  );
+  assert(stored.every((f) => f.stored && f.data.startsWith('data:image/jpeg;base64,')));
+  stored.forEach((f) => assert(Math.abs(f.time - nearestKey(info.keys, f.requested)) < 0.002));
+  assert.equal(cache.stats().stored, 1);
+  assert.equal(await readTileFile(tileFile, native, info.sourceStart + 1), 'stale');
+  const corrupt = path.join(tiles, 'corrupt-filmstrip.bin');
+  await writeFile(corrupt, (await readFile(tileFile)).subarray(0, 100));
+  assert.equal(await readTileFile(corrupt, native, info.sourceStart), 'stale');
+  assert.equal(await readTileFile(path.join(tiles, 'missing.bin'), native, 0), null);
+  const stopped = new AbortController();
+  const cancelled = sweepKeyframes(ffmpeg, native, info.sourceStart, info.keys, stopped.signal);
+  setTimeout(() => stopped.abort(), 20);
+  await assert.rejects(cancelled, /Cancelled/);
+  results.tileFile = {
+    keyframes: set.tiles.length,
+    passMs: sweepMs,
+    fileBytes: (await stat(tileFile)).size,
+    servedWithoutDecoder: true,
+  };
+  // A changed source drops only its own thumbnails (VC-134).
+  await cache.request(
+    ffmpeg,
+    alternate,
+    alternateInfo.sourceStart,
+    alternateInfo.keys,
+    [1, 2],
+    randomUUID(),
+  );
+  const entriesBefore = cache.stats().entries;
   const oldStat = await stat(long);
   await utimes(long, new Date(), new Date(oldStat.mtimeMs + 10000));
   await assert.rejects(
     cache.request(ffmpeg, native, info.sourceStart, info.keys, [40], randomUUID()),
     /source changed/,
   );
-  assert.equal(cache.stats().entries, 0);
+  assert(cache.stats().entries < entriesBefore, "The changed recording's entries are gone");
+  assert.equal(cache.stats().stored, 0, "The changed recording's tile set is released");
+  assert.equal(
+    (
+      await cache.request(
+        'nonexistent-decoder-must-not-run',
+        alternate,
+        alternateInfo.sourceStart,
+        alternateInfo.keys,
+        [1, 2],
+        randomUUID(),
+      )
+    ).length,
+    2,
+    "Another recording's thumbnails survive the change",
+  );
+  results.changedSource = 'Only the changed recording was dropped';
   await cache.close();
   const service = new ProjectService(path.join(dir, 'profile'), path.join(dir, 'tools'));
   try {
@@ -260,8 +332,23 @@ try {
       1,
       'Only the stable media-pool poster is on disk',
     );
-    const count = (await service.filmstrip(p.project.id, r.id, [1, 2, 3], randomUUID())).length;
-    assert.equal(count, 3);
+    // With no job queued, the filmstrip pass makes the recording's tile file in the cache folder.
+    const isTileFile = (n) => n.endsWith('-filmstrip.bin');
+    for (let until = Date.now() + 30000; Date.now() < until;) {
+      if ((await readdir(path.join(dir, 'cache'))).some(isTileFile)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(
+      (await readdir(path.join(dir, 'cache'))).filter(isTileFile).length,
+      1,
+      'The filmstrip pass wrote one tile file after import',
+    );
+    const frames = await service.filmstrip(p.project.id, r.id, [1, 2, 3], randomUUID());
+    assert.equal(frames.length, 3);
+    assert(
+      frames.every((f) => f.stored),
+      'Tiles are served from the tile file',
+    );
     assert.throws(() => service.filmstrip(p.project.id, 'foreign', [1], randomUUID()), /available/);
     assert.throws(
       () => service.filmstrip(p.project.id, r.id, Array(33).fill(1), randomUUID()),

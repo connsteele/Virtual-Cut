@@ -92,8 +92,9 @@ export function ProjectStorage({ id }: { id: string }) {
             are always kept.
           </p>
           <p className={s.muted}>
-            Filmstrips live in memory. Older thumbnail files can still occupy cache space. Only
-            recorded source/output paths and files directly in the save/cache folders are measured.
+            Filmstrips are kept in the cache folder, one file per recording, and are made again if
+            deleted. Older thumbnail files can still occupy cache space. Only recorded source/output
+            paths and files directly in the save/cache folders are measured.
           </p>
           {!!unavailable && (
             <p role="status">

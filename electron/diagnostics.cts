@@ -84,6 +84,7 @@ const words = new Set([
   'cancelFiling',
   'ffmpeg',
   'ffprobe',
+  'filmstrip',
   'completed',
   'cancelled',
   'interrupted',

@@ -44,16 +44,20 @@ export function useFilmstrip(
     if (!missing.length || suspended) return;
     let alive = true;
     const request = crypto.randomUUID();
-    const timer = setTimeout(() => {
-      void api
-        .filmstrip(projectId!, recording.id, missing, request)
-        .then((frames) => {
-          if (alive) memory.put(source, frames, overview, times);
-        })
-        .catch(() => {
-          if (alive) setError(identity);
-        });
-    }, 250);
+    // Decoding waits for zoom and pan to settle; tiles read from a tile file need no wait.
+    const timer = setTimeout(
+      () => {
+        void api
+          .filmstrip(projectId!, recording.id, missing, request)
+          .then((frames) => {
+            if (alive) memory.put(source, frames, overview, times);
+          })
+          .catch(() => {
+            if (alive) setError(identity);
+          });
+      },
+      memory.isStored(source) ? 0 : 250,
+    );
     return () => {
       alive = false;
       clearTimeout(timer);

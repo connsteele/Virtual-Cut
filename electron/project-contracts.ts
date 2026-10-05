@@ -196,4 +196,6 @@ export interface FilmstripFrame {
   requested: number;
   time: number;
   data: string;
+  /** Read from the recording's tile file rather than decoded for this request. */
+  stored?: boolean;
 }
