@@ -2,6 +2,16 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.15 — One transcript toolbar, Help and smoother reverse scan (October 5, 2026)
+
+Sprint 2. The transcript window's four stacked rows become one toolbar row: recording,
+transcript (beside search), search with Original, Follow, an Export menu, the speech engine and
+Transcribe. Filter chips with counts replace the Show dropdown, and the Export menu holds the
+format and timing. The bottom bar's F11 hint becomes a Help button that lists the spoken cues.
+Reverse scan seeks again as soon as each seek lands instead of every 83 ms, which shows about
+twice as many pictures at 1× and 2× and five times as many at 4×. `npm run deliver` now runs a
+delivery end to end. See [the 0.4.15 review](docs/review-0.4.15.md).
+
 ## 0.4.14 — Filmstrips without the loading flash (October 5, 2026)
 
 Sprint 1. Zooming and panning a recording that has its filmstrip file no longer flash
