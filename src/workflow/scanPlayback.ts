@@ -1,5 +1,6 @@
 /** One seek in flight. The wall clock determines scan speed; decoder work never
- * accumulates behind a rapid interval or prevents the user from stopping. */
+ * accumulates behind a rapid interval or prevents the user from stopping. The next seek
+ * starts as soon as the previous one lands, so the decoder sets the frame rate (VC-146). */
 export function startScan({
   video,
   direction,
@@ -23,18 +24,20 @@ export function startScan({
   let origin = video.currentTime - offset,
     started = performance.now(),
     cancelled = false;
-  let ended = false;
+  let ended = false,
+    timer: ReturnType<typeof setTimeout> | undefined;
+  /** Returns true when it started a seek; the seek's `seeked` event drives the next step. */
   const tick = () => {
-    if (cancelled || video.seeking || video.readyState < 2) return;
+    if (cancelled || video.seeking || video.readyState < 2) return false;
     if (ended) {
       onEnd();
-      return;
+      return false;
     }
     const { start, end, looping } = range();
     const span = end - start;
     if (!(span > 0)) {
       onEnd();
-      return;
+      return false;
     }
     let target = origin + (direction * rate * (performance.now() - started)) / 1000;
     let wrapped = false;
@@ -49,9 +52,10 @@ export function startScan({
         ended = true;
       }
     }
-    // Fast scans decode nearby random-access frames. At normal reverse speeds,
-    // retain frame-level movement so a long GOP does not freeze the preview.
-    if (!ended && rate >= 4 && keys.length) {
+    // 16× decodes nearby random-access frames. Below that, exact seeks back to back show
+    // more pictures than keyframes would (16 a second at 4× against 4 with one-second GOPs)
+    // and keep frame-level movement, so a long GOP does not freeze the preview.
+    if (!ended && rate >= 16 && keys.length) {
       let lo = 0,
         hi = keys.length;
       while (lo < hi) {
@@ -63,22 +67,35 @@ export function startScan({
         right = keys[Math.min(lo, keys.length - 1)];
       const key = Math.abs(left - target) <= Math.abs(right - target) ? left : right;
       if (key >= start && key < end && Math.abs(key - target) <= Math.max(1, rate / 12)) {
-        if (!wrapped && direction * (key - (video.currentTime - offset)) < 0) return;
+        if (!wrapped && direction * (key - (video.currentTime - offset)) < 0) return false;
         target = key;
       }
     }
     target = Math.max(start, Math.min(end - 0.001, target));
-    if (Math.abs(video.currentTime - offset - target) < 0.001) return;
+    if (Math.abs(video.currentTime - offset - target) < 0.001) return false;
     video.currentTime = target + offset;
     onPosition(target);
+    return true;
   };
-  const timer = setInterval(tick, 83);
+  // After a seek, wait for `seeked` (with a slow watchdog in case it never fires). When there
+  // was nothing to seek yet, for example while the target is still on the shown frame, look
+  // again shortly.
+  const step = () => {
+    clearTimeout(timer);
+    if (cancelled) return;
+    const started = tick();
+    if (!cancelled) timer = setTimeout(step, started ? 250 : 16);
+  };
+  const onSeeked = () => step();
+  video.addEventListener('seeked', onSeeked);
+  step();
   return {
     direction,
     rate,
     cancel() {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
+      video.removeEventListener('seeked', onSeeked);
     },
   };
 }
