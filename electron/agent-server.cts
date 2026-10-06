@@ -1,5 +1,6 @@
 import { app, clipboard, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import type { Socket } from 'node:net';
+import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod';
@@ -33,7 +34,6 @@ export function registerAgentAccess(options: {
   projects: () => ProjectService | undefined;
   mainWindow: () => BrowserWindow | null;
   trusted: (event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>) => void;
-  launch: string[];
 }) {
   const access = new AgentAccess(options.userData);
   access.onChange = () => {
@@ -181,14 +181,24 @@ export function registerAgentAccess(options: {
       throw new Error('Open the project this agent app should read, then pair it.');
     if (typeof name !== 'string') throw new Error('Name the agent app.');
     const { client, token } = await access.pair(store.data.project, name);
-    const args = [...options.launch, '--mcp', `--pair=${token}`];
+    // The relay runs as plain Node from this executable; `--mcp` works too, but Electron's
+    // start-up writes a blank line to stdout on Windows, which some MCP clients log as an error.
+    const args = [
+      path.join(__dirname, 'mcp-relay.cjs'),
+      `--pipe=${access.pipe}`,
+      `--pair=${token}`,
+    ];
     const quote = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
     const pairing: AgentPairing = {
       client,
       token,
-      claudeCode: `claude mcp add --scope user virtual-cut -- ${[process.execPath, ...args].map(quote).join(' ')}`,
+      claudeCode: `claude mcp add --scope user -e ELECTRON_RUN_AS_NODE=1 virtual-cut -- ${[process.execPath, ...args].map(quote).join(' ')}`,
       claudeDesktop: JSON.stringify(
-        { mcpServers: { 'virtual-cut': { command: process.execPath, args } } },
+        {
+          mcpServers: {
+            'virtual-cut': { command: process.execPath, args, env: { ELECTRON_RUN_AS_NODE: '1' } },
+          },
+        },
         null,
         2,
       ),

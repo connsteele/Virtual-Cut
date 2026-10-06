@@ -1,10 +1,14 @@
 import { connect } from 'node:net';
 
-// Runs as plain Node (ELECTRON_RUN_AS_NODE) under `Virtual Cut.exe --mcp`; see mcp-launcher.
+// Runs as plain Node (ELECTRON_RUN_AS_NODE): started by `Virtual Cut.exe --mcp` (see
+// mcp-launcher), or directly by an agent app's config with --pipe and --pair, which skips
+// Electron's start-up and the blank line it writes to stdout on Windows.
 // The first line on the pipe carries the pairing token; the app answers with one line
 // before MCP traffic starts. Nothing here reads files or opens other connections.
-const pipe = process.env.VIRTUAL_CUT_AGENT_PIPE || '',
-  token = process.env.VIRTUAL_CUT_AGENT_TOKEN || '';
+const option = (name: string) =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+const pipe = option('pipe') || process.env.VIRTUAL_CUT_AGENT_PIPE || '',
+  token = option('pair') || process.env.VIRTUAL_CUT_AGENT_TOKEN || '';
 function fail(message: string): never {
   process.stderr.write(`Virtual Cut: ${message}\n`);
   process.exit(1);

@@ -781,11 +781,6 @@ if (!mcpLaunch)
         projects: () => projects,
         mainWindow: () => mainWindow,
         trusted: assertTrustedSender,
-        // How an agent app starts this same app and profile with --mcp.
-        launch: [
-          ...(app.isPackaged ? [] : [app.getAppPath()]),
-          ...(requestedProfile ? [`--user-data-dir=${requestedProfile}`] : []),
-        ],
       });
       await agentAccess.start();
       await createWindow();

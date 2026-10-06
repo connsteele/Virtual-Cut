@@ -46,16 +46,18 @@ async function capture(name) {
 }
 /** Starts the configured launcher and speaks newline-delimited JSON-RPC to it. */
 function agent(config) {
-  const { command, args } = JSON.parse(config).mcpServers['virtual-cut'];
+  const { command, args, env = {} } = JSON.parse(config).mcpServers['virtual-cut'];
   const child = spawn(command, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: electronEnvironment(),
+    env: { ...electronEnvironment(), ...env },
   });
+  let first;
   let out = '',
     stderr = '',
     id = 0;
   const waiting = new Map();
   child.stdout.on('data', (d) => {
+    first ??= String(d);
     out += d;
     let end;
     while ((end = out.indexOf('\n')) >= 0) {
@@ -83,6 +85,7 @@ function agent(config) {
     notify: (method) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n'),
     exited,
     stderr: () => stderr,
+    first: () => first,
     end: () => child.stdin.end(),
     kill: () => child.kill(),
   };
@@ -123,7 +126,7 @@ try {
   const config = await panel.locator('[data-config="claude-desktop"]').textContent();
   assert.match(
     await panel.locator('[data-config="claude-code"]').textContent(),
-    /^claude mcp add --scope user virtual-cut -- .+ --mcp --pair=[\w-]{32}$/,
+    /^claude mcp add --scope user -e ELECTRON_RUN_AS_NODE=1 virtual-cut -- .+mcp-relay\.cjs"? --pipe=\S+ --pair=[\w-]{32}$/,
   );
   await panel.getByRole('button', { name: 'Done', exact: true }).click();
 
@@ -132,10 +135,11 @@ try {
   assert.equal(await offline.exited, 1);
   assert.match(offline.stderr(), /not running, or agent access is off/);
   // A launcher without a pairing never connects.
-  const { command, args } = JSON.parse(config).mcpServers['virtual-cut'];
+  const { command, args, env } = JSON.parse(config).mcpServers['virtual-cut'];
+  const token = args.find((a) => a.startsWith('--pair='));
   const unpaired = agent(
     JSON.stringify({
-      mcpServers: { 'virtual-cut': { command, args: args.filter((a) => !a.startsWith('--pair')) } },
+      mcpServers: { 'virtual-cut': { command, env, args: args.filter((a) => a !== token) } },
     }),
   );
   assert.equal(await unpaired.exited, 1);
@@ -172,6 +176,25 @@ try {
   );
   await expect(panel.getByText('connected')).toBeVisible();
   await capture('agent-access');
+
+  // `Virtual Cut.exe --mcp` reaches the same server without opening a window (VC-159).
+  const launcher = agent(
+    JSON.stringify({
+      mcpServers: {
+        'virtual-cut': {
+          command,
+          args: [...(executable ? [] : [root]), `--user-data-dir=${profile}`, '--mcp', token],
+        },
+      },
+    }),
+  );
+  await initialize(launcher);
+  assert.equal(JSON.parse((await tool(launcher, 'get_current_view')).text).page, 'cut');
+  assert.equal(await windows(), 1);
+  launcher.end();
+  assert.equal(await launcher.exited, 0);
+  // The relay's first output is MCP itself: no stray blank line from Electron's start-up.
+  assert.match(client.first(), /^\{"/);
 
   // Revoking cuts the live connection and refuses the same pairing afterwards.
   await panel.getByRole('button', { name: 'Revoke Claude Code' }).click();
