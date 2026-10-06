@@ -77,6 +77,7 @@ import { Library } from './Library';
 import { ReviewSignals, HoldReason } from './ReviewSignals';
 import { ReviewColumns } from './ReviewColumns';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { AgentAccess } from './AgentAccess';
 import { DestinationPicker, DestinationPlanPanel } from './DestinationPanel';
 import {
   reviewContent,
@@ -658,7 +659,6 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [renameMarkerId, setRenameMarkerId] = useState(''),
     [deleteMarkerId, setDeleteMarkerId] = useState(''),
     [drawer, setDrawer] = useState(''),
-    [agent, setAgent] = useState('Copilot'),
     [notice, setNotice] = useState(''),
     [dismissedRecovery, setDismissedRecovery] = useState(''),
     [dialog, setDialog] = useState(''),
@@ -787,6 +787,20 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const clips = model.clips.filter((c) => c.rid === r.id).sort((a, b) => a.start - b.start),
     c = mid ? undefined : clips.find((c) => c.id === cid);
   const e = model.sequence.find((e) => e.id === eid) || model.sequence[0];
+  // Agent apps may ask what is on screen (VC-160); main keeps only the latest view.
+  const viewProjectId = project?.project.id,
+    viewPlayhead = Math.round(r.position * 2) / 2;
+  useEffect(() => {
+    if (!viewProjectId) return;
+    window.virtualCut?.agent?.view({
+      projectId: viewProjectId,
+      page,
+      recordingId: r.id || undefined,
+      playhead: viewPlayhead,
+      clipId: c?.id,
+      markerId: mid || undefined,
+    });
+  }, [viewProjectId, page, r.id, viewPlayhead, c?.id, mid]);
   // Frame-accurate stepping and snapping need the per-frame index of every recording a
   // player can show: the Cut source, an expanded Review clip and the current select.
   const expandedClip = expanded ? model.clips.find((x) => x.id === expanded) : undefined;
@@ -2793,29 +2807,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ))}
               </>
             ) : (
-              <>
-                <div className={s.tools}>
-                  {['Copilot', 'Agent'].map((x) => (
-                    <Button key={x} aria-pressed={agent === x} onClick={() => setAgent(x)}>
-                      {x}
-                    </Button>
-                  ))}
-                </div>
-                <Field label="Scope">
-                  <select>
-                    <option>Selected clip</option>
-                    <option>Current recording</option>
-                    <option>Current batch</option>
-                  </select>
-                </Field>
-                <Field label="Request">
-                  <textarea placeholder="Review these markers using the capture intent…" />
-                </Field>
-                <Button onClick={() => setNotice('Request preview only. No model is connected.')}>
-                  Preview request
-                </Button>
-                <p className={s.muted}>No model connected · no background processing</p>
-              </>
+              <AgentAccess project={project?.project} />
             )}
           </aside>
         )}

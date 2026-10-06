@@ -35,6 +35,8 @@ import {
   removeResolveHelper,
 } from './resolve-helper.cjs';
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
+import { runLauncher } from './mcp-launcher.cjs';
+import { registerAgentAccess } from './agent-server.cjs';
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
@@ -50,6 +52,7 @@ let transcriptWindow: ReturnType<typeof registerTranscriptWindow>;
 let closing = false;
 let diagnostics: Diagnostics;
 let lastProjectFile: string | undefined;
+let agentAccess: ReturnType<typeof registerAgentAccess> | undefined;
 
 app.setName('Virtual Cut');
 app.setAppUserModelId('com.virtuallegacy.virtualcut');
@@ -80,18 +83,31 @@ if (backgroundTest)
     ),
   );
 
+// `Virtual Cut.exe --mcp` is an agent app's launcher (VC-159): it relays stdio to the
+// running app and never opens a window, a project or a second app.
+const mcpLaunch = app.commandLine.hasSwitch('mcp');
+if (mcpLaunch) {
+  // Chromium still starts in the launcher: keep its caches away from the running app's
+  // profile, in one shared temporary folder rather than one per launch.
+  const userData = app.getPath('userData');
+  app.setPath('sessionData', path.join(app.getPath('temp'), 'Virtual Cut agent launcher'));
+  app.disableHardwareAcceleration();
+  runLauncher(userData, app.commandLine.getSwitchValue('pair'), (code) => app.exit(code));
+}
+
 // Start before creating either renderer. Native dumps remain local and separate
 // from the redacted text report; no submit URL or automatic upload is configured.
 let crashCapture = false;
-try {
-  const crashDirectory = path.join(app.getPath('userData'), 'diagnostics', 'crashes');
-  mkdirSync(crashDirectory, { recursive: true });
-  app.setPath('crashDumps', crashDirectory);
-  crashReporter.start({ uploadToServer: false });
-  crashCapture = true;
-} catch {
-  /* Diagnostics below reports unavailable capture without blocking startup. */
-}
+if (!mcpLaunch)
+  try {
+    const crashDirectory = path.join(app.getPath('userData'), 'diagnostics', 'crashes');
+    mkdirSync(crashDirectory, { recursive: true });
+    app.setPath('crashDumps', crashDirectory);
+    crashReporter.start({ uploadToServer: false });
+    crashCapture = true;
+  } catch {
+    /* Diagnostics below reports unavailable capture without blocking startup. */
+  }
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -687,91 +703,105 @@ async function createWindow(): Promise<void> {
   if (!backgroundTest && !window.isDestroyed() && !window.isVisible()) window.show();
 }
 
-app
-  .whenReady()
-  .then(async () => {
-    diagnostics = new Diagnostics(app.getPath('userData'));
-    diagnostics.beginSession();
-    await diagnostics.pruneCrashDumps();
-    diagnostics.record('crash-capture', { enabled: crashCapture, uploadToServer: false });
-    diagnostics.record('session-start', {
-      app: app.getVersion(),
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      node: process.versions.node,
-      packaged: app.isPackaged,
-    });
-    app.on('child-process-gone', (_event, details) =>
-      diagnostics.record('child-gone', {
-        reason: details.reason,
-        exitCode: details.exitCode,
-        processType: details.type,
-      }),
-    );
-    process.on('uncaughtExceptionMonitor', (e) => {
-      diagnostics.fatal(e);
-    });
-    nativeTheme.themeSource = 'dark';
-    Menu.setApplicationMenu(null);
-    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) =>
-      callback(false),
-    );
-    session.defaultSession.setPermissionCheckHandler(() => false);
-    if (!process.env.VIRTUAL_CUT_DEV_URL || app.isPackaged) await registerAppProtocol();
-    projects = new ProjectService(
-      app.getPath('userData'),
-      path.join(process.resourcesPath, 'tools'),
-      diagnostics,
-    );
-    projects.logToolVersions().catch((e: unknown) => console.error(e));
-    // Change notifications replace renderer polling (VC-98): at most one every 250 ms,
-    // always followed by a trailing one so the final state is never missed.
-    let changeTimer: ReturnType<typeof setTimeout> | undefined,
-      changePending = false;
-    const announce = () => {
-      changeTimer = undefined;
-      if (!changePending) return;
-      changePending = false;
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('workspace:changed');
-      changeTimer = setTimeout(announce, 250);
-    };
-    projects.onChange = () => {
-      changePending = true;
-      if (!changeTimer) announce();
-    };
-    transcriptWindow = registerTranscriptWindow(
-      projects,
-      () => mainWindow,
-      getRendererUrl,
-      app.getPath('userData'),
-      backgroundTest,
-      diagnostics,
-    );
-    await demoMedia
-      .load(path.join(app.getAppPath(), 'demo-media.local.json'))
-      .catch((error: unknown) => {
-        console.error('Demo media is unavailable:', error);
+if (!mcpLaunch)
+  app
+    .whenReady()
+    .then(async () => {
+      diagnostics = new Diagnostics(app.getPath('userData'));
+      diagnostics.beginSession();
+      await diagnostics.pruneCrashDumps();
+      diagnostics.record('crash-capture', { enabled: crashCapture, uploadToServer: false });
+      diagnostics.record('session-start', {
+        app: app.getVersion(),
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        node: process.versions.node,
+        packaged: app.isPackaged,
       });
-    protocol.handle('media', (request) =>
-      request.url.startsWith('media://video/demo/')
-        ? demoMedia.respond(request)
-        : projects.respond(request) || videoAccess.respond(request),
-    );
-    registerDesktopApi();
-    await createWindow();
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0)
-        createWindow().catch((e: unknown) => diagnostics.fatal(e));
+      app.on('child-process-gone', (_event, details) =>
+        diagnostics.record('child-gone', {
+          reason: details.reason,
+          exitCode: details.exitCode,
+          processType: details.type,
+        }),
+      );
+      process.on('uncaughtExceptionMonitor', (e) => {
+        diagnostics.fatal(e);
+      });
+      nativeTheme.themeSource = 'dark';
+      Menu.setApplicationMenu(null);
+      session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) =>
+        callback(false),
+      );
+      session.defaultSession.setPermissionCheckHandler(() => false);
+      if (!process.env.VIRTUAL_CUT_DEV_URL || app.isPackaged) await registerAppProtocol();
+      projects = new ProjectService(
+        app.getPath('userData'),
+        path.join(process.resourcesPath, 'tools'),
+        diagnostics,
+      );
+      projects.logToolVersions().catch((e: unknown) => console.error(e));
+      // Change notifications replace renderer polling (VC-98): at most one every 250 ms,
+      // always followed by a trailing one so the final state is never missed.
+      let changeTimer: ReturnType<typeof setTimeout> | undefined,
+        changePending = false;
+      const announce = () => {
+        changeTimer = undefined;
+        if (!changePending) return;
+        changePending = false;
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send('workspace:changed');
+        changeTimer = setTimeout(announce, 250);
+      };
+      projects.onChange = () => {
+        changePending = true;
+        if (!changeTimer) announce();
+      };
+      transcriptWindow = registerTranscriptWindow(
+        projects,
+        () => mainWindow,
+        getRendererUrl,
+        app.getPath('userData'),
+        backgroundTest,
+        diagnostics,
+      );
+      await demoMedia
+        .load(path.join(app.getAppPath(), 'demo-media.local.json'))
+        .catch((error: unknown) => {
+          console.error('Demo media is unavailable:', error);
+        });
+      protocol.handle('media', (request) =>
+        request.url.startsWith('media://video/demo/')
+          ? demoMedia.respond(request)
+          : projects.respond(request) || videoAccess.respond(request),
+      );
+      registerDesktopApi();
+      agentAccess = registerAgentAccess({
+        userData: app.getPath('userData'),
+        projects: () => projects,
+        mainWindow: () => mainWindow,
+        trusted: assertTrustedSender,
+        // How an agent app starts this same app and profile with --mcp.
+        launch: [
+          ...(app.isPackaged ? [] : [app.getAppPath()]),
+          ...(requestedProfile ? [`--user-data-dir=${requestedProfile}`] : []),
+        ],
+      });
+      await agentAccess.start();
+      await createWindow();
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0)
+          createWindow().catch((e: unknown) => diagnostics.fatal(e));
+      });
+    })
+    .catch((error: unknown) => {
+      console.error(error);
+      dialog.showErrorBox(
+        'Virtual Cut could not start',
+        error instanceof Error ? error.message : 'Unexpected startup error.',
+      );
+      app.quit();
     });
-  })
-  .catch((error: unknown) => {
-    console.error(error);
-    dialog.showErrorBox(
-      'Virtual Cut could not start',
-      error instanceof Error ? error.message : 'Unexpected startup error.',
-    );
-    app.quit();
-  });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -785,7 +815,7 @@ app.on('before-quit', (event) => {
   if (shutdownStarted) return;
   shutdownStarted = true;
   // Finish owned partial-install cleanup before Electron terminates its native process.
-  Promise.allSettled([transcriptWindow?.stopSetup()])
+  Promise.allSettled([transcriptWindow?.stopSetup(), agentAccess?.stop()])
     .then(() =>
       Promise.race([diagnostics?.flush(), new Promise((resolve) => setTimeout(resolve, 700))]),
     )

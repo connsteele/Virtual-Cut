@@ -50,6 +50,22 @@ await cp(path.join(root, 'dist-electron'), path.join(appDirectory, 'dist-electro
 await cp(path.join(root, 'integrations'), path.join(appDirectory, 'integrations'), {
   recursive: true,
 });
+// Electron main's runtime packages and their dependencies (VC-159). The renderer's
+// packages are bundled by Vite; nothing else from node_modules is shipped.
+const mainPackages = ['@modelcontextprotocol/server'];
+const shipped = new Set();
+async function shipPackage(name) {
+  if (shipped.has(name)) return;
+  shipped.add(name);
+  const source = path.join(root, 'node_modules', ...name.split('/'));
+  const info = JSON.parse(await readFile(path.join(source, 'package.json'), 'utf8'));
+  await cp(source, path.join(appDirectory, 'node_modules', ...name.split('/')), {
+    recursive: true,
+    errorOnExist: true,
+  });
+  for (const dependency of Object.keys(info.dependencies || {})) await shipPackage(dependency);
+}
+for (const name of mainPackages) await shipPackage(name);
 const toolDirectory = path.join(destination, 'resources', 'tools');
 await mkdir(toolDirectory, { recursive: true });
 // Explicit local-review configuration only. Public packages never embed workstation paths.

@@ -13,6 +13,9 @@ before changing cutting, timestamps, mic removal or transcription.
   navigation inspired by Resolve.
 - Never invent footage, progress, transcripts or agent output. Every proposed action (spoken cue,
   suggestion) needs the user's review; nothing is applied automatically.
+- Agents reach Virtual Cut only through its local MCP server (`electron/agent-*.cts`,
+  `docs/decisions/0014-agent-access-boundary.md`). It is off by default and paired per agent app
+  and project. Tools never return file paths or media, and never delete, import, export or file.
 - Keep app behavior independent of personal drive letters and game names.
 
 ## Architecture
@@ -61,8 +64,9 @@ before changing cutting, timestamps, mic removal or transcription.
   agent does the whole sprint's work, and Connor reviews it after it is done. Plans, checks and
   decisions go on the review board; tickets live on the Notion development board. Decisions are
   applied only when Connor says "apply".
-- Spoken cues are under evaluation: Connor is deciding whether and how cues should change. Until
-  he decides, leave cue detection, cue words and cue scoring as they are.
+- Spoken cues: Split and Clip start/end stay as commands; other mic speech becomes intent
+  proposals (VC-155). Leave cue detection, cue words and cue scoring as they are until VC-155
+  starts; the freeze lifts then.
 - Whenever Connor has to check something, a build containing the change must exist and be
   linked first. Never describe unbuilt behavior as ready to check.
 - Push or merge only what Connor has approved.

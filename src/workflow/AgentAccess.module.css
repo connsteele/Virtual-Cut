@@ -1,0 +1,72 @@
+.panel {
+  display: grid;
+  gap: 12px;
+  font-size: 12px;
+}
+.panel p {
+  margin: 0;
+  line-height: 1.6;
+}
+.panel h3 {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.muted {
+  color: var(--muted);
+}
+.switch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+.pairing {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #4e7465;
+  border-radius: 6px;
+  background: #1f2c28;
+}
+.pairing pre {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 4px;
+  background: #121716;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.list,
+.activity {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.activity li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.live {
+  color: #7fd3b0;
+}
+.refused {
+  color: #e7b3a8;
+}

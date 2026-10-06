@@ -21,6 +21,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0011](0011-frame-indexes-outside-model.md)    | Frame and keyframe indexes live outside the editable project model          | Accepted |
 | [0012](0012-change-notifications.md)           | Native change notifications instead of renderer polling                     | Accepted |
 | [0013](0013-filmstrip-tile-files.md)           | Filmstrips made once per recording and kept in the preview cache            | Accepted |
+| [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed |
 
 ## Adding a record
 

@@ -11,6 +11,7 @@ export const fast = [
   'marker-timing.test.mjs',
   'review-order.test.mjs',
   'game-library.test.mjs',
+  'agent-tools.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -52,6 +53,7 @@ export const desktop = [
   'filmstrip-ui-checks.mjs',
   'filmstrip-reuse-checks.mjs',
   'review-planning-ui.mjs',
+  'agent-access-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],

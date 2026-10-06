@@ -154,6 +154,19 @@ const api: VirtualCutApi = {
     revealExport: (id, exportId, kind) =>
       ipcRenderer.invoke('workspace:revealExport', id, exportId, kind),
   },
+  agent: {
+    state: () => ipcRenderer.invoke('agent:state'),
+    setEnabled: (enabled) => ipcRenderer.invoke('agent:setEnabled', enabled),
+    pair: (projectId, name) => ipcRenderer.invoke('agent:pair', projectId, name),
+    revoke: (clientId) => ipcRenderer.invoke('agent:revoke', clientId),
+    copy: (text) => ipcRenderer.invoke('agent:copy', text),
+    view: (view) => ipcRenderer.send('agent:view', view),
+    onChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('agent:changed', listener);
+      return () => ipcRenderer.removeListener('agent:changed', listener);
+    },
+  },
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   selectProjectFolder: () => ipcRenderer.invoke('project:select-folder'),
   openVideo: () => ipcRenderer.invoke('media:open-video'),

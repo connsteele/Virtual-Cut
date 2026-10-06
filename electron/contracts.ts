@@ -23,6 +23,8 @@ export interface VirtualCutApi {
   transcript: import('./transcript-contracts.js').TranscriptApi;
   diagnostics: import('./diagnostic-contracts.js').DiagnosticApi;
   project: import('./project-contracts.js').ProjectApi;
+  /** Agent access (VC-160): pairing, activity and the view agents may read. */
+  agent: import('./agent-contracts.js').AgentApi;
   getAppInfo(): Promise<AppInfo>;
   /** Opens a native picker. Selection does not import, read, or change footage. */
   selectProjectFolder(): Promise<ProjectFolder | null>;
