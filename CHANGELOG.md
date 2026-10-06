@@ -2,6 +2,17 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.16 — Transcript rows, subtitles with exports and a game picker (October 6, 2026)
+
+Sprint 3. The transcript reads as dense timed rows with a line for each pause of 10 s or more.
+Double-clicking a word turns it into a field in the line (Enter saves, Escape cancels, the
+original is kept), and Edit phrase on hover edits a whole line the same way. Export and filing
+offer a Transcript section: SRT subtitles beside the video, cut to the verified clip and named
+after it (`<video>.srt`, `<video>.mic.srt`), and transcript history (original words,
+corrections, word timing) in the `.vcut.json` companion. A fixture and steps check subtitle
+import in Resolve by hand. Project and batch context get a searchable game picker that
+remembers games across projects. See [the 0.4.16 review](docs/review-0.4.16.md).
+
 ## 0.4.15 — One transcript toolbar, Help and smoother reverse scan (October 5, 2026)
 
 Sprint 2. The transcript window's four stacked rows become one toolbar row: recording,
