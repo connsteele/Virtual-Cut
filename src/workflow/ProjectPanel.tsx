@@ -549,10 +549,13 @@ export function SaveHistory({
   );
 }
 
+// Placeholder id for the context drafted in New batch; replaced by the created batch's id.
+const newBatch = 'new-batch';
 export function BatchTools({ workspace: w }: { workspace: Workspace }) {
   const [contextOpen, setContextOpen] = useState(false);
   const [creating, setCreating] = useState(false),
     [name, setName] = useState(''),
+    [draft, setDraft] = useState(() => defaultContext(newBatch)),
     [jobs, setJobs] = useState(false),
     [deleting, setDeleting] = useState(false),
     [targetId, setTargetId] = useState(''),
@@ -752,6 +755,8 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
+          {/* The batch's game and brief can be set while creating it (M342); all optional. */}
+          <ContextEditor contexts={w.model.contexts} value={draft} onChange={setDraft} />
           <Button
             primary
             disabled={!name.trim() || w.busy}
@@ -761,8 +766,18 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                   .run(() => api.batch(p.project.id, name))
                   .then((value) => {
                     if (value) {
+                      const id = value.activeBatchId;
+                      if (JSON.stringify(draft) !== JSON.stringify(defaultContext(newBatch)))
+                        w.setModel((model) => ({
+                          ...model,
+                          contexts: [
+                            ...(model.contexts || []).filter((c) => c.id !== id),
+                            { ...draft, id },
+                          ],
+                        }));
                       setCreating(false);
                       setName('');
+                      setDraft(defaultContext(newBatch));
                     }
                   }),
               )

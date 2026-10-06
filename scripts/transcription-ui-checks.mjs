@@ -393,6 +393,45 @@ try {
   await expect(batchContext).toContainText('Using: no specific game');
   await batchContext.getByLabel('Game context').selectOption('inherit');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
+  // M342: a new batch takes its game and brief in the same dialog that names it.
+  const firstBatch = await page.getByLabel('Current batch').inputValue();
+  await page.getByRole('button', { name: 'New batch', exact: true }).click();
+  const newBatch = page.getByRole('dialog', { name: 'New batch', exact: true });
+  await newBatch.getByLabel('Batch name').fill('Context batch');
+  const draft = newBatch.getByRole('region', { name: 'Batch context', exact: true });
+  await draft.getByLabel('Game context').selectOption('set');
+  await draft.getByLabel('Game name', { exact: true }).fill('review game');
+  await expect(draft).toContainText('Saved game');
+  await draft.getByLabel('Video brief').selectOption('append');
+  await draft.getByLabel('Batch brief', { exact: true }).fill('Boss fight');
+  const newBatchShot = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()
+        .find((w) => !w.webContents.getURL().endsWith('#transcript'))
+        .webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+    )
+      .toPNG()
+      .toString('base64'),
+  );
+  await writeFile(path.join(dir, 'new-batch-context.png'), Buffer.from(newBatchShot, 'base64'));
+  await newBatch.getByRole('button', { name: 'Create batch', exact: true }).click();
+  await expect(newBatch).toHaveCount(0);
+  await expect(page.getByLabel('Current batch')).toHaveValue(
+    await page
+      .getByLabel('Current batch')
+      .locator('option', { hasText: 'Context batch' })
+      .getAttribute('value'),
+  );
+  await page.getByRole('button', { name: 'Batch context', exact: true }).click();
+  const created = page.getByRole('region', { name: 'Batch context', exact: true });
+  await expect(created.getByLabel('Game name', { exact: true })).toHaveValue('review game');
+  await expect(created.getByLabel('Names and game terms (optional)')).toHaveValue('Cai, Castor');
+  // A filled textarea joins its label's accessible name, so match the label loosely here.
+  await expect(created.getByLabel('Batch brief')).toHaveValue('Boss fight');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  // The rest of this check works on the first batch's recordings.
+  await page.getByLabel('Current batch').selectOption(firstBatch);
+  await expect(page.getByLabel('Current batch')).toHaveValue(firstBatch);
   // Optional real installed-runtime acceptance: empty GPU location, then restore it.
   // A disposable profile and native picker stub protect the user's working settings.
   if (process.env.VIRTUAL_CUT_VERIFY_GPU === '1') {
