@@ -57,9 +57,12 @@ before changing cutting, timestamps, mic removal or transcription.
 
 - One item, or one small coherent cluster, at a time. Propose before starting; reviews are
   read-only.
-- Work runs in short sprints (1–3 days, one build). Plans, checks and decisions go on the review
-  board; tickets live on the Notion development board. Decisions are applied only when Connor
-  says "apply".
+- Work runs in micro-sprints (1–3 days, normally one build). Once a sprint's scope is agreed, the
+  agent does the whole sprint's work, and Connor reviews it after it is done. Plans, checks and
+  decisions go on the review board; tickets live on the Notion development board. Decisions are
+  applied only when Connor says "apply".
+- Spoken cues are under evaluation: Connor is deciding whether and how cues should change. Until
+  he decides, leave cue detection, cue words and cue scoring as they are.
 - Whenever Connor has to check something, a build containing the change must exist and be
   linked first. Never describe unbuilt behavior as ready to check.
 - Push or merge only what Connor has approved.
