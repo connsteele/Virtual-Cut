@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.17 — Agent apps can read the open project (October 6, 2026)
+
+Sprint 4, the first M4 build. The Agent button in the header opens Agent access: a switch
+(off by default) lets agent apps such as Claude Code or Claude Desktop connect through MCP, and
+Pair with <project> shows the one command (Claude Code) or settings block (Claude Desktop) that
+connects that app. The agent can read what's on screen, the project and batch summaries with
+game and brief, the context packet, transcript lines between two times and existing markers,
+clips, notes and cue decisions. Nothing can change through it, and it never sees file paths or
+media. Every read is listed under Activity; Revoke cuts an app off at once. See
+[the 0.4.17 review](docs/review-0.4.17.md) and
+[decision 0014](docs/decisions/0014-agent-access-boundary.md).
+
 ## 0.4.16 — Transcript rows, subtitles with exports and a game picker (October 6, 2026)
 
 Sprint 3. The transcript reads as dense timed rows with a line for each pause of 10 s or more.
