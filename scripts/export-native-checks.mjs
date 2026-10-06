@@ -231,7 +231,7 @@ assert.equal(
 const results = [];
 await service.checkpoint(project);
 const baselineSave = service.store.snapshot().saves.find((s) => s.kind === 'manual').id;
-async function attempt(rid, start, end, container, label) {
+async function attempt(rid, start, end, container, label, subtitles) {
   const before = structuredClone(service.store.data.model),
     after = structuredClone(before),
     clip = after.clips.find((c) => c.rid === rid);
@@ -273,7 +273,7 @@ async function attempt(rid, start, end, container, label) {
   const plan = await service.exportPlan(project, clip.id, container),
     output = path.join(destination, label + '.' + container);
   await assert.rejects(() => service.startExport(project, plan.id, output, false), /Confirm/);
-  await service.startExport(project, plan.id, output, true);
+  await service.startExport(project, plan.id, output, true, subtitles);
   await wait();
   const record = service.store.exports().find((e) => e.plan.id === plan.id);
   assert.equal(record.state, 'verified', record.message);
@@ -324,7 +324,57 @@ try {
   const records = service.store.data.model.recordings;
   const normal =
     records.find((r) => r.sourcePath === source.replaceAll('/', path.sep)) || records[0];
-  const a = await attempt(normal.id, 2.2, 5.1, 'mkv', 'B frames outward');
+  // A finished game transcript: one phrase per second, so the SRT shows the outward cut (VC-94).
+  const sourceRecord = service.store.sources().find((x) => x.id === normal.id);
+  service.store.transcripts.begin({
+    id: 'export-game-dialogue',
+    sourceId: normal.id,
+    fingerprint: sourceRecord.fingerprint,
+    role: 'game',
+    track: 1,
+    language: 'en',
+    duration: normal.duration,
+    offset: 0,
+    state: 'complete',
+    model: 'fixture',
+    device: 'cpu',
+    created: new Date().toISOString(),
+    context: { vocabulary: '', brief: '' },
+    segmentCount: 8,
+    wordCount: 8,
+  });
+  for (let i = 0; i < 8; i++)
+    service.store.transcripts.append('export-game-dialogue', {
+      id: i,
+      start: i,
+      end: i + 0.8,
+      text: ` Line${i}`,
+      words: [{ text: ` Line${i}`, start: i, end: i + 0.8, probability: 1 }],
+      noSpeechProbability: 0,
+      averageLogProbability: 0,
+    });
+  const snapshotRoles = (await service.snapshot()).transcriptRoles;
+  assert.deepEqual(snapshotRoles[normal.id], ['game']);
+  const a = await attempt(normal.id, 2.2, 5.1, 'mkv', 'B frames outward', ['game', 'mic']);
+  const srtFile = path.join(destination, 'B frames outward.srt');
+  const srt = await readFile(srtFile, 'utf8');
+  // Cut to the verified (outward) range, with times relative to the clip, not the source.
+  const actual = a.verification.actual;
+  const firstLine = Math.ceil(actual.start - 0.8 + 1e-9);
+  const clipTime = (seconds) => {
+    const ms = Math.round(seconds * 1000);
+    return `00:00:${String(Math.floor(ms / 1000)).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`;
+  };
+  const firstStart = clipTime(Math.max(firstLine, actual.start) - actual.start),
+    firstEnd = clipTime(Math.min(firstLine + 0.8, actual.end) - actual.start);
+  assert(srt.startsWith(`1\n${firstStart} --> ${firstEnd}\nLine${firstLine}\n`), srt);
+  assert(!srt.includes(`Line${Math.floor(actual.end) + 1}`), srt);
+  assert.deepEqual(
+    a.subtitles.written.map((w) => [w.role, w.transcriptId, w.file]),
+    [['game', 'export-game-dialogue', srtFile]],
+  );
+  assert.deepEqual(a.subtitles.skipped, ['Microphone: no finished transcript for this recording.']);
+  assert.match(a.message, /Subtitles: B frames outward\.srt\./);
   await attempt(normal.id, 0, 1.6, 'mp4', 'Zero marker MP4');
   await attempt(normal.id, 6.2, normal.duration, 'mkv', 'End of source');
   await attempt(records[1].id, 2.2, 5.1, 'mp4', 'Nonzero source timestamps');

@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import type { ExportContainerChoice, ExportPlan } from '../../electron/export-contracts';
+import type {
+  ExportContainerChoice,
+  ExportPlan,
+  SubtitleRole,
+} from '../../electron/export-contracts';
+import { SubtitleChoice } from './SubtitleChoice';
 import { JobTime } from './JobTime';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Field, Modal } from './ui';
@@ -26,7 +31,9 @@ export function ExportPanel({
     [plan, setPlan] = useState<ExportPlan>(),
     [error, setError] = useState(''),
     [preparing, setPreparing] = useState(true),
-    [confirmed, setConfirmed] = useState(false);
+    [confirmed, setConfirmed] = useState(false),
+    [subtitles, setSubtitles] = useState<SubtitleRole[]>([]);
+  const available = (clip && w.snapshot!.transcriptRoles?.[clip.rid]) || [];
   const projectId = w.snapshot!.project.id,
     flush = w.flush;
   useEffect(() => {
@@ -118,6 +125,7 @@ export function ExportPanel({
         Chapter names and times are embedded in the video. Resolve color and note transfer still
         needs manual review.
       </p>
+      <SubtitleChoice available={available} value={subtitles} onChange={setSubtitles} />
       {plan && ['mp4', 'mov', 'm4v'].includes(plan.container) && (
         <p className={s.muted}>
           {plan.container.toUpperCase()} may add a neutral “Clip start” chapter so the first real
@@ -131,7 +139,13 @@ export function ExportPanel({
           background(
             w
               .run(
-                () => window.virtualCut!.project.exportClip(projectId, plan!.id, confirmed),
+                () =>
+                  window.virtualCut!.project.exportClip(
+                    projectId,
+                    plan!.id,
+                    confirmed,
+                    subtitles.filter((r) => available.includes(r)),
+                  ),
                 true,
               )
               .then((value) => {

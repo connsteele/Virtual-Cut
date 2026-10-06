@@ -141,16 +141,16 @@ const api: VirtualCutApi = {
     exportPlan: (id, clipId, container) =>
       ipcRenderer.invoke('workspace:exportPlan', id, clipId, container),
     filingPlan: (id, batchId) => ipcRenderer.invoke('workspace:filingPlan', id, batchId),
-    fileQueue: (id, planId, confirmed) =>
-      ipcRenderer.invoke('workspace:fileQueue', id, planId, confirmed),
+    fileQueue: (id, planId, confirmed, subtitles) =>
+      ipcRenderer.invoke('workspace:fileQueue', id, planId, confirmed, subtitles),
     cancelFiling: (id, queueId) => ipcRenderer.invoke('workspace:cancelFiling', id, queueId),
     retainedMedia: (id, exportId) => ipcRenderer.invoke('workspace:retainedMedia', id, exportId),
     inspectRetained: (id, exportId, token) =>
       ipcRenderer.invoke('workspace:inspectRetained', id, exportId, token),
     releaseRetained: (id, token) => ipcRenderer.invoke('workspace:releaseRetained', id, token),
     relinkExport: (id, exportId) => ipcRenderer.invoke('workspace:relinkExport', id, exportId),
-    exportClip: (id, planId, confirmed) =>
-      ipcRenderer.invoke('workspace:exportClip', id, planId, confirmed),
+    exportClip: (id, planId, confirmed, subtitles) =>
+      ipcRenderer.invoke('workspace:exportClip', id, planId, confirmed, subtitles),
     revealExport: (id, exportId, kind) =>
       ipcRenderer.invoke('workspace:revealExport', id, exportId, kind),
   },

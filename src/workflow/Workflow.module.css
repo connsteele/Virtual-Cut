@@ -2056,3 +2056,21 @@
   min-width: 0;
   margin-top: 5px;
 }
+
+/* Subtitle (SRT) option in export and filing (VC-94). */
+.subtitleChoice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #38514c;
+  border-radius: 6px;
+}
+.subtitleChoice legend {
+  padding: 0 4px;
+  font-size: 13px;
+}
+.subtitleChoice label {
+  gap: 8px;
+}
+.subtitleChoice p {
+  margin: 6px 0 0;
+}

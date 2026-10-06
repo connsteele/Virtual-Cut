@@ -5,6 +5,7 @@ import type {
   ExportRecord,
   FilingPlan,
   RetainedClip,
+  SubtitleRole,
 } from './export-contracts.js';
 
 export interface Batch {
@@ -72,6 +73,8 @@ export interface ProjectSnapshot {
   warning?: string;
   recoveryNotice?: string;
   destinations?: import('./review-plan.js').DestinationPlan;
+  /** Roles with a finished transcript, by recording id; export and filing offer SRT for these. */
+  transcriptRoles?: Record<string, SubtitleRole[]>;
   /** Filmstrip tile files by recording id: ready, being made, or waiting their turn. */
   filmstrips?: Record<string, 'ready' | 'making' | 'waiting'>;
   cleanup?: {
@@ -112,7 +115,12 @@ export interface ProjectApi {
   removeResolveHelper(): Promise<ResolveHelperStatus>;
   revealResolveHelper(): Promise<void>;
   filingPlan(id: string, batchId: string): Promise<FilingPlan>;
-  fileQueue(id: string, planId: string, confirmed: boolean): Promise<ProjectSnapshot>;
+  fileQueue(
+    id: string,
+    planId: string,
+    confirmed: boolean,
+    subtitles?: SubtitleRole[],
+  ): Promise<ProjectSnapshot>;
   cancelFiling(id: string, queueId: string): Promise<ProjectSnapshot>;
   retainedMedia(id: string, exportId: string): Promise<RetainedClip>;
   inspectRetained(
@@ -187,6 +195,7 @@ export interface ProjectApi {
     id: string,
     planId: string,
     cleanGameConfirmed: boolean,
+    subtitles?: SubtitleRole[],
   ): Promise<ProjectSnapshot | null>;
   revealExport(id: string, exportId: string, kind: 'video' | 'metadata'): Promise<void>;
 }

@@ -44,6 +44,14 @@ export interface ExportVerification {
   bytes: number;
   sha256: string;
 }
+/** Which finished transcript an SRT is written from (VC-94). */
+export type SubtitleRole = 'game' | 'mic';
+export interface SubtitleSidecars {
+  requested: SubtitleRole[];
+  written: { role: SubtitleRole; transcriptId: string; file: string; sha256: string }[];
+  /** Plain reasons a requested SRT was not written; the verified video is unaffected. */
+  skipped: string[];
+}
 export interface ExportRecord {
   /** Native filing receipt, retained independently of editorial Undo and save restore. */
   filing?: {
@@ -66,6 +74,8 @@ export interface ExportRecord {
   output?: string;
   metadata?: string;
   cleanGameConfirmed?: boolean;
+  /** SRT files written beside the verified video, cut to its actual range. */
+  subtitles?: SubtitleSidecars;
   verification?: ExportVerification;
   message: string;
   updated: string;

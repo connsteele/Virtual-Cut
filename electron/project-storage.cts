@@ -50,6 +50,7 @@ export async function projectStorageUsage(
     .forEach((e) => {
       add(e.output, 'exports');
       add(e.metadata, 'companions');
+      for (const w of e.subtitles?.written || []) add(w.file, 'companions');
     });
   add(project.file, 'project');
   for (const suffix of ['-wal', '-shm', '.lock']) add(project.file + suffix, 'project', true);

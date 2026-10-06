@@ -107,7 +107,12 @@ export async function planProjectDeletion(
   const protect = (p: ReturnType<typeof readProject>) => {
     for (const s of p.sources) if (typeof s.file === 'string') protectedFiles.add(key(s.file));
     for (const e of p.exports)
-      for (const file of [e.output, e.metadata, e.input?.sourceFile])
+      for (const file of [
+        e.output,
+        e.metadata,
+        e.input?.sourceFile,
+        ...(e.subtitles?.written || []).map((w) => w.file),
+      ])
         if (typeof file === 'string') protectedFiles.add(key(file));
   };
   protect(data);

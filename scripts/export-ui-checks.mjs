@@ -56,7 +56,12 @@ try {
   await expect(dialog.getByRole('button', { name: 'Choose output file…' })).toBeDisabled();
   await dialog.getByLabel('Export container').selectOption('mp4');
   await expect(dialog.getByRole('table', { name: 'Export ranges' })).toBeVisible();
-  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('checkbox', { name: /game track is clean/ }).check();
+  // The transcript option (VC-94): one SRT per finished transcript role, nothing re-transcribed.
+  const subtitles = dialog.getByRole('group', { name: 'Subtitles (SRT)' });
+  await expect(subtitles).toBeVisible();
+  await expect(subtitles.getByLabel('Microphone notes subtitles')).toBeDisabled();
+  await expect(subtitles).toContainText('no finished microphone notes transcript');
   await capture('export-plan-wide');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1120, 760));
   await capture('export-plan-compact');

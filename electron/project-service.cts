@@ -61,7 +61,9 @@ import type {
   ExportRecord,
   FilingPlan,
   RetainedClip,
+  SubtitleRole,
 } from './export-contracts.js' with { 'resolution-mode': 'import' };
+import { subtitleRequest, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -609,6 +611,15 @@ export class ProjectService {
       }
     }
     snapshot.library = await this.retainedClips();
+    snapshot.transcriptRoles = {};
+    for (const t of store.transcripts.list())
+      if (
+        t.state === 'complete' &&
+        t.fingerprint === store.sources().find((x) => x.id === t.sourceId)?.fingerprint
+      ) {
+        const roles = (snapshot.transcriptRoles[t.sourceId] ||= []);
+        if (!roles.includes(t.role)) roles.push(t.role);
+      }
     for (const clip of snapshot.model.clips) {
       clip.filed =
         !clip.held &&
@@ -1307,9 +1318,16 @@ export class ProjectService {
     s.putExport(record);
     return record.plan;
   }
-  async startExport(id: string, planId: string, output: string, cleanGameConfirmed: boolean) {
+  async startExport(
+    id: string,
+    planId: string,
+    output: string,
+    cleanGameConfirmed: boolean,
+    subtitles?: SubtitleRole[],
+  ) {
     const s = this.require(id),
-      record = s.exports().find((e) => e.plan.id === planId);
+      record = s.exports().find((e) => e.plan.id === planId),
+      requested = subtitleRequest(subtitles);
     if (!record || !['planned', 'failed', 'cancelled', 'interrupted'].includes(record.state))
       throw new Error('Make a new export plan.');
     if (cleanGameConfirmed !== true)
@@ -1332,6 +1350,7 @@ export class ProjectService {
       output: resolved,
       metadata: resolved + '.vcut.json',
       cleanGameConfirmed: true,
+      subtitles: requested.length ? { requested, written: [], skipped: [] } : undefined,
       state: 'queued',
       verification: resolved === record.output ? record.verification : undefined,
       started: undefined,
@@ -1422,6 +1441,19 @@ export class ProjectService {
     this.filingPlans.set(plan.id, { plan, records });
     return plan;
   }
+  /** The latest finished transcript of this role for the export's recording (one per role). */
+  private subtitleSource(record: ExportRecord, role: SubtitleRole) {
+    const s = this.require(),
+      source = s.sources().find((x) => x.id === record.plan.sourceId),
+      transcript = s.transcripts
+        .list(record.plan.sourceId)
+        .find(
+          (t) => t.role === role && t.state === 'complete' && t.fingerprint === source?.fingerprint,
+        );
+    return transcript
+      ? { transcript, segments: s.transcripts.segments(transcript.id), model: s.data.model }
+      : undefined;
+  }
   private assertFilingCurrent(record: ExportRecord) {
     if (!record.filing) return;
     const s = this.require(),
@@ -1437,9 +1469,10 @@ export class ProjectService {
         'This accepted clip changed or was held. Review and accept the current edits before filing.',
       );
   }
-  async fileQueue(id: string, planId: string, confirmed: boolean) {
+  async fileQueue(id: string, planId: string, confirmed: boolean, subtitles?: SubtitleRole[]) {
     const s = this.require(id),
-      saved = this.filingPlans.get(planId);
+      saved = this.filingPlans.get(planId),
+      requested = subtitleRequest(subtitles);
     if (!saved || !saved.records.length || saved.plan.rows.some((r) => r.issues.length))
       throw new Error('Check an eligible filing plan first.');
     if (confirmed !== true)
@@ -1488,6 +1521,7 @@ export class ProjectService {
     s.transaction(() => {
       for (const record of saved.records) {
         record.cleanGameConfirmed = true;
+        record.subtitles = requested.length ? { requested, written: [], skipped: [] } : undefined;
         record.state = 'queued';
         record.message = 'Waiting to file';
         s.putExport(record);
@@ -1897,8 +1931,12 @@ export class ProjectService {
         );
         await guard();
         await verifyPublished(done, signal);
+        const subtitles = done.subtitles?.requested.length
+          ? await writeSubtitleSidecars(done, (role) => this.subtitleSource(done, role))
+          : undefined;
         const completed = {
           ...done,
+          subtitles,
           started: job.started,
           elapsedMs: elapsedMs(),
           ...(done.filing
@@ -1912,6 +1950,11 @@ export class ProjectService {
               }
             : {}),
         };
+        if (subtitles)
+          completed.message +=
+            (subtitles.written.length
+              ? ` Subtitles: ${subtitles.written.map((w) => path.basename(w.file)).join(', ')}.`
+              : '') + (subtitles.skipped.length ? ` ${subtitles.skipped.join(' ')}` : '');
         s.putExport(completed);
         s.putJob({
           ...job,

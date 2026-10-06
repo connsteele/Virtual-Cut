@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import type { FilingPlan } from '../../electron/export-contracts';
+import type { FilingPlan, SubtitleRole } from '../../electron/export-contracts';
+import { SubtitleChoice } from './SubtitleChoice';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Modal } from './ui';
 import { JobTime } from './JobTime';
@@ -25,6 +26,7 @@ export function FilingPanel({
       p.exports.some((e) => e.filing && ['queued', 'running'].includes(e.state)),
     ),
     [confirmed, setConfirmed] = useState(false),
+    [subtitles, setSubtitles] = useState<SubtitleRole[]>([]),
     [error, setError] = useState(''),
     [checking, setChecking] = useState(true);
   const id = p.project.id,
@@ -55,6 +57,12 @@ export function FilingPanel({
       e.state !== 'planned',
   );
   const pending = records.some((e) => ['queued', 'running'].includes(e.state));
+  // Roles any planned clip can use; clips without that transcript are filed without the SRT.
+  const rowRoles = (plan?.rows || []).map(
+    (row) => p.transcriptRoles?.[p.model.clips.find((c) => c.id === row.clipId)?.rid || ''] || [],
+  );
+  const available = (['game', 'mic'] as const).filter((r) => rowRoles.some((x) => x.includes(r)));
+  const partial = subtitles.some((r) => rowRoles.some((x) => !x.includes(r)));
   return (
     <Modal title="File accepted clips" onClose={onClose} className={s.filingModal}>
       <p>
@@ -153,6 +161,16 @@ export function FilingPanel({
             />
             Every selected game track is clean, with no microphone mixed into it.
           </label>
+          <SubtitleChoice
+            available={[...available]}
+            value={subtitles}
+            onChange={setSubtitles}
+            missingNote={
+              partial
+                ? 'Some clips have no finished transcript for a chosen role; they are filed without that SRT.'
+                : undefined
+            }
+          />
           <p className={s.muted}>
             Filing saves this accepted plan before starting. Original recordings stay in place. Done
             appears only after the finished video, companion and dates are verified.
@@ -169,7 +187,16 @@ export function FilingPanel({
             onClick={() =>
               background(
                 w
-                  .run(() => window.virtualCut!.project.fileQueue(id, plan!.id, confirmed), true)
+                  .run(
+                    () =>
+                      window.virtualCut!.project.fileQueue(
+                        id,
+                        plan!.id,
+                        confirmed,
+                        subtitles.filter((r) => available.includes(r)),
+                      ),
+                    true,
+                  )
                   .then((value) => {
                     if (value) {
                       setQueueId(plan!.id);

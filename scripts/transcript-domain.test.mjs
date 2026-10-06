@@ -26,6 +26,12 @@ import {
 } from '../dist-electron/transcript-export.js';
 const { TranscriptStore } = createRequire(import.meta.url)('../dist-electron/transcript-store.cjs');
 import { readTranscriptView, saveTranscriptView } from '../dist-electron/transcript-view.js';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+const { subtitleFile, subtitleRequest, writeSubtitleSidecars } = createRequire(import.meta.url)(
+  '../dist-electron/subtitle-sidecar.cjs',
+);
 test('transcript reading state is bounded, session scoped and excludes editing drafts', () => {
   const values = new Map();
   let writes = 0;
@@ -781,5 +787,52 @@ test('cue filters cover every page, corrections and review state; playback pages
     assert.throws(() => store.page('speech', 0, '', [], {}, 'unknown'), /Invalid cue filter/);
   } finally {
     db.close();
+  }
+});
+
+test('export SRT sidecars follow the verified cut, are named after the video and never replace files', async () => {
+  assert.deepEqual(subtitleRequest(undefined), []);
+  assert.deepEqual(subtitleRequest(['mic', 'game', 'mic']), ['game', 'mic']);
+  assert.throws(() => subtitleRequest(['music']), /game dialogue or microphone/);
+  assert.equal(subtitleFile('D:/Clips/Anna arrives.mkv', 'game'), 'D:/Clips/Anna arrives.srt');
+  assert.equal(subtitleFile('D:/Clips/Anna arrives.mkv', 'mic'), 'D:/Clips/Anna arrives.mic.srt');
+  const dir = await mkdtemp(path.join(process.env.VIRTUAL_CUT_TEST_ROOT || os.tmpdir(), 'srt-'));
+  try {
+    const output = path.join(dir, 'Anna arrives.mkv');
+    // The written video holds 11–13 s of the source, wider than the requested 11.5–12.5 s.
+    const record = {
+      output,
+      plan: { id: '00000000-0000-4000-8000-000000000094', name: 'Anna arrives' },
+      input: { sourceStart: 5 },
+      verification: { actual: { start: 11, end: 13 }, timestampShift: -16 },
+      subtitles: { requested: ['game', 'mic'], written: [], skipped: [] },
+    };
+    const game = { ...transcript, id: 'dialogue', role: 'game' };
+    const find = (role) =>
+      role === 'game' ? { transcript: game, segments: [phrase()], model: {} } : undefined;
+    const first = await writeSubtitleSidecars(record, find);
+    const srt = await readFile(path.join(dir, 'Anna arrives.srt'), 'utf8');
+    assert.match(srt, /^1\n00:00:00,000 --> 00:00:02,000\nis Kai\n/);
+    assert.deepEqual(
+      first.written.map((w) => [w.role, w.transcriptId, path.basename(w.file)]),
+      [['game', 'dialogue', 'Anna arrives.srt']],
+    );
+    assert.deepEqual(first.skipped, ['Microphone: no finished transcript for this recording.']);
+    // A retry finds its own identical file and counts it as written.
+    assert.equal((await writeSubtitleSidecars(record, find)).written.length, 1);
+    // Someone else's file of that name is left exactly as it was.
+    await writeFile(path.join(dir, 'Anna arrives.srt'), 'mine', 'utf8');
+    const third = await writeSubtitleSidecars(record, find);
+    assert.equal(third.written.length, 0);
+    assert.match(third.skipped[0], /already exists and was not replaced/);
+    assert.equal(await readFile(path.join(dir, 'Anna arrives.srt'), 'utf8'), 'mine');
+    // A clip without speech gets no empty file.
+    const quiet = await writeSubtitleSidecars(
+      { ...record, verification: { ...record.verification, actual: { start: 50, end: 60 } } },
+      find,
+    );
+    assert.deepEqual(quiet.skipped[0], 'Game dialogue: no speech in this clip.');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
