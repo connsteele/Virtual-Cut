@@ -69,6 +69,18 @@ service.store.db.prepare('INSERT INTO exports(id,body) VALUES (?,?)').run(
     state: 'verified',
   }),
 );
+// An older export without subtitles is still protected.
+const olderId = randomUUID();
+service.store.db.prepare('INSERT INTO exports(id,body) VALUES (?,?)').run(
+  olderId,
+  JSON.stringify({
+    plan: { id: olderId },
+    input: { sourceFile: source },
+    output,
+    metadata,
+    state: 'verified',
+  }),
+);
 await assert.rejects(() => service.deletionPlan(project.id), /close/i);
 const writesBefore = service.store.db.prepare('SELECT total_changes() AS n').get().n;
 const sizes = await service.storageUsage(project.id);
