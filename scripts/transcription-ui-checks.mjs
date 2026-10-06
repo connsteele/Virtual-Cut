@@ -159,6 +159,17 @@ try {
     ),
     'Search sits left of the filter chips',
   );
+  const edges = await transcript.evaluate(() => {
+    const right = (el) => el.lastElementChild.getBoundingClientRect().right;
+    return [
+      right(document.querySelector('[aria-label="Transcript tools"]')),
+      right(document.querySelector('[aria-label="Transcript filter"]')),
+    ];
+  });
+  assert(
+    Math.abs(edges[0] - edges[1]) < 2,
+    `The filter chips end flush with the toolbar row (${edges.join(', ')})`,
+  );
   await transcript.screenshot({ path: path.join(dir, 'transcript-toolbar.png') });
   await transcript.locator('[data-filter="pending"]').click();
   await expect(phrases.locator('article')).toHaveCount(1);
