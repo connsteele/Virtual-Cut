@@ -47,11 +47,13 @@ try {
     requireType: typeof window.require,
     processType: typeof window.process,
     apiKeys: Object.keys(window.virtualCut).sort(),
+    agentKeys: Object.keys(window.virtualCut.agent).sort(),
     info: await window.virtualCut.getAppInfo(),
   }));
   assert.equal(boundary.requireType, 'undefined');
   assert.equal(boundary.processType, 'undefined');
   assert.deepEqual(boundary.apiKeys, [
+    'agent',
     'diagnostics',
     'getAppInfo',
     'openVideo',
@@ -59,6 +61,16 @@ try {
     'selectProjectFolder',
     'toggleFullscreen',
     'transcript',
+  ]);
+  // Agent access (VC-160) adds only pairing, activity and the reported view.
+  assert.deepEqual(boundary.agentKeys, [
+    'copy',
+    'onChanged',
+    'pair',
+    'revoke',
+    'setEnabled',
+    'state',
+    'view',
   ]);
   assert.equal(boundary.info.name, 'Virtual Cut');
   assert.equal(boundary.info.platform, process.platform);
