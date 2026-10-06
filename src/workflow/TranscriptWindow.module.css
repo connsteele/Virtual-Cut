@@ -47,7 +47,6 @@
   width: 100%;
 }
 .toolbar,
-.phraseHeading,
 .pagination {
   display: flex;
   align-items: center;
@@ -184,8 +183,7 @@
 .help summary {
   cursor: pointer;
 }
-.card,
-.editor {
+.card {
   background: #1b2725;
   border: 1px solid #38514c;
   border-radius: 9px;
@@ -283,23 +281,101 @@
 .job progress {
   width: min(70%, 400px);
 }
+/* Dense timed rows (VC-114 stage 2b): time, words, and Edit phrase on hover. */
 .segment {
-  border-bottom: 1px solid #2a3735;
-  padding: 14px 0 18px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 4px 6px 4px 3px;
+  border-left: 3px solid transparent;
+  border-radius: 0 4px 4px 0;
 }
-.phraseHeading {
-  justify-content: space-between;
+.segment:hover,
+.segment:focus-within {
+  background: #142220;
+}
+.segment[data-cue='mark'] {
+  border-left-color: #d3b26b;
+}
+.segment[data-cue='note'] {
+  border-left-color: #8fb3e8;
+}
+.segment[data-cue='cut'] {
+  border-left-color: #e08f7a;
+}
+.segment[data-cue='clip-start'],
+.segment[data-cue='clip-end'] {
+  border-left-color: #6fcf9a;
+}
+.rowTime {
+  font:
+    12px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.rowTime:hover {
+  color: var(--teal-light);
+}
+/* Shown on hover or keyboard focus; opacity keeps it clickable and in the tab order. */
+.rowTools {
+  opacity: 0;
+}
+.segment:hover .rowTools,
+.segment:focus-within .rowTools {
+  opacity: 1;
+}
+.rowTools button {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.rowCue,
+.editHint {
+  grid-column: 2 / 4;
+}
+.window .editHint {
+  margin: 2px 0 4px;
   color: var(--muted);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.linkButton {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--teal-light);
+  font: inherit;
+  cursor: pointer;
+}
+.gap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 4px 105px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gap::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed #2f3f3c;
 }
 .words {
-  font-size: 17px;
-  line-height: 2;
+  font-size: 15px;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 .words button {
-  padding: 2px 1px;
+  padding: 1px;
   border-radius: 3px;
   white-space: pre-wrap;
   text-align: left;
@@ -318,9 +394,26 @@
   text-decoration: underline dotted #d9b76b;
   text-underline-offset: 5px;
 }
+.words .corrected,
+.words .phrase {
+  color: #9ee6c9;
+}
 .words small {
   color: var(--muted);
   font-size: 11px;
+}
+/* Overrides the window's roomy form fields so the line barely moves while editing. */
+.window .words input.inlineWord,
+.window .words textarea.inlinePhrase {
+  font-size: 15px;
+  padding: 0 4px;
+  border-color: var(--teal-light);
+  border-radius: 4px;
+}
+.window .words textarea.inlinePhrase {
+  min-height: 0;
+  line-height: 1.5;
+  resize: vertical;
 }
 .cue {
   margin-top: 10px;
@@ -359,11 +452,6 @@
   padding: 50px 12px;
   color: var(--muted);
   text-align: center;
-}
-.editor {
-  position: sticky;
-  bottom: 12px;
-  box-shadow: 0 4px 24px #0009;
 }
 @media (max-width: 600px) {
   .window {

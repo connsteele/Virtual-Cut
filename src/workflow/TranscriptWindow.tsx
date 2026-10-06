@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Settings, ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import type {
   TranscriptApi,
@@ -15,6 +15,7 @@ import { TranscriptionOptions, initialTranscriptionOptions } from './Transcripti
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
+import { TranscriptInlineEdit } from './TranscriptInlineEdit';
 import { SpeechSetup } from './SpeechSetup';
 import { background } from './background';
 import { useWindowFocus } from './useWindowFocus';
@@ -30,6 +31,15 @@ const time = (seconds: number) => {
   const total = Math.floor(seconds),
     ms = Math.floor((seconds - total) * 1000);
   return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+};
+// Row timestamps: hundredths are enough to tell phrases apart; the title keeps milliseconds.
+// Rounded first, so 12.1 s reads 12.10 rather than a truncated 12.09.
+const rowTime = (seconds: number) => time(Math.round(seconds * 100) / 100 + 0.0005).slice(0, -1);
+// Pauses at least this long between phrases show as a gap line (VC-114 stage 2b).
+const silenceGap = 10;
+const gapLabel = (seconds: number) => {
+  const total = Math.round(seconds);
+  return `${total >= 60 ? `${Math.floor(total / 60)} min ` : ''}${total % 60} s without speech`;
 };
 const filters: [TranscriptFilter, string][] = [
   ['all', 'All'],
@@ -396,6 +406,31 @@ export function TranscriptWindow() {
       expected: JSON.stringify(expected || null),
     });
   }
+  // Enter in the line saves. Typing the original back restores it, so nothing is lost.
+  async function saveCorrection(text: string) {
+    if (!selection || !session) return;
+    const { segment, wordIndex } = selection;
+    const original = wordIndex == null ? segment.text : segment.words[wordIndex].text;
+    const existing = session.edits.some(
+      (e) => e.id === correctionId(selection.transcriptId, segment.id, wordIndex),
+    );
+    const restore = text.trim() === original.trim();
+    if (restore && !existing) return setSelection(undefined);
+    // The main window would refuse this with a generic message; say what to do instead.
+    if (wordIndex != null && text.trim().split(/\s+/).length > 1)
+      return setError('A word correction is one word. Use Edit phrase to add or remove words.');
+    let saved = false;
+    await action(async () => {
+      await command(
+        segment,
+        restore ? 'restore' : 'correct',
+        restore ? undefined : text,
+        wordIndex,
+      );
+      saved = true;
+    });
+    if (saved) setSelection(undefined);
+  }
   const hasSelection = selection && selection.transcriptId === currentId;
   return (
     <main className={s.window}>
@@ -669,9 +704,10 @@ export function TranscriptWindow() {
             </summary>
             <p>Speech model: {selected.model}</p>
             <p>
-              Click a word to seek. Double-click to correct; Escape closes the editor. J/K/L
-              controls playback when you are not typing. Dotted words have low recognition
-              confidence.
+              Click a word to seek. Double-click a word to correct it in the line: Enter saves,
+              Escape cancels, and the original recognition is kept. Edit phrase (on hover) changes a
+              whole line. J/K/L controls playback when you are not typing. Dotted words have low
+              recognition confidence.
             </p>
             <p>
               Spoken microphone cues: Marker, Note, Split, Clip start and Clip end. Marker is
@@ -691,89 +727,156 @@ export function TranscriptWindow() {
             aria-label="Transcript phrases"
             onWheel={() => setFollow(false)}
           >
-            {usablePage?.segments.map((segment) => {
+            {usablePage?.segments.map((segment, row, segments) => {
               const phraseEdit = session.edits.find(
                 (e) => e.id === correctionId(currentId, segment.id),
               );
               const cue = cueCandidate(selected, segment);
               const active =
                 position.projectId === projectId && position.sourceId === session.sourceId;
+              const editing =
+                hasSelection && selection.segment.id === segment.id ? selection : undefined;
+              const originalText = (
+                editing?.wordIndex == null ? segment.text : segment.words[editing.wordIndex].text
+              ).trim();
+              const previous = segments[row - 1];
+              // Gaps only make sense in the unfiltered, time-ordered reading view.
+              const pause =
+                previous && filter === 'all' && !search ? segment.start - previous.end : 0;
+              const editor = (initial: string, phrase: boolean) => (
+                <TranscriptInlineEdit
+                  key={`${segment.id}:${editing?.wordIndex ?? 'phrase'}`}
+                  initial={initial}
+                  phrase={phrase}
+                  disabled={busy}
+                  onSave={(text) => background(saveCorrection(text))}
+                  onCancel={() => (setSelection(undefined), setError(''))}
+                />
+              );
               return (
-                <article className={s.segment} key={segment.id}>
-                  <div className={s.phraseHeading}>
-                    <button onClick={() => seek(segment)}>{time(segment.start)}</button>
-                    <Button
-                      disabled={busy || selected.state !== 'complete'}
-                      onClick={() => (
-                        setFollow(false),
-                        setSelection({
-                          transcriptId: currentId,
-                          segment,
-                          text: phraseEdit?.text ?? segment.text,
-                        })
-                      )}
+                <Fragment key={segment.id}>
+                  {pause >= silenceGap && <div className={s.gap}>{gapLabel(pause)}</div>}
+                  <article className={s.segment} data-cue={cue?.kind}>
+                    <button
+                      className={s.rowTime}
+                      title={time(segment.start)}
+                      onClick={() => seek(segment)}
                     >
-                      Edit phrase
-                    </Button>
-                  </div>
-                  <div className={s.words}>
-                    {phraseEdit && !original ? (
-                      <button
-                        className={s.phrase}
-                        onClick={() => seek(segment)}
-                        onDoubleClick={() => seek(segment, undefined, true)}
+                      {rowTime(segment.start)}
+                    </button>
+                    <div className={s.words}>
+                      {editing && editing.wordIndex == null ? (
+                        editor(editing.text, true)
+                      ) : phraseEdit && !original ? (
+                        <button
+                          className={s.phrase}
+                          title={`Original: ${segment.text.trim()}`}
+                          onClick={() => seek(segment)}
+                          onDoubleClick={() => seek(segment, undefined, true)}
+                        >
+                          {phraseEdit.text}
+                          <small> · phrase timing</small>
+                        </button>
+                      ) : segment.words.length ? (
+                        segment.words.map((word, index) => {
+                          if (editing?.wordIndex === index)
+                            // Recognized words carry their own spacing; keep it around the field.
+                            return (
+                              <Fragment key={index}>
+                                {word.text.match(/^\s*/)?.[0]}
+                                {editor(editing.text, false)}
+                                {word.text.match(/\s*$/)?.[0]}
+                              </Fragment>
+                            );
+                          const correction = session.edits.find(
+                            (e) => e.id === correctionId(currentId, segment.id, index),
+                          );
+                          const focused =
+                            focusedWord?.segment === segment.id && focusedWord.word === index;
+                          const playing =
+                            active && position.time >= word.start && position.time < word.end;
+                          return (
+                            <button
+                              key={index}
+                              className={`${playing ? s.active : ''} ${focused ? s.selected : ''} ${word.probability < 0.5 ? s.uncertain : ''} ${correction && !original ? s.corrected : ''}`}
+                              data-active-word={playing ? 'true' : undefined}
+                              title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
+                              onClick={() => seek(segment, index)}
+                              onDoubleClick={() =>
+                                selected.state === 'complete' && seek(segment, index, true)
+                              }
+                            >
+                              {!original && correction ? correction.text : word.text}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <button onClick={() => seek(segment)}>{segment.text}</button>
+                      )}
+                    </div>
+                    <div className={s.rowTools}>
+                      <Button
+                        disabled={busy || selected.state !== 'complete'}
+                        onClick={() => (
+                          setFollow(false),
+                          setFocusedWord({ segment: segment.id }),
+                          setSelection({
+                            transcriptId: currentId,
+                            segment,
+                            text: phraseEdit?.text ?? segment.text,
+                          })
+                        )}
                       >
-                        {phraseEdit.text}
-                        <small> · phrase timing</small>
-                      </button>
-                    ) : segment.words.length ? (
-                      segment.words.map((word, index) => {
-                        const correction = session.edits.find(
-                          (e) => e.id === correctionId(currentId, segment.id, index),
-                        );
-                        const focused =
-                          focusedWord?.segment === segment.id && focusedWord.word === index;
-                        return (
+                        Edit phrase
+                      </Button>
+                    </div>
+                    {editing && (
+                      <p className={s.editHint} aria-label="Transcript correction">
+                        Enter saves · Escape cancels · Original: {originalText}
+                        {editing.wordIndex == null
+                          ? ' · the line keeps its phrase timing'
+                          : ' · one word; use Edit phrase to add or remove words'}
+                        {' · '}
+                        {session.clips
+                          .filter((c) => c.start < segment.end && c.end > segment.start)
+                          .map((c) => c.name)
+                          .join(', ') || 'No clip at this phrase'}
+                        {session.edits.some(
+                          (e) => e.id === correctionId(currentId, segment.id, editing.wordIndex),
+                        ) && (
                           <button
-                            key={index}
-                            className={`${active && position.time >= word.start && position.time < word.end ? s.active : ''} ${focused ? s.selected : ''} ${word.probability < 0.5 ? s.uncertain : ''}`}
-                            data-active-word={
-                              active && position.time >= word.start && position.time < word.end
-                                ? 'true'
-                                : undefined
-                            }
-                            title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
-                            onClick={() => seek(segment, index)}
-                            onDoubleClick={() => seek(segment, index, true)}
+                            className={s.linkButton}
+                            disabled={busy}
+                            onClick={() => background(saveCorrection(originalText))}
                           >
-                            {!original && correction ? correction.text : word.text}
+                            <RotateCcw size={12} /> Restore original
                           </button>
-                        );
-                      })
-                    ) : (
-                      <button onClick={() => seek(segment)}>{segment.text}</button>
+                        )}
+                      </p>
                     )}
-                  </div>
-                  {cue && (
-                    <TranscriptCue
-                      key={`${currentId}:${segment.id}:${JSON.stringify(session.edits)}`}
-                      segment={segment}
-                      transcript={selected}
-                      session={session}
-                      busy={busy}
-                      onSeek={(time) => {
-                        setFollow(false);
-                        background(action(() => api.seek(projectId, session.sourceId, time)));
-                      }}
-                      onCommand={(type, values) => {
-                        setFollow(false);
-                        background(
-                          action(() => command(segment, type, values.text, undefined, values)),
-                        );
-                      }}
-                    />
-                  )}
-                </article>
+                    {cue && (
+                      <div className={s.rowCue}>
+                        <TranscriptCue
+                          key={`${currentId}:${segment.id}:${JSON.stringify(session.edits)}`}
+                          segment={segment}
+                          transcript={selected}
+                          session={session}
+                          busy={busy}
+                          onSeek={(time) => {
+                            setFollow(false);
+                            background(action(() => api.seek(projectId, session.sourceId, time)));
+                          }}
+                          onCommand={(type, values) => {
+                            setFollow(false);
+                            background(
+                              action(() => command(segment, type, values.text, undefined, values)),
+                            );
+                          }}
+                        />
+                      </div>
+                    )}
+                  </article>
+                </Fragment>
               );
             })}
             {usablePage && !usablePage.segments.length && (
@@ -811,69 +914,6 @@ export function TranscriptWindow() {
               <ChevronRight size={18} />
             </Button>
           </nav>
-          {hasSelection && (
-            <section className={s.editor} aria-label="Transcript correction">
-              <p className={s.muted}>
-                Linked clips:{' '}
-                {session.clips
-                  .filter((c) => c.start < selection.segment.end && c.end > selection.segment.start)
-                  .map((c) => c.name)
-                  .join(', ') || 'No clip at this phrase'}
-              </p>
-              <h2>
-                {selection.wordIndex == null ? 'Phrase correction' : 'Word correction'} ·{' '}
-                {time(
-                  selection.wordIndex == null
-                    ? selection.segment.start
-                    : selection.segment.words[selection.wordIndex].start,
-                )}
-              </h2>
-              <p className={s.muted}>
-                Original:{' '}
-                {selection.wordIndex == null
-                  ? selection.segment.text
-                  : selection.segment.words[selection.wordIndex].text}
-              </p>
-              <textarea
-                aria-label="Corrected transcript text"
-                value={selection.text}
-                onChange={(e) => setSelection({ ...selection, text: e.target.value })}
-                maxLength={10000}
-              />
-              <p className={s.muted}>
-                {selection.wordIndex == null
-                  ? 'Phrase edits keep the original phrase anchor. Individual replacement words have no invented timing.'
-                  : 'Correct a proper noun or misheard word. To change the number of words, use Edit phrase.'}{' '}
-                Undo is available in the main editor.
-              </p>
-              <Button
-                primary
-                disabled={busy || selected.state !== 'complete'}
-                onClick={() =>
-                  background(
-                    action(() =>
-                      command(selection.segment, 'correct', selection.text, selection.wordIndex),
-                    ),
-                  )
-                }
-              >
-                Save correction
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  background(
-                    action(() =>
-                      command(selection.segment, 'restore', undefined, selection.wordIndex),
-                    ),
-                  )
-                }
-              >
-                <RotateCcw size={14} /> Restore original
-              </Button>
-              <Button onClick={() => setSelection(undefined)}>Close edit</Button>
-            </section>
-          )}
         </>
       )}
       {session && !selected && (

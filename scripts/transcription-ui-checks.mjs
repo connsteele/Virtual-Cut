@@ -108,32 +108,54 @@ try {
     Math.abs(position - anchor) < 0.04,
     `Word seek error ${Math.abs(position - anchor)} seconds`,
   );
+  // Corrections are typed into the line (VC-114 stage 2b): Enter saves, Escape cancels.
+  const firstRow = phrases.locator('article').first();
+  const originalWord = (await words.nth(3).textContent()).trim();
   await words.nth(3).dblclick();
   await expect(transcript.getByLabel('Transcript correction')).toBeVisible();
+  await expect(firstRow.getByLabel('Correct word')).toBeFocused();
   await transcript.keyboard.press('Escape');
   await expect(transcript.getByLabel('Transcript correction')).toHaveCount(0);
+  await expect(words.nth(3)).toHaveText(originalWord);
   await words.nth(3).dblclick();
-  await transcript.getByLabel('Corrected transcript text').fill('Cai');
-  await transcript.getByRole('button', { name: 'Save correction', exact: true }).click();
+  await firstRow.getByLabel('Correct word').fill('Cai');
+  await firstRow.getByLabel('Correct word').press('Enter');
   await expect(words.nth(3)).toHaveText('Cai');
+  await expect(transcript.getByLabel('Transcript correction')).toHaveCount(0);
+  await expect(words.nth(3)).toHaveAttribute('title', new RegExp(`original: ${originalWord}`));
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(words.nth(3)).not.toHaveText('Cai');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(words.nth(3)).toHaveText('Cai');
-  await transcript.getByRole('button', { name: 'Close edit', exact: true }).click();
-  await phrases
-    .locator('article')
-    .first()
-    .getByRole('button', { name: 'Edit phrase', exact: true })
-    .click();
-  await transcript
-    .getByLabel('Corrected transcript text')
-    .fill('A corrected phrase with different words.');
-  await transcript.getByRole('button', { name: 'Save correction', exact: true }).click();
-  await expect(phrases.locator('article').first()).toContainText('phrase timing');
+  // Several words in a word edit are refused; the line stays open with the draft.
+  await words.nth(3).dblclick();
+  await firstRow.getByLabel('Correct word').fill('two words');
+  await firstRow.getByLabel('Correct word').press('Enter');
+  await expect(transcript.getByRole('alert')).toContainText('Edit phrase');
+  await expect(firstRow.getByLabel('Correct word')).toHaveValue('two words');
+  await transcript.screenshot({ path: path.join(dir, 'inline-edit.png') });
+  await transcript.keyboard.press('Escape');
+  // Edit phrase appears on hover and edits the whole line.
+  await firstRow.hover();
+  const editPhrase = firstRow.getByRole('button', { name: 'Edit phrase', exact: true });
+  await expect
+    .poll(() => editPhrase.evaluate((b) => getComputedStyle(b.parentElement).opacity))
+    .toBe('1');
+  await editPhrase.click();
+  await firstRow.getByLabel('Correct phrase').fill('A corrected phrase with different words.');
+  await firstRow.getByLabel('Correct phrase').press('Enter');
+  await expect(firstRow).toContainText('phrase timing');
+  await firstRow.locator('[class*="phrase"]').first().dblclick();
   await transcript.getByRole('button', { name: 'Restore original', exact: true }).click();
-  await expect(phrases.locator('article').first()).not.toContainText('phrase timing');
-  await transcript.getByRole('button', { name: 'Close edit', exact: true }).click();
+  await expect(firstRow).not.toContainText('phrase timing');
+  await expect(words.nth(3)).toHaveText('Cai');
+  // Dense rows: the time sits beside the words, so a row is barely taller than its text.
+  const rowPadding = await firstRow.evaluate(
+    (row) =>
+      row.getBoundingClientRect().height -
+      row.querySelector('[class*="words"]').getBoundingClientRect().height,
+  );
+  assert.ok(rowPadding <= 10, `Dense transcript rows (${rowPadding}px around the words)`);
   await transcript.getByLabel('Search transcript').fill('zzzz-not-present');
   await expect(transcript.getByText('No matching phrases.')).toBeVisible();
   await transcript.getByLabel('Search transcript').fill('');

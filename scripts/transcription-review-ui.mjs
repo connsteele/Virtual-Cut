@@ -17,8 +17,9 @@ await service.open(file);
 const store = service.store,
   summary = store.transcripts.get(fixture.transcriptId);
 const transcriptId = 'synthetic-pagination-and-cues';
-store.transcripts.begin({ ...summary, id: transcriptId, segmentCount: 125, wordCount: 125 });
-for (let i = 0; i < 125; i++) {
+store.transcripts.begin({ ...summary, id: transcriptId, segmentCount: 126, wordCount: 126 });
+// The last phrase follows 12 s without speech, which shows as a gap line (VC-114 stage 2b).
+for (let i = 0; i < 126; i++) {
   const text =
     i === 10
       ? 'Clip start opening'
@@ -29,12 +30,14 @@ for (let i = 0; i < 125; i++) {
           : i === 115
             ? 'Mark short title'
             : `word${i}`;
+  const start = i === 125 ? 24.5 : i / 10,
+    end = i === 125 ? 25 : (i + 1) / 10;
   store.transcripts.append(transcriptId, {
     id: i,
-    start: i / 10,
-    end: (i + 1) / 10,
+    start,
+    end,
     text,
-    words: [{ text, start: i / 10, end: (i + 1) / 10, probability: 1 }],
+    words: [{ text, start, end, probability: 1 }],
     noSpeechProbability: 0,
     averageLogProbability: 0,
   });
@@ -122,6 +125,9 @@ try {
   await position(0.5);
   await position(12.2);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 3');
+  await expect(phrases.getByText('12 s without speech', { exact: true })).toHaveCount(1);
+  await phrases.getByText('12 s without speech', { exact: true }).scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'silence-gap.png') });
   await position(12.2);
   await position(0.5);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
@@ -299,7 +305,7 @@ try {
   await view.getByRole('button', { name: 'Next transcript page', exact: true }).click();
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 2');
   await view.getByRole('button', { name: 'word80', exact: true }).dblclick();
-  await view.getByLabel('Corrected transcript text').fill('Unsaved draft must not reopen');
+  await view.getByLabel('Correct word').fill('Unsaved');
   await view.getByLabel('Original', { exact: true }).check();
   const owner = await view.evaluate(
     async () => (await window.virtualCut.transcript.session()).viewSessionId,
@@ -346,7 +352,7 @@ try {
   const cached = await reopened.evaluate(() =>
     localStorage.getItem('virtual-cut-transcript-view-v1'),
   );
-  assert(!cached.includes('Unsaved draft'));
+  assert(!cached.includes('Unsaved'));
   await main.evaluate(() => window.virtualCut.project.close());
   await expect(
     reopened.getByText('Open a project in the main window to read or generate transcripts.'),
