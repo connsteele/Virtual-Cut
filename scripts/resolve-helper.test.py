@@ -90,6 +90,13 @@ class Tests(unittest.TestCase):
         self.assertEqual(helper.plan_clip(item)['changes'], [])
         item.markers[74]['note'] = 'User edited'
         self.assertTrue(helper.plan_clip(item)['conflicts'])
+    def test_companion_transcript_history_is_ignored(self):
+        # VC-154: the optional, separately versioned transcripts section must not change markers.
+        self.data['version'] = 4
+        self.data['transcripts'] = {'schema': 'virtual-cut-transcript-history', 'version': 1, 'items': [{'spans': [{'subtitleText': 'Hello'}]}]}
+        self.save()
+        item = Item(self.file, self.old)
+        self.assertEqual([c['frame'] for c in helper.plan_clip(item)['changes']], [33, 74])
     def test_explicit_generated_anchor(self):
         self.data['version'] = 3
         self.data['generatedChapters'] = [dict(name='Clip start', containerTime=0, purpose='quicktime-leading-anchor')]

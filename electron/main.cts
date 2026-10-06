@@ -407,8 +407,8 @@ function registerDesktopApi(): void {
     shell.showItemInFolder(status.file);
   });
   workspace('filingPlan', (id, batchId) => projects.filingPlan(id, batchId));
-  workspace('fileQueue', (id, planId, confirmed, subtitles) =>
-    projects.fileQueue(id, planId, confirmed, subtitles),
+  workspace('fileQueue', (id, planId, confirmed, transcript) =>
+    projects.fileQueue(id, planId, confirmed, transcript),
   );
   workspace('cancelFiling', (id, queueId) => projects.cancelFiling(id, queueId));
   workspace('retainedMedia', (id, exportId) => projects.retainedMedia(id, exportId));
@@ -432,7 +432,7 @@ function registerDesktopApi(): void {
       ? null
       : projects.relinkExport(id, exportId, chosen.filePaths[0]);
   });
-  workspace('exportClip', async (id, planId, confirmed, subtitles) => {
+  workspace('exportClip', async (id, planId, confirmed, transcript) => {
     const s = projects.require(id),
       item = s.exports().find((e) => e.plan.id === planId);
     if (!item) throw new Error('Make a new export plan.');
@@ -450,7 +450,7 @@ function registerDesktopApi(): void {
     });
     return chosen.canceled || !chosen.filePath
       ? null
-      : projects.startExport(id, planId, chosen.filePath, confirmed, subtitles);
+      : projects.startExport(id, planId, chosen.filePath, confirmed, transcript);
   });
   workspace('revealExport', async (id, exportId, kind) =>
     shell.showItemInFolder(await projects.exportLocation(id, exportId, kind)),

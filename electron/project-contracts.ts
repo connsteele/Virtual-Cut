@@ -6,6 +6,7 @@ import type {
   FilingPlan,
   RetainedClip,
   SubtitleRole,
+  TranscriptOutputs,
 } from './export-contracts.js';
 
 export interface Batch {
@@ -119,7 +120,7 @@ export interface ProjectApi {
     id: string,
     planId: string,
     confirmed: boolean,
-    subtitles?: SubtitleRole[],
+    transcript?: TranscriptOutputs,
   ): Promise<ProjectSnapshot>;
   cancelFiling(id: string, queueId: string): Promise<ProjectSnapshot>;
   retainedMedia(id: string, exportId: string): Promise<RetainedClip>;
@@ -195,7 +196,7 @@ export interface ProjectApi {
     id: string,
     planId: string,
     cleanGameConfirmed: boolean,
-    subtitles?: SubtitleRole[],
+    transcript?: TranscriptOutputs,
   ): Promise<ProjectSnapshot | null>;
   revealExport(id: string, exportId: string, kind: 'video' | 'metadata'): Promise<void>;
 }

@@ -354,7 +354,7 @@ try {
   await dialog()
     .getByRole('checkbox', { name: /game track is clean/ })
     .check();
-  await expect(dialog().getByRole('group', { name: 'Subtitles (SRT)' })).toBeVisible();
+  await expect(dialog().getByRole('group', { name: 'Transcript' })).toBeVisible();
   await capture('filing-wide');
   await dialog().getByRole('button', { name: 'File 1 accepted clips', exact: true }).click();
   await expect(dialog().getByRole('table', { name: 'Filing progress' })).toContainText('Done', {

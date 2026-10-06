@@ -62,8 +62,9 @@ import type {
   FilingPlan,
   RetainedClip,
   SubtitleRole,
+  TranscriptOutputs,
 } from './export-contracts.js' with { 'resolution-mode': 'import' };
-import { subtitleRequest, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
+import { transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -604,6 +605,13 @@ export class ProjectService {
     const snapshot = store.snapshot();
     snapshot.destinations = structuredClone(await this.checkedDestinations());
     for (const item of snapshot.exports) {
+      // The window needs only which roles were kept, not the frozen transcript data.
+      if (item.companionTranscripts)
+        item.companionTranscripts = {
+          requested: item.companionTranscripts.requested,
+          items: [],
+          included: item.companionTranscripts.items.map((h) => h.transcript.role),
+        };
       try {
         item.current = item.inputHash === this.exportInput(item.plan.clipId, false).hash;
       } catch {
@@ -1323,11 +1331,11 @@ export class ProjectService {
     planId: string,
     output: string,
     cleanGameConfirmed: boolean,
-    subtitles?: SubtitleRole[],
+    transcript?: TranscriptOutputs,
   ) {
     const s = this.require(id),
       record = s.exports().find((e) => e.plan.id === planId),
-      requested = subtitleRequest(subtitles);
+      outputs = transcriptOutputs(transcript);
     if (!record || !['planned', 'failed', 'cancelled', 'interrupted'].includes(record.state))
       throw new Error('Make a new export plan.');
     if (cleanGameConfirmed !== true)
@@ -1350,7 +1358,7 @@ export class ProjectService {
       output: resolved,
       metadata: resolved + '.vcut.json',
       cleanGameConfirmed: true,
-      subtitles: requested.length ? { requested, written: [], skipped: [] } : undefined,
+      ...this.transcriptRequest(record, outputs),
       state: 'queued',
       verification: resolved === record.output ? record.verification : undefined,
       started: undefined,
@@ -1441,6 +1449,34 @@ export class ProjectService {
     this.filingPlans.set(plan.id, { plan, records });
     return plan;
   }
+  /**
+   * What the transcript option asks of this export. Companion history is frozen now, so verifying
+   * or retrying later reproduces exactly the same .vcut.json.
+   */
+  private transcriptRequest(record: ExportRecord, outputs: TranscriptOutputs) {
+    const { start, end } = record.plan.planned,
+      margin = 5;
+    const items = outputs.companion
+      ? outputs.roles.flatMap((role) => {
+          const found = this.subtitleSource(record, role);
+          if (!found) return [];
+          const segments = [...found.segments].filter(
+            (x) => x.end > start - margin && x.start < end + margin,
+          );
+          const ids = new Set(segments.map((x) => x.id));
+          const edits = (found.model.transcriptEdits || []).filter(
+            (e) => e.transcriptId === found.transcript.id && ids.has(e.segmentId),
+          );
+          return [{ transcript: found.transcript, segments, edits }];
+        })
+      : [];
+    return {
+      subtitles: outputs.srt ? { requested: outputs.roles, written: [], skipped: [] } : undefined,
+      companionTranscripts: outputs.companion
+        ? { requested: outputs.roles, items: structuredClone(items) }
+        : undefined,
+    };
+  }
   /** The latest finished transcript of this role for the export's recording (one per role). */
   private subtitleSource(record: ExportRecord, role: SubtitleRole) {
     const s = this.require(),
@@ -1469,10 +1505,10 @@ export class ProjectService {
         'This accepted clip changed or was held. Review and accept the current edits before filing.',
       );
   }
-  async fileQueue(id: string, planId: string, confirmed: boolean, subtitles?: SubtitleRole[]) {
+  async fileQueue(id: string, planId: string, confirmed: boolean, transcript?: TranscriptOutputs) {
     const s = this.require(id),
       saved = this.filingPlans.get(planId),
-      requested = subtitleRequest(subtitles);
+      outputs = transcriptOutputs(transcript);
     if (!saved || !saved.records.length || saved.plan.rows.some((r) => r.issues.length))
       throw new Error('Check an eligible filing plan first.');
     if (confirmed !== true)
@@ -1521,7 +1557,7 @@ export class ProjectService {
     s.transaction(() => {
       for (const record of saved.records) {
         record.cleanGameConfirmed = true;
-        record.subtitles = requested.length ? { requested, written: [], skipped: [] } : undefined;
+        Object.assign(record, this.transcriptRequest(record, outputs));
         record.state = 'queued';
         record.message = 'Waiting to file';
         s.putExport(record);
@@ -1950,6 +1986,13 @@ export class ProjectService {
               }
             : {}),
         };
+        const history = done.companionTranscripts;
+        if (history) {
+          const kept = history.items.map((h) => h.transcript.role);
+          completed.message += kept.length
+            ? ` Transcript history kept in the companion (${kept.map((r) => (r === 'game' ? 'game dialogue' : 'microphone')).join(', ')}).`
+            : ' No finished transcript for the companion history.';
+        }
         if (subtitles)
           completed.message +=
             (subtitles.written.length

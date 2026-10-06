@@ -1,4 +1,9 @@
 import type { Clip, Marker } from './workflow-types.js';
+import type {
+  TranscriptEdit,
+  TranscriptSegment,
+  TranscriptSummary,
+} from './transcript-contracts.js';
 
 export type ExportContainer = 'mp4' | 'mkv' | 'mov' | 'm4v' | 'webm';
 export type ExportContainerChoice = 'source' | 'mp4' | 'mkv';
@@ -46,6 +51,25 @@ export interface ExportVerification {
 }
 /** Which finished transcript an SRT is written from (VC-94). */
 export type SubtitleRole = 'game' | 'mic';
+/** The transcript option offered with export and filing (VC-94, VC-154). */
+export interface TranscriptOutputs {
+  roles: SubtitleRole[];
+  /** SRT files beside the video. */
+  srt: boolean;
+  /** Original recognition, corrections and word timing in the .vcut.json companion. */
+  companion: boolean;
+}
+/** Transcript data frozen when the export is queued, so the companion is reproducible. */
+export interface CompanionTranscripts {
+  requested: SubtitleRole[];
+  items: {
+    transcript: TranscriptSummary;
+    segments: TranscriptSegment[];
+    edits: TranscriptEdit[];
+  }[];
+  /** Snapshots sent to the window carry only the included roles, not the data. */
+  included?: SubtitleRole[];
+}
 export interface SubtitleSidecars {
   requested: SubtitleRole[];
   written: { role: SubtitleRole; transcriptId: string; file: string; sha256: string }[];
@@ -76,6 +100,8 @@ export interface ExportRecord {
   cleanGameConfirmed?: boolean;
   /** SRT files written beside the verified video, cut to its actual range. */
   subtitles?: SubtitleSidecars;
+  /** Transcript history embedded in the companion (VC-154). */
+  companionTranscripts?: CompanionTranscripts;
   verification?: ExportVerification;
   message: string;
   updated: string;

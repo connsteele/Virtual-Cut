@@ -353,9 +353,59 @@ try {
       noSpeechProbability: 0,
       averageLogProbability: 0,
     });
+  // One corrected word, so the companion history carries both the original and the correction.
+  const { correctionId } = await import('../dist-electron/transcript-edits.js');
+  const editBefore = structuredClone(service.store.data.model),
+    editAfter = structuredClone(editBefore);
+  editAfter.transcriptEdits = [
+    {
+      id: correctionId('export-game-dialogue', 4, 0),
+      transcriptId: 'export-game-dialogue',
+      segmentId: 4,
+      wordIndex: 0,
+      text: ' Fixed4',
+    },
+  ];
+  await service.save(project, editBefore, editAfter);
+  await wait();
   const snapshotRoles = (await service.snapshot()).transcriptRoles;
   assert.deepEqual(snapshotRoles[normal.id], ['game']);
-  const a = await attempt(normal.id, 2.2, 5.1, 'mkv', 'B frames outward', ['game', 'mic']);
+  const a = await attempt(normal.id, 2.2, 5.1, 'mkv', 'B frames outward', {
+    roles: ['game', 'mic'],
+    srt: true,
+    companion: true,
+  });
+  // Companion history (VC-154): a separately versioned section; the receipt stays version 4.
+  const companion = JSON.parse(await readFile(a.metadata, 'utf8'));
+  assert.equal(companion.version, 4);
+  assert.equal(companion.transcripts.schema, 'virtual-cut-transcript-history');
+  assert.equal(companion.transcripts.version, 1);
+  assert.deepEqual(
+    companion.transcripts.items.map((i) => [
+      i.transcript.id,
+      i.transcript.role,
+      i.transcript.model,
+    ]),
+    [['export-game-dialogue', 'game', 'fixture']],
+  );
+  const fixed = companion.transcripts.items[0].spans.find((x) => x.original.id === 4);
+  assert.equal(fixed.original.text, ' Line4');
+  assert.equal(fixed.subtitleText, ' Fixed4');
+  assert.equal(fixed.timingPrecision, 'word');
+  assert.equal(fixed.words[0].clipStart, 4 - a.verification.actual.start);
+  assert.deepEqual(
+    companion.transcripts.items[0].corrections.map((c) => c.text),
+    [' Fixed4'],
+  );
+  assert.equal(companion.transcripts.items[0].scope.start, a.verification.actual.start);
+  assert.match(a.message, /Transcript history kept in the companion \(game dialogue\)\./);
+  // The window gets only which roles were kept, not the transcript data.
+  const shown = (await service.snapshot()).exports.find((e) => e.plan.id === a.plan.id);
+  assert.deepEqual(shown.companionTranscripts, {
+    requested: ['game', 'mic'],
+    items: [],
+    included: ['game'],
+  });
   const srtFile = path.join(destination, 'B frames outward.srt');
   const srt = await readFile(srtFile, 'utf8');
   // Cut to the verified (outward) range, with times relative to the clip, not the source.
@@ -368,6 +418,7 @@ try {
   const firstStart = clipTime(Math.max(firstLine, actual.start) - actual.start),
     firstEnd = clipTime(Math.min(firstLine + 0.8, actual.end) - actual.start);
   assert(srt.startsWith(`1\n${firstStart} --> ${firstEnd}\nLine${firstLine}\n`), srt);
+  assert(srt.includes('\nFixed4\n') && !srt.includes('Line4'), srt);
   assert(!srt.includes(`Line${Math.floor(actual.end) + 1}`), srt);
   assert.deepEqual(
     a.subtitles.written.map((w) => [w.role, w.transcriptId, w.file]),

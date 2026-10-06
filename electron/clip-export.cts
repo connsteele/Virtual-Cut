@@ -16,6 +16,7 @@ import {
 import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
 import { colors, markerColor, markerColorName } from './workflow-types.js';
+import { transcriptHandoff } from './transcript-export.js';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -711,6 +712,31 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                 }
               : {}),
           })),
+        // Optional and separately versioned, so helpers that read version 4 are unaffected (VC-154).
+        ...(record.companionTranscripts?.items.length
+          ? {
+              transcripts: {
+                schema: 'virtual-cut-transcript-history',
+                version: 1,
+                timing:
+                  'sourceStart/sourceEnd: recording time; clipStart/clipEnd: this video from 0; containerStart/containerEnd: video timestamps.',
+                items: record.companionTranscripts.items.map((h) =>
+                  transcriptHandoff(
+                    h.transcript,
+                    h.segments,
+                    { transcriptEdits: h.edits },
+                    {
+                      ...v.actual,
+                      sourceStart: input.sourceStart,
+                      timestampShift: v.timestampShift,
+                      exportId: plan.id,
+                      name: plan.name,
+                    },
+                  ),
+                ),
+              },
+            }
+          : {}),
         compatibility: {
           embedded: 'Chapter names and container timestamps',
           portable: 'All annotation fields in this file',

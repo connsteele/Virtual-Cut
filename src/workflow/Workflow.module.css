@@ -2057,7 +2057,7 @@
   margin-top: 5px;
 }
 
-/* Subtitle (SRT) option in export and filing (VC-94). */
+/* Transcript option in export and filing: SRT (VC-94) and companion history (VC-154). */
 .subtitleChoice {
   margin: 12px 0;
   padding: 10px 12px;
@@ -2073,4 +2073,9 @@
 }
 .subtitleChoice p {
   margin: 6px 0 0;
+}
+.subtitleOutputs {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #2f3f3c;
 }

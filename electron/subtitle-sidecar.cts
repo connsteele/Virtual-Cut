@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { link, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ExportRecord, SubtitleRole, SubtitleSidecars } from './export-contracts.js' with {
+import type {
+  ExportRecord,
+  SubtitleRole,
+  SubtitleSidecars,
+  TranscriptOutputs,
+} from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
 import type { TranscriptSegment, TranscriptSummary } from './transcript-contracts.js' with {
@@ -14,6 +19,17 @@ import type { TranscriptScope } from './transcript-export.js';
 export const subtitleRoles: readonly SubtitleRole[] = ['game', 'mic'];
 const label = { game: 'Game dialogue', mic: 'Microphone' } as const;
 
+/** Validates the transcript option from the window; anything malformed is refused. */
+export function transcriptOutputs(value: unknown): TranscriptOutputs {
+  if (value == null) return { roles: [], srt: false, companion: false };
+  const v = value as Partial<TranscriptOutputs>;
+  if (typeof v !== 'object' || typeof v.srt !== 'boolean' || typeof v.companion !== 'boolean')
+    throw new Error('Choose subtitles, companion transcript history, or neither.');
+  const roles = subtitleRequest(v.roles);
+  return roles.length && (v.srt || v.companion)
+    ? { roles, srt: v.srt, companion: v.companion }
+    : { roles: [], srt: false, companion: false };
+}
 export function subtitleRequest(value: unknown): SubtitleRole[] {
   if (value == null) return [];
   if (!Array.isArray(value) || value.some((r) => !subtitleRoles.includes(r as SubtitleRole)))

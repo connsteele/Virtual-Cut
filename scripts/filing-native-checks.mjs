@@ -314,8 +314,20 @@ for (const clipId of individualIds) await service.acceptReview(id, clipId);
 const individualPlan = await service.filingPlan(id, batch);
 service.switching = true;
 // Subtitles requested for clips without a finished transcript: filing still completes (VC-94).
-await assert.rejects(() => service.fileQueue(id, individualPlan.id, true, ['music']), /game/);
-await service.fileQueue(id, individualPlan.id, true, ['game']);
+await assert.rejects(
+  () =>
+    service.fileQueue(id, individualPlan.id, true, {
+      roles: ['music'],
+      srt: true,
+      companion: false,
+    }),
+  /game/,
+);
+await service.fileQueue(id, individualPlan.id, true, {
+  roles: ['game'],
+  srt: true,
+  companion: true,
+});
 const individualRecords = () =>
   service.store.exports().filter((e) => e.filing?.queueId === individualPlan.id);
 const queuedOne = individualRecords().find((e) => e.plan.clipId === 'cancel-queued');
@@ -336,7 +348,12 @@ assert.deepEqual(survivor.subtitles, {
   written: [],
   skipped: ['Game dialogue: no finished transcript for this recording.'],
 });
-assert.match(survivor.message, /^Filed · .* Game dialogue: no finished transcript/);
+assert.deepEqual(survivor.companionTranscripts, { requested: ['game'], items: [] });
+assert.equal(JSON.parse(await readFile(survivor.metadata, 'utf8')).transcripts, undefined);
+assert.match(
+  survivor.message,
+  /^Filed · .* No finished transcript for the companion history\. Game dialogue: no finished transcript/,
+);
 for (const record of individualRecords().filter((e) => e.state === 'cancelled')) {
   assert.equal(await stat(record.output).catch(() => null), null);
   assert.equal(await stat(record.metadata).catch(() => null), null);

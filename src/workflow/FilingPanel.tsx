@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
-import type { FilingPlan, SubtitleRole } from '../../electron/export-contracts';
-import { SubtitleChoice } from './SubtitleChoice';
+import type { FilingPlan, TranscriptOutputs } from '../../electron/export-contracts';
+import { TranscriptChoice, chosenTranscript, noTranscript } from './TranscriptChoice';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Modal } from './ui';
 import { JobTime } from './JobTime';
@@ -26,7 +26,7 @@ export function FilingPanel({
       p.exports.some((e) => e.filing && ['queued', 'running'].includes(e.state)),
     ),
     [confirmed, setConfirmed] = useState(false),
-    [subtitles, setSubtitles] = useState<SubtitleRole[]>([]),
+    [transcript, setTranscript] = useState<TranscriptOutputs>(noTranscript),
     [error, setError] = useState(''),
     [checking, setChecking] = useState(true);
   const id = p.project.id,
@@ -62,7 +62,9 @@ export function FilingPanel({
     (row) => p.transcriptRoles?.[p.model.clips.find((c) => c.id === row.clipId)?.rid || ''] || [],
   );
   const available = (['game', 'mic'] as const).filter((r) => rowRoles.some((x) => x.includes(r)));
-  const partial = subtitles.some((r) => rowRoles.some((x) => !x.includes(r)));
+  const partial =
+    (transcript.srt || transcript.companion) &&
+    transcript.roles.some((r) => rowRoles.some((x) => !x.includes(r)));
   return (
     <Modal title="File accepted clips" onClose={onClose} className={s.filingModal}>
       <p>
@@ -161,13 +163,13 @@ export function FilingPanel({
             />
             Every selected game track is clean, with no microphone mixed into it.
           </label>
-          <SubtitleChoice
+          <TranscriptChoice
             available={[...available]}
-            value={subtitles}
-            onChange={setSubtitles}
+            value={transcript}
+            onChange={setTranscript}
             missingNote={
               partial
-                ? 'Some clips have no finished transcript for a chosen role; they are filed without that SRT.'
+                ? 'Some clips have no finished transcript for a chosen role; they are filed without it.'
                 : undefined
             }
           />
@@ -193,7 +195,7 @@ export function FilingPanel({
                         id,
                         plan!.id,
                         confirmed,
-                        subtitles.filter((r) => available.includes(r)),
+                        chosenTranscript(transcript, available),
                       ),
                     true,
                   )

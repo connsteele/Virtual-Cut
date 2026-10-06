@@ -3,9 +3,9 @@ import { FolderOpen } from 'lucide-react';
 import type {
   ExportContainerChoice,
   ExportPlan,
-  SubtitleRole,
+  TranscriptOutputs,
 } from '../../electron/export-contracts';
-import { SubtitleChoice } from './SubtitleChoice';
+import { TranscriptChoice, chosenTranscript, noTranscript } from './TranscriptChoice';
 import { JobTime } from './JobTime';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Field, Modal } from './ui';
@@ -32,7 +32,7 @@ export function ExportPanel({
     [error, setError] = useState(''),
     [preparing, setPreparing] = useState(true),
     [confirmed, setConfirmed] = useState(false),
-    [subtitles, setSubtitles] = useState<SubtitleRole[]>([]);
+    [transcript, setTranscript] = useState<TranscriptOutputs>(noTranscript);
   const available = (clip && w.snapshot!.transcriptRoles?.[clip.rid]) || [];
   const projectId = w.snapshot!.project.id,
     flush = w.flush;
@@ -125,7 +125,7 @@ export function ExportPanel({
         Chapter names and times are embedded in the video. Resolve color and note transfer still
         needs manual review.
       </p>
-      <SubtitleChoice available={available} value={subtitles} onChange={setSubtitles} />
+      <TranscriptChoice available={available} value={transcript} onChange={setTranscript} />
       {plan && ['mp4', 'mov', 'm4v'].includes(plan.container) && (
         <p className={s.muted}>
           {plan.container.toUpperCase()} may add a neutral “Clip start” chapter so the first real
@@ -144,7 +144,7 @@ export function ExportPanel({
                     projectId,
                     plan!.id,
                     confirmed,
-                    subtitles.filter((r) => available.includes(r)),
+                    chosenTranscript(transcript, available),
                   ),
                 true,
               )

@@ -29,9 +29,9 @@ import { readTranscriptView, saveTranscriptView } from '../dist-electron/transcr
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-const { subtitleFile, subtitleRequest, writeSubtitleSidecars } = createRequire(import.meta.url)(
-  '../dist-electron/subtitle-sidecar.cjs',
-);
+const { subtitleFile, subtitleRequest, transcriptOutputs, writeSubtitleSidecars } = createRequire(
+  import.meta.url,
+)('../dist-electron/subtitle-sidecar.cjs');
 test('transcript reading state is bounded, session scoped and excludes editing drafts', () => {
   const values = new Map();
   let writes = 0;
@@ -791,6 +791,17 @@ test('cue filters cover every page, corrections and review state; playback pages
 });
 
 test('export SRT sidecars follow the verified cut, are named after the video and never replace files', async () => {
+  const none = { roles: [], srt: false, companion: false };
+  assert.deepEqual(transcriptOutputs(undefined), none);
+  assert.deepEqual(transcriptOutputs({ roles: ['game'], srt: false, companion: false }), none);
+  assert.deepEqual(transcriptOutputs({ roles: [], srt: true, companion: true }), none);
+  assert.deepEqual(transcriptOutputs({ roles: ['mic', 'game'], srt: false, companion: true }), {
+    roles: ['game', 'mic'],
+    srt: false,
+    companion: true,
+  });
+  assert.throws(() => transcriptOutputs({ roles: ['game'], srt: 'yes' }), /Choose subtitles/);
+  assert.throws(() => transcriptOutputs('game'), /Choose subtitles/);
   assert.deepEqual(subtitleRequest(undefined), []);
   assert.deepEqual(subtitleRequest(['mic', 'game', 'mic']), ['game', 'mic']);
   assert.throws(() => subtitleRequest(['music']), /game dialogue or microphone/);
