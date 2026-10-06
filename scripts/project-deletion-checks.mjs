@@ -43,7 +43,9 @@ const preview = path.join(project.cache, prefix + '-audio-1.m4a');
 const unknown = path.join(project.cache, 'user-notes.txt');
 const output = path.join(dir, 'finished.mp4');
 const metadata = output + '.vcut.json';
-for (const f of [source, preview, unknown, output, metadata])
+// An SRT written beside the export (VC-94) is protected like the companion.
+const subtitle = path.join(dir, 'finished.srt');
+for (const f of [source, preview, unknown, output, metadata, subtitle])
   await writeFile(f, 'preserve unless verified disposable preview');
 service.store.db
   .prepare('INSERT INTO sources(id,body) VALUES (?,?)')
@@ -59,6 +61,11 @@ service.store.db.prepare('INSERT INTO exports(id,body) VALUES (?,?)').run(
     input: { sourceFile: source },
     output,
     metadata,
+    subtitles: {
+      requested: ['game'],
+      written: [{ role: 'game', transcriptId: 't', file: subtitle, sha256: '' }],
+      skipped: [],
+    },
     state: 'verified',
   }),
 );
@@ -70,7 +77,7 @@ assert.equal(category('sources').files, 1);
 assert.equal(category('images').files, 0, 'A source inside cache remains referenced media');
 assert.equal(category('audio').bytes, (await stat(preview)).size);
 assert.equal(category('exports').files, 1);
-assert.equal(category('companions').files, 1);
+assert.equal(category('companions').files, 2);
 assert.equal(category('cacheOther').files, 1);
 assert.equal(
   service.store.db.prepare('SELECT total_changes() AS n').get().n,
@@ -99,7 +106,16 @@ assert(
 );
 assert(plan.files.some((f) => f.path === preview));
 assert(plan.files.some((f) => f.path === save));
-for (const protectedFile of [source, unknown, output, metadata, linked, junction, lockedSave])
+for (const protectedFile of [
+  source,
+  unknown,
+  output,
+  metadata,
+  subtitle,
+  linked,
+  junction,
+  lockedSave,
+])
   assert(!plan.files.some((f) => f.path === protectedFile));
 // Changed files and an active writer invalidate confirmation without removing anything.
 await writeFile(preview, 'changed since preview');
@@ -118,6 +134,7 @@ for (const preserved of [
   unknown,
   output,
   metadata,
+  subtitle,
   linked,
   lockedSave,
   path.join(saveDir, 'keep.txt'),
