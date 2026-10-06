@@ -63,8 +63,8 @@
   min-width: 200px;
   margin: 0;
 }
-/* One toolbar row (VC-114 stage 2a): recording, transcript, Follow, Export, engine, Transcribe.
-   Search sits on the row below, left of the filter chips. */
+/* One toolbar row (VC-114 stage 2a): track, Follow, Export, engine, Transcribe. The recording
+   follows the main window. Search sits on the row below, left of the filter chips. */
 .tools {
   display: flex;
   flex-wrap: wrap;
@@ -75,9 +75,9 @@
 /* Starting widths that grow, so the row fits the default 760 px window and wraps only when the
    window is narrower. */
 .window .tools > select {
-  flex: 1 1 120px;
-  width: 120px;
-  max-width: 240px;
+  flex: 1 1 260px;
+  width: 260px;
+  max-width: 420px;
   padding: 7px 8px;
   text-overflow: ellipsis;
 }

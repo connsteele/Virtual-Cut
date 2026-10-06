@@ -405,21 +405,8 @@ export function TranscriptWindow() {
       ) : (
         <>
           <div className={s.tools} role="toolbar" aria-label="Transcript tools">
-            <select
-              aria-label="Recording"
-              title="Recording"
-              value={session.sourceId}
-              onChange={(e) => {
-                setSourceId(e.target.value);
-                setSelection(undefined);
-              }}
-            >
-              {session.recordings.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.title}
-                </option>
-              ))}
-            </select>
+            {/* No recording switcher: the window follows the recording selected in the main
+                window (Connor, M336). */}
             {selected && (
               <select
                 aria-label="Select transcript"
@@ -433,8 +420,8 @@ export function TranscriptWindow() {
               >
                 {session.transcripts.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.role === 'mic' ? 'Microphone notes' : 'Game dialogue'} ·{' '}
-                    {t.language || 'Auto'} · {t.state} · {new Date(t.created).toLocaleString()}
+                    {t.role === 'mic' ? 'Microphone' : 'Game'} · {t.language || 'Auto'} · {t.state}{' '}
+                    · {new Date(t.created).toLocaleString()}
                   </option>
                 ))}
               </select>

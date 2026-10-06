@@ -145,6 +145,11 @@ try {
   // One toolbar row (VC-114 stage 2a, VC-92); search sits left of the filter chips (M336).
   const tools = transcript.getByRole('toolbar', { name: 'Transcript tools' });
   await expect(tools.getByLabel('Select transcript', { exact: true })).toBeVisible();
+  // No recording switcher (the window follows the main window); short track labels (M336).
+  await expect(tools.getByLabel('Recording', { exact: true })).toHaveCount(0);
+  await expect(
+    tools.getByLabel('Select transcript', { exact: true }).locator('option').first(),
+  ).toHaveText(/^(Microphone|Game) · /);
   const searchBox = transcript.getByLabel('Search transcript');
   await expect(searchBox).toHaveAttribute('placeholder', 'Search');
   assert(
