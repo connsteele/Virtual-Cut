@@ -1,6 +1,8 @@
 import type { CreativeContext } from '../../electron/project-context';
 import { defaultContext, effectiveContext } from '../../electron/project-context';
+import { useId, useState } from 'react';
 import { Field } from './ui';
+import { gameChoices, pickGame, rememberGame, savedGames } from './gameLibrary';
 import s from './Workflow.module.css';
 
 export function ContextEditor({
@@ -13,6 +15,17 @@ export function ContextEditor({
   contexts?: CreativeContext[];
 }) {
   const batch = value.id !== 'project';
+  const listId = useId();
+  const [saved, setSaved] = useState(() => savedGames(storage()));
+  const choices = gameChoices(
+    saved,
+    contexts.filter((c) => c.id !== value.id).map((c) => c.game),
+  );
+  const remember = (game = value.game) => {
+    rememberGame(game, storage());
+    setSaved(savedGames(storage()));
+  };
+  const known = !!value.game && choices.some((g) => g.id === value.game!.id);
   const update = (patch: Partial<CreativeContext>) => onChange({ ...value, ...patch });
   const effective = effectiveContext(
     [...contexts.filter((c) => c.id !== value.id), value],
@@ -32,25 +45,36 @@ export function ContextEditor({
       </Field>
       {value.gameMode === 'set' && (
         <>
+          {/* Searchable saved or custom title (VC-53); a saved title keeps its game identity. */}
           <Field label="Game name">
             <input
               maxLength={300}
+              list={listId}
+              placeholder="Search saved games or type a new title"
               value={value.game?.name || ''}
               onChange={(e) =>
                 update({
-                  game: {
-                    id: value.game?.id || crypto.randomUUID(),
-                    vocabulary: value.game?.vocabulary || '',
-                    name: e.target.value,
-                  },
+                  game: pickGame(e.target.value, value.game, choices, () => crypto.randomUUID()),
                 })
               }
+              onBlur={() => remember()}
             />
           </Field>
+          <datalist id={listId}>
+            {choices.map((g) => (
+              <option key={g.id} value={g.name} />
+            ))}
+          </datalist>
+          {!!value.game?.name.trim() && (
+            <p className={s.muted}>
+              {known ? 'Saved game' : 'New game'} · it is offered in every project on this computer.
+            </p>
+          )}
           <Field label="Names and game terms (optional)">
             <textarea
               maxLength={10000}
               placeholder="Character names, places and fictional terms"
+              onBlur={() => remember()}
               value={value.game?.vocabulary || ''}
               onChange={(e) =>
                 update({
@@ -97,3 +121,10 @@ export function ContextEditor({
   );
 }
 export { defaultContext };
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}

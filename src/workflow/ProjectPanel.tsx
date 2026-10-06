@@ -199,6 +199,7 @@ export function ProjectPanel({
           <details>
             <summary>Project game and video brief</summary>
             <ContextEditor
+              contexts={w.model.contexts}
               value={w.model.contexts?.find((c) => c.id === 'project') || defaultContext('project')}
               onChange={(context) =>
                 w.setModel((model) => ({

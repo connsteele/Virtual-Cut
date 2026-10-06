@@ -362,6 +362,31 @@ try {
   const batchContext = page.getByRole('region', { name: 'Batch context', exact: true });
   await batchContext.getByLabel('Game context').selectOption('inherit');
   await expect(batchContext).toContainText('Using: Review game');
+  // Searchable saved games (VC-53): the project's game is offered and keeps its identity.
+  await batchContext.getByLabel('Game context').selectOption('set');
+  const gamePicker = batchContext.getByLabel('Game name', { exact: true });
+  const offered = await gamePicker.evaluate((input) =>
+    [...input.list.options].map((option) => option.value),
+  );
+  assert.deepEqual(offered, ['Review game']);
+  await gamePicker.fill('review game');
+  await expect(batchContext).toContainText('Saved game');
+  const pickerShot = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()
+        .find((w) => !w.webContents.getURL().endsWith('#transcript'))
+        .webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+    )
+      .toPNG()
+      .toString('base64'),
+  );
+  await writeFile(path.join(dir, 'game-picker.png'), Buffer.from(pickerShot, 'base64'));
+  await expect(batchContext.getByLabel('Names and game terms (optional)')).toHaveValue(
+    'Cai, Castor',
+  );
+  await gamePicker.fill('Another game');
+  await expect(batchContext).toContainText('New game');
+  await batchContext.getByLabel('Game context').selectOption('inherit');
   await batchContext.getByLabel('Video brief').selectOption('append');
   await batchContext.getByLabel('Batch brief', { exact: true }).fill('Opening scene');
   await batchContext.getByLabel('Game context').selectOption('none');

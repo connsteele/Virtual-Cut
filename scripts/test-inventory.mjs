@@ -10,6 +10,7 @@ export const fast = [
   'filmstrip-memory.test.mjs',
   'marker-timing.test.mjs',
   'review-order.test.mjs',
+  'game-library.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -82,6 +83,8 @@ export const other = {
     'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
   'reverse-cache-study.mjs':
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
+  'resolve-subtitle-fixture.mjs':
+    'Makes the timed video and SRT pair for checking subtitle import in Resolve by hand (VC-154); not a test.',
   'cue-accuracy-study.mjs':
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'transcription-device-study.mjs':
