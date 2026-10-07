@@ -30,6 +30,8 @@ import {
   type SubmitInput,
 } from './agent-proposals.js';
 import { proposalLimit } from './proposal-store.cjs';
+import { intentGuideAnswer } from './intent-guide.js';
+import { readFileSync, statSync } from 'node:fs';
 const instructions =
   'Virtual Cut prepares game footage for YouTube. These tools read the project that is open in ' +
   'Virtual Cut right now: what is on screen, batches with their game and brief, the context ' +
@@ -37,6 +39,8 @@ const instructions =
   'decisions. Times are seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
+  "Before proposing from the creator's mic speech, read get_intent_guide: it says what their " +
+  'free speech means and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
   'never return file paths or media.';
 
@@ -79,6 +83,16 @@ export function registerAgentAccess(options: {
       transcripts: store.transcripts,
       proposals: store.proposals,
       view: access.view,
+      taggedNotes: (recordingId) => {
+        const file = store.sources().find((s) => s.id === recordingId)?.file;
+        if (!file) return undefined;
+        const notes = file.slice(0, file.length - path.extname(file).length) + '.txt';
+        try {
+          return statSync(notes).size <= 256 * 1024 ? readFileSync(notes, 'utf8') : undefined;
+        } catch {
+          return undefined;
+        }
+      },
     };
   }
 
@@ -190,6 +204,19 @@ export function registerAgentAccess(options: {
       (s, a) => annotations(s, a.batch_id, a.recording_id),
       (a, n) =>
         `Annotations: ${a.recording_id ? n(a.recording_id) : a.batch_id ? n(a.batch_id) : 'active batch'}`,
+    );
+    read<{ recording_id?: string; max_examples?: number }>(
+      'get_intent_guide',
+      "How to read the creator's free mic speech and turn it into proposals: the intents " +
+        '(marker, general, notion, edit), spoken commands, rules and the steps of a mic intent ' +
+        'pass, with their own labelled examples, earlier decisions and habits. Read it before ' +
+        'proposing from mic speech. Give recording_id to leave that recording out of the examples.',
+      z.object({
+        recording_id: z.string().max(200).optional().describe('The recording you will work on.'),
+        max_examples: z.number().int().min(0).max(200).optional().describe('Default 40.'),
+      }),
+      (s, a) => intentGuideAnswer(s, a),
+      (a, n) => `Intent guide${a.recording_id ? ` for ${n(a.recording_id)}` : ''}`,
     );
     read<SubmitInput>(
       'submit_proposals',

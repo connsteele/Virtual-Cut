@@ -88,6 +88,8 @@ export interface CueDecision {
   appliedEnd?: number;
   text?: string;
   decided?: string;
+  /** A spoken cue settled by accepting the agent proposal that reworked it (VC-155). */
+  settledBy?: string;
 }
 export interface TranscriptPage {
   followStart?: number;

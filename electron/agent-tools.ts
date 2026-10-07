@@ -23,6 +23,8 @@ export interface AgentReadSource {
     segments(id: string, after?: number): Iterable<TranscriptSegment>;
   };
   view?: AgentView;
+  /** The tagged mic notes (.txt) beside a recording's file, if any (VC-155). */
+  taggedNotes?: (recordingId: string) => string | undefined;
   proposals?: { list(sourceId?: string): import('./proposal-contracts.js').AgentProposal[] };
 }
 export class AgentReadError extends Error {}

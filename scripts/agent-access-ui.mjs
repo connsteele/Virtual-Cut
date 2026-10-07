@@ -155,6 +155,7 @@ try {
     'get_annotations',
     'get_context',
     'get_current_view',
+    'get_intent_guide',
     'get_project_summary',
     'get_proposal_decisions',
     'get_transcript',

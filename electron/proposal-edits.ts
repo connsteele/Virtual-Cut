@@ -16,6 +16,9 @@ export function proposalDecision(decisions: CueDecision[], proposalId: string) {
 export function proposalStatus(decisions: CueDecision[], proposalId: string) {
   return proposalDecision(decisions, proposalId)?.status || 'pending';
 }
+/** A proposal's intent tags, whichever field stored them. */
+export const proposalIntents = (p: Pick<AgentProposal, 'intent' | 'intents'>) =>
+  p.intents ?? (p.intent ? [p.intent] : []);
 export const proposalLabel = (kind: AgentProposal['kind']) =>
   kind === 'clip'
     ? 'Clip range'
@@ -131,12 +134,21 @@ export function applyProposalCommand(
       time: start,
     });
   } else {
+    // A range marker labels part of a continuous scene (VC-155).
+    const end = command.endTime ?? proposal.end;
+    if (
+      end !== undefined &&
+      (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
+    )
+      throw new Error('Marker end must follow its start within this recording.');
+    if (end !== undefined) decision.appliedEnd = end;
     decision.markerId = newId();
     next.markers[record.id] = [
       ...(next.markers[record.id] || []),
       {
         id: decision.markerId,
         time: start,
+        ...(end !== undefined ? { end } : {}),
         name: title.slice(0, 100) || 'Agent marker',
         note: text,
         category: 'Context',
@@ -146,5 +158,30 @@ export function applyProposalCommand(
     ];
   }
   next.cueDecisions = [...(next.cueDecisions || []), decision];
+  // Accepting a proposal that reworked a spoken cue settles that cue too, unless it was already
+  // decided on its own.
+  const cue = proposal.refines;
+  if (
+    cue &&
+    !next.cueDecisions.some(
+      (d) =>
+        !d.proposalId &&
+        d.sourceId === record.id &&
+        d.track === cue.track &&
+        d.kind === cue.kind &&
+        d.time != null &&
+        Math.abs(d.time - cue.time) <= 0.5,
+    )
+  )
+    next.cueDecisions.push({
+      id: `${record.id}:${cue.track}:${cue.kind}:${Math.round(cue.time * 4)}`,
+      sourceId: record.id,
+      track: cue.track,
+      kind: cue.kind,
+      time: cue.time,
+      status: 'accepted',
+      decided: now,
+      settledBy: proposal.id,
+    });
   return next;
 }

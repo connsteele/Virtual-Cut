@@ -16,11 +16,13 @@ import { validateEdits, emptyModel } from '../dist-electron/project-edits.js';
 
 // Agent proposals (VC-161/VC-162): a submission is checked whole, names the failing field,
 // cites only the current transcript, and changes nothing until a decision is applied.
+// Line 30 is a spoken Split and line 31 a spoken Marker cue, for proposals that rework them.
+const spoken = { 30: ' Split.', 31: ' Marker, Bertrand shows up.' };
 const segments = Array.from({ length: 40 }, (_, i) => ({
   id: i,
   start: i * 5,
   end: i * 5 + 4,
-  text: ` line ${i}`,
+  text: spoken[i] ?? ` line ${i}`,
   words: [],
   noSpeechProbability: 0,
   averageLogProbability: 0,
@@ -159,7 +161,7 @@ const refused = (proposals, pattern, extra) =>
 refused([base({ time_seconds: 900 })], /^proposals\[0\]\.time_seconds: 900 is past the end/);
 refused([base({ kind: 'clip' })], /^proposals\[0\]\.end_seconds: a clip needs an end/);
 refused([base({ kind: 'clip', end_seconds: 10 })], /end must follow/);
-refused([base({ end_seconds: 20 })], /only a clip has an end/);
+refused([base({ kind: 'note', end_seconds: 20 })], /only a clip or a range marker has an end/);
 refused(
   [base({ clip_names: { first: 'A', second: 'B' } })],
   /^proposals\[0\]\.clip_names: only a split names two clips/,
@@ -361,4 +363,133 @@ assert.equal(
 assert.throws(() => proposalDecisions(source, { proposal_ids: ['nope'] }), /no proposal "nope"/);
 assert.throws(() => proposalDecisions(source, { status: 'maybe' }), /status: Invalid option/);
 assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs');
+// VC-155: several intents, Notion targets, range markers, and reworking a spoken cue.
+{
+  const [range, notion, rework, retitle] = submit([
+    base({ time_seconds: 20, end_seconds: 60, title: 'Reunion', intents: ['marker'] }),
+    base({
+      kind: 'note',
+      time_seconds: 5,
+      title: 'Cai stops running',
+      intents: ['general', 'notion'],
+      intent: 'general',
+      notion: { target: 'expands', existing: "Cai's doubt " },
+      evidence: [{ role: 'mic', transcript_id: 'mic-1', line_ids: [1, 3, 5] }],
+    }),
+    base({
+      kind: 'split',
+      time_seconds: 147,
+      title: 'Scene change',
+      clip_names: { first: 'Fort', second: 'Camp' },
+      refines: { transcript_id: 'mic-1', line_id: 30 },
+      evidence: [],
+    }),
+    base({
+      time_seconds: 155,
+      title: 'Bertrand returns',
+      refines: { transcript_id: 'mic-1', line_id: 31 },
+      evidence: [],
+    }),
+  ]);
+  assert.equal(range.end, 60);
+  assert.deepEqual(notion.intents, ['general', 'notion']);
+  assert.equal(notion.intent, 'general');
+  assert.deepEqual(notion.notion, { target: 'expands', existing: "Cai's doubt" });
+  assert.deepEqual(rework.refines, {
+    transcriptId: 'mic-1',
+    track: 1,
+    lineId: 30,
+    kind: 'cut',
+    time: 150,
+    text: 'Split.',
+  });
+  assert.equal(retitle.refines.kind, 'mark');
+  assert.equal(submissionAnswer(source, [rework]).submitted[0].reworks, 'cut cue at 150 s');
+  refused([base({ notion: { target: 'new' } })], /notion: only a proposal with the notion intent/);
+  refused(
+    [base({ intents: ['notion'], notion: { target: 'duplicate' } })],
+    /notion\.existing: name the note it repeats/,
+  );
+  refused([base({ end_seconds: 300 })], /end_seconds: the end must follow/);
+  refused(
+    [base({ kind: 'split', refines: { transcript_id: 'mic-old', line_id: 30 } })],
+    /refines\.transcript_id: stale or unknown/,
+  );
+  refused(
+    [base({ kind: 'split', refines: { transcript_id: 'mic-1', line_id: 2 } })],
+    /refines\.line_id: line 2 holds no spoken cue/,
+  );
+  refused(
+    [base({ kind: 'split', refines: { transcript_id: 'mic-1', line_id: 99 } })],
+    /line 99 holds no spoken cue/,
+  );
+  refused(
+    [base({ kind: 'clip', end_seconds: 170, refines: { transcript_id: 'mic-1', line_id: 30 } })],
+    /line 30 is a cut cue; a clip proposal cannot rework it/,
+  );
+  stored.push(range, notion, rework, retitle);
+  refused(
+    [base({ kind: 'split', time_seconds: 149, refines: { transcript_id: 'mic-1', line_id: 30 } })],
+    /another pending proposal already reworks that cue/,
+  );
+
+  // Accepting a range marker keeps its end; accepting a rework settles the spoken cue too.
+  const camp = {
+    ...model,
+    clips: [
+      ...model.clips,
+      { id: 'c2', rid: 'r1', name: 'Camp', start: 100, end: 200, folder: 'Story', include: true },
+    ],
+  };
+  const ranged = applyProposalCommand(model, range, command(range, 'accept-proposal', {}), newId);
+  assert.equal(ranged.markers.r1.at(-1).end, 60);
+  assert.equal(proposalDecision(ranged.cueDecisions, range.id).appliedEnd, 60);
+  assert.throws(
+    () =>
+      applyProposalCommand(model, range, command(range, 'accept-proposal', { endTime: 10 }), newId),
+    /Marker end must follow/,
+  );
+  const settled = applyProposalCommand(
+    camp,
+    rework,
+    command(rework, 'accept-proposal', { clipId: 'c2' }),
+    newId,
+    '2026-10-07T03:00:00Z',
+  );
+  assert.deepEqual(settled.cueDecisions.at(-1), {
+    id: 'r1:1:cut:600',
+    sourceId: 'r1',
+    track: 1,
+    kind: 'cut',
+    time: 150,
+    status: 'accepted',
+    decided: '2026-10-07T03:00:00Z',
+    settledBy: rework.id,
+  });
+  validateEdits(settled);
+  // A cue already decided on its own is left as it was; rejecting a rework leaves the cue open.
+  const own = {
+    ...camp,
+    cueDecisions: [
+      { id: 'mine', sourceId: 'r1', track: 1, kind: 'cut', time: 150.2, status: 'rejected' },
+    ],
+  };
+  assert.equal(
+    applyProposalCommand(own, rework, command(rework, 'accept-proposal', { clipId: 'c2' }), newId)
+      .cueDecisions.length,
+    2,
+  );
+  assert.equal(
+    applyProposalCommand(model, rework, command(rework, 'reject-proposal', {}), newId).cueDecisions
+      .length,
+    1,
+  );
+  const back = proposalDecisions(source, { proposal_ids: [notion.id, rework.id] }).proposals;
+  assert.deepEqual(back[0].intents, ['general', 'notion']);
+  assert.deepEqual(back[0].evidence, [{ role: 'mic', start: 5, end: 29 }]);
+  assert.deepEqual(back[1].refines, { lineId: 30, kind: 'cut', time: 150, heard: 'Split.' });
+  assert.deepEqual(proposalDecisions(source, { proposal_ids: [range.id] }).proposals[0].intents, [
+    'marker',
+  ]);
+}
 console.log('Agent proposals: submission checks, decisions and read-back passed.');

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { parseTaggedNotes, splitTarget } from '../dist-electron/intent-notes.js';
 import { scoreRecording } from '../dist-electron/intent-score.js';
+import { intentGuide, intentGuideAnswer } from '../dist-electron/intent-guide.js';
+import { emptyModel } from '../dist-electron/project-edits.js';
 
 // Tagged mic notes (VC-128, VC-155): the notes read as written, and the scorer credits each
 // intent only when a proposal of that intent sits on the tagged speech.
@@ -194,4 +196,146 @@ const p = (id, values) => ({
   assert.equal(none.entries.find((e) => e.command).split.proposal, undefined);
   assert.equal(none.entries.find((e) => e.command).split.onTarget, false);
 }
-console.log('Intent notes and scoring checks passed.');
+// The intent guide (VC-155): the shipped guide plus the user's examples and decisions, never the
+// tagged notes of the recording being worked on.
+{
+  const rec = (id, title) => ({
+    id,
+    title,
+    url: '',
+    frames: [],
+    base: 0,
+    duration: 3000,
+    sample: false,
+    context: '',
+    batchIds: ['b1'],
+  });
+  const notesText = `00:01:00
+{marker, general}
+Nice crit here [Peter]
+
+00:02:00
+[cough]
+
+00:03:00
+Split [exactly here]
+
+00:04:00
+{notion}
+Note I like the crowd
+`;
+  const proposal = (id, extra) => ({
+    id,
+    sourceId: 'r2',
+    kind: 'mark',
+    time: 10,
+    title: 'Old',
+    text: '',
+    reason: 'r',
+    evidence: [
+      { role: 'mic', transcriptId: 'm', lineIds: [1], start: 9, end: 12, quote: 'Mark this one' },
+    ],
+    agent: { clientId: 'c', name: 'Claude' },
+    submitted: 's',
+    submissionId: 'x',
+    projectRevision: 1,
+    ...extra,
+  });
+  const source = {
+    project: { id: 'p', name: 'P' },
+    batches: [{ id: 'b1', name: 'B', created: 'c' }],
+    activeBatchId: 'b1',
+    revision: 4,
+    model: {
+      ...emptyModel(),
+      recordings: [
+        rec('r1', 'Session one'),
+        rec('r2', 'Session two'),
+        { ...rec('r3', 'Sample'), sample: true },
+      ],
+      cueDecisions: [
+        {
+          id: 'agent:a',
+          proposalId: 'a',
+          status: 'accepted',
+          appliedTime: 11.5,
+          title: 'New title',
+        },
+        { id: 'agent:b', proposalId: 'b', status: 'rejected' },
+        { id: 'agent:d', proposalId: 'd', status: 'accepted', appliedTime: 40, title: 'A | B' },
+      ],
+    },
+    fingerprints: {},
+    transcripts: { list: () => [], *segments() {} },
+    taggedNotes: (id) => (id === 'r1' || id === 'r3' ? notesText : undefined),
+    proposals: {
+      list: () => [
+        proposal('a', { intents: ['marker'] }),
+        proposal('b', { intent: 'general', title: 'Nope' }),
+        proposal('c', {}),
+        proposal('d', { kind: 'cut', time: 40, evidence: [], refines: { text: 'Split.' } }),
+        proposal('e', { sourceId: 'gone' }),
+      ],
+    },
+  };
+  const all = intentGuideAnswer(source);
+  assert.equal(all.guide, intentGuide);
+  assert.equal(all.guide.version, '1');
+  assert.deepEqual(
+    all.guide.intents.map((i) => i.tag),
+    ['marker', 'general', 'notion', 'edit'],
+  );
+  assert.deepEqual(
+    all.examples.map((e) => [
+      e.from,
+      e.recording,
+      e.time,
+      e.intents.join('+'),
+      e.outcome ?? e.command ?? '',
+    ]),
+    [
+      [
+        'decision',
+        'Session two',
+        10,
+        'marker',
+        'accepted mark, moved +1.5 s, retitled "Old" → "New title"',
+      ],
+      ['decision', 'Session two', 10, 'general', 'rejected mark "Nope"'],
+      ['decision', 'Session two', 40, '', 'accepted split "A | B"'],
+      ['tagged notes', 'Session one', 1, 'marker+general', ''],
+      ['tagged notes', 'Session one', 3, '', 'split'],
+      ['tagged notes', 'Session one', 4, 'notion', ''],
+    ],
+  );
+  assert.equal(all.examples[2].said, 'Split.', 'a reworked cue says what was heard');
+  assert.equal(all.examples[3].context, 'Peter');
+  assert.deepEqual(all.profile, {
+    taggedLines: 3,
+    intents: { marker: 1, general: 1, notion: 1, edit: 0 },
+    cueWordShare: 0.33,
+    decisions: { accepted: 2, rejected: 1, moved: 1 },
+    notes: [],
+  });
+  assert.equal(all.projectRevision, 4);
+  const working = intentGuideAnswer(source, { recording_id: 'r1', max_examples: 2 });
+  assert.ok(
+    working.examples.every((e) => e.from === 'decision'),
+    "r1's own notes are left out",
+  );
+  assert.equal(working.examples.length, 2);
+  assert.equal(working.moreExamples, 1);
+  assert.equal(working.profile.taggedLines, 0);
+  assert.equal(working.profile.cueWordShare, undefined);
+  const quiet = intentGuideAnswer({
+    ...source,
+    taggedNotes: () => '00:01:00\n{general}\nJust talking\n',
+    proposals: undefined,
+  });
+  assert.deepEqual(quiet.profile.notes, [
+    'Rarely uses cue words: read free speech for intent rather than waiting for one.',
+  ]);
+  assert.throws(() => intentGuideAnswer(source, { max_examples: 500 }), /max_examples/);
+  assert.throws(() => intentGuideAnswer(source, { recording_id: 'nope' }), /No recording/);
+}
+console.log('Intent notes, scoring and guide checks passed.');
