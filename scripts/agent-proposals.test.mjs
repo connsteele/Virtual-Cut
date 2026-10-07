@@ -8,6 +8,7 @@ import {
 } from '../dist-electron/agent-proposals.js';
 import { AgentReadError } from '../dist-electron/agent-tools.js';
 import {
+  inferReworks,
   applyProposalCommand,
   proposalDecision,
   proposalStatus,
@@ -540,5 +541,49 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   assert.deepEqual(proposalDecisions(source, { proposal_ids: [range.id] }).proposals[0].intents, [
     'marker',
   ]);
+}
+// An agent that cites a spoken cue's line without `refines` still reworks it (VC-155): one card.
+{
+  const cueAt = (transcriptId, lineId) =>
+    transcriptId === 'mic-1' && lineId === 30
+      ? { transcriptId, track: 1, lineId, kind: 'cut', time: 150, text: 'Split.' }
+      : transcriptId === 'mic-1' && lineId === 31
+        ? {
+            transcriptId,
+            track: 1,
+            lineId,
+            kind: 'mark',
+            time: 155,
+            text: 'Marker, Bertrand shows up.',
+          }
+        : undefined;
+  const cites = (id, kind, lineIds, extra = {}) => ({
+    id,
+    kind,
+    evidence: [{ role: 'mic', transcriptId: 'mic-1', lineIds, start: 0, end: 1, quote: '' }],
+    ...extra,
+  });
+  const out = inferReworks(
+    [
+      cites('a', 'cut', [29, 30]),
+      cites('b', 'cut', [30]),
+      cites('c', 'clip', [31]),
+      cites('d', 'note', [31]),
+      cites('e', 'mark', [3], { refines: { transcriptId: 'mic-1', lineId: 3 } }),
+      { id: 'f', kind: 'mark', evidence: [{ role: 'game', transcriptId: 'mic-1', lineIds: [31] }] },
+    ],
+    cueAt,
+  );
+  assert.deepEqual(
+    out.map((p) => [p.id, p.refines?.lineId]),
+    [
+      ['a', 30],
+      ['b', undefined],
+      ['c', undefined],
+      ['d', 31],
+      ['e', 3],
+      ['f', undefined],
+    ],
+  );
 }
 console.log('Agent proposals: submission checks, decisions and read-back passed.');

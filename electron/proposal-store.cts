@@ -11,10 +11,16 @@ export const proposalLimit = 2000;
 
 /** Proposals are append-only: decisions live in the model, so Undo never loses a proposal. */
 export class ProposalStore {
+  /** Fills in what stored proposals imply (the spoken cue an agent reworked, VC-155). */
+  infer?: (proposals: AgentProposal[]) => AgentProposal[];
   constructor(private db: DatabaseSync) {
     createProposalSchema(db);
   }
   list(sourceId?: string): AgentProposal[] {
+    const stored = this.stored(sourceId);
+    return this.infer ? this.infer(stored) : stored;
+  }
+  private stored(sourceId?: string): AgentProposal[] {
     return (
       sourceId
         ? this.db
@@ -24,9 +30,10 @@ export class ProposalStore {
     ).map((r) => JSON.parse(String(r.body)));
   }
   get(id: string): AgentProposal {
-    const row = this.db.prepare('SELECT body FROM agent_proposals WHERE id=?').get(id);
-    if (!row) throw new Error('This proposal is no longer available. Reopen the transcript.');
-    return JSON.parse(String(row.body));
+    const row = this.db.prepare('SELECT source_id FROM agent_proposals WHERE id=?').get(id);
+    const proposal = row && this.list(String(row.source_id)).find((p) => p.id === id);
+    if (!proposal) throw new Error('This proposal is no longer available. Reopen the transcript.');
+    return proposal;
   }
   count(sourceId: string) {
     return Number(

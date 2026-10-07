@@ -17,6 +17,8 @@ import type {
 };
 import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edits.js';
 import { reconcileReview } from './review-state.cjs';
+import { inferReworks } from './proposal-edits.js';
+import { correctedText, cueCandidate } from './transcript-edits.js';
 import { changes, applyChange, type Change } from './project-changes.js';
 import {
   PROJECT_APP_ID,
@@ -162,6 +164,27 @@ export class ProjectStore {
       this.db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
       this.transcripts = new TranscriptStore(this.db);
       this.proposals = new ProposalStore(this.db);
+      this.proposals.infer = (proposals) =>
+        inferReworks(proposals, (transcriptId, lineId) => {
+          try {
+            const transcript = this.transcripts.get(transcriptId);
+            const segment = this.transcripts.segment(transcriptId, lineId);
+            const text = correctedText(this.data.model, transcriptId, segment);
+            const cue = cueCandidate(transcript, { ...segment, text });
+            return cue
+              ? {
+                  transcriptId,
+                  track: transcript.track,
+                  lineId,
+                  kind: cue.kind,
+                  time: Math.round(cue.time * 1000) / 1000,
+                  text: text.trim(),
+                }
+              : undefined;
+          } catch {
+            return undefined;
+          }
+        });
       for (const transcript of this.transcripts.list())
         if (transcript.state === 'running')
           this.transcripts.put({ ...transcript, state: 'interrupted' });

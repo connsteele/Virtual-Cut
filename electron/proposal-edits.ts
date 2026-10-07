@@ -17,6 +17,44 @@ export function proposalDecision(decisions: CueDecision[], proposalId: string) {
 export function proposalStatus(decisions: CueDecision[], proposalId: string) {
   return proposalDecision(decisions, proposalId)?.status || 'pending';
 }
+/** Whether a proposal of this kind can rework a spoken cue of that kind (marker and note swap). */
+export function reworkFits(kind: AgentProposal['kind'], cue: CueKind) {
+  const fits = cue === 'clip-start' || cue === 'clip-end' ? 'clip' : cue;
+  return (
+    fits === kind || (kind === 'note' && fits === 'mark') || (kind === 'mark' && fits === 'note')
+  );
+}
+
+/**
+ * A proposal that cites a spoken cue's mic line as evidence reworks that cue, even when the agent
+ * left out `refines` (VC-155): the user sees one card, not the cue and a copy of it. Each cue is
+ * claimed by the first proposal that names or cites it.
+ */
+export function inferReworks(
+  proposals: AgentProposal[],
+  cueAt: (transcriptId: string, lineId: number) => AgentProposal['refines'] | undefined,
+) {
+  const claimed = new Set(
+    proposals
+      .filter((p) => p.refines)
+      .map((p) => `${p.refines!.transcriptId}:${p.refines!.lineId}`),
+  );
+  return proposals.map((p) => {
+    if (p.refines) return p;
+    for (const e of p.evidence)
+      if (e.role === 'mic')
+        for (const lineId of e.lineIds) {
+          const key = `${e.transcriptId}:${lineId}`;
+          if (claimed.has(key)) continue;
+          const cue = cueAt(e.transcriptId, lineId);
+          if (!cue || !reworkFits(p.kind, cue.kind)) continue;
+          claimed.add(key);
+          return { ...p, refines: cue };
+        }
+    return p;
+  });
+}
+
 /** A proposal's intent tags, whichever field stored them. */
 export const proposalIntents = (p: Pick<AgentProposal, 'intent' | 'intents'>) =>
   p.intents ?? (p.intent ? [p.intent] : []);
