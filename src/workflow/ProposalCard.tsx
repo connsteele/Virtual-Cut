@@ -143,11 +143,14 @@ export function ProposalCard({
       <div className={s.pcLine1}>
         {tags}
         <span className={s.pcKind}>{kind}</span>
-        {intents.map((i) => (
-          <span key={i} className={s.pcChip}>
-            {i === 'marker' && range ? 'Range' : i[0].toUpperCase() + i.slice(1)}
-          </span>
-        ))}
+        {/* An intent the kind already says ("Marker", "Notion note") isn't repeated as a chip. */}
+        {intents
+          .filter((i) => !kind.toLowerCase().includes(i === 'marker' && range ? 'range' : i))
+          .map((i) => (
+            <span key={i} className={s.pcChip}>
+              {i === 'marker' && range ? 'Range' : i[0].toUpperCase() + i.slice(1)}
+            </span>
+          ))}
         <span className={s.pcActions}>
           <button
             className={s.pcAccept}
