@@ -43,10 +43,21 @@ const kinds = {
   split: 'split',
   clip: 'clip',
 };
+// Mic lines a proposal cites. With --transcript the cited line ids give each line's own time;
+// otherwise one evidence entry is a span from its first to its last line, and a span longer
+// than 20 s (a composite note citing lines far apart) would match everything in between, so it
+// is left out and the proposal matches by its time instead.
+let lineTimes;
 const spans = (evidence = []) =>
   evidence
     .filter((e) => e.role === 'mic' && e.start != null)
-    .map((e) => ({ start: e.start, end: e.end }));
+    .flatMap((e) =>
+      e.lineIds && lineTimes
+        ? e.lineIds.map((id) => lineTimes.get(id)).filter(Boolean)
+        : e.end - e.start <= 20
+          ? [{ start: e.start, end: e.end }]
+          : [],
+    );
 const intentsOf = (p) => [...new Set([...(p.intents || []), ...(p.intent ? [p.intent] : [])])];
 
 /** Proposals from a decisions answer, a submit_proposals input or a plain array. */
@@ -100,11 +111,18 @@ function spokenSplits(segments) {
 
 const notes = parseTaggedNotes(await readFile(values.notes, 'utf8'));
 const proposals = [];
+if (values.transcript) {
+  const t = JSON.parse(await readFile(values.transcript, 'utf8'));
+  const lines = Array.isArray(t) ? t : t.segments || t.lines || [];
+  if (lines.some((l) => l.id != null))
+    lineTimes = new Map(lines.map((l) => [l.id, { start: l.start, end: l.end }]));
+}
 for (const file of values.proposals || [])
   proposals.push(...readProposals(JSON.parse(await readFile(file, 'utf8')), path.basename(file)));
 if (values.transcript) {
   const t = JSON.parse(await readFile(values.transcript, 'utf8'));
-  proposals.push(...spokenSplits(Array.isArray(t) ? t : t.segments || t.lines || []));
+  const lines = Array.isArray(t) ? t : t.segments || t.lines || [];
+  proposals.push(...spokenSplits(lines));
 }
 const score = scoreRecording(notes.entries, proposals, {
   labelledUntil: values.until ? Number(values.until) : undefined,

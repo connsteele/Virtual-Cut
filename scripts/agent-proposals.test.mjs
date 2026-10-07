@@ -538,7 +538,9 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   );
   const back = proposalDecisions(source, { proposal_ids: [notion.id, rework.id] }).proposals;
   assert.deepEqual(back[0].intents, ['general', 'notion']);
-  assert.deepEqual(back[0].evidence, [{ role: 'mic', start: 5, end: 29 }]);
+  assert.deepEqual(back[0].evidence, [
+    { role: 'mic', transcriptId: 'mic-1', lineIds: [1, 3, 5], start: 5, end: 29 },
+  ]);
   assert.deepEqual(back[1].refines, { lineId: 30, kind: 'cut', time: 150, heard: 'Split.' });
   assert.deepEqual(proposalDecisions(source, { proposal_ids: [range.id] }).proposals[0].intents, [
     'marker',

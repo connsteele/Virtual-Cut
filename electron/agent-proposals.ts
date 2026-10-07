@@ -374,7 +374,13 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
             },
           }
         : {}),
-      evidence: p.evidence.map((e) => ({ role: e.role, start: e.start, end: e.end })),
+      evidence: p.evidence.map((e) => ({
+        role: e.role,
+        transcriptId: e.transcriptId,
+        lineIds: e.lineIds,
+        start: e.start,
+        end: e.end,
+      })),
       agent: p.agent.name,
       submitted: p.submitted,
       status,
