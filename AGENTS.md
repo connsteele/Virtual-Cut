@@ -67,8 +67,8 @@ before changing cutting, timestamps, mic removal or transcription.
   decisions go on the review board; tickets live on the Notion development board. Decisions are
   applied only when Connor says "apply".
 - Spoken cues: Split and Clip start/end stay as commands; other mic speech becomes intent
-  proposals (VC-155). Leave cue detection, cue words and cue scoring as they are until VC-155
-  starts; the freeze lifts then.
+  proposals (VC-155), reviewed on the same card as every other proposal. Cue logic is no longer
+  frozen; change it only through VC-155 and VC-128 work, measured against Connor's tagged notes.
 - Whenever Connor has to check something, a build containing the change must exist and be
   linked first. Never describe unbuilt behavior as ready to check.
 - Push or merge only what Connor has approved.
