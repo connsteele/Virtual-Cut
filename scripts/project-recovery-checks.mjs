@@ -160,6 +160,57 @@ if (process.argv[2] === '--crash') {
   assert.throws(() => new ProjectStore(future), /newer Virtual Cut/);
   assert.deepEqual(await readFile(future), futureBytes);
 
+  // Schema 6 (VC-161): agent proposals live in their own table, outside the model and Undo.
+  // Upgrading keeps a verified v5 copy; restoring a save never drops a proposal.
+  const v5 = path.join(dir, 'v5.vcut');
+  await recoverProjectCopy(checkpoint, v5);
+  db = new DatabaseSync(v5);
+  db.exec('DROP TABLE IF EXISTS agent_proposals; PRAGMA user_version=5');
+  db.close();
+  store = new ProjectStore(v5);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, PROJECT_VERSION);
+  await store.loadCopies();
+  const v5Copy = store.snapshot().saves.find((s) => s.kind === 'migration');
+  assert.match(v5Copy.id, new RegExp(`^migration-v5-v${PROJECT_VERSION}-`));
+  const proposal = (id) => ({
+    id,
+    sourceId: 'fixture',
+    kind: 'mark',
+    time: 1,
+    title: 'Proposal ' + id,
+    text: '',
+    reason: 'Check',
+    evidence: [],
+    agent: { clientId: 'c', name: 'Claude Code' },
+    submitted: '2026-10-07T00:00:00Z',
+    submissionId: 's',
+    projectRevision: 0,
+  });
+  store.proposals.add([proposal('a'), proposal('b')]);
+  assert.throws(() => store.proposals.add([proposal('c'), proposal('a')]));
+  assert.deepEqual(
+    store.proposals.list('fixture').map((p) => p.id),
+    ['a', 'b'],
+    'a refused submission stores nothing',
+  );
+  assert.equal(store.snapshot().canUndo, false, 'proposals never enter Undo');
+  const savesBefore = new Set(store.snapshot().saves.map((s) => s.id));
+  await store.checkpoint('manual');
+  const withProposals = store.snapshot().saves.find((s) => !savesBefore.has(s.id)).id;
+  store.proposals.add([proposal('later')]);
+  await store.restore(withProposals);
+  await store.restore(v5Copy.id);
+  assert.deepEqual(
+    store.proposals.list().map((p) => p.id),
+    ['a', 'b', 'later'],
+    'restores keep current proposals, including from a copy without the table',
+  );
+  assert.equal(store.proposals.get('b').title, 'Proposal b');
+  store.proposals.removeSource('fixture');
+  assert.equal(store.proposals.count('fixture'), 0);
+  assert.throws(() => store.proposals.get('a'), /no longer available/);
+  store.close();
+
   const corrupt = path.join(dir, 'damaged.vcut');
   await writeFile(corrupt, 'not a sqlite database');
   assert.throws(() => new ProjectStore(corrupt), /Recover from save/);

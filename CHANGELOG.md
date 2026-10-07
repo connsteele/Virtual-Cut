@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.18 — Agent proposals on the cue card (October 7, 2026)
+
+Sprint 5. Paired agent apps can now propose markers, timed notes, splits and clip ranges with
+`submit_proposals`, each with a reason, an intent tag and the transcript lines it rests on.
+Proposals change nothing: they wait in the transcript window as Agent cards between the phrases
+at their time and under Needs review, and are accepted, moved, retitled or rejected exactly like
+spoken cues; Undo returns a decision to review. `get_proposal_decisions` reads the choices back,
+including how far each one moved. Proposals are kept outside the project's Undo history, so
+projects upgrade to saved format 6 after a verified copy. See
+[the 0.4.18 review](docs/review-0.4.18.md) and
+[decision 0015](docs/decisions/0015-agent-proposals.md).
+
 ## 0.4.17 — Agent apps can read the open project (October 6, 2026)
 
 Sprint 4, the first M4 build. The Agent button in the header opens Agent access: a switch

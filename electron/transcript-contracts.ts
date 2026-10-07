@@ -83,6 +83,11 @@ export interface CueDecision {
   noteId?: string;
   clipId?: string;
   appliedTime?: number;
+  /** Agent proposals (VC-162): the proposal decided, the chosen range end and wording. */
+  proposalId?: string;
+  appliedEnd?: number;
+  text?: string;
+  decided?: string;
 }
 export interface TranscriptPage {
   followStart?: number;
@@ -118,6 +123,8 @@ export interface TranscriptSession {
   transcripts: TranscriptSummary[];
   edits: TranscriptEdit[];
   decisions: CueDecision[];
+  /** Agent proposals for this recording, newest last. */
+  proposals: import('./proposal-contracts.js').AgentProposal[];
   jobs: {
     device?: 'cpu' | 'cuda';
     deviceMessage?: string;
@@ -141,7 +148,10 @@ export interface TranscriptCommand {
   projectId: string;
   sourceId: string;
   transcriptId: string;
-  action: 'correct' | 'restore' | 'accept-cue' | 'reject-cue';
+  action:
+    'correct' | 'restore' | 'accept-cue' | 'reject-cue' | 'accept-proposal' | 'reject-proposal';
+  /** Proposal actions name the proposal; their transcript and phrase fields are not used. */
+  proposalId?: string;
   segmentId: number;
   wordIndex?: number;
   text?: string;

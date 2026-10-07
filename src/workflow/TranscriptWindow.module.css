@@ -422,6 +422,44 @@
   padding: 10px;
   font-size: 12px;
 }
+.proposal {
+  border-left-color: #8f7bd8;
+  background: #23202f;
+}
+.agentTag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #8f7bd8;
+  color: #101918;
+  font-weight: 700;
+  font-size: 11px;
+}
+.reason {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.evidence {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 1px solid #3f3a55;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.evidence:hover {
+  border-color: #8f7bd8;
+}
+.proposals {
+  margin: 4px 0 8px;
+}
 .cue input {
   display: block;
   width: 100%;

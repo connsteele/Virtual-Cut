@@ -156,9 +156,18 @@ try {
     'get_context',
     'get_current_view',
     'get_project_summary',
+    'get_proposal_decisions',
     'get_transcript',
+    'submit_proposals',
   ]);
-  assert(listed.every((t) => t.annotations?.readOnlyHint === true));
+  // Only proposing is not read-only, and it is never destructive (VC-162).
+  for (const t of listed)
+    assert.deepEqual(
+      t.annotations,
+      t.name === 'submit_proposals'
+        ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+        : { readOnlyHint: true },
+    );
   const view = JSON.parse((await tool(client, 'get_current_view')).text);
   assert.equal(view.project.name, 'Agent check');
   assert.equal(view.page, 'cut');

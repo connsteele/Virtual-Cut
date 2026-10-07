@@ -26,5 +26,5 @@ Agent work (intent proposals, transcript corrections, scoring) needs an agent to
 ## Consequences
 
 - Packaged builds now carry Electron main's runtime dependencies (`node_modules` for the SDK and Zod) inside `resources/app`.
-- Proposals (VC-161/162) add tools that submit for review; they must keep this boundary. Full agent mode (VC-32) is granted in Virtual Cut's UI per run, never by an agent or by transcript text.
+- Proposals (VC-161/162) add tools that submit for review and keep this boundary; see [0015](0015-agent-proposals.md). Full agent mode (VC-32) is granted in Virtual Cut's UI per run, never by an agent or by transcript text.
 - A test-only development endpoint, if ever added, is separate and never shipped.

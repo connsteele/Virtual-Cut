@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { TranscriptStore } from './transcript-store.cjs';
+import { ProposalStore } from './proposal-store.cjs';
 import { mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -51,6 +52,7 @@ interface Data {
 const APP_ID = PROJECT_APP_ID;
 export class ProjectStore {
   transcripts!: TranscriptStore;
+  proposals!: ProposalStore;
   readonly db!: DatabaseSync;
   private lock: string;
   data: Data;
@@ -159,6 +161,7 @@ export class ProjectStore {
       // projects open without changing annotation or timing identities.
       this.db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
       this.transcripts = new TranscriptStore(this.db);
+      this.proposals = new ProposalStore(this.db);
       for (const transcript of this.transcripts.list())
         if (transcript.state === 'running')
           this.transcripts.put({ ...transcript, state: 'interrupted' });
@@ -294,6 +297,7 @@ export class ProjectStore {
       frames: Uint8Array;
       keys: Uint8Array;
     }[] = [];
+    let proposals: import('./proposal-contracts.js').AgentProposal[] = [];
     const transcripts: {
       summary: import('./transcript-contracts.js').TranscriptSummary;
       segments: import('./transcript-contracts.js').TranscriptSegment[];
@@ -330,6 +334,11 @@ export class ProjectStore {
         .prepare('SELECT body FROM jobs')
         .all()
         .map((row) => JSON.parse(String(row.body)));
+      if (check.prepare("SELECT name FROM sqlite_master WHERE name='agent_proposals'").get())
+        proposals = check
+          .prepare('SELECT body FROM agent_proposals ORDER BY rowid')
+          .all()
+          .map((row) => JSON.parse(String(row.body)));
       if (check.prepare("SELECT name FROM sqlite_master WHERE name='transcripts'").get()) {
         for (const row of check.prepare('SELECT body FROM transcripts').all()) {
           const summary = JSON.parse(String(row.body));
@@ -377,6 +386,7 @@ export class ProjectStore {
           putIndex.run(row.source_id, row.fingerprint, row.frames, row.keys);
       for (const row of savedIndexes)
         putIndex.run(row.source_id, row.fingerprint, row.frames, row.keys);
+      this.proposals.merge(proposals);
       for (const transcript of transcripts) {
         this.transcripts.put(transcript.summary);
         for (const segment of transcript.segments)
@@ -484,6 +494,7 @@ export class ProjectStore {
   removeSource(id: string) {
     this.db.prepare('DELETE FROM frame_indexes WHERE source_id=?').run(id);
     this.transcripts.removeSource(id);
+    this.proposals.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);
     this.db.prepare('DELETE FROM sources WHERE id=?').run(id);
     this.changed?.();

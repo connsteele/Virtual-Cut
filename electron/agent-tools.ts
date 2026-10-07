@@ -23,6 +23,7 @@ export interface AgentReadSource {
     segments(id: string, after?: number): Iterable<TranscriptSegment>;
   };
   view?: AgentView;
+  proposals?: { list(sourceId?: string): import('./proposal-contracts.js').AgentProposal[] };
 }
 export class AgentReadError extends Error {}
 /** A recording or batch named for the activity list; ids an agent made up stay as given. */
@@ -48,14 +49,14 @@ function findBatch(source: AgentReadSource, batchId?: string) {
   if (!batch) throw new AgentReadError(`No batch with id "${id}". Call get_project_summary.`);
   return batch;
 }
-function findRecording(source: AgentReadSource, id: string) {
+export function findRecording(source: AgentReadSource, id: string) {
   const recording = recordingsIn(source).find((r) => r.id === id);
   if (!recording)
     throw new AgentReadError(`No recording with id "${id}". Call get_project_summary.`);
   return recording;
 }
 /** The newest finished transcript of the recording's current file, per role. */
-function currentTranscripts(source: AgentReadSource, recordingId: string) {
+export function currentTranscripts(source: AgentReadSource, recordingId: string) {
   const result: Partial<Record<'mic' | 'game', TranscriptSummary>> = {};
   for (const t of source.transcripts.list())
     if (
@@ -316,6 +317,7 @@ export function annotations(source: AgentReadSource, batchId?: string, recording
         time: d.time === undefined ? undefined : round(d.time),
         title: d.title,
         status: d.status,
+        proposalId: d.proposalId,
       })),
     projectRevision: source.revision,
   };

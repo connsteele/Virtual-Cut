@@ -12,6 +12,7 @@ export const fast = [
   'review-order.test.mjs',
   'game-library.test.mjs',
   'agent-tools.test.mjs',
+  'agent-proposals.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -54,11 +55,13 @@ export const desktop = [
   'filmstrip-reuse-checks.mjs',
   'review-planning-ui.mjs',
   'agent-access-ui.mjs',
+  'agent-proposals-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
+  'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],

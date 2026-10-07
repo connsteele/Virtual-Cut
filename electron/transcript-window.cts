@@ -9,6 +9,7 @@ import { observeWindow } from './window-diagnostics.cjs';
 import { SpeechSetup } from './speech-setup.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
+import { applyProposalCommand, proposalStatus } from './proposal-edits.js';
 import { transcriptHandoff, transcriptSrt, transcriptSaveSuggestion } from './transcript-export.js';
 import type { TranscriptApi, TranscriptCommand } from './transcript-contracts.js' with {
   'resolution-mode': 'import',
@@ -190,7 +191,13 @@ export function registerTranscriptWindow(
           e.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
       )
       .map((e) => e.segmentId);
-    return s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
+    const result = s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
+    // Agent proposals belong to the recording and count with its cues (VC-162).
+    for (const proposal of s.proposals.list(result.transcript.sourceId)) {
+      result.counts!.cues++;
+      result.counts![proposalStatus(s.data.model.cueDecisions || [], proposal.id)]++;
+    }
+    return result;
   });
   handle('runtime', async (refresh) => {
     if (refresh != null && typeof refresh !== 'boolean') throw new Error('Invalid GPU check.');
@@ -330,8 +337,14 @@ export function registerTranscriptWindow(
       const item = pending.get(token);
       if (!item || item.applied) throw new Error('This transcript edit has expired.');
       const c = item.command,
-        s = projects.require(c.projectId),
-        transcript = s.transcripts.get(c.transcriptId);
+        s = projects.require(c.projectId);
+      if (c.action === 'accept-proposal' || c.action === 'reject-proposal') {
+        const proposal = s.proposals.get(String(c.proposalId));
+        s.save(s.data.model, applyProposalCommand(s.data.model, proposal, c, randomUUID));
+        item.applied = true;
+        return projects.snapshot();
+      }
+      const transcript = s.transcripts.get(c.transcriptId);
       const segment = c.action.endsWith('cue')
         ? s.transcripts.cueSegment(c.transcriptId, c.segmentId, s.data.model)
         : s.transcripts.segment(c.transcriptId, c.segmentId);

@@ -46,7 +46,7 @@ function readProject(file: string, immutable = true) {
   try {
     if (
       db.prepare('PRAGMA application_id').get()?.application_id !== PROJECT_APP_ID ||
-      ![1, 2, 3, PROJECT_VERSION].includes(
+      !Array.from({ length: PROJECT_VERSION }, (_, i) => i + 1).includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       )
     )

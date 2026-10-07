@@ -22,7 +22,7 @@ export interface AgentActivity {
   clientName: string;
   tool: string;
   summary: string;
-  outcome: 'read' | 'refused';
+  outcome: 'read' | 'proposed' | 'refused';
 }
 export interface AgentAccessState {
   enabled: boolean;

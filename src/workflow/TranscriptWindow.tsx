@@ -15,6 +15,9 @@ import { TranscriptionOptions, initialTranscriptionOptions } from './Transcripti
 import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
+import { TranscriptProposal } from './TranscriptProposal';
+import { proposalStatus } from '../../electron/proposal-edits';
+import type { AgentProposal } from '../../electron/proposal-contracts';
 import { TranscriptInlineEdit } from './TranscriptInlineEdit';
 import { SpeechSetup } from './SpeechSetup';
 import { background } from './background';
@@ -203,6 +206,28 @@ export function TranscriptWindow() {
     loadedPageKey === pageKey && page?.transcript.id === currentId ? page : undefined;
   // Chip counts cover the whole transcript, so the previous page's counts stay while loading.
   const counts = page?.transcript.id === currentId ? page.counts : undefined;
+  // Agent proposals (VC-162) sit in time order between phrases while reading, and at the top of
+  // the first page under a cue filter. Search shows phrases only.
+  const placed = new Map<number, AgentProposal[]>();
+  if (usablePage && session && !search)
+    for (const proposal of session.proposals || []) {
+      let row = -1;
+      if (filter === 'all') {
+        if (
+          proposal.time < (pageIndex === 0 ? 0 : (usablePage.followStart ?? 0)) ||
+          proposal.time >= (usablePage.followEnd ?? Infinity)
+        )
+          continue;
+        usablePage.segments.forEach((segment, index) => {
+          if (segment.start <= proposal.time) row = index;
+        });
+      } else if (
+        pageIndex !== 0 ||
+        (filter !== 'cues' && proposalStatus(session.decisions, proposal.id) !== filter)
+      )
+        continue;
+      placed.set(row, [...(placed.get(row) || []), proposal]);
+    }
   // Position updates share one lookup. Only a reader/context change invalidates it.
   followOwner.current =
     follow &&
@@ -382,6 +407,39 @@ export function TranscriptWindow() {
     const target = word?.start ?? segment.start;
     setPosition({ projectId: session.projectId, sourceId: session.sourceId, time: target });
     void api.seek(session.projectId, session.sourceId, target).catch((e) => setError(String(e)));
+  }
+  function proposalCard(proposal: AgentProposal) {
+    if (!session) return null;
+    return (
+      <div key={proposal.id} className={s.proposals}>
+        <TranscriptProposal
+          proposal={proposal}
+          session={session}
+          busy={busy}
+          onSeek={(time) => {
+            setFollow(false);
+            background(action(() => api.seek(projectId, session.sourceId, time)));
+          }}
+          onCommand={(type, values) => {
+            setFollow(false);
+            background(
+              action(() =>
+                api.command({
+                  ...values,
+                  projectId: session.projectId,
+                  sourceId: proposal.sourceId,
+                  transcriptId: currentId,
+                  segmentId: -1,
+                  proposalId: proposal.id,
+                  action: type,
+                  expected: 'null',
+                }),
+              ),
+            );
+          }}
+        />
+      </div>
+    );
   }
   function command(
     segment: TranscriptSegment,
@@ -727,6 +785,7 @@ export function TranscriptWindow() {
             aria-label="Transcript phrases"
             onWheel={() => setFollow(false)}
           >
+            {placed.get(-1)?.map(proposalCard)}
             {usablePage?.segments.map((segment, row, segments) => {
               const phraseEdit = session.edits.find(
                 (e) => e.id === correctionId(currentId, segment.id),
@@ -876,10 +935,11 @@ export function TranscriptWindow() {
                       </div>
                     )}
                   </article>
+                  {placed.get(row)?.map(proposalCard)}
                 </Fragment>
               );
             })}
-            {usablePage && !usablePage.segments.length && (
+            {usablePage && !usablePage.segments.length && !placed.size && (
               <p>
                 {filter !== 'all'
                   ? 'No matching cues.'

@@ -16,6 +16,8 @@ before changing cutting, timestamps, mic removal or transcription.
 - Agents reach Virtual Cut only through its local MCP server (`electron/agent-*.cts`,
   `docs/decisions/0014-agent-access-boundary.md`). It is off by default and paired per agent app
   and project. Tools never return file paths or media, and never delete, import, export or file.
+  Agents propose only through `submit_proposals`; proposals wait on the transcript window's cue
+  card until the user accepts them (`docs/decisions/0015-agent-proposals.md`).
 - Keep app behavior independent of personal drive letters and game names.
 
 ## Architecture

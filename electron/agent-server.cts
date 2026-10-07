@@ -1,6 +1,7 @@
 import { app, clipboard, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import type { Socket } from 'node:net';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod';
@@ -19,12 +20,25 @@ import {
   transcriptLines,
   type AgentReadSource,
 } from './agent-tools.js';
+import {
+  decisionsInput,
+  prepareSubmission,
+  proposalDecisions,
+  submissionAnswer,
+  submitInput,
+  type DecisionsInput,
+  type SubmitInput,
+} from './agent-proposals.js';
+import { proposalLimit } from './proposal-store.cjs';
 const instructions =
   'Virtual Cut prepares game footage for YouTube. These tools read the project that is open in ' +
   'Virtual Cut right now: what is on screen, batches with their game and brief, the context ' +
   'packet, transcript lines between two times, and existing markers, clips, notes and cue ' +
-  'decisions. Times are seconds in the recording. Access is read-only: nothing can be changed, ' +
-  'imported, exported or filed through these tools, and they never return file paths or media.';
+  'decisions. Times are seconds in the recording. You can also propose markers, notes, splits ' +
+  'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
+  'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
+  'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
+  'never return file paths or media.';
 
 /**
  * Agent access (VC-159/VC-160): pairing and activity IPC for the main window, and a read-only
@@ -63,6 +77,7 @@ export function registerAgentAccess(options: {
       model: store.data.model,
       fingerprints,
       transcripts: store.transcripts,
+      proposals: store.proposals,
       view: access.view,
     };
   }
@@ -78,10 +93,18 @@ export function registerAgentAccess(options: {
       input: z.ZodObject,
       run: (s: AgentReadSource, args: A) => unknown,
       summary: (args: A, name: (id: string) => string) => string,
+      proposes = false,
     ) =>
       server.registerTool(
         name,
-        { description, inputSchema: input, annotations: { readOnlyHint: true } },
+        {
+          description,
+          inputSchema: input,
+          // Proposals add review candidates only: nothing is replaced, deleted or applied.
+          annotations: proposes
+            ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+            : { readOnlyHint: true },
+        },
         async (args: unknown) => {
           const a = args as A;
           if (!access.isPaired(client.id)) {
@@ -93,7 +116,7 @@ export function registerAgentAccess(options: {
           try {
             project = source(client);
             const result = run(project, a);
-            access.record(client, name, summary(a, label), 'read');
+            access.record(client, name, summary(a, label), proposes ? 'proposed' : 'read');
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 1) }] };
           } catch (e) {
             const known = e instanceof Refused || e instanceof AgentReadError;
@@ -167,6 +190,38 @@ export function registerAgentAccess(options: {
       (s, a) => annotations(s, a.batch_id, a.recording_id),
       (a, n) =>
         `Annotations: ${a.recording_id ? n(a.recording_id) : a.batch_id ? n(a.batch_id) : 'active batch'}`,
+    );
+    read<SubmitInput>(
+      'submit_proposals',
+      'Propose markers, timed notes, splits or clip ranges for one recording, each with a reason, ' +
+        "an optional intent tag and the transcript lines it rests on. They appear on cue cards in the user's " +
+        'transcript window and change nothing until accepted. The whole call is refused, naming the ' +
+        'field, if any proposal is invalid, repeats a pending one or cites a stale transcript.',
+      submitInput,
+      (s, a) => {
+        const store = options.projects()!.store!;
+        const proposals = prepareSubmission(
+          s,
+          a,
+          { clientId: client.id, name: client.name },
+          { submission: randomUUID(), proposal: randomUUID },
+          undefined,
+          store.proposals.count(a.recording_id),
+          proposalLimit,
+        );
+        store.proposals.add(proposals);
+        return submissionAnswer(s, proposals);
+      },
+      (a, n) => `Proposed ${a.proposals?.length ?? 0} for ${n(a.recording_id)}`,
+      true,
+    );
+    read<DecisionsInput>(
+      'get_proposal_decisions',
+      "The user's decisions on proposals: pending, accepted (with the position, end, title and note " +
+        'chosen, and how far it moved) or rejected. Filter by recording, proposal ids or status.',
+      decisionsInput,
+      (s, a) => proposalDecisions(s, a),
+      (a, n) => `Proposal decisions${a.recording_id ? `: ${n(a.recording_id)}` : ''}`,
     );
     const transport = new StdioServerTransport(socket, socket);
     void server.connect(transport).catch(() => socket.destroy());

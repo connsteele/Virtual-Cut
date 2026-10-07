@@ -127,6 +127,7 @@ export class ProjectService {
       transcripts,
       edits: (s.data.model.transcriptEdits || []).filter((e) => transcriptIds.has(e.transcriptId)),
       decisions: s.data.model.cueDecisions || [],
+      proposals: source ? s.proposals.list(source.id) : [],
       jobs: s
         .jobs()
         .filter((j) => j.kind === 'transcribe' && (!source || j.sourceId === source.id))

@@ -12,7 +12,7 @@ const time = (iso: string) =>
     minute: '2-digit',
   });
 
-/** Agent access (VC-160): the switch, paired agent apps and what each one read. */
+/** Agent access (VC-160): the switch, paired agent apps and what each one read or proposed. */
 export function AgentAccess({ project }: { project?: { id: string; name: string } }) {
   const api = window.virtualCut?.agent;
   const [state, setState] = useState<AgentAccessState | null>(null);
@@ -52,8 +52,9 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
   return (
     <div className={s.panel} data-agent-access>
       <p>
-        Agent apps such as Claude Code or Claude Desktop can read the open project through MCP. Read
-        only: nothing can change, and every read is listed below.
+        Agent apps such as Claude Code or Claude Desktop can read the open project through MCP and
+        propose markers, notes, splits and clips. Proposals wait on cue cards in the transcript
+        window; nothing changes until you accept one. Every call is listed below.
       </p>
       <label className={s.switch}>
         <input
@@ -154,13 +155,17 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
               </span>
               <span>
                 {a.summary}
-                {a.outcome === 'refused' ? ' (refused)' : ''}
+                {a.outcome === 'refused'
+                  ? ' (refused)'
+                  : a.outcome === 'proposed'
+                    ? ' · waiting in the transcript window'
+                    : ''}
               </span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className={s.muted}>No reads yet.</p>
+        <p className={s.muted}>No calls yet.</p>
       )}
     </div>
   );

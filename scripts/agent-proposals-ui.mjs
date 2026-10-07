@@ -1,0 +1,315 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { copyFile, mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
+import { require, root, electronEnvironment } from './shared.mjs';
+import { collectBeforeWindowClose } from './coverage-desktop.mjs';
+
+// VC-161/VC-162: an agent app proposes over MCP, the proposals wait on the transcript window's
+// cue cards with an Agent tag, the user decides there, and the agent reads the decisions back.
+const base = process.env.VIRTUAL_CUT_TEST_ROOT;
+assert(base, 'Run with the test suite so all media is disposable.');
+const fixture = JSON.parse(await readFile(path.join(base, 'transcripts/latest.json'), 'utf8'));
+await mkdir(path.join(base, 'agent-proposals'), { recursive: true });
+const dir = await mkdtemp(path.join(base, 'agent-proposals/run-'));
+const file = path.join(dir, 'proposals.vcut');
+await copyFile(fixture.file, file);
+const { ProjectService } = require('../dist-electron/project-service.cjs');
+const service = new ProjectService(path.join(dir, 'native-profile'), '');
+await service.open(file);
+const store = service.store;
+const recording = store.data.model.recordings.find((r) => r.id === fixture.rid);
+const fingerprint = store.sources().find((s) => s.id === fixture.rid).fingerprint;
+const lines = [
+  'Okay, starting the fort chapter.',
+  'Marker, Bertrand shows up here.',
+  'This is where the siege starts.',
+  'Siege is over, cut it here.',
+];
+const step = Math.min(4, recording.duration / (lines.length + 1));
+store.transcripts.begin({
+  ...store.transcripts.get(fixture.transcriptId),
+  id: 'agent-mic',
+  role: 'mic',
+  state: 'complete',
+  fingerprint,
+  segmentCount: lines.length,
+  wordCount: lines.length,
+});
+lines.forEach((text, i) =>
+  store.transcripts.append('agent-mic', {
+    id: i,
+    start: i * step,
+    end: i * step + step * 0.8,
+    text,
+    words: [{ text, start: i * step, end: i * step + step * 0.8, probability: 1 }],
+    noSpeechProbability: 0,
+    averageLogProbability: 0,
+  }),
+);
+const before = store.data.model;
+store.save(before, {
+  ...before,
+  cueDecisions: [],
+  clips: [
+    {
+      id: 'whole',
+      rid: fixture.rid,
+      name: 'Whole session',
+      start: 0,
+      end: recording.duration,
+      include: true,
+      folder: '_Review',
+    },
+  ],
+});
+await service.checkpoint(fixture.id);
+await service.close();
+
+const errors = [];
+let app, main;
+function agent(config) {
+  const { command, args, env = {} } = JSON.parse(config).mcpServers['virtual-cut'];
+  const child = spawn(command, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...electronEnvironment(), ...env },
+  });
+  let out = '',
+    stderr = '',
+    id = 0;
+  const waiting = new Map();
+  child.stdout.on('data', (d) => {
+    out += d;
+    let end;
+    while ((end = out.indexOf('\n')) >= 0) {
+      const line = out.slice(0, end).trim();
+      out = out.slice(end + 1);
+      if (line) {
+        const message = JSON.parse(line);
+        waiting.get(message.id)?.(message);
+      }
+    }
+  });
+  child.stderr.on('data', (d) => (stderr += d));
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  const call = (method, params) =>
+    new Promise((resolve, reject) => {
+      const n = ++id;
+      const timer = setTimeout(() => reject(new Error(`${method} timed out: ${stderr}`)), 20000);
+      waiting.set(n, (m) => (clearTimeout(timer), resolve(m)));
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
+    });
+  return {
+    call,
+    notify: (method) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n'),
+    end: () => child.stdin.end(),
+    exited,
+  };
+}
+const tool = async (client, name, args = {}) => {
+  const reply = await client.call('tools/call', { name, arguments: args });
+  const text = reply.result.content[0].text;
+  return { error: !!reply.result.isError, text, json: () => JSON.parse(text) };
+};
+try {
+  app = await electron.launch({
+    executablePath: process.env.VIRTUAL_CUT_TEST_EXECUTABLE || require('electron'),
+    args: [
+      ...(process.env.VIRTUAL_CUT_TEST_EXECUTABLE ? [] : [root]),
+      `--user-data-dir=${path.join(dir, 'profile')}`,
+      '--background-test',
+    ],
+    cwd: root,
+    env: electronEnvironment(),
+  });
+  main = await app.firstWindow();
+  main.setDefaultTimeout(20000);
+  main.on('pageerror', (e) => errors.push(e.message));
+  await main.locator('[data-workflow]').waitFor();
+  await app.evaluate(({ dialog, BrowserWindow }, file) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    BrowserWindow.getAllWindows()[0].webContents.setAudioMuted(true);
+  }, file);
+  await main.getByRole('button', { name: 'Projects', exact: true }).click();
+  await main.getByRole('button', { name: 'Open project file…', exact: true }).click();
+
+  await main.getByRole('button', { name: 'Agent', exact: true }).click();
+  const panel = main.locator('[data-agent-access]');
+  await panel.getByLabel('Allow agent apps to connect').click();
+  await panel.getByRole('button', { name: /^Pair with / }).click();
+  const config = await panel.locator('[data-config="claude-desktop"]').textContent();
+  await panel.getByRole('button', { name: 'Done', exact: true }).click();
+  const client = agent(config);
+  await client.call('initialize', {
+    protocolVersion: '2025-11-25',
+    capabilities: {},
+    clientInfo: { name: 'agent-proposals-check', version: '1' },
+  });
+  client.notify('notifications/initialized');
+  const listed = (await client.call('tools/list', {})).result.tools;
+  const submitTool = listed.find((t) => t.name === 'submit_proposals');
+  assert.deepEqual(submitTool.annotations, {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+  });
+  assert.equal(submitTool.inputSchema.properties.proposals.type, 'array');
+  assert.equal(
+    listed.find((t) => t.name === 'get_proposal_decisions').annotations.readOnlyHint,
+    true,
+  );
+
+  const mic = (
+    await tool(client, 'get_transcript', { recording_id: fixture.rid, role: 'mic' })
+  ).json();
+  assert.equal(mic.transcriptId, 'agent-mic');
+  const evidence = (ids) => [{ role: 'mic', transcript_id: mic.transcriptId, line_ids: ids }];
+  const proposals = [
+    {
+      kind: 'marker',
+      time_seconds: mic.lines[1].start,
+      title: 'Bertrand arrives',
+      note: 'He shows up at the fort.',
+      reason: 'You said "Marker, Bertrand shows up here."',
+      intent: 'marker',
+      evidence: evidence([1]),
+    },
+    {
+      kind: 'split',
+      time_seconds: mic.lines[3].start,
+      title: 'Siege ends',
+      reason: 'You asked to cut when the siege is over.',
+      intent: 'edit',
+      evidence: evidence([3]),
+    },
+    {
+      kind: 'clip',
+      time_seconds: mic.lines[2].start,
+      end_seconds: mic.lines[3].end,
+      title: 'The siege',
+      reason: 'From the siege start to its end.',
+      evidence: evidence([2, 3]),
+    },
+  ];
+  // A stale citation refuses the whole call and names the field.
+  const stale = await tool(client, 'submit_proposals', {
+    recording_id: fixture.rid,
+    proposals: [
+      proposals[0],
+      { ...proposals[1], evidence: [{ ...evidence([3])[0], transcript_id: 'old' }] },
+    ],
+  });
+  assert(stale.error);
+  assert.match(stale.text, /^proposals\[1\]\.evidence\[0\]\.transcript_id: stale or unknown/);
+  const submitted = await tool(client, 'submit_proposals', {
+    recording_id: fixture.rid,
+    proposals,
+    agent_model: 'check-model',
+  });
+  assert(!submitted.error, submitted.text);
+  const ids = submitted.json().submitted.map((p) => p.id);
+  assert.equal(ids.length, 3);
+  assert.equal(
+    (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
+      .markers.length,
+    0,
+    'nothing changes until the user decides',
+  );
+  const repeat = await tool(client, 'submit_proposals', {
+    recording_id: fixture.rid,
+    proposals: [proposals[0]],
+  });
+  assert.match(repeat.text, /repeats pending proposal/);
+  await expect(
+    panel.locator('[data-agent-activity] li', {
+      hasText: `Proposed 3 for ${recording.title} · waiting in the transcript window`,
+    }),
+  ).toHaveCount(1);
+
+  const opened = app.waitForEvent('window');
+  await main.getByRole('button', { name: 'Transcript', exact: true }).click();
+  const view = await opened;
+  view.on('pageerror', (e) => errors.push(e.message));
+  await view.getByLabel('Select transcript', { exact: true }).selectOption('agent-mic');
+  const cards = view.locator('[data-proposal]');
+  await expect(cards).toHaveCount(3);
+  // Three proposals plus the spoken Marker cue on line 1, side by side.
+  await expect(view.locator('[data-filter="pending"] span')).toHaveText('4');
+  const [marker, split, clip] = ids.map((id) => view.locator(`[data-proposal="${id}"]`));
+  await expect(marker).toContainText('Agent');
+  await expect(marker).toContainText('Point marker proposal');
+  await expect(marker).toContainText('Claude Code (check-model) · intent: marker');
+  await expect(marker).toContainText('Marker, Bertrand shows up here.');
+  await marker.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-cards.png') });
+  // The compact transcript window keeps every field and button reachable.
+  const resize = (compact) =>
+    app.evaluate(({ BrowserWindow }, compact) => {
+      const w = BrowserWindow.getAllWindows().find((x) =>
+        x.webContents.getURL().endsWith('#transcript'),
+      );
+      if (compact) {
+        globalThis.__transcriptBounds = w.getBounds();
+        w.setSize(500, 700);
+      } else w.setBounds(globalThis.__transcriptBounds);
+    }, compact);
+  await resize(true);
+  await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);
+  await marker.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-compact.png') });
+  await resize(false);
+
+  const moved = Math.round((mic.lines[1].start + 0.5) * 1000) / 1000;
+  await view.getByLabel(`Proposal position ${ids[0]}`).fill(String(moved));
+  await view.getByLabel(`Proposal title ${ids[0]}`).fill('Bertrand at the gate');
+  await marker.getByRole('button', { name: 'Accept marker', exact: true }).click();
+  await expect(marker).toContainText('accepted');
+  await expect(marker).toContainText('moved +0.500 s');
+  await expect(split.getByLabel(`Proposal split target ${ids[1]}`)).toHaveValue('whole');
+  await split.getByRole('button', { name: 'Accept split', exact: true }).click();
+  await expect(split).toContainText('accepted');
+  await clip.getByRole('button', { name: 'Reject', exact: true }).click();
+  await expect(clip).toContainText('rejected');
+  await expect(view.locator('[data-filter="accepted"] span')).toHaveText('2');
+  await view.locator('[data-filter="rejected"]').click();
+  await expect(cards).toHaveCount(1);
+  await view.screenshot({ path: path.join(dir, 'proposal-rejected-filter.png') });
+  await view.locator('[data-filter="all"]').click();
+
+  const decisions = (
+    await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
+  ).json();
+  assert.deepEqual(decisions.counts, { pending: 0, accepted: 2, rejected: 1 });
+  const row = (id) => decisions.proposals.find((p) => p.id === id);
+  assert.equal(row(ids[0]).chosen.time, moved);
+  assert.equal(row(ids[0]).movedSeconds, 0.5);
+  assert.equal(row(ids[0]).chosen.title, 'Bertrand at the gate');
+  assert.equal(row(ids[0]).retitled, true);
+  assert.equal(row(ids[1]).status, 'accepted');
+  assert.equal(row(ids[2]).status, 'rejected');
+  const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
+  assert.equal(annotated.recordings[0].markers[0].name, 'Bertrand at the gate');
+  assert.equal(annotated.clips.length, 2, 'the split made two clips');
+
+  // Undo in the editor returns the last decision to review.
+  await main.bringToFront();
+  await main.keyboard.press('Control+z');
+  await expect(clip).toContainText('Needs review');
+  assert.equal(
+    (await tool(client, 'get_proposal_decisions', { status: 'pending' })).json().proposals[0].id,
+    ids[2],
+  );
+  client.end();
+  await client.exited;
+  assert.deepEqual(errors, []);
+  await collectBeforeWindowClose(app);
+  console.log(JSON.stringify({ passed: true, dir }));
+} catch (e) {
+  await main?.screenshot({ path: path.join(dir, 'failure.png') }).catch(() => {});
+  console.error({ errors, dir });
+  throw e;
+} finally {
+  if (app && app.process().exitCode === null) await app.close();
+}
