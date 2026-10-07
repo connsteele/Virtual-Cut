@@ -415,26 +415,6 @@
   line-height: 1.5;
   resize: vertical;
 }
-.cue {
-  margin-top: 10px;
-  border-left: 3px solid #d3b26b;
-  background: #292a20;
-  padding: 10px;
-  font-size: 12px;
-}
-.proposal {
-  border-left-color: #8f7bd8;
-  background: #23202f;
-}
-.agentTag {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #8f7bd8;
-  color: #101918;
-  font-weight: 700;
-  font-size: 11px;
-}
 .reason {
   margin: 6px 0;
   white-space: pre-wrap;
@@ -460,27 +440,6 @@
 .proposals {
   margin: 4px 0 8px;
 }
-.cue input {
-  display: block;
-  width: 100%;
-}
-.context {
-  margin-top: 12px;
-  padding: 10px;
-  border: 1px solid #4c4e38;
-  border-radius: 6px;
-  overflow-wrap: anywhere;
-}
-.context summary {
-  cursor: pointer;
-}
-.context > label,
-.cue > label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-}
 .pagination {
   justify-content: center;
   margin: 12px;
@@ -498,4 +457,308 @@
   .setupRow {
     flex-wrap: wrap;
   }
+}
+/* Proposal card (VC-155): the same lines in the same places for every proposal. */
+.pc {
+  margin: 4px 0 8px;
+  display: grid;
+  gap: 3px;
+  padding: 6px 10px 7px 12px;
+  border-left: 3px solid #8f7bd8;
+  border-radius: 0 6px 6px 0;
+  background: #201e2a;
+  font-size: 12.5px;
+}
+.pc:focus-visible {
+  outline: 1px solid var(--teal-light);
+  outline-offset: -1px;
+}
+.pcSpoken {
+  border-left-color: #d3b26b;
+  background: #24241d;
+}
+.pcBoth {
+  border-left-color: #d3b26b;
+  box-shadow: inset 3px 0 0 #8f7bd8;
+  padding-left: 15px;
+}
+.pcLine1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-height: 24px;
+}
+.whoTag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #8f7bd8;
+  color: #141516;
+  font-weight: 700;
+  font-size: 11px;
+}
+.spokenTag {
+  background: #d3b26b;
+}
+.pcKind {
+  font-weight: 600;
+}
+.pcChip {
+  padding: 0 6px;
+  border: 1px solid #4a4466;
+  border-radius: 9px;
+  color: #c9bff0;
+  font-size: 11px;
+}
+.pcActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pcActions kbd {
+  margin-left: 5px;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--faint);
+  font:
+    10px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+}
+.pcAccept,
+.pcReject,
+.pcQuiet {
+  padding: 1px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.pcAccept {
+  border-color: var(--accent-border);
+  color: var(--teal-light);
+}
+.pcAccept:hover:not(:disabled) {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.pcReject {
+  border-color: #6b3a35;
+  color: #d69a90;
+}
+.pcReject:hover:not(:disabled) {
+  border-color: #c98276;
+  background: #3a221f;
+  color: #f0b4aa;
+}
+.pcQuiet {
+  color: var(--muted);
+}
+.pcQuiet:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border);
+}
+.pcToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.4em;
+}
+.pcLine2 {
+  display: flex;
+  align-items: baseline;
+  gap: 2.2em;
+  min-width: 0;
+}
+.pcName {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcName:hover,
+.pcTime:hover {
+  color: var(--teal-light);
+}
+.pcTime {
+  flex: none;
+  padding: 0;
+  color: var(--muted);
+  font:
+    12px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pcCut {
+  color: var(--muted);
+  font-weight: 400;
+}
+.pcLine3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pcChanged {
+  color: var(--teal-light);
+}
+.pcBody {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #ffffff12;
+}
+.pcBody > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pcBody input,
+.pcBody textarea {
+  display: block;
+  width: 100%;
+}
+.pcDone {
+  padding-block: 3px;
+  opacity: 0.8;
+}
+.pcDoneName {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 1.6em;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcAccepted {
+  color: #6fbf8e;
+  font-weight: 600;
+}
+.pcRejected {
+  color: #c98276;
+  font-weight: 600;
+}
+.heardFirst {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.heardFirst > :nth-child(odd) {
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.was {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.nudge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.nudge button {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font:
+    11px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+}
+.pcDetails {
+  display: grid;
+  gap: 6px;
+}
+.pcDetails > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pcDetails p {
+  margin: 0;
+}
+/* Editing in place: the name, time code and note become fields where they are. */
+.pcLine2Edit {
+  flex-wrap: wrap;
+  gap: 6px 1.2em;
+}
+.inlineField {
+  flex: 1 1 16em;
+  min-width: 0;
+  padding: 2px 6px;
+  font-weight: 600;
+}
+.timeField {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.inlineTime {
+  width: 7.6em;
+  padding: 2px 6px;
+  font:
+    12px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+}
+.inlineNote {
+  width: 100%;
+  min-height: 4.4em;
+  resize: vertical;
+}
+.why {
+  margin: 0;
+  color: var(--text);
+  opacity: 0.85;
+}
+.why strong {
+  color: #c9bff0;
+}
+.pcSpoken .why strong {
+  color: #e3cf9e;
+}
+/* In-place fields stay the size of the text they replace. */
+.window .pc input.inlineField,
+.window .pc input.inlineTime {
+  min-height: 0;
+  height: 26px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.window .pc input.inlineTime {
+  width: 7.2em;
+  font:
+    12px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+}
+.window .pc textarea.inlineNote {
+  min-height: 4.2em;
+  padding: 6px 8px;
+  font-size: 13px;
 }

@@ -16,6 +16,7 @@ import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { TranscriptProposal } from './TranscriptProposal';
+import { formatTimecode, time } from './transcriptTime';
 import { proposalStatus } from '../../electron/proposal-edits';
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { TranscriptInlineEdit } from './TranscriptInlineEdit';
@@ -30,14 +31,7 @@ const viewStorage = () => {
     return undefined;
   }
 };
-const time = (seconds: number) => {
-  const total = Math.floor(seconds),
-    ms = Math.floor((seconds - total) * 1000);
-  return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
-};
-// Row timestamps: hundredths are enough to tell phrases apart; the title keeps milliseconds.
-// Rounded first, so 12.1 s reads 12.10 rather than a truncated 12.09.
-const rowTime = (seconds: number) => time(Math.round(seconds * 100) / 100 + 0.0005).slice(0, -1);
+const rowTime = formatTimecode;
 // Pauses at least this long between phrases show as a gap line (VC-114 stage 2b).
 const silenceGap = 10;
 const gapLabel = (seconds: number) => {
@@ -209,10 +203,26 @@ export function TranscriptWindow() {
   // Agent proposals (VC-162) sit in time order between phrases while reading, and at the top of
   // the first page under a cue filter. Search shows phrases only.
   const placed = new Map<number, AgentProposal[]>();
+  // A proposal that reworks a spoken cue (VC-155) takes that cue's place: one card, both tags.
+  // Rejecting it brings the spoken cue back on its own.
+  const reworks = (proposal: AgentProposal) =>
+    proposal.refines?.transcriptId === currentId &&
+    proposalStatus(session?.decisions || [], proposal.id) !== 'rejected';
+  const reworked = new Set(
+    (session?.proposals || []).filter(reworks).map((p) => p.refines!.lineId),
+  );
+  const playhead =
+    session && position.projectId === projectId && position.sourceId === session.sourceId
+      ? position.time
+      : 0;
   if (usablePage && session && !search)
     for (const proposal of session.proposals || []) {
       let row = -1;
-      if (filter === 'all') {
+      const cueRow = reworks(proposal)
+        ? usablePage.segments.findIndex((s) => s.id === proposal.refines!.lineId)
+        : -1;
+      if (cueRow >= 0) row = cueRow;
+      else if (filter === 'all') {
         if (
           proposal.time < (pageIndex === 0 ? 0 : (usablePage.followStart ?? 0)) ||
           proposal.time >= (usablePage.followEnd ?? Infinity)
@@ -416,6 +426,7 @@ export function TranscriptWindow() {
           proposal={proposal}
           session={session}
           busy={busy}
+          playhead={playhead}
           onSeek={(time) => {
             setFollow(false);
             background(action(() => api.seek(projectId, session.sourceId, time)));
@@ -432,7 +443,10 @@ export function TranscriptWindow() {
                   segmentId: -1,
                   proposalId: proposal.id,
                   action: type,
-                  expected: 'null',
+                  expected:
+                    type === 'reopen-proposal'
+                      ? proposalStatus(session.decisions, proposal.id)
+                      : 'null',
                 }),
               ),
             );
@@ -913,7 +927,7 @@ export function TranscriptWindow() {
                         )}
                       </p>
                     )}
-                    {cue && (
+                    {cue && !reworked.has(segment.id) && (
                       <div className={s.rowCue}>
                         <TranscriptCue
                           key={`${currentId}:${segment.id}:${JSON.stringify(session.edits)}`}
@@ -921,6 +935,7 @@ export function TranscriptWindow() {
                           transcript={selected}
                           session={session}
                           busy={busy}
+                          playhead={playhead}
                           onSeek={(time) => {
                             setFollow(false);
                             background(action(() => api.seek(projectId, session.sourceId, time)));

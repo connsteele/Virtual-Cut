@@ -197,6 +197,7 @@ export function validateEdits(model: Model): Model {
       (decision.time != null && (!Number.isFinite(decision.time) || decision.time < 0)) ||
       (decision.proposalId != null && !text(decision.proposalId, 200)) ||
       (decision.settledBy != null && !text(decision.settledBy, 200)) ||
+      (decision.priorName != null && !text(decision.priorName, 200)) ||
       (decision.appliedEnd != null &&
         (!Number.isFinite(decision.appliedEnd) ||
           !(decision.appliedEnd > (decision.appliedTime ?? -1)))) ||

@@ -193,9 +193,26 @@ export function registerTranscriptWindow(
       .map((e) => e.segmentId);
     const result = s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
     // Agent proposals belong to the recording and count with its cues (VC-162).
+    const decisions = s.data.model.cueDecisions || [];
     for (const proposal of s.proposals.list(result.transcript.sourceId)) {
+      const status = proposalStatus(decisions, proposal.id);
       result.counts!.cues++;
-      result.counts![proposalStatus(s.data.model.cueDecisions || [], proposal.id)]++;
+      result.counts![status]++;
+      // A proposal that reworks a spoken cue shows as one card with it (VC-155), so the cue
+      // is not counted twice unless the rework was rejected.
+      const cue = proposal.refines;
+      if (cue?.transcriptId === transcriptId && status !== 'rejected') {
+        const own = decisions.find(
+          (d) =>
+            !d.proposalId &&
+            d.sourceId === proposal.sourceId &&
+            d.kind === cue.kind &&
+            d.time != null &&
+            Math.abs(d.time - cue.time) <= 0.5,
+        );
+        result.counts!.cues--;
+        result.counts![own?.status || 'pending']--;
+      }
     }
     return result;
   });
@@ -338,7 +355,7 @@ export function registerTranscriptWindow(
       if (!item || item.applied) throw new Error('This transcript edit has expired.');
       const c = item.command,
         s = projects.require(c.projectId);
-      if (c.action === 'accept-proposal' || c.action === 'reject-proposal') {
+      if (c.action.endsWith('-proposal')) {
         const proposal = s.proposals.get(String(c.proposalId));
         s.save(s.data.model, applyProposalCommand(s.data.model, proposal, c, randomUUID));
         item.applied = true;

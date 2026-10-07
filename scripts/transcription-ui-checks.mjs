@@ -200,7 +200,14 @@ try {
   const notesBefore = await page.evaluate(
     async () => (await window.virtualCut.project.current()).model.notes.length,
   );
-  await transcript.getByRole('button', { name: 'Accept timed note', exact: true }).click();
+  // The spoken cue sits on a one-line card (VC-155); its keys work while it has focus.
+  const cueCard = transcript.locator('[data-proposal-card^="cue:"]');
+  await expect(cueCard).toContainText('Spoken');
+  await expect(cueCard).toContainText('Timed note');
+  await cueCard.focus();
+  await transcript.keyboard.press('d');
+  await expect(cueCard.getByRole('button', { name: 'Hide details', exact: true })).toBeVisible();
+  await transcript.keyboard.press('a');
   await expect
     .poll(() =>
       page.evaluate(async () => (await window.virtualCut.project.current()).model.notes.length),

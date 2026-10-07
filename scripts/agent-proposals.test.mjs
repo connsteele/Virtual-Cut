@@ -467,6 +467,55 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
     settledBy: rework.id,
   });
   validateEdits(settled);
+  // Reopening takes back what accepting made: the split's clips join again under their old
+  // name, and the spoken cue it settled returns to review with it.
+  const reopen = (m, p) =>
+    applyProposalCommand(
+      m,
+      p,
+      { ...command(p, 'reopen-proposal'), expected: proposalDecision(m.cueDecisions, p.id).status },
+      newId,
+    );
+  const unsplit = reopen(settled, rework);
+  assert.deepEqual(
+    unsplit.clips.map((c) => [c.id, c.name, c.start, c.end]),
+    camp.clips.map((c) => [c.id, c.name, c.start, c.end]),
+  );
+  assert.deepEqual(unsplit.cueDecisions, []);
+  const unranged = reopen(ranged, range);
+  assert.equal(unranged.markers.r1?.length ?? 0, model.markers.r1?.length ?? 0);
+  assert.equal(proposalDecision(unranged.cueDecisions, range.id), undefined);
+  const turnedDown = applyProposalCommand(model, notion, command(notion, 'reject-proposal'), newId);
+  assert.equal(proposalDecision(reopen(turnedDown, notion).cueDecisions, notion.id), undefined);
+  const noted = applyProposalCommand(model, notion, command(notion, 'accept-proposal'), newId);
+  assert.equal(noted.notes.length, model.notes.length + 1);
+  assert.equal(reopen(noted, notion).notes.length, model.notes.length);
+  assert.throws(
+    () =>
+      applyProposalCommand(
+        noted,
+        notion,
+        { ...command(notion, 'reopen-proposal'), expected: 'rejected' },
+        newId,
+      ),
+    /changed elsewhere/,
+  );
+  assert.throws(
+    () =>
+      applyProposalCommand(
+        model,
+        notion,
+        { ...command(notion, 'reopen-proposal'), expected: 'accepted' },
+        newId,
+      ),
+    /changed elsewhere/,
+  );
+  // A split whose clips changed since can't be put back; Undo still can.
+  const moved = {
+    ...settled,
+    clips: settled.clips.map((c) => (c.id === 'c2' ? { ...c, end: 140 } : c)),
+  };
+  assert.throws(() => reopen(moved, rework), /changed since\. Use Undo/);
   // A cue already decided on its own is left as it was; rejecting a rework leaves the cue open.
   const own = {
     ...camp,

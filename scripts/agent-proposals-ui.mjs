@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 
-// VC-161/VC-162: an agent app proposes over MCP, the proposals wait on the transcript window's
-// cue cards with an Agent tag, the user decides there, and the agent reads the decisions back.
+// VC-161/VC-162/VC-155: an agent app reads the intent guide and proposes over MCP, the proposals
+// wait on proposal cards in the transcript window (one card with the spoken cue an agent
+// reworks), the user decides or reopens there, and the agent reads the decisions back.
 const base = process.env.VIRTUAL_CUT_TEST_ROOT;
 assert(base, 'Run with the test suite so all media is disposable.');
 const fixture = JSON.parse(await readFile(path.join(base, 'transcripts/latest.json'), 'utf8'));
@@ -66,6 +67,11 @@ store.save(before, {
   ],
 });
 await service.checkpoint(fixture.id);
+const media = store.sources().find((s) => s.id === fixture.rid).file;
+await writeFile(
+  media.slice(0, media.length - path.extname(media).length) + '.txt',
+  '00:01:00\n{marker, general}\nNice crit here [Peter]\n\n00:02:00\n[cough]\n',
+);
 await service.close();
 
 const errors = [];
@@ -161,6 +167,19 @@ try {
     true,
   );
 
+  // The intent guide: the shipped guide plus the tagged notes beside other recordings only.
+  const guide = (await tool(client, 'get_intent_guide')).json();
+  assert.equal(guide.guide.version, '1');
+  assert.deepEqual(
+    guide.examples.map((e) => [e.from, e.time, e.intents.join('+'), e.context]),
+    [['tagged notes', 1, 'marker+general', 'Peter']],
+  );
+  assert.deepEqual(
+    (await tool(client, 'get_intent_guide', { recording_id: fixture.rid })).json().examples,
+    [],
+    "the recording's own notes are left out",
+  );
+
   const mic = (
     await tool(client, 'get_transcript', { recording_id: fixture.rid, role: 'mic' })
   ).json();
@@ -173,7 +192,8 @@ try {
       title: 'Bertrand arrives',
       note: 'He shows up at the fort.',
       reason: 'You said "Marker, Bertrand shows up here."',
-      intent: 'marker',
+      intents: ['marker', 'general'],
+      refines: { transcript_id: mic.transcriptId, line_id: 1 },
       evidence: evidence([1]),
     },
     {
@@ -193,6 +213,17 @@ try {
       reason: 'From the siege start to its end.',
       evidence: evidence([2, 3]),
     },
+    {
+      kind: 'marker',
+      time_seconds: mic.lines[2].start,
+      end_seconds: mic.lines[3].end,
+      title: 'Siege scene',
+      note: 'The siege as one part of the fort chapter.',
+      reason: 'One continuous scene: labelled, not cut.',
+      intents: ['marker', 'notion'],
+      notion: { target: 'new' },
+      evidence: evidence([2, 3]),
+    },
   ];
   // A stale citation refuses the whole call and names the field.
   const stale = await tool(client, 'submit_proposals', {
@@ -210,8 +241,9 @@ try {
     agent_model: 'check-model',
   });
   assert(!submitted.error, submitted.text);
+  assert.equal(submitted.json().submitted[0].reworks, `mark cue at ${mic.lines[1].start} s`);
   const ids = submitted.json().submitted.map((p) => p.id);
-  assert.equal(ids.length, 3);
+  assert.equal(ids.length, 4);
   assert.equal(
     (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
       .markers.length,
@@ -220,12 +252,12 @@ try {
   );
   const repeat = await tool(client, 'submit_proposals', {
     recording_id: fixture.rid,
-    proposals: [proposals[0]],
+    proposals: [{ ...proposals[0], refines: undefined }],
   });
   assert.match(repeat.text, /repeats pending proposal/);
   await expect(
     panel.locator('[data-agent-activity] li', {
-      hasText: `Proposed 3 for ${recording.title} · waiting in the transcript window`,
+      hasText: `Proposed 4 for ${recording.title} · waiting in the transcript window`,
     }),
   ).toHaveCount(1);
 
@@ -234,15 +266,25 @@ try {
   const view = await opened;
   view.on('pageerror', (e) => errors.push(e.message));
   await view.getByLabel('Select transcript', { exact: true }).selectOption('agent-mic');
-  const cards = view.locator('[data-proposal]');
-  await expect(cards).toHaveCount(3);
-  // Three proposals plus the spoken Marker cue on line 1, side by side.
+  const cards = view.locator('[data-proposal-card]:not([data-proposal-card^="cue:"])');
+  await expect(cards).toHaveCount(4);
+  // The agent reworked the spoken Marker cue on line 1: one card with both tags, not two.
+  await expect(view.locator('[data-proposal-card^="cue:"]')).toHaveCount(0);
   await expect(view.locator('[data-filter="pending"] span')).toHaveText('4');
-  const [marker, split, clip] = ids.map((id) => view.locator(`[data-proposal="${id}"]`));
+  const [marker, split, clip, range] = ids.map((id) =>
+    view.locator(`[data-proposal-card="${id}"]`),
+  );
+  await expect(marker).toContainText('Spoken');
   await expect(marker).toContainText('Agent');
-  await expect(marker).toContainText('Point marker proposal');
-  await expect(marker).toContainText('Claude Code (check-model) · intent: marker');
+  await expect(marker).toContainText('Changed: retitled · note written');
+  await expect(range).toContainText('Range marker');
+  await expect(range).toContainText('Range');
+  await expect(range).toContainText('Notion: new note');
+  await marker.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(marker).toContainText('Heard first');
   await expect(marker).toContainText('Marker, Bertrand shows up here.');
+  await expect(marker).toContainText('Why: You said');
+  await expect(marker).toContainText('Claude Code (check-model)');
   await marker.scrollIntoViewIfNeeded();
   await view.screenshot({ path: path.join(dir, 'proposal-cards.png') });
   // The compact transcript window keeps every field and button reachable.
@@ -262,12 +304,18 @@ try {
   await view.screenshot({ path: path.join(dir, 'proposal-compact.png') });
   await resize(false);
 
+  // Edit opens the fields in place; the nudges move the position by tenths.
   const moved = Math.round((mic.lines[1].start + 0.5) * 1000) / 1000;
-  await view.getByLabel(`Proposal position ${ids[0]}`).fill(String(moved));
+  await marker.getByRole('button', { name: 'Edit', exact: true }).click();
+  await view.getByLabel(`Proposal position ${ids[0]}`, { exact: true }).fill(String(moved - 0.2));
+  await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
+  await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
   await view.getByLabel(`Proposal title ${ids[0]}`).fill('Bertrand at the gate');
+  await view.screenshot({ path: path.join(dir, 'proposal-edit.png') });
   await marker.getByRole('button', { name: 'Accept marker', exact: true }).click();
-  await expect(marker).toContainText('accepted');
-  await expect(marker).toContainText('moved +0.500 s');
+  await expect(marker).toHaveAttribute('data-status', 'accepted');
+  await expect(marker).toContainText('✓ Accepted');
+  await split.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(split.getByLabel(`Proposal split target ${ids[1]}`)).toHaveValue('whole');
   await expect(split.getByLabel(`Proposal first clip name ${ids[1]}`)).toHaveValue(
     'Fort and siege',
@@ -276,9 +324,27 @@ try {
   await split.scrollIntoViewIfNeeded();
   await view.screenshot({ path: path.join(dir, 'proposal-split-names.png') });
   await split.getByRole('button', { name: 'Accept split', exact: true }).click();
-  await expect(split).toContainText('accepted');
+  await expect(split).toHaveAttribute('data-status', 'accepted');
+  // Reject folds in place; Reopen brings it back for review, here and for the agent.
   await clip.getByRole('button', { name: 'Reject', exact: true }).click();
-  await expect(clip).toContainText('rejected');
+  await expect(clip).toHaveAttribute('data-status', 'rejected');
+  await clip.getByRole('button', { name: 'Reopen', exact: true }).click();
+  await expect(clip).toHaveAttribute('data-status', 'pending');
+  await clip.focus();
+  await view.keyboard.press('r');
+  await expect(clip).toHaveAttribute('data-status', 'rejected');
+  // Reopening an accepted range marker takes the marker back.
+  await range.getByRole('button', { name: 'Accept range marker', exact: true }).click();
+  await expect(range).toHaveAttribute('data-status', 'accepted');
+  await expect
+    .poll(
+      async () =>
+        (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
+          .markers.length,
+    )
+    .toBe(2);
+  await range.getByRole('button', { name: 'Reopen', exact: true }).click();
+  await expect(range).toHaveAttribute('data-status', 'pending');
   await expect(view.locator('[data-filter="accepted"] span')).toHaveText('2');
   await view.locator('[data-filter="rejected"]').click();
   await expect(cards).toHaveCount(1);
@@ -288,33 +354,43 @@ try {
   const decisions = (
     await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
   ).json();
-  assert.deepEqual(decisions.counts, { pending: 0, accepted: 2, rejected: 1 });
+  assert.deepEqual(decisions.counts, { pending: 1, accepted: 2, rejected: 1 });
   const row = (id) => decisions.proposals.find((p) => p.id === id);
   assert.equal(row(ids[0]).chosen.time, moved);
   assert.equal(row(ids[0]).movedSeconds, 0.5);
   assert.equal(row(ids[0]).chosen.title, 'Bertrand at the gate');
   assert.equal(row(ids[0]).retitled, true);
+  assert.deepEqual(row(ids[0]).intents, ['marker', 'general']);
+  assert.equal(row(ids[0]).refines.heard, 'Marker, Bertrand shows up here.');
   assert.equal(row(ids[1]).status, 'accepted');
   assert.equal(row(ids[2]).status, 'rejected');
+  assert.equal(row(ids[3]).status, 'pending');
+  assert.deepEqual(row(ids[3]).notion, { target: 'new' });
   const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
-  assert.equal(annotated.recordings[0].markers[0].name, 'Bertrand at the gate');
+  assert.deepEqual(
+    annotated.recordings[0].markers.map((m) => m.name),
+    ['Bertrand at the gate'],
+    'the reopened range marker is gone',
+  );
   assert.deepEqual(
     annotated.clips.map((c) => c.name),
     ['Fort and siege', 'Bertrand talk'],
     'the split made two clips with the names chosen on the card',
   );
+  // Accepting the rework settled the spoken cue too.
+  assert.equal(annotated.cueDecisions.filter((d) => d.kind === 'mark' && !d.proposalId).length, 1);
   assert.deepEqual(row(ids[1]).chosen.clipNames, {
     first: 'Fort and siege',
     second: 'Bertrand talk',
   });
 
-  // Undo in the editor returns the last decision to review.
+  // Undo in the editor reverses the last change: the range marker is accepted again.
   await main.bringToFront();
   await main.keyboard.press('Control+z');
-  await expect(clip).toContainText('Needs review');
+  await expect(range).toHaveAttribute('data-status', 'accepted');
   assert.equal(
-    (await tool(client, 'get_proposal_decisions', { status: 'pending' })).json().proposals[0].id,
-    ids[2],
+    (await tool(client, 'get_proposal_decisions', { status: 'pending' })).json().proposals.length,
+    0,
   );
   client.end();
   await client.exited;

@@ -1,3 +1,4 @@
+import { reopenDecision } from './decision-reopen.js';
 import type { Model } from './workflow-types.js';
 import type {
   TranscriptCommand,
@@ -188,6 +189,14 @@ export function applyTranscriptCommand(
   if (!cue) throw new Error('This phrase does not contain a microphone cue candidate.');
   const id = cueId(transcript, segment),
     current = reviewedCue(model.cueDecisions || [], transcript, segment);
+  // Reopening puts the cue back in review and takes back what accepting made.
+  if (command.action === 'reopen-cue') {
+    if (!current || JSON.stringify(current) !== command.expected)
+      throw new Error('This cue changed elsewhere. Refresh it before reopening.');
+    if (current.settledBy)
+      throw new Error("An agent reworked this cue. Reopen it from the agent's card.");
+    return reopenDecision(model, current);
+  }
   if (JSON.stringify(current || null) !== command.expected || current)
     throw new Error('This cue was already reviewed. Undo its decision before changing it.');
   if (!['accept-cue', 'reject-cue'].includes(command.action))
@@ -240,12 +249,21 @@ export function applyTranscriptCommand(
         );
       const clip = intersecting[0],
         end = clip.end;
+      // Names for both halves (VC-155): what the card shows, else the clip's name and "· 2".
+      const names = [command.firstName, command.secondName].map((n) =>
+        typeof n === 'string' ? n.trim() : '',
+      );
+      if (names.some((n) => n.length > 200))
+        throw new Error('Enter clip names of up to 200 characters.');
+      decision.priorName = clip.name;
+      if (names[0]) clip.name = names[0];
       clip.end = target;
       clip.accepted = false;
+      decision.clipId = newId();
       next.clips.push({
         ...clip,
-        id: newId(),
-        name: `${clip.name} · 2`,
+        id: decision.clipId,
+        name: names[1] || `${clip.name} · 2`,
         start: target,
         end,
         accepted: false,

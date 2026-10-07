@@ -90,6 +90,8 @@ export interface CueDecision {
   decided?: string;
   /** A spoken cue settled by accepting the agent proposal that reworked it (VC-155). */
   settledBy?: string;
+  /** A split: the clip's name before it, so reopening can put the clip back as it was. */
+  priorName?: string;
 }
 export interface TranscriptPage {
   followStart?: number;
@@ -151,10 +153,17 @@ export interface TranscriptCommand {
   sourceId: string;
   transcriptId: string;
   action:
-    'correct' | 'restore' | 'accept-cue' | 'reject-cue' | 'accept-proposal' | 'reject-proposal';
+    | 'correct'
+    | 'restore'
+    | 'accept-cue'
+    | 'reject-cue'
+    | 'reopen-cue'
+    | 'accept-proposal'
+    | 'reject-proposal'
+    | 'reopen-proposal';
   /** Proposal actions name the proposal; their transcript and phrase fields are not used. */
   proposalId?: string;
-  /** Accepting a split proposal: names for the clips before and after it. */
+  /** Accepting a split (spoken or proposed): names for the clips before and after it. */
   firstName?: string;
   secondName?: string;
   segmentId: number;

@@ -1,6 +1,7 @@
 import type { Model } from './workflow-types.js';
 import type { CueDecision, CueKind, TranscriptCommand } from './transcript-contracts.js';
 import type { AgentProposal } from './proposal-contracts.js';
+import { reopenDecision } from './decision-reopen.js';
 
 /**
  * Deciding an agent proposal on its cue card (VC-162). Accepting does what accepting a spoken
@@ -40,6 +41,12 @@ export function applyProposalCommand(
   const record = model.recordings.find((r) => r.id === proposal.sourceId);
   if (!record) throw new Error('This recording is no longer in the project.');
   const current = proposalDecision(model.cueDecisions || [], proposal.id);
+  // Reopening puts the proposal back in review and takes back what accepting made.
+  if (command.action === 'reopen-proposal') {
+    if (!current || command.expected !== current.status)
+      throw new Error('This proposal changed elsewhere. Reopen the transcript.');
+    return reopenDecision(model, current);
+  }
   if (current || command.expected !== 'null')
     throw new Error('This proposal was already decided. Undo its decision before changing it.');
   const decision: CueDecision = {
@@ -90,12 +97,14 @@ export function applyProposalCommand(
     if (names.some((n) => n.length > 200))
       throw new Error('Enter clip names of up to 200 characters.');
     const second = names[1] || `${names[0] || clip.name} · 2`;
+    decision.priorName = clip.name;
     if (names[0]) clip.name = names[0];
     clip.end = start;
     clip.accepted = false;
+    decision.clipId = newId();
     next.clips.push({
       ...clip,
-      id: newId(),
+      id: decision.clipId,
       name: second,
       start,
       end,

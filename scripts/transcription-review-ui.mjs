@@ -193,7 +193,11 @@ try {
   await view.keyboard.press('k');
   await view.locator('[data-filter="pending"]').click();
   await expect(phrases.locator('article')).toHaveCount(4);
-  await expect(view.getByLabel('Cue title 95')).toHaveValue('opening');
+  // Proposal cards (VC-155): one line with the name and time; Edit opens fields in place.
+  const card = (id) => view.locator(`[data-proposal-card$=":${id}"]`);
+  const editCard = (id) => card(id).getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(card(95)).toContainText('opening');
+  await expect(card(95)).toContainText('Spoken');
   await phrases
     .locator('article')
     .nth(1)
@@ -205,9 +209,10 @@ try {
   assert.equal(current.model.cueDecisions.length, 2);
   await main.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(phrases.locator('article')).toHaveCount(4);
+  await editCard(10);
   await view.getByLabel('Cue title 10').fill('Reviewed opening');
-  await view.getByLabel('Cue position 10').fill('0.8');
-  await view.getByLabel('Cue end 10').fill('9.6');
+  await view.getByLabel('Cue position 10', { exact: true }).fill('0.8');
+  await view.getByLabel('Cue end 10', { exact: true }).fill('9.6');
   await phrases
     .locator('article')
     .first()
@@ -225,9 +230,12 @@ try {
   await main.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(phrases.locator('article')).toHaveCount(2);
   await expect(view.getByRole('button', { name: 'Accept split', exact: true })).toBeDisabled();
+  await editCard(110);
   await view.getByLabel('Split target 110').selectOption('overlap-b');
   await view.getByRole('button', { name: 'Accept split', exact: true }).click();
   await expect(phrases.locator('article')).toHaveCount(1);
+  await expect(card(115)).toContainText('short title');
+  await editCard(115);
   await expect(view.getByLabel('Cue title 115')).toHaveValue('short title');
   await expect(view.getByLabel('Cue text 115')).toHaveValue(/word124/);
   await view.getByLabel('Cue context end 115').selectOption('116');
@@ -273,6 +281,17 @@ try {
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-a').end, 15);
   assert.equal(current.model.clips.find((c) => c.id === 'overlap-b').end, 11);
   await view.locator('[data-filter="accepted"]').click();
+  await expect(phrases.locator('article')).toHaveCount(4);
+  // Reopening an accepted cue takes back what it made and puts it back in review (VC-155).
+  await expect(card(115)).toHaveAttribute('data-status', 'accepted');
+  await card(115).getByRole('button', { name: 'Reopen', exact: true }).click();
+  await expect(phrases.locator('article')).toHaveCount(3);
+  current = await main.evaluate(() => window.virtualCut.project.current());
+  assert.equal(
+    current.model.markers[fixture.rid].some((m) => m.name === 'Context review marker'),
+    false,
+  );
+  await main.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(phrases.locator('article')).toHaveCount(4);
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
