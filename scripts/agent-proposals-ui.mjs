@@ -273,6 +273,8 @@ try {
     'Fort and siege',
   );
   await split.getByLabel(`Proposal second clip name ${ids[1]}`).fill('Bertrand talk');
+  await split.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-split-names.png') });
   await split.getByRole('button', { name: 'Accept split', exact: true }).click();
   await expect(split).toContainText('accepted');
   await clip.getByRole('button', { name: 'Reject', exact: true }).click();
