@@ -278,6 +278,13 @@ try {
   await expect(marker).toContainText('Agent');
   await expect(marker).toContainText('Changed: retitled · note written');
   await expect(range).toContainText('Range marker');
+  // A range has two times to jump to: its start and its end.
+  await range.getByTitle('Go to the end', { exact: true }).click();
+  await expect
+    .poll(async () =>
+      Math.abs((await main.locator('video').evaluate((v) => v.currentTime)) - mic.lines[3].end),
+    )
+    .toBeLessThan(0.05);
   await expect(range).toContainText('Range');
   await expect(range).toContainText('Notion: new note');
   await marker.getByRole('button', { name: 'Details', exact: true }).click();

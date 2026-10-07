@@ -203,9 +203,20 @@ export function ProposalCard({
           >
             {name}
           </button>
-          <button className={s.pcTime} title="Listen from here" onClick={() => onSeek(time)}>
-            {timecode}
-          </button>
+          {/* A range has two times to jump to: its start and its end. */}
+          <span className={s.pcTimes}>
+            <button className={s.pcTime} title="Go to the start" onClick={() => onSeek(time)}>
+              {formatTimecode(time)}
+            </button>
+            {end != null && (
+              <>
+                <span className={s.pcCut}>–</span>
+                <button className={s.pcTime} title="Go to the end" onClick={() => onSeek(end)}>
+                  {formatTimecode(end)}
+                </button>
+              </>
+            )}
+          </span>
         </div>
       )}
       {meta.length > 0 && (

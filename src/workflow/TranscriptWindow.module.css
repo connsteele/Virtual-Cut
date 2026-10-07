@@ -762,3 +762,9 @@
   padding: 6px 8px;
   font-size: 13px;
 }
+.pcTimes {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 6px;
+}
