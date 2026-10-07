@@ -23,6 +23,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0013](0013-filmstrip-tile-files.md)           | Filmstrips made once per recording and kept in the preview cache            | Accepted |
 | [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed |
 | [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed |
+| [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed |
 
 ## Adding a record
 
