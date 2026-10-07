@@ -36,3 +36,11 @@ Commits since 0.4.17 on branch `m4-agents-mcp`, plus this delivery commit. Produ
   submissions, proposals outside Undo, restores keep proposals. `agent-proposals-ui.mjs`
   (desktop and packaged): submit over MCP, Agent cards in the transcript window, move, accept,
   split, reject, filter, decisions read back, Undo returns a decision to review, compact window.
+
+- Fast gate: `G:\Claude\Virtual Cut\evidence\0.4.18\fast\run-YL8AHc`.
+- Full desktop suite with coverage (54/54, gates met):
+  `G:\Claude\Virtual Cut\evidence\0.4.18\suite\run-guvWKO`.
+- Build: `G:\Claude\Virtual Cut\builds\Virtual-Cut-0.4.18-win-x64-2026-10-07T03-55-47-950Z\Virtual Cut.exe`.
+- Packaged checks (54/54): `G:\Claude\Virtual Cut\evidence\0.4.18\packaged\run-k55hbL`; the
+  packaged build's Agent cards are in `G:\Claude\Virtual Cut\evidence\0.4.18\screens`.
+- Transport check: `G:\Claude\Virtual Cut\evidence\0.4.18\transport`.
