@@ -317,6 +317,18 @@ try {
   await view.getByLabel(`Proposal position ${ids[0]}`, { exact: true }).fill(String(moved - 0.2));
   await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
   await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
+  // Times read like the ruler; Ctrl+Z on the card undoes its last change, then it is redone.
+  const position = view.getByLabel(`Proposal position ${ids[0]}`, { exact: true });
+  const ruler = (s) => {
+    const ms = Math.round(s * 1000);
+    return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
+  };
+  await expect(position).toHaveValue(ruler(moved));
+  await position.focus();
+  await view.keyboard.press('Control+z');
+  await expect(position).toHaveValue(ruler(moved - 0.1));
+  await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
+  await expect(position).toHaveValue(ruler(moved));
   await view.getByLabel(`Proposal title ${ids[0]}`).fill('Bertrand at the gate');
   await view.screenshot({ path: path.join(dir, 'proposal-edit.png') });
   await marker.getByRole('button', { name: 'Accept marker', exact: true }).click();

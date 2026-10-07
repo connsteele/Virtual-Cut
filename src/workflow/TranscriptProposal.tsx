@@ -4,6 +4,7 @@ import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
 import { ProposalCard } from './ProposalCard';
 import { TimeField } from './TimeField';
+import { useCardDraft } from './useCardDraft';
 import { formatTimecode } from './transcriptTime';
 import s from './TranscriptWindow.module.css';
 
@@ -39,7 +40,7 @@ export function TranscriptProposal({
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<{
+  const { draft, setDraft, undo, reset } = useCardDraft<{
     title?: string;
     text?: string;
     time?: number;
@@ -47,7 +48,7 @@ export function TranscriptProposal({
     clipId?: string;
     first?: string;
     second?: string;
-  }>({});
+  }>();
   const decision = proposalDecision(session.decisions, proposal.id);
   const kind = proposalKindLabel(proposal);
   const split = proposal.kind === 'cut';
@@ -200,9 +201,10 @@ export function TranscriptProposal({
       onReject={() => onCommand('reject-proposal', {})}
       onReopen={() => onCommand('reopen-proposal', {})}
       onCancel={() => {
-        setDraft({});
+        reset();
         setEditing(false);
       }}
+      onUndo={undo}
       onSeek={onSeek}
     >
       <div className={s.pcDetails} data-proposal={proposal.id}>

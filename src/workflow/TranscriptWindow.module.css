@@ -768,3 +768,12 @@
   align-items: baseline;
   gap: 6px;
 }
+.pcChangedSince {
+  padding: 0 7px;
+  border: 1px solid #8a6d2c;
+  border-radius: 9px;
+  background: #3a2f17;
+  color: #e8c77a;
+  font-size: 11px;
+  font-weight: 600;
+}

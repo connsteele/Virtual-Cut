@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { parsePosition, positionText } from './timelineRuler';
 import s from './TranscriptWindow.module.css';
 
-/** A time edited in place on a proposal (VC-155): seconds, ±0.1 s / ±1 s nudges and Playhead. */
+/** A time edited in place on a proposal (VC-155): the ruler's format, ±0.1 s / ±1 s nudges, Playhead. */
 export function TimeField({
   name,
   value,
@@ -13,22 +14,25 @@ export function TimeField({
   playhead: number;
   onChange: (seconds: number) => void;
 }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+  const [text, setText] = useState(positionText(value));
+  useEffect(() => setText(positionText(value)), [value]);
   const set = (seconds: number) => onChange(Math.max(0, Math.round(seconds * 1000) / 1000));
   return (
     <span className={s.timeField}>
       <input
         aria-label={name}
         className={s.inlineTime}
-        type="number"
-        min={0}
-        step="0.001"
         value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          if (e.target.value.trim() && Number.isFinite(Number(e.target.value)))
-            onChange(Number(e.target.value));
+        spellCheck={false}
+        title="hh:mm:ss.mmm, like the ruler; seconds work too"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          const seconds = parsePosition(text);
+          if (seconds == null) setText(positionText(value));
+          else if (seconds !== value) onChange(seconds);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
         }}
       />
       <span className={s.nudge}>

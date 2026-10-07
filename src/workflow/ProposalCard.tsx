@@ -33,6 +33,7 @@ export function ProposalCard({
   onReopen,
   changedSince = false,
   onCancel,
+  onUndo,
   onSeek,
   children,
 }: {
@@ -63,6 +64,8 @@ export function ProposalCard({
   changedSince?: boolean;
   /** Esc anywhere on the card: drop the edits and leave editing. */
   onCancel: () => void;
+  /** Ctrl+Z while editing: undo the last change on this card. */
+  onUndo: () => void;
   onSeek: (time: number) => void;
   children?: ReactNode;
 }) {
@@ -87,8 +90,11 @@ export function ProposalCard({
               {status === 'accepted' ? '✓ Accepted' : '✕ Rejected'}
             </span>
             {changedSince && (
-              <span className={s.muted} title="What accepting made was changed in Cut since">
-                · changed since
+              <span
+                className={s.pcChangedSince}
+                title="What accepting made was changed in Cut since"
+              >
+                Changed since
               </span>
             )}
             {onReopen && (
@@ -112,6 +118,12 @@ export function ProposalCard({
   // Keys on a focused proposal, outside its fields: A accept, R reject, D details, E edit,
   // N/P the next or previous proposal waiting for review. J K L stay playback.
   const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (editing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      onUndo();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (event.key === 'Escape' && editing) {
       onCancel();
       event.preventDefault();
@@ -230,7 +242,10 @@ export function ProposalCard({
         <div className={s.pcBody}>
           {children}
           {editing && (
-            <p className={s.muted}>Editing in place. Esc puts the proposal back as it was.</p>
+            <p className={s.muted}>
+              Editing in place. Ctrl+Z undoes the last change on this card; Esc puts it back as it
+              was.
+            </p>
           )}
         </div>
       )}

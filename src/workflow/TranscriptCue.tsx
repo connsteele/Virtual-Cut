@@ -15,6 +15,7 @@ import {
 import { ProposalCard } from './ProposalCard';
 import { Button, Field } from './ui';
 import { TimeField } from './TimeField';
+import { useCardDraft } from './useCardDraft';
 import s from './TranscriptWindow.module.css';
 
 /** A spoken cue on the shared proposal card (VC-155), decided where it was said. */
@@ -43,7 +44,7 @@ export function TranscriptCue({
   const split = cue.kind === 'cut';
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<{
+  const { draft, setDraft, undo, reset } = useCardDraft<{
     title?: string;
     contextEndSegmentId?: number;
     text?: string;
@@ -52,7 +53,7 @@ export function TranscriptCue({
     clipId?: string;
     first?: string;
     second?: string;
-  }>({});
+  }>();
   const context = cueContext(segment, draft.contextEndSegmentId);
   const suggestedTitle = cueTitle(transcript, segment).slice(0, range ? 200 : 100);
   const title = draft.title ?? suggestedTitle;
@@ -180,9 +181,10 @@ export function TranscriptCue({
       onReject={() => onCommand('reject-cue', {})}
       onReopen={() => onCommand('reopen-cue', {})}
       onCancel={() => {
-        setDraft({});
+        reset();
         setEditing(false);
       }}
+      onUndo={undo}
       onSeek={onSeek}
     >
       <div className={s.pcDetails}>
