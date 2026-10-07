@@ -126,7 +126,7 @@ try {
   const config = await panel.locator('[data-config="claude-desktop"]').textContent();
   assert.match(
     await panel.locator('[data-config="claude-code"]').textContent(),
-    /^claude mcp add --scope user -e ELECTRON_RUN_AS_NODE=1 virtual-cut -- .+mcp-relay\.cjs"? --pipe=\S+ --pair=[\w-]{32}$/,
+    /^claude mcp add --scope user virtual-cut -e ELECTRON_RUN_AS_NODE=1 -- .+mcp-relay\.cjs"? --pipe=virtual-cut-agents-[0-9a-f]{24} --pair=[\w-]{32}$/,
   );
   await panel.getByRole('button', { name: 'Done', exact: true }).click();
 

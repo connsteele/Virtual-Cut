@@ -7,7 +7,10 @@ import { connect } from 'node:net';
 // before MCP traffic starts. Nothing here reads files or opens other connections.
 const option = (name: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-const pipe = option('pipe') || process.env.VIRTUAL_CUT_AGENT_PIPE || '',
+// --pipe carries only the pipe's name: shells and agent apps drop backslashes from a full
+// \\.\pipe\ path, so the prefix is added here.
+const pipeName = (option('pipe') || process.env.VIRTUAL_CUT_AGENT_PIPE || '').split(/[\\/]/).pop(),
+  pipe = pipeName ? '\\\\.\\pipe\\' + pipeName : '',
   token = option('pair') || process.env.VIRTUAL_CUT_AGENT_TOKEN || '';
 function fail(message: string): never {
   process.stderr.write(`Virtual Cut: ${message}\n`);

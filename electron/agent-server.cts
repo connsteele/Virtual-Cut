@@ -192,14 +192,14 @@ export function registerAgentAccess(options: {
     // start-up writes a blank line to stdout on Windows, which some MCP clients log as an error.
     const args = [
       path.join(__dirname, 'mcp-relay.cjs'),
-      `--pipe=${access.pipe}`,
+      `--pipe=${path.basename(access.pipe)}`,
       `--pair=${token}`,
     ];
     const quote = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
     const pairing: AgentPairing = {
       client,
       token,
-      claudeCode: `claude mcp add --scope user -e ELECTRON_RUN_AS_NODE=1 virtual-cut -- ${[process.execPath, ...args].map(quote).join(' ')}`,
+      claudeCode: `claude mcp add --scope user virtual-cut -e ELECTRON_RUN_AS_NODE=1 -- ${[process.execPath, ...args].map(quote).join(' ')}`,
       claudeDesktop: JSON.stringify(
         {
           mcpServers: {
