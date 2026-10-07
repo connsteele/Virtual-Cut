@@ -2,6 +2,19 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.19 — One proposal card and mic intents (October 7, 2026)
+
+Sprint 6. Spoken cues and agent proposals now share one card in the transcript window, with
+the same lines in the same places: who proposed it, the kind and intents, Accept, Reject,
+Details and Edit at the right, then the name and time code. Edit changes the fields in place,
+with nudges and Playhead. Decided proposals fold to one line with Reopen, which takes back what
+accepting made. An agent that reworks a spoken cue shows one card tagged Spoken and Agent with
+what changed. Agents read the mic intent guide (`get_intent_guide`) with your tagged notes and
+earlier decisions, and can propose several intents, Notion notes and range markers.
+`scripts/intent-score.mjs` scores proposals and decisions against tagged notes. See
+[the 0.4.19 review](docs/review-0.4.19.md) and
+[decision 0016](docs/decisions/0016-mic-intents-and-proposal-card.md).
+
 ## 0.4.18 — Agent proposals on the cue card (October 7, 2026)
 
 Sprint 5. Paired agent apps can now propose markers, timed notes, splits and clip ranges with
