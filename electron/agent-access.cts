@@ -46,6 +46,8 @@ export class AgentAccess {
   private writing: Promise<void> = Promise.resolve();
   view?: AgentView;
   onChange?: () => void;
+  /** Diagnostics: connection events only, never names, tokens or what was read. */
+  log?: (event: string, details?: Record<string, unknown>) => void;
   serve?: AgentServe;
   readonly pipe: string;
   private file: string;
@@ -79,6 +81,7 @@ export class AgentAccess {
   }
   async setEnabled(enabled: boolean) {
     this.data.enabled = enabled;
+    this.log?.('agent-access', { enabled });
     await this.persist();
     if (enabled) await this.listen();
     else await this.stop();
@@ -103,6 +106,7 @@ export class AgentAccess {
     return { client: visible(client), token };
   }
   async revoke(clientId: string) {
+    this.log?.('agent-revoked', { clientId });
     this.data.clients = this.data.clients.filter((c) => c.id !== clientId);
     for (const [socket, c] of this.connections) if (c.clientId === clientId) this.drop(socket);
     await this.persist();
@@ -145,6 +149,7 @@ export class AgentAccess {
       server.once('error', (e: NodeJS.ErrnoException) => {
         this.server = undefined;
         this.listening = false;
+        this.log?.('agent-listen-failed', { errorCode: e.code });
         this.message =
           e.code === 'EADDRINUSE'
             ? 'Another Virtual Cut window already offers agent access.'
@@ -161,6 +166,8 @@ export class AgentAccess {
   private accept(socket: Socket) {
     this.connections.set(socket, { clientId: '' });
     socket.on('close', () => {
+      const clientId = this.connections.get(socket)?.clientId;
+      if (clientId) this.log?.('agent-disconnected', { clientId });
       this.connections.get(socket)?.stop?.();
       this.connections.delete(socket);
       this.changed();
@@ -192,6 +199,7 @@ export class AgentAccess {
         timingSafeEqual(Buffer.from(c.tokenHash, 'hex'), presented),
       );
       if (!client) {
+        this.log?.('agent-refused');
         this.record(
           { id: '', name: 'Unpaired app', projectId: '', projectName: '', paired: '' },
           'connect',
@@ -208,6 +216,7 @@ export class AgentAccess {
       socket.write(JSON.stringify({ ok: true }) + '\n');
       const entry = this.connections.get(socket)!;
       entry.clientId = client.id;
+      this.log?.('agent-connected', { clientId: client.id });
       if (rest.length) socket.unshift(rest);
       entry.stop = this.serve(socket, visible(client));
       socket.resume();

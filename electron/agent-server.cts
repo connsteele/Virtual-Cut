@@ -35,8 +35,10 @@ export function registerAgentAccess(options: {
   projects: () => ProjectService | undefined;
   mainWindow: () => BrowserWindow | null;
   trusted: (event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>) => void;
+  log?: (event: string, details?: Record<string, unknown>) => void;
 }) {
   const access = new AgentAccess(options.userData);
+  access.log = options.log;
   access.onChange = () => {
     const window = options.mainWindow();
     if (window && !window.isDestroyed()) window.webContents.send('agent:changed');

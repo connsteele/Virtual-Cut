@@ -221,6 +221,12 @@ try {
   const closed = agent(second);
   assert.equal(await closed.exited, 1);
   assert.match(closed.stderr(), /not running, or agent access is off/);
+  // Diagnostics keep connection events only: no app names, tokens or what was read.
+  const report = (await page.evaluate(() => window.virtualCut.diagnostics.summary())).text;
+  for (const event of ['agent-access', 'agent-connected', 'agent-refused', 'agent-revoked'])
+    assert(report.includes(event), `diagnostics lack ${event}`);
+  for (const secret of ['Claude Code', 'Claude Desktop', '--pair', 'Mic transcript'])
+    assert(!report.includes(secret), `diagnostics leak ${secret}`);
   assert.deepEqual(errors, []);
   await collectBeforeWindowClose(app);
   console.log(JSON.stringify({ passed: true, dir }));

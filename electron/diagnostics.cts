@@ -49,6 +49,12 @@ const events = new Set([
   'preview-recovered',
   'media-read-failed',
   'destination-holds',
+  'agent-access',
+  'agent-listen-failed',
+  'agent-connected',
+  'agent-refused',
+  'agent-disconnected',
+  'agent-revoked',
 ]);
 const words = new Set([
   'inspect',
@@ -148,6 +154,7 @@ function safeFields(data: Record<string, unknown>, nested = false): Record<strin
         'previewId',
         'mediaId',
         'previousSession',
+        'clientId',
       ].includes(key) &&
       typeof value === 'string' &&
       /^[a-f\d-]{36}$/i.test(value)

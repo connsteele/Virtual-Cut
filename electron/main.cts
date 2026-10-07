@@ -781,6 +781,7 @@ if (!mcpLaunch)
         projects: () => projects,
         mainWindow: () => mainWindow,
         trusted: assertTrustedSender,
+        log: (event, details) => diagnostics.record(event, details),
       });
       await agentAccess.start();
       await createWindow();
