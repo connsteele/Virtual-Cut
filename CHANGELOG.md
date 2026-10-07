@@ -15,6 +15,12 @@ earlier decisions, and can propose several intents, Notion notes and range marke
 [the 0.4.19 review](docs/review-0.4.19.md) and
 [decision 0016](docs/decisions/0016-mic-intents-and-proposal-card.md).
 
+Review round (test builds 0.4.19-2 to -5): a proposal that cites a spoken cue's line is one
+Spoken + Agent card even when the agent leaves out `refines`; Reopen works after you changed the
+result by hand, and the card says Changed since; range markers jump to their start or end; card
+times read like the ruler, and Ctrl+Z undoes the last change on a card. `get_proposal_decisions`
+returns the cited line ids, and the scorer places composite notes by their own lines.
+
 ## 0.4.18 — Agent proposals on the cue card (October 7, 2026)
 
 Sprint 5. Paired agent apps can now propose markers, timed notes, splits and clip ranges with

@@ -49,3 +49,12 @@ Commits since 0.4.18 on branch `m4-agents-mcp`, plus this delivery commit. Produ
 - Packaged checks (55/55): `G:\Claude\Virtual Cut\evidence\0.4.19\packaged\run-bvk6c3`; the
   packaged build's proposal cards are in `G:\Claude\Virtual Cut\evidence\0.4.19\screens`.
 - Transport check: `G:\Claude\Virtual Cut\evidence\0.4.19\transport`.
+
+## Review round and result
+
+Connor's notes during review were built as test builds 0.4.19-2 to -5 (commits `829efcc`,
+`f4c238f`, `93bd19d`, `2d2813b`, `50b13d4`), each with the proposal and transcript checks passing
+on the packaged build. M347 and M348 were accepted on October 7, 2026. M348's pass on Cai
+Chapter 4: 29 proposals, all accepted; Splits 5 of 9 where the notes say after review; findings in
+`G:\Claude\Virtual Cut\intent-score\cai-ch4-agent-run-1\findings.md`. Connor's conclusion:
+training is premature until names, picture evidence and transcript corrections reach the agent.
