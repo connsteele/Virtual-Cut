@@ -312,7 +312,13 @@ export function useProjectWorkspace() {
         setRecents(await window.virtualCut!.project.recent());
         return value;
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        // Main-process refusals read as their own message, without the IPC wrapper.
+        setError(
+          (e instanceof Error ? e.message : String(e)).replace(
+            /^Error invoking remote method '[^']+': (Error: )?/,
+            '',
+          ),
+        );
         return null;
       } finally {
         working.current = false;

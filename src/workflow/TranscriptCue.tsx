@@ -144,6 +144,11 @@ export function TranscriptCue({
           ? ['No matching boundary: correct the cue wording, or create this clip in Cut.']
           : []
       }
+      changedSince={
+        decision?.status === 'accepted' &&
+        decision.clipId != null &&
+        !session.clips.some((c) => c.id === decision.clipId)
+      }
       status={decision?.status || 'pending'}
       open={open}
       editing={editing}

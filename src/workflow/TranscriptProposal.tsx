@@ -167,6 +167,11 @@ export function TranscriptProposal({
       time={decision?.appliedTime ?? start}
       end={decision?.appliedEnd ?? end}
       meta={meta}
+      changedSince={
+        decision?.status === 'accepted' &&
+        decision.clipId != null &&
+        !session.clips.some((c) => c.id === decision.clipId)
+      }
       status={decision?.status || 'pending'}
       open={open}
       editing={editing}

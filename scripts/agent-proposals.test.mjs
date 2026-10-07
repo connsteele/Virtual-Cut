@@ -511,12 +511,14 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
       ),
     /changed elsewhere/,
   );
-  // A split whose clips changed since can't be put back; Undo still can.
+  // A split whose clips were already joined by hand just goes back to review.
   const moved = {
     ...settled,
     clips: settled.clips.map((c) => (c.id === 'c2' ? { ...c, end: 140 } : c)),
   };
-  assert.throws(() => reopen(moved, rework), /changed since\. Use Undo/);
+  const rejoined = reopen(moved, rework);
+  assert.deepEqual(rejoined.clips, moved.clips, 'clips are left as the user made them');
+  assert.equal(proposalDecision(rejoined.cueDecisions, rework.id), undefined);
   // A cue already decided on its own is left as it was; rejecting a rework leaves the cue open.
   const own = {
     ...camp,

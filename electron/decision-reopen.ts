@@ -5,7 +5,8 @@ import type { CueDecision } from './transcript-contracts.js';
  * Reopening a decided cue or proposal (VC-155): the decision goes, and so does what accepting
  * made: the marker, the note, the clip, or the split (its two clips become one again, with the
  * name it had). Decisions that went with it (a clip's other boundary, a spoken cue settled by
- * the proposal) go too. Refused when the split's clips changed since; Undo still works then.
+ * the proposal) go too. When what it made is already gone (the user joined the split's clips
+ * again by hand, deleted the marker), reopening only puts it back in review.
  */
 export function reopenDecision(model: Model, decision: CueDecision): Model {
   const next = structuredClone(model);
@@ -29,11 +30,11 @@ export function reopenDecision(model: Model, decision: CueDecision): Model {
       next.clips.find(
         (c) => c.rid === second.rid && c.id !== second.id && Math.abs(c.end - second.start) < 0.001,
       );
-    if (!second || !first)
-      throw new Error('The clips from this split changed since. Use Undo to take it back.');
-    first.end = second.end;
-    if (decision.priorName != null) first.name = decision.priorName;
-    next.clips = next.clips.filter((c) => c.id !== second.id);
+    if (second && first) {
+      first.end = second.end;
+      if (decision.priorName != null) first.name = decision.priorName;
+      next.clips = next.clips.filter((c) => c.id !== second.id);
+    }
   } else if (decision.clipId) next.clips = next.clips.filter((c) => c.id !== decision.clipId);
   return next;
 }

@@ -31,6 +31,7 @@ export function ProposalCard({
   onAccept,
   onReject,
   onReopen,
+  changedSince = false,
   onCancel,
   onSeek,
   children,
@@ -58,6 +59,8 @@ export function ProposalCard({
   onAccept: () => void;
   onReject: () => void;
   onReopen?: () => void;
+  /** Accepted, but the clip it made is gone (joined or deleted in Cut). */
+  changedSince?: boolean;
   /** Esc anywhere on the card: drop the edits and leave editing. */
   onCancel: () => void;
   onSeek: (time: number) => void;
@@ -83,6 +86,11 @@ export function ProposalCard({
             <span className={status === 'accepted' ? s.pcAccepted : s.pcRejected}>
               {status === 'accepted' ? '✓ Accepted' : '✕ Rejected'}
             </span>
+            {changedSince && (
+              <span className={s.muted} title="What accepting made was changed in Cut since">
+                · changed since
+              </span>
+            )}
             {onReopen && (
               <button
                 className={s.pcQuiet}
