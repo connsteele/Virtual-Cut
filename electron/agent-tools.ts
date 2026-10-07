@@ -25,6 +25,14 @@ export interface AgentReadSource {
   view?: AgentView;
 }
 export class AgentReadError extends Error {}
+/** A recording or batch named for the activity list; ids an agent made up stay as given. */
+export function readableName(source: AgentReadSource | undefined, id: string) {
+  return (
+    source?.model.recordings.find((r) => r.id === id)?.title ||
+    source?.batches.find((b) => b.id === id)?.name ||
+    id
+  );
+}
 
 const pageSize = 100;
 const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -253,10 +261,19 @@ export function transcriptLines(
 }
 
 export function annotations(source: AgentReadSource, batchId?: string, recordingId?: string) {
-  const batch = findBatch(source, batchId);
-  const recordings = recordingId
-    ? [findRecording(source, recordingId)]
-    : recordingsIn(source, batch.id);
+  const one = recordingId ? findRecording(source, recordingId) : undefined;
+  // A recording answers for the batch it belongs to: the one asked for, else the active batch
+  // if it holds the recording, else the recording's own batch.
+  const batch = findBatch(
+    source,
+    batchId ||
+      (one && !one.batchIds?.includes(source.activeBatchId) ? one.batchIds?.[0] : undefined),
+  );
+  if (one && !one.batchIds?.includes(batch.id))
+    throw new AgentReadError(
+      `"${one.title}" is not in the batch "${batch.name}". Leave batch_id out, or use the recording's own batch from get_project_summary.`,
+    );
+  const recordings = one ? [one] : recordingsIn(source, batch.id);
   const ids = new Set(recordings.map((r) => r.id));
   return {
     batch: { id: batch.id, name: batch.name },

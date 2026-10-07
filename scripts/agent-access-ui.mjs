@@ -202,6 +202,11 @@ try {
   const revoked = agent(config);
   assert.equal(await revoked.exited, 1);
   assert.match(revoked.stderr(), /not paired, or its pairing was revoked/);
+  // Refused connections are listed too, under a neutral name.
+  await expect(panel.locator('[data-agent-activity] li').first()).toContainText('Unpaired app');
+  await expect(panel.locator('[data-agent-activity] li').first()).toContainText(
+    'Connection refused',
+  );
 
   // Turning access off closes the pipe.
   await panel.getByRole('textbox', { name: 'Agent app' }).fill('Claude Desktop');

@@ -191,10 +191,17 @@ export class AgentAccess {
       const client = this.data.clients.find((c) =>
         timingSafeEqual(Buffer.from(c.tokenHash, 'hex'), presented),
       );
-      if (!client)
+      if (!client) {
+        this.record(
+          { id: '', name: 'Unpaired app', projectId: '', projectName: '', paired: '' },
+          'connect',
+          'Connection refused: not paired, or its pairing was revoked',
+          'refused',
+        );
         return refuse(
           'This agent app is not paired, or its pairing was revoked. Pair it again under Agent in Virtual Cut.',
         );
+      }
       if (!this.serve) return refuse('Agent access is not available in this build.');
       const rest = pending.subarray(end + 1);
       socket.setTimeout(0);

@@ -5,6 +5,7 @@ import {
   contextPacket,
   currentView,
   projectSummary,
+  readableName,
   transcriptLines,
 } from '../dist-electron/agent-tools.js';
 import { defaultContext } from '../dist-electron/project-context.js';
@@ -192,6 +193,17 @@ const marked = annotations(source);
 assert.equal(marked.recordings[0].markers[0].name, 'Bertrand');
 assert.equal(marked.notes[0].text, 'Fort battle');
 assert.equal(marked.cueDecisions[0].status, 'accepted');
+// A recording answers for its own batch and is refused under another (found in testing).
+assert.equal(annotations(source, undefined, 'r1').batch.id, 'b1');
+assert.throws(() => annotations(source, 'b2', 'r1'), /is not in the batch "Empty"/);
+assert.equal(
+  annotations({ ...source, activeBatchId: 'b2' }, undefined, 'r1').batch.id,
+  'b1',
+  'with the active batch elsewhere, the recording keeps its own batch',
+);
+assert.equal(readableName(source, 'r1'), 'Cai session 1');
+assert.equal(readableName(source, 'b1'), 'Cai');
+assert.equal(readableName(undefined, 'made-up'), 'made-up');
 
 // No answer may carry a path, media URL or note link.
 const everything = JSON.stringify([

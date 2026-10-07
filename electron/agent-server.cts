@@ -12,6 +12,7 @@ import type { AgentClient, AgentPairing, AgentView } from './agent-contracts.js'
 import {
   AgentReadError,
   annotations,
+  readableName,
   contextPacket,
   currentView,
   projectSummary,
@@ -74,7 +75,7 @@ export function registerAgentAccess(options: {
       description: string,
       input: z.ZodObject,
       run: (s: AgentReadSource, args: A) => unknown,
-      summary: (args: A) => string,
+      summary: (args: A, name: (id: string) => string) => string,
     ) =>
       server.registerTool(
         name,
@@ -85,13 +86,16 @@ export function registerAgentAccess(options: {
             socket.destroy();
             return failure('This pairing was revoked in Virtual Cut.');
           }
+          let project: AgentReadSource | undefined;
+          const label = (id: string) => readableName(project, id);
           try {
-            const result = run(source(client), a);
-            access.record(client, name, summary(a), 'read');
+            project = source(client);
+            const result = run(project, a);
+            access.record(client, name, summary(a, label), 'read');
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 1) }] };
           } catch (e) {
             const known = e instanceof Refused || e instanceof AgentReadError;
-            access.record(client, name, summary(a), 'refused');
+            access.record(client, name, summary(a, label), 'refused');
             return failure(known ? (e as Error).message : 'Virtual Cut could not read that.');
           }
         },
@@ -113,14 +117,14 @@ export function registerAgentAccess(options: {
       'The open project and its batches. With batch_id: that batch, its game and brief, recordings (with which transcripts exist) and clips.',
       z.object({ batch_id: batch }),
       (s, a) => projectSummary(s, a.batch_id),
-      (a) => (a.batch_id ? `Batch summary ${a.batch_id}` : 'Project summary'),
+      (a, n) => (a.batch_id ? `Batch summary: ${n(a.batch_id)}` : 'Project summary'),
     );
     read<{ batch_id?: string }>(
       'get_context',
       "A batch's context packet: game and vocabulary, the brief (situational context, not a narrative to fit), glossary and what is already marked, with a revision id.",
       z.object({ batch_id: batch }),
       (s, a) => contextPacket(s, a.batch_id),
-      (a) => `Context packet ${a.batch_id || '(active batch)'}`,
+      (a, n) => `Context packet: ${a.batch_id ? n(a.batch_id) : 'active batch'}`,
     );
     read<{
       recording_id: string;
@@ -130,7 +134,7 @@ export function registerAgentAccess(options: {
       cursor?: string;
     }>(
       'get_transcript',
-      "Transcript lines of one recording's microphone (the creator's spoken notes) or game audio between two times, 100 lines per page with corrections applied. Pass next_cursor to continue.",
+      "Transcript lines of one recording's microphone (the creator's spoken notes) or game audio between two times, 100 lines per page with corrections applied. When more lines remain, the answer has next_cursor: pass that value as cursor to continue.",
       z.object({
         recording_id: z.string().max(200),
         role: z.enum(['mic', 'game']),
@@ -146,8 +150,8 @@ export function registerAgentAccess(options: {
           end: a.end_seconds,
           cursor: a.cursor,
         }),
-      (a) =>
-        `${a.role === 'mic' ? 'Mic' : 'Game'} transcript of ${a.recording_id}, ` +
+      (a, n) =>
+        `${a.role === 'mic' ? 'Mic' : 'Game'} transcript of ${n(a.recording_id)}, ` +
         `${clock(a.start_seconds ?? 0)}–${a.end_seconds === undefined ? 'end' : clock(a.end_seconds)}` +
         (a.cursor ? ' (next page)' : ''),
     );
@@ -159,7 +163,8 @@ export function registerAgentAccess(options: {
         recording_id: z.string().max(200).optional().describe('Limit to one recording.'),
       }),
       (s, a) => annotations(s, a.batch_id, a.recording_id),
-      (a) => `Annotations ${a.recording_id || a.batch_id || '(active batch)'}`,
+      (a, n) =>
+        `Annotations: ${a.recording_id ? n(a.recording_id) : a.batch_id ? n(a.batch_id) : 'active batch'}`,
     );
     const transport = new StdioServerTransport(socket, socket);
     void server.connect(transport).catch(() => socket.destroy());
