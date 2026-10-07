@@ -70,6 +70,13 @@ timing error, Note wording, false triggers and per-phrase word error rate. It ne
 engine (`VIRTUAL_CUT_ASR_RUNTIME` pointing at a `transcription-runtime.json`, read only) and is not
 part of the automatic gates.
 
+`scripts/intent-score.mjs` scores proposals and the user's decisions against tagged mic notes (each
+line tagged `{marker}`, `{general}`, `{notion}` or `{edit}`, Splits with where they should cut). It
+reads a `get_proposal_decisions` answer, a saved `submit_proposals` run or a mic transcript, and
+reports per intent: tagged lines covered, proposals on tagged speech, accepted and rejected, Split
+cut points against their targets, and false proposals. The notes format is in
+`electron/intent-notes.ts`; `intent-score.test.mjs` in the fast gate covers the reader and scoring.
+
 M3 adds context inheritance, immutable transcript storage, corrections, cue actions, silence offsets, pagination/search, checkpoint recovery, cancellation/retry and separate-window IPC/layout checks. The maintained storage test uses a synthetic worker boundary; it is not recognition-accuracy evidence. Explicit real-model worker/native/sample scripts remain classified outside CI and need copied audio plus an installed runtime. Their measured results and known recognition errors are in [M3 review](m3-review.md). Python-worker execution is not included in Istanbul's JavaScript/TypeScript percentage.
 
 Use the repository's Node/npm dependencies. Native and desktop gates need FFmpeg and FFprobe on PATH (or the documented tool overrides); packaged checks require both binaries in `resources/tools` beside the executable. Fixture preparation runs under the repository Electron runtime; application checks run the packaged executable. Packaged tests do not silently substitute the installed application for a missing executable.

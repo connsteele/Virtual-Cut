@@ -13,6 +13,7 @@ export const fast = [
   'game-library.test.mjs',
   'agent-tools.test.mjs',
   'agent-proposals.test.mjs',
+  'intent-score.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -90,6 +91,8 @@ export const other = {
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':
     'Makes the timed video and SRT pair for checking subtitle import in Resolve by hand (VC-154); not a test.',
+  'intent-score.mjs':
+    'Scores proposals and decisions against tagged mic notes (VC-128); on demand, reads only the files it is given.',
   'cue-accuracy-study.mjs':
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'transcription-device-study.mjs':
