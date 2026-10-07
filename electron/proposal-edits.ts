@@ -81,16 +81,28 @@ export function applyProposalCommand(
       );
     const clip = intersecting[0],
       end = clip.end;
+    const names = [command.firstName, command.secondName].map((n) =>
+      typeof n === 'string' ? n.trim() : '',
+    );
+    if (names.some((n) => n.length > 200))
+      throw new Error('Enter clip names of up to 200 characters.');
+    const second = names[1] || `${names[0] || clip.name} · 2`;
+    if (names[0]) clip.name = names[0];
     clip.end = start;
     clip.accepted = false;
     next.clips.push({
       ...clip,
       id: newId(),
-      name: `${clip.name} · 2`,
+      name: second,
       start,
       end,
       accepted: false,
     });
+    // The names chosen for both halves, read back as the split's clip names.
+    if (names[0] || names[1]) {
+      decision.title = clip.name;
+      decision.text = second;
+    }
   } else if (proposal.kind === 'clip') {
     const end = command.endTime ?? proposal.end ?? Number.NaN;
     if (!Number.isFinite(end) || end > record.duration || end - start < 0.001)

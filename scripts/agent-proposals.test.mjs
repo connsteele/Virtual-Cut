@@ -116,7 +116,13 @@ assert.deepEqual(schema.properties.proposals.items.properties.kind.enum, [
 const accepted = submit(
   [
     base({ intent: 'marker', note: 'Arrival scene.' }),
-    base({ kind: 'split', time_seconds: 50, title: 'Fort', evidence: [] }),
+    base({
+      kind: 'split',
+      time_seconds: 50,
+      title: 'Fort',
+      clip_names: { first: 'Fort approach ', second: 'Fort battle' },
+      evidence: [],
+    }),
     base({ kind: 'clip', time_seconds: 60, end_seconds: 90, title: 'Siege', evidence: [] }),
     base({ kind: 'note', time_seconds: 120, title: 'Name check', intent: 'general', evidence: [] }),
   ],
@@ -154,6 +160,10 @@ refused([base({ time_seconds: 900 })], /^proposals\[0\]\.time_seconds: 900 is pa
 refused([base({ kind: 'clip' })], /^proposals\[0\]\.end_seconds: a clip needs an end/);
 refused([base({ kind: 'clip', end_seconds: 10 })], /end must follow/);
 refused([base({ end_seconds: 20 })], /only a clip has an end/);
+refused(
+  [base({ clip_names: { first: 'A', second: 'B' } })],
+  /^proposals\[0\]\.clip_names: only a split names two clips/,
+);
 refused([base({ title: 'x'.repeat(150) })], /^proposals\[0\]\.title: at most 100/);
 refused(
   [
@@ -245,14 +255,18 @@ assert.throws(
 next = applyProposalCommand(
   next,
   split,
-  command(split, 'accept-proposal', { clipId: 'c1' }),
+  command(split, 'accept-proposal', {
+    clipId: 'c1',
+    firstName: split.names.first,
+    secondName: 'The fort battle',
+  }),
   newId,
 );
 assert.deepEqual(
   next.clips.map((c) => [c.name, c.start, c.end]),
   [
-    ['Fort', 0, 50],
-    ['Fort · 2', 50, 100],
+    ['Fort approach', 0, 50],
+    ['The fort battle', 50, 100],
   ],
 );
 assert.throws(
@@ -305,6 +319,32 @@ assert.equal(markerRow.chosen.title, 'Bertrand returns');
 assert.equal(markerRow.decided, '2026-10-07T02:00:00Z');
 assert.equal(read.proposals.find((p) => p.id === clip.id).endMovedSeconds, 5);
 assert.equal(read.proposals.find((p) => p.id === note.id).chosen, undefined);
+const splitRow = read.proposals.find((p) => p.id === split.id);
+assert.deepEqual(splitRow.proposed.clipNames, { first: 'Fort approach', second: 'Fort battle' });
+assert.deepEqual(splitRow.chosen.clipNames, { first: 'Fort approach', second: 'The fort battle' });
+assert.equal(splitRow.renamed, true);
+// Without names a split keeps the clip's name and adds "· 2", as spoken splits do.
+const unnamed = applyProposalCommand(
+  model,
+  split,
+  command(split, 'accept-proposal', { clipId: 'c1' }),
+  newId,
+);
+assert.deepEqual(
+  unnamed.clips.map((c) => c.name),
+  ['Fort', 'Fort · 2'],
+);
+assert.equal(proposalDecision(unnamed.cueDecisions, split.id).title, undefined);
+assert.throws(
+  () =>
+    applyProposalCommand(
+      model,
+      split,
+      command(split, 'accept-proposal', { clipId: 'c1', firstName: 'x'.repeat(201) }),
+      newId,
+    ),
+  /clip names of up to 200/,
+);
 assert.deepEqual(
   proposalDecisions({ ...source, model: next }, { status: 'rejected' }).proposals.map((p) => p.id),
   [note.id],

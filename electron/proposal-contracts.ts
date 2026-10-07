@@ -24,6 +24,8 @@ export interface AgentProposal {
   end?: number;
   title: string;
   text: string;
+  /** Splits only: suggested names for the clips before and after the split. */
+  names?: { first: string; second: string };
   reason: string;
   intent?: ProposalIntent;
   evidence: ProposalEvidence[];

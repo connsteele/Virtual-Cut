@@ -34,6 +34,8 @@ export function TranscriptProposal({
     time?: string;
     end?: string;
     clipId?: string;
+    first?: string;
+    second?: string;
   }>({});
   const decision = proposalDecision(session.decisions, proposal.id);
   const label = proposalLabel(proposal.kind);
@@ -43,6 +45,10 @@ export function TranscriptProposal({
   const end = draft.end ?? String(proposal.end ?? '');
   const targetClips = session.clips.filter((c) => Number(start) > c.start && Number(start) < c.end);
   const target = draft.clipId || (targetClips.length === 1 ? targetClips[0].id : '');
+  // A split names both halves: the agent's suggestions, else the clip's name and "· 2".
+  const targetName = targetClips.find((c) => c.id === target)?.name ?? '';
+  const first = draft.first ?? proposal.names?.first ?? targetName;
+  const second = draft.second ?? proposal.names?.second ?? (first ? `${first} · 2` : '');
   const moved =
     decision?.appliedTime != null && Math.abs(decision.appliedTime - proposal.time) >= 0.001
       ? ` · moved ${decision.appliedTime > proposal.time ? '+' : ''}${(decision.appliedTime - proposal.time).toFixed(3)} s`
@@ -79,7 +85,11 @@ export function TranscriptProposal({
         <p className={s.muted}>
           Accepted at {decision.appliedTime?.toFixed(3)}
           {decision.appliedEnd != null ? `–${decision.appliedEnd.toFixed(3)}` : ''} s{moved}
-          {decision.title ? ` · ${decision.title}` : ''}
+          {decision.title
+            ? split
+              ? ` · ${decision.title} | ${decision.text}`
+              : ` · ${decision.title}`
+            : ''}
         </p>
       )}
       {!decision && (
@@ -146,6 +156,26 @@ export function TranscriptProposal({
               </select>
             </Field>
           )}
+          {split && (
+            <div className={s.toolbar}>
+              <Field label="Clip before the split">
+                <input
+                  aria-label={`Proposal first clip name ${proposal.id}`}
+                  value={first}
+                  maxLength={200}
+                  onChange={(e) => setDraft({ ...draft, first: e.target.value })}
+                />
+              </Field>
+              <Field label="Clip after the split">
+                <input
+                  aria-label={`Proposal second clip name ${proposal.id}`}
+                  value={second}
+                  maxLength={200}
+                  onChange={(e) => setDraft({ ...draft, second: e.target.value })}
+                />
+              </Field>
+            </div>
+          )}
           <div className={s.toolbar}>
             <Button onClick={() => onSeek(Number(start) || 0)}>Listen</Button>
             <Button
@@ -157,6 +187,8 @@ export function TranscriptProposal({
                   time: Number(start),
                   endTime: range ? Number(end) : undefined,
                   clipId: split ? target : undefined,
+                  firstName: split ? first : undefined,
+                  secondName: split ? second : undefined,
                 })
               }
             >

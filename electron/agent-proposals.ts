@@ -34,6 +34,12 @@ export const proposalInput = z.object({
     .max(200)
     .describe('Marker, note or clip name (100 characters except clips).'),
   note: z.string().max(10000).optional().describe('Marker note, note text or clip note.'),
+  clip_names: z
+    .object({ first: z.string().min(1).max(200), second: z.string().min(1).max(200) })
+    .optional()
+    .describe(
+      'Splits only: suggested names for the clip before the split and the clip after it, from what the recording shows and says. Strongly recommended for every split.',
+    ),
   reason: z
     .string()
     .min(1)
@@ -141,6 +147,8 @@ export function prepareSubmission(
         );
     } else if (p.end_seconds !== undefined)
       throw new AgentReadError(`${at}.end_seconds: only a clip has an end.`);
+    if (p.clip_names && kind !== 'cut')
+      throw new AgentReadError(`${at}.clip_names: only a split names two clips.`);
     if (kind !== 'clip' && p.title.length > 100)
       throw new AgentReadError(`${at}.title: at most 100 characters except for clips.`);
     const evidence = p.evidence.map((e, j) => {
@@ -176,6 +184,9 @@ export function prepareSubmission(
       ...(kind === 'clip' ? { end: p.end_seconds } : {}),
       title: p.title.trim(),
       text: (p.note || '').trim(),
+      ...(p.clip_names
+        ? { names: { first: p.clip_names.first.trim(), second: p.clip_names.second.trim() } }
+        : {}),
       reason: p.reason.trim(),
       ...(p.intent ? { intent: p.intent } : {}),
       evidence,
@@ -226,13 +237,15 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
   const mapped = all.map((p) => {
     const d = proposalDecision(decisions, p.id);
     const status = d?.status || 'pending';
+    // A split's decision keeps the two clip names in title and text.
     const chosen =
       d?.status === 'accepted'
         ? {
             time: round(d.appliedTime ?? p.time),
             end: d.appliedEnd === undefined ? undefined : round(d.appliedEnd),
-            title: d.title,
-            note: d.text,
+            ...(p.kind === 'cut'
+              ? { clipNames: d.title ? { first: d.title, second: d.text ?? '' } : undefined }
+              : { title: d.title, note: d.text }),
           }
         : undefined;
     return {
@@ -244,6 +257,7 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
         end: p.end === undefined ? undefined : round(p.end),
         title: p.title,
         note: p.text || undefined,
+        clipNames: p.names,
       },
       intent: p.intent,
       agent: p.agent.name,
@@ -257,8 +271,16 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
             ...(p.end !== undefined && chosen.end !== undefined
               ? { endMovedSeconds: round(chosen.end - p.end) }
               : {}),
-            retitled: p.kind !== 'cut' && chosen.title !== p.title,
-            noteEdited: p.kind !== 'cut' && (chosen.note ?? '') !== p.text,
+            ...(p.kind === 'cut'
+              ? {
+                  renamed:
+                    JSON.stringify(d!.title ? [d!.title, d!.text ?? ''] : null) !==
+                    JSON.stringify(p.names ? [p.names.first, p.names.second] : null),
+                }
+              : {
+                  retitled: d!.title !== p.title,
+                  noteEdited: (d!.text ?? '') !== p.text,
+                }),
           }
         : {}),
     };

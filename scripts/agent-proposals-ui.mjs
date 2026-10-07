@@ -180,6 +180,7 @@ try {
       kind: 'split',
       time_seconds: mic.lines[3].start,
       title: 'Siege ends',
+      clip_names: { first: 'Fort and siege', second: 'Talking to Bertrand' },
       reason: 'You asked to cut when the siege is over.',
       intent: 'edit',
       evidence: evidence([3]),
@@ -268,6 +269,10 @@ try {
   await expect(marker).toContainText('accepted');
   await expect(marker).toContainText('moved +0.500 s');
   await expect(split.getByLabel(`Proposal split target ${ids[1]}`)).toHaveValue('whole');
+  await expect(split.getByLabel(`Proposal first clip name ${ids[1]}`)).toHaveValue(
+    'Fort and siege',
+  );
+  await split.getByLabel(`Proposal second clip name ${ids[1]}`).fill('Bertrand talk');
   await split.getByRole('button', { name: 'Accept split', exact: true }).click();
   await expect(split).toContainText('accepted');
   await clip.getByRole('button', { name: 'Reject', exact: true }).click();
@@ -291,7 +296,15 @@ try {
   assert.equal(row(ids[2]).status, 'rejected');
   const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
   assert.equal(annotated.recordings[0].markers[0].name, 'Bertrand at the gate');
-  assert.equal(annotated.clips.length, 2, 'the split made two clips');
+  assert.deepEqual(
+    annotated.clips.map((c) => c.name),
+    ['Fort and siege', 'Bertrand talk'],
+    'the split made two clips with the names chosen on the card',
+  );
+  assert.deepEqual(row(ids[1]).chosen.clipNames, {
+    first: 'Fort and siege',
+    second: 'Bertrand talk',
+  });
 
   // Undo in the editor returns the last decision to review.
   await main.bringToFront();

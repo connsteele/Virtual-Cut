@@ -152,6 +152,9 @@ export interface TranscriptCommand {
     'correct' | 'restore' | 'accept-cue' | 'reject-cue' | 'accept-proposal' | 'reject-proposal';
   /** Proposal actions name the proposal; their transcript and phrase fields are not used. */
   proposalId?: string;
+  /** Accepting a split proposal: names for the clips before and after it. */
+  firstName?: string;
+  secondName?: string;
   segmentId: number;
   wordIndex?: number;
   text?: string;
