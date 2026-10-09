@@ -97,10 +97,10 @@ try {
     };
   });
   await modal().getByRole('button', { name: 'Choose folder…', exact: true }).click();
-  assert.equal(
-    await app.evaluate(() => globalThis.openedDestination),
-    path.join(fixture.dest, 'Existing'),
-  );
+  // The folder dialog opens in the main process after the click returns.
+  await expect
+    .poll(() => app.evaluate(() => globalThis.openedDestination))
+    .toBe(path.join(fixture.dest, 'Existing'));
   await expect(modal()).toContainText('Existing\\Planned UI');
   await app.evaluate(({ dialog }, dest) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dest] });
