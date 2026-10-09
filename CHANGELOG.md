@@ -2,6 +2,16 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.20 — Lossless audio, ALAC included (October 9, 2026)
+
+ALAC recordings play with sound everywhere. Each track's listening copy is now lossless: audio
+the player can play as recorded (AAC, FLAC and others) is copied packet for packet, and ALAC or
+PCM becomes FLAC with the recording's own sample rate and bit depth, checked sample for sample
+against the original. Export and filing carry that same FLAC for ALAC/PCM recordings, so filed
+clips play in the Library, and Open video makes a temporary FLAC copy for ALAC files. Projects
+remake their older AAC copies once when opened. See [the 0.4.20 review](docs/review-0.4.20.md)
+and [decision 0017](docs/decisions/0017-lossless-audio-copies.md).
+
 ## 0.4.19 — One proposal card and mic intents (October 7, 2026)
 
 Sprint 6. Spoken cues and agent proposals now share one card in the transcript window, with
