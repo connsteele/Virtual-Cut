@@ -295,8 +295,12 @@ export function Player({
       (r.monitor !== 'game' && r.monitor != null && t.index === r.micTrack),
   );
   const audioKey = monitored.map((t) => `${t.index}:${t.previewUrl || ''}:${t.offset}`).join('|');
+  // Project recordings always play their track copies beside the muted video. An opened
+  // local video does too when its audio needed a lossless copy (ALAC, PCM).
+  const separateAudio =
+    (!!r.sourcePath && !r.retained) || (!r.sourcePath && monitored.some((t) => t.previewUrl));
   useEffect(() => {
-    if (!r.sourcePath || r.retained) return;
+    if (!separateAudio) return;
     const v = video.current!,
       elements = audio.current;
     const lastCorrection = new Map<number, number>();
@@ -366,7 +370,7 @@ export function Player({
     };
     // The key includes all selected stream URLs and timing offsets.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioKey, volume, r.sourcePath, clockOffset]);
+  }, [audioKey, volume, separateAudio, clockOffset]);
   useEffect(() => {
     callbacks.current = { onPosition, onDuration, onEnded };
   }, [onPosition, onDuration, onEnded]);
@@ -649,7 +653,7 @@ export function Player({
           ref={video}
           playsInline
           preload="metadata"
-          muted={(!!r.sourcePath && !r.retained) || (r.sample && !r.fullResolution)}
+          muted={separateAudio || (r.sample && !r.fullResolution)}
           aria-label={`Video: ${r.title}`}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
@@ -811,7 +815,7 @@ export function Player({
           </div>
         )}
       </div>
-      {r.sourcePath &&
+      {separateAudio &&
         monitored
           .filter((t) => t.previewUrl)
           .map((t) => (
@@ -865,7 +869,7 @@ export function Player({
         onMarkerDeselect={onMarkerDeselect}
         onMarkerMove={onMarkerMove}
         waveMode={waveMode}
-        audioTracks={monitored}
+        audioTracks={r.sourcePath ? monitored : []}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>

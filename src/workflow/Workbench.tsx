@@ -1269,6 +1269,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               position: 0,
               sample: false,
               context: '',
+              // ALAC or PCM audio is heard from the lossless copy made when opening.
+              ...(video.audio && {
+                gameTrack: 0,
+                monitor: 'game' as const,
+                audioTracks: [
+                  {
+                    index: 0,
+                    codec: 'flac',
+                    channels: 0,
+                    title: '',
+                    language: '',
+                    offset: video.audio.offset,
+                    previewUrl: video.audio.url,
+                  },
+                ],
+              }),
             },
           ],
           clips: m.clips.filter((c) => m.recordings.find((r) => r.id === c.rid)?.sample),
