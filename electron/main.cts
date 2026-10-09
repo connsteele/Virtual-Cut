@@ -14,7 +14,7 @@ import {
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
-import { realpath, stat, writeFile } from 'node:fs/promises';
+import { realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
 import { observeWindow } from './window-diagnostics.cjs';
@@ -45,6 +45,20 @@ let mainWindow: BrowserWindow | null = null;
 let folderDialog: Promise<ProjectFolder | null> | null = null;
 let videoDialog: Promise<OpenedVideo | null> | null = null;
 const videoAccess = new VideoAccess();
+// Session-only lossless audio copy for the opened video; replaced or deleted with it.
+const openedAudio = {
+  access: new VideoAccess(),
+  file: '',
+  url: '',
+  controller: new AbortController(),
+};
+function clearOpenedAudio() {
+  openedAudio.controller.abort();
+  openedAudio.access.clear();
+  if (openedAudio.file) void unlink(openedAudio.file).catch(() => {});
+  openedAudio.file = '';
+  openedAudio.url = '';
+}
 const demoMedia = new DemoMedia();
 const droppedImports = new DroppedImports();
 let projects: ProjectService;
@@ -604,7 +618,18 @@ function registerDesktopApi(): void {
         filters: [{ name: 'Video files', extensions: videoExtensions }],
       });
       if (result.canceled || !result.filePaths[0]) return null;
-      return videoAccess.select(result.filePaths[0]);
+      const video = await videoAccess.select(result.filePaths[0]);
+      clearOpenedAudio();
+      const controller = (openedAudio.controller = new AbortController());
+      const target = path.join(app.getPath('temp'), `virtual-cut-open-${video.id}.m4a`);
+      openedAudio.file = target;
+      const audio = await projects
+        .openedVideoAudio(result.filePaths[0], target, controller.signal)
+        // Without a copy the video still opens and plays whatever audio Chromium can.
+        .catch(() => null);
+      if (!audio || controller.signal.aborted) return video;
+      openedAudio.url = (await openedAudio.access.select(target)).url;
+      return { ...video, audio: { ...audio, url: openedAudio.url } };
     })();
     try {
       return await videoDialog;
@@ -692,6 +717,7 @@ async function createWindow(): Promise<void> {
     transcriptWindow?.close();
     if (mainWindow === window) mainWindow = null;
     videoAccess.clear();
+    clearOpenedAudio();
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -773,7 +799,10 @@ if (!mcpLaunch)
       protocol.handle('media', (request) =>
         request.url.startsWith('media://video/demo/')
           ? demoMedia.respond(request)
-          : projects.respond(request) || videoAccess.respond(request),
+          : projects.respond(request) ||
+            (openedAudio.url && request.url === openedAudio.url
+              ? openedAudio.access.respond(request)
+              : videoAccess.respond(request)),
       );
       registerDesktopApi();
       agentAccess = registerAgentAccess({

@@ -43,6 +43,11 @@ export interface NativeSource {
   fingerprint: string;
   importedAt?: number;
   audioPreviews?: Record<number, string>;
+  /**
+   * How each track copy was made (original packets, or lossless FLAC) and the file that
+   * was verified sample-identical to the original.
+   */
+  audioCopies?: Record<number, { kind: 'copy' | 'flac'; bytes: number; modified: number }>;
 }
 interface Data {
   project: ProjectInfo;

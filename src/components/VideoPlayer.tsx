@@ -38,6 +38,10 @@ export function VideoPlayer({
   onStageHeightChange?: (height: number) => void;
 }) {
   const element = useRef<HTMLVideoElement>(null);
+  // Audio Chromium cannot play is heard from a lossless copy beside the muted video;
+  // volume and mute then belong to that copy.
+  const sound = useRef<HTMLAudioElement>(null);
+  const output = () => (video.audio ? sound.current : element.current);
   const stage = useRef<HTMLDivElement>(null);
   const initial = useRef(bookmark.current?.id === video.id ? { ...bookmark.current } : null);
   const [duration, setDuration] = useState(0);
@@ -62,16 +66,49 @@ export function VideoPlayer({
   }, [onStageHeightChange]);
 
   useEffect(() => {
+    const v = element.current!,
+      a = sound.current;
+    if (!a || !video.audio) return;
+    const offset = video.audio.offset;
+    const sync = () => {
+      const at = v.currentTime - offset;
+      if (v.paused || v.seeking || at < 0 || at >= a.duration) {
+        a.pause();
+        return;
+      }
+      if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate;
+      if (a.readyState >= 1 && !a.seeking && Math.abs(a.currentTime - at) > 0.12 * v.playbackRate)
+        a.currentTime = at;
+      if (a.paused) void a.play().catch(() => {});
+    };
+    const seek = () => {
+      if (a.readyState >= 1) a.currentTime = Math.max(0, v.currentTime - offset);
+      sync();
+    };
+    const events = ['play', 'pause', 'ratechange', 'seeking', 'ended'] as const;
+    events.forEach((e) => v.addEventListener(e, sync));
+    v.addEventListener('seeked', seek);
+    const timer = setInterval(sync, 250);
+    return () => {
+      clearInterval(timer);
+      events.forEach((e) => v.removeEventListener(e, sync));
+      v.removeEventListener('seeked', seek);
+      a.pause();
+    };
+  }, [video.audio]);
+
+  useEffect(() => {
     const player = element.current!;
     if (player.getAttribute('src') !== video.url) player.src = video.url;
     return () => {
       if (player.readyState > 0) {
+        const out = output() || player;
         bookmark.current = {
           id: video.id,
           time: player.currentTime,
           rate: player.playbackRate,
-          volume: player.volume,
-          muted: player.muted,
+          volume: out.volume,
+          muted: out.muted,
           playing: !player.paused && !player.ended,
         };
       }
@@ -91,12 +128,13 @@ export function VideoPlayer({
 
   function remember(player: HTMLVideoElement) {
     if (player.readyState === 0) return;
+    const out = output() || player;
     bookmark.current = {
       id: video.id,
       time: player.currentTime,
       rate: player.playbackRate,
-      volume: player.volume,
-      muted: player.muted,
+      volume: out.volume,
+      muted: out.muted,
       playing: !player.paused && !player.ended,
     };
   }
@@ -173,8 +211,10 @@ export function VideoPlayer({
               const length = Number.isFinite(player.duration) ? player.duration : 0;
               setDuration(length);
               setDimensions(`${player.videoWidth} × ${player.videoHeight}`);
-              player.volume = initial.current?.volume ?? 0.7;
-              player.muted = initial.current?.muted ?? false;
+              const out = output() || player;
+              out.volume = initial.current?.volume ?? 0.7;
+              out.muted = initial.current?.muted ?? false;
+              if (video.audio) player.muted = true;
               player.playbackRate = initial.current?.rate ?? 1;
               if (initial.current) player.currentTime = Math.min(initial.current.time, length);
               setReady(length > 0 && player.videoWidth > 0);
@@ -206,6 +246,7 @@ export function VideoPlayer({
               remember(event.currentTarget);
             }}
             onVolumeChange={(event) => {
+              if (video.audio) return;
               setVolume(event.currentTarget.volume);
               setMuted(event.currentTarget.muted);
               remember(event.currentTarget);
@@ -218,6 +259,18 @@ export function VideoPlayer({
               );
             }}
           />
+          {video.audio && (
+            <audio
+              ref={sound}
+              src={video.audio.url}
+              preload="auto"
+              onVolumeChange={(event) => {
+                setVolume(event.currentTarget.volume);
+                setMuted(event.currentTarget.muted);
+                if (element.current) remember(element.current);
+              }}
+            />
+          )}
           {error ? (
             <div className={styles.message} role="alert">
               {error}
@@ -286,7 +339,8 @@ export function VideoPlayer({
               disabled={!ready}
               aria-label={muted ? 'Unmute video' : 'Mute video'}
               onClick={() => {
-                if (element.current) element.current.muted = !muted;
+                const out = output();
+                if (out) out.muted = !muted;
               }}
             >
               {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
@@ -300,7 +354,8 @@ export function VideoPlayer({
               value={volume}
               disabled={!ready}
               onChange={(event) => {
-                if (element.current) element.current.volume = Number(event.target.value);
+                const out = output();
+                if (out) out.volume = Number(event.target.value);
               }}
             />
           </div>
@@ -308,7 +363,7 @@ export function VideoPlayer({
       </div>
       <div className={styles.details}>
         <span>{dimensions || 'Single-video preview'}</span>
-        <span>Default audio track</span>
+        <span>{video.audio ? 'Default audio track · lossless copy' : 'Default audio track'}</span>
       </div>
     </section>
   );

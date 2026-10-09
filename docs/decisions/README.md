@@ -24,6 +24,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed |
 | [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed |
 | [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed |
+| [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed |
 
 ## Adding a record
 

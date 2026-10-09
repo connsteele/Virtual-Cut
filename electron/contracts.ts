@@ -17,6 +17,8 @@ export interface OpenedVideo {
   bytes: number;
   /** Opaque, session-only URL. Only the native picker grants access. */
   url: string;
+  /** A lossless copy of audio Chromium cannot play (ALAC, PCM), heard beside the muted video. */
+  audio?: { url: string; offset: number };
 }
 
 export interface VirtualCutApi {

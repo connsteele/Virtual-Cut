@@ -106,6 +106,26 @@ async function probe(file: string, tool: string, signal: AbortSignal): Promise<M
   );
   return { streams, packets, chapters: facts.chapters || [] };
 }
+/**
+ * The game track as exports carry it: either the original stream, or its verified
+ * lossless copy placed on the original track's clock (the copy starts at zero).
+ */
+function withAudioCopy(source: Media, copy: Media, track: number): Media {
+  const stream = copy.streams.find((s) => s.codec_type === 'audio');
+  const original = source.packets.filter((p) => p.stream === track);
+  if (!stream || !original.length) throw new Error('The game-audio copy is unavailable.');
+  const offset = original.reduce((n, p) => Math.min(n, p.pts), Infinity);
+  return {
+    ...source,
+    streams: source.streams.map((s) => (s.index === track ? { ...stream, index: track } : s)),
+    packets: [
+      ...source.packets.filter((p) => p.stream !== track),
+      ...copy.packets
+        .filter((p) => p.stream === stream.index)
+        .map((p) => ({ ...p, stream: track, pts: p.pts + offset, dts: p.dts + offset })),
+    ],
+  };
+}
 function tick(s: Stream) {
   const [a, b] = s.time_base.split('/').map(Number);
   return a / b;
@@ -355,6 +375,8 @@ export async function exportClip(
   signal: AbortSignal,
   update: (record: ExportRecord, progress: number) => void,
   publicationGuard: () => Promise<void> = async () => {},
+  /** Verified lossless copy of the game track, used when browsers cannot play the original. */
+  gameAudio?: string,
 ): Promise<ExportRecord> {
   const began = performance.now();
   record = {
@@ -465,7 +487,14 @@ export async function exportClip(
     if (free.bavail * free.bsize < estimate * 3 + 256 * 1024 * 1024)
       throw new Error('The output drive needs space for two staged copies of this clip.');
     report('Checking original packets', 0.05);
-    const source = await probe(record.input.sourceFile, tools.ffprobe, signal),
+    const original = await probe(record.input.sourceFile, tools.ffprobe, signal),
+      source = gameAudio
+        ? withAudioCopy(
+            original,
+            await probe(gameAudio, tools.ffprobe, signal),
+            record.input.gameTrack,
+          )
+        : original,
       video = source.streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
     if (!video) throw new Error('Original video stream is unavailable.');
     const keys = source.packets.filter((p) => p.stream === video.index && p.key);
@@ -501,6 +530,7 @@ export async function exportClip(
     const hasSeek = record.plan.planned.start > 0.000001,
       seek = seekBoundary(audioPackets, start, hasSeek, tick(video));
     const args = ['-v', 'error', '-nostdin', '-copyts', '-i', record.input.sourceFile];
+    if (gameAudio) args.push('-itsoffset', String(audioPackets[0]?.pts ?? 0), '-i', gameAudio);
     if (hasSeek) args.push('-ss', String(seek));
     args.push('-to', String(videoEnd));
     // Output seeking rebases timestamps before bitstream filtering. Filter
@@ -515,7 +545,7 @@ export async function exportClip(
       '-map',
       `0:${video.index}`,
       '-map',
-      `0:${record.input.gameTrack}`,
+      gameAudio ? '1:a:0' : `0:${record.input.gameTrack}`,
       '-map_metadata',
       '0',
       '-map_chapters',

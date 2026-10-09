@@ -30,6 +30,7 @@ export const native = [
   'intake-zoom-native-checks.mjs',
   'export-native-checks.mjs',
   'export-feedback-native.mjs',
+  'lossless-audio-native.mjs',
   'filmstrip-checks.mjs',
   'review-planning-native.mjs',
   'project-capacity-checks.mjs',

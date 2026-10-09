@@ -36,6 +36,7 @@ import { identify, inspectMedia, launchTool } from './media-inspection.cjs';
 import { VideoAccess, videoExtensions } from './media.cjs';
 import { FilmstripCache, filmstripFile, sweepKeyframes, writeTileFile } from './filmstrip.cjs';
 import { inspectRetainedOutput } from './retained-preview.cjs';
+import { audioCopyArgs, decodedAudioHash, packetHash, playableAudio } from './audio-copy.cjs';
 import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -553,9 +554,13 @@ export class ProjectService {
     const prefix = `${source.id}-${source.fingerprint}-audio-${index}`;
     const name = source.audioPreviews?.[index];
     // Only native cache basenames are accepted, including in an edited project file.
+    // Copies made before lossless previews (AAC) have no kind and are made again.
     const valid =
-      name?.startsWith(prefix + '-') && /^[a-f0-9-]{36}\.m4a$/.test(name.slice(prefix.length + 1));
-    return path.join(this.require().data.project.cache, valid ? name! : prefix + '.m4a');
+      !!source.audioCopies?.[index] &&
+      name?.startsWith(prefix + '-') &&
+      /^[a-f0-9-]{36}\.m4a$/.test(name.slice(prefix.length + 1));
+    // A missing or older copy resolves to a name that is never written, so it is remade.
+    return path.join(this.require().data.project.cache, valid ? name! : prefix + '-pending.m4a');
   }
   respond(request: Request): Promise<Response> | null {
     for (const grant of this.grants.values())
@@ -1113,6 +1118,7 @@ export class ProjectService {
               id: existing.id,
               importedAt: existing.importedAt,
               audioPreviews: existing.audioPreviews,
+              audioCopies: existing.audioCopies,
             });
             r.availability = r.duration ? 'ready' : 'pending';
             this.grants.delete(existing.file);
@@ -1244,6 +1250,81 @@ export class ProjectService {
       .update(JSON.stringify({ ...input, clip: payload }))
       .digest('hex');
     return { input, hash, recording: r };
+  }
+  /**
+   * The Open video viewer has no project cache. When its first audio stream is one
+   * browsers cannot play, write a verified lossless copy to `target` and return the
+   * time that copy starts at on the video's clock.
+   */
+  async openedVideoAudio(file: string, target: string, signal: AbortSignal) {
+    const data = JSON.parse(
+      await launchTool(
+        this.tool('ffprobe'),
+        [
+          '-v',
+          'error',
+          '-show_entries',
+          'stream=index,codec_type,codec_name,start_time',
+          '-of',
+          'json',
+          file,
+        ],
+        signal,
+      ),
+    ) as {
+      streams?: { index: number; codec_type: string; codec_name?: string; start_time?: string }[];
+    };
+    const track = data.streams?.find((x) => x.codec_type === 'audio');
+    if (!track?.codec_name || playableAudio(track.codec_name)) return null;
+    const partial = target + '.partial';
+    try {
+      await launchTool(
+        this.tool('ffmpeg'),
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          ...audioCopyArgs(file, track.index, track.codec_name, 0),
+          '-f',
+          'mp4',
+          '-y',
+          partial,
+        ],
+        signal,
+      );
+      const [original, copied] = await Promise.all([
+        decodedAudioHash(this.tool('ffmpeg'), file, track.index, signal),
+        decodedAudioHash(this.tool('ffmpeg'), partial, 0, signal),
+      ]);
+      if (original !== copied) throw new Error('The audio copy did not match the original.');
+      await rename(partial, target);
+    } catch (e) {
+      await unlink(partial).catch(() => {});
+      throw e;
+    }
+    return { offset: Number(track.start_time) || 0 };
+  }
+  /**
+   * Game audio browsers cannot play (ALAC, PCM) is exported from its lossless copy, the
+   * same FLAC heard while cutting. Other codecs are copied from the original as before.
+   */
+  private async exportAudio(record: ExportRecord) {
+    const s = this.require(),
+      native = s.sources().find((x) => x.id === record.plan.sourceId),
+      codec = s.data.model.recordings
+        .find((r) => r.id === record.plan.sourceId)
+        ?.audioTracks?.find((t) => t.index === record.input.gameTrack)?.codec;
+    if (!native || playableAudio(codec)) return undefined;
+    const copy = native.audioCopies?.[record.input.gameTrack],
+      file = this.audioFile(native, record.input.gameTrack),
+      info = await stat(file).catch(() => null);
+    if (copy?.kind !== 'flac' || info?.size !== copy.bytes || info.mtimeMs !== copy.modified) {
+      this.queueAudio(native.id);
+      throw new Error(
+        'The game audio’s lossless copy is being prepared. Retry this export when audio preparation finishes.',
+      );
+    }
+    return file;
   }
   private reconcileExports() {
     const s = this.require();
@@ -1775,7 +1856,12 @@ export class ProjectService {
         'This file does not match the saved recording fingerprint. Import changed footage as a new recording to protect existing timing.',
       );
     s.transaction(() => {
-      s.putSource({ ...next, importedAt: old.importedAt, audioPreviews: old.audioPreviews });
+      s.putSource({
+        ...next,
+        importedAt: old.importedAt,
+        audioPreviews: old.audioPreviews,
+        audioCopies: old.audioCopies,
+      });
       const r = s.data.model.recordings.find((r) => r.id === sourceId)!;
       r.sourcePath = next.file;
       r.availability = r.duration ? 'ready' : 'pending';
@@ -1965,6 +2051,7 @@ export class ProjectService {
             progress(n, next.message);
           },
           guard,
+          await this.exportAudio(record),
         );
         await guard();
         await verifyPublished(done, signal);
@@ -2272,27 +2359,46 @@ export class ProjectService {
         const record = s.data.model.recordings.find((r) => r.id === source.id)!;
         const duration = record.duration;
         const expected = record.audioTracks?.find((t) => t.index === job.track)?.duration;
-        if (free.bavail * free.bsize < 256 * 1024 * 1024 + duration * 64000)
+        // Lossless 24-bit stereo is at most about 290 kB per second.
+        if (free.bavail * free.bsize < 256 * 1024 * 1024 + duration * 300000)
           throw new Error('Free more space in the preview cache before preparing this audio.');
+        const starts = JSON.parse(
+          await launchTool(
+            this.tool('ffprobe'),
+            [
+              '-v',
+              'error',
+              '-show_entries',
+              'format=start_time:stream=index,codec_name,start_time',
+              '-of',
+              'json',
+              source.file,
+            ],
+            signal,
+          ),
+        ) as {
+          format?: { start_time?: string };
+          streams?: { index: number; codec_name?: string; start_time?: string }[];
+        };
+        const probed = starts.streams?.find((x) => x.index === job.track);
+        if (!probed?.codec_name) throw new Error('This audio track could not be read.');
+        const kind = playableAudio(probed.codec_name) ? 'copy' : 'flac';
         await launchTool(
           this.tool('ffmpeg'),
           [
             '-v',
             'error',
             '-nostdin',
-            '-i',
-            source.file,
-            '-map',
-            `0:${job.track}`,
-            '-vn',
-            '-af',
-            'asetpts=PTS-STARTPTS',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '192k',
+            ...audioCopyArgs(
+              source.file,
+              job.track!,
+              probed.codec_name,
+              Number(starts.format?.start_time || 0) - Number(probed.start_time || 0),
+            ),
             '-movflags',
             '+faststart',
+            '-f',
+            'mp4',
             '-progress',
             'pipe:1',
             '-y',
@@ -2335,6 +2441,21 @@ export class ProjectService {
           (expected && Math.abs(actualDuration - expected) > 0.25)
         )
           throw new Error('Audio preview duration did not match its source stream.');
+        // Nothing may change: copied packets stay byte-identical, and a FLAC copy decodes
+        // to the original's exact samples. The copy is what you hear and what exports carry.
+        const [original, copied] = await Promise.all(
+          kind === 'copy'
+            ? [
+                packetHash(this.tool('ffprobe'), source.file, job.track!, signal),
+                packetHash(this.tool('ffprobe'), temp, 0, signal),
+              ]
+            : [
+                decodedAudioHash(this.tool('ffmpeg'), source.file, job.track!, signal),
+                decodedAudioHash(this.tool('ffmpeg'), temp, 0, signal),
+              ],
+        );
+        if (original !== copied)
+          throw new Error('The audio copy did not decode identical to the original track.');
         const final = await stat(source.file);
         if (final.size !== source.bytes || final.mtimeMs !== source.modified)
           throw new Error('Recording changed during audio preparation.');
@@ -2342,6 +2463,8 @@ export class ProjectService {
         signal.throwIfAborted();
         await rename(temp, file);
         temp = '';
+        const published = await stat(file),
+          copyIdentity = { bytes: published.size, modified: published.mtimeMs };
         s.transaction(() => {
           const native = s.sources().find((x) => x.id === source.id)!;
           s.putSource({
@@ -2350,6 +2473,7 @@ export class ProjectService {
               ...native.audioPreviews,
               [job.track!]: path.basename(file),
             },
+            audioCopies: { ...native.audioCopies, [job.track!]: { kind, ...copyIdentity } },
           });
           const track = s.data.model.recordings
             .find((r) => r.id === source.id)
