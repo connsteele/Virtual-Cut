@@ -423,20 +423,14 @@ export class ProjectService {
     const offset = r.sourceStart || 0;
     const decode = async (from: number, to: number) => {
       const lines: string[] = [];
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 60_000);
-      try {
-        await launchTool(
-          this.tool('ffmpeg'),
-          snapArgs(source.file, offset + from, to - from),
-          controller.signal,
-          (line) => {
-            if (line.startsWith('lavfi.black_')) lines.push(line);
-          },
-        );
-      } finally {
-        clearTimeout(timer);
-      }
+      await launchTool(
+        this.tool('ffmpeg'),
+        snapArgs(source.file, offset + from, to - from),
+        AbortSignal.timeout(60_000),
+        (line) => {
+          if (line.startsWith('lavfi.black_')) lines.push(line);
+        },
+      );
       return readBlacks(lines, offset);
     };
     const run = this.snapQueue.then(async () => {

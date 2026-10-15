@@ -4,7 +4,7 @@
 // the spoken time on the decision.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
@@ -60,9 +60,13 @@ await new Promise((resolve, reject) => {
   p.on('close', (code) => (code ? reject(Error(error)) : resolve()));
 });
 const { ProjectService } = require('../dist-electron/project-service.cjs');
-const service = new ProjectService(path.join(dir, 'native-profile'), '');
+const logged = [];
+const service = new ProjectService(path.join(dir, 'native-profile'), '', {
+  record: (event) => logged.push(event),
+});
 let snap = await service.open(file, { name: 'Split snap QA', destination: dir, cache });
-const id = snap.project.id;
+const id = snap.project.id,
+  batchId = snap.activeBatchId;
 await service.importFiles(id, snap.activeBatchId, [source], { game: 1, mic: 2 });
 for (const until = Date.now() + 60000; ;) {
   snap = await service.snapshot();
@@ -125,6 +129,18 @@ store.save(before, {
   ],
 });
 await service.checkpoint(id);
+// A snap whose FFmpeg pass fails rejects, is not remembered, and leaves the queue working.
+const moved = `${source}.away`;
+await rename(source, moved);
+await assert.rejects(service.splitSnap(id, recording.id, 9.5));
+await rename(moved, source);
+assert.equal((await service.splitSnap(id, recording.id, 9.5))?.time, 8.5);
+// A batch record that cannot be saved is logged, and the export carries on (VC-182).
+const blocked = service.batchRecords.file(id, batchId);
+await mkdir(blocked, { recursive: true });
+service.batchRecords.exported(store, batchId);
+assert(logged.includes('operation-failed'), 'The failed record save is logged');
+await rm(blocked, { recursive: true });
 await service.close();
 
 let app;
