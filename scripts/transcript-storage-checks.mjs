@@ -207,6 +207,15 @@ try {
   assert.equal(checks, 2);
   release();
   assert.equal((await recheck).available, true);
+  const batches = [];
+  readiness.execute = async (config) => {
+    batches.push(config.batchSize);
+  };
+  const plain = { source: 'a.mp4', track: 1, offset: 0, language: 'en', vocabulary: '' };
+  await readiness.run(plain, new AbortController().signal, () => {});
+  await readiness.run({ ...plain, vocabulary: 'Cai' }, new AbortController().signal, () => {});
+  await readiness.run({ ...plain, batchSize: 4 }, new AbortController().signal, () => {});
+  assert.deepEqual(batches, [8, 1, 4], 'Batch 8 by default; hints stay at batch 1 (VC-181).');
   assert.equal(frozenVocabulary, '');
   assert.equal(
     service.store.transcripts.segment(job.id, 1).start,

@@ -171,7 +171,7 @@ def worker():
             ordinal = 0
             language = request["language"] or None
             emit({"type": "info", "language": language or "", "duration": duration})
-            # Experimental batching is available to the measurement harness only.
+            # The app sends batch 8 (batch 1 with vocabulary hints); the harness may choose.
             # Preserve each utterance's real source offset; never concatenate gaps.
             batch_size = int(request.get("batchSize", 1))
             if batch_size not in [1, 2, 4, 8]:

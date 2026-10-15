@@ -1,7 +1,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
-export const TRANSCRIPTION_PIPELINE = 'utterance-v1';
+export const TRANSCRIPTION_PIPELINE = 'utterance-v2';
+// utterance-v2 recognizes up to eight speech spans together in one worker (VC-181).
+// Vocabulary hints stay at batch 1 until they ship with their guard (VC-164).
+export const TRANSCRIPTION_BATCH_SIZE = 8;
+export const transcriptionBatchSize = (vocabulary: string) =>
+  vocabulary ? 1 : TRANSCRIPTION_BATCH_SIZE;
 import type {
   AsrRuntime,
   TranscriptSegment,
@@ -174,7 +179,15 @@ export class TranscriptionRuntime {
     receive: (event: WorkerEvent) => void,
   ) {
     if (!this.configured) throw new Error(this.problem);
-    return this.execute({ ...this.settings, ...request }, signal, receive);
+    return this.execute(
+      {
+        ...this.settings,
+        ...request,
+        batchSize: request.batchSize ?? transcriptionBatchSize(request.vocabulary),
+      },
+      signal,
+      receive,
+    );
   }
   private async execute(
     config: Record<string, unknown>,
