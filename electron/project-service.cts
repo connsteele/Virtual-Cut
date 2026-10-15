@@ -2160,6 +2160,7 @@ export class ProjectService {
               ? ` Subtitles: ${subtitles.written.map((w) => path.basename(w.file)).join(', ')}.`
               : '') + (subtitles.skipped.length ? ` ${subtitles.skipped.join(' ')}` : '');
         s.putExport(completed);
+        this.batchRecords.exportSettled(s, completed.plan.id);
         s.putJob({
           ...job,
           state: 'succeeded',

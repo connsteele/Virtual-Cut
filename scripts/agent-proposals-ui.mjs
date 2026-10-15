@@ -471,6 +471,12 @@ try {
     pass.proposals.map((p) => p.id),
     ids,
   );
+  // The record follows each export to its end, not just the moment it was queued.
+  assert(kept.final.exports.length >= 2);
+  assert(
+    kept.final.exports.every((e) => e.state === 'verified'),
+    JSON.stringify(kept.final.exports),
+  );
   const final = kept.final.recordings.find((r) => r.id === fixture.rid);
   assert.deepEqual(
     final.clips.map((c) => [c.name, c.origin, c.splitBy]),

@@ -135,7 +135,14 @@ export interface BatchRecord {
     projectRevision: number;
     recordings: FinalRecording[];
     proposals: FinalProposal[];
-    exports: { clipId: string; name: string; start: number; end: number; state: string }[];
+    exports: {
+      exportId?: string;
+      clipId: string;
+      name: string;
+      start: number;
+      end: number;
+      state: string;
+    }[];
   };
 }
 
@@ -520,6 +527,7 @@ export function finalState(
     exports: input.exports
       .filter((e) => ids.has(e.plan.sourceId) && e.state !== 'planned')
       .map((e) => ({
+        exportId: e.plan.id,
         clipId: e.plan.clipId,
         name: e.plan.name,
         start: round(e.plan.requested.start),
@@ -529,4 +537,16 @@ export function finalState(
   };
   next.updated = input.now;
   return next;
+}
+/** An export in the record finished or failed: bring its state up to date, nothing else. */
+export function settleExports(record: BatchRecord, exports: ExportRecord[]) {
+  let changed = false;
+  for (const e of record.final?.exports || []) {
+    const now = exports.find((x) => x.plan.id === e.exportId)?.state;
+    if (now && now !== e.state) {
+      e.state = now;
+      changed = true;
+    }
+  }
+  return changed;
 }

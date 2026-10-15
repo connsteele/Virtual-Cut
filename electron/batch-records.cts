@@ -6,6 +6,7 @@ import {
   batchOf,
   batchRecordVersion,
   finalState,
+  settleExports,
   type BatchRecord,
   type RecordRun,
 } from './batch-record.js';
@@ -94,6 +95,17 @@ export class BatchRecords {
           now: new Date().toISOString(),
         }),
       );
+    });
+  }
+  /** A queued export finished: update its state in the record it was written into. */
+  exportSettled(store: ProjectStore, exportId: string) {
+    this.guard('batch-record', () => {
+      const { project, model, activeBatchId } = store.data;
+      const exports = store.exports(),
+        done = exports.find((e) => e.plan.id === exportId);
+      if (!done) return;
+      const record = this.read(project.id, batchOf(model, activeBatchId, done.plan.sourceId) || '');
+      if (record && settleExports(record, exports)) this.write(record);
     });
   }
 }

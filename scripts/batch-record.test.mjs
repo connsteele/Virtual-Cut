@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { addSubmission, batchOf, finalState, removedSpans } from '../dist-electron/batch-record.js';
+import {
+  addSubmission,
+  batchOf,
+  finalState,
+  removedSpans,
+  settleExports,
+} from '../dist-electron/batch-record.js';
 import { batchRecordAnswer, AgentReadError } from '../dist-electron/agent-tools.js';
 import { applyProposalCommand } from '../dist-electron/proposal-edits.js';
 import { emptyModel } from '../dist-electron/project-edits.js';
@@ -150,11 +156,17 @@ model.markers.r1.push({ id: 'u1', time: 60, name: 'Missed', category: 'Context',
 model.notes.push({ id: 'n9', sourceId: 'r2', title: 'Other', text: '', url: '' });
 const exports = [
   {
-    plan: { clipId: 'c1', sourceId: 'r1', name: 'Fort', requested: { start: 0, end: 100 } },
+    plan: {
+      id: 'e1',
+      clipId: 'c1',
+      sourceId: 'r1',
+      name: 'Fort',
+      requested: { start: 0, end: 100 },
+    },
     state: 'verified',
   },
   {
-    plan: { clipId: 'x', sourceId: 'r2', name: 'Other', requested: { start: 0, end: 1 } },
+    plan: { id: 'e2', clipId: 'x', sourceId: 'r2', name: 'Other', requested: { start: 0, end: 1 } },
     state: 'queued',
   },
   {
@@ -205,7 +217,7 @@ assert.deepEqual(
   ],
 );
 assert.deepEqual(exported.final.exports, [
-  { clipId: 'c1', name: 'Fort', start: 0, end: 100, state: 'verified' },
+  { exportId: 'e1', clipId: 'c1', name: 'Fort', start: 0, end: 100, state: 'verified' },
 ]);
 assert(JSON.stringify(exported).length < 10000, 'a few KB, no media');
 
@@ -313,8 +325,13 @@ try {
   records.submitted(store, first, { runIntent: 'pass', transcripts: [] });
   assert.equal(records.read('p1', 'b1').runs[0].intent, 'pass');
   records.submitted(store, [], { transcripts: [] });
+  exports[0].state = 'queued';
   records.exported(store, 'b1');
   assert.equal(records.read('p1', 'b1').final.exports.length, 1);
+  exports[0].state = 'verified';
+  records.exportSettled(store, 'e1');
+  records.exportSettled(store, 'missing');
+  assert.equal(records.read('p1', 'b1').final.exports[0].state, 'verified');
   records.exported(store, 'missing');
   records.submitted(store, [{ ...first[0], sourceId: 'r9' }], { transcripts: [] });
   assert.equal(records.read('p1', 'missing'), undefined);
@@ -332,3 +349,23 @@ try {
   await rm(profile, { recursive: true, force: true });
 }
 console.log('batch record checks passed');
+
+// A finished export updates only its state in the record.
+{
+  const record = {
+    final: {
+      exports: [
+        { exportId: 'a', clipId: 'c1', name: 'One', start: 0, end: 1, state: 'queued' },
+        { exportId: 'b', clipId: 'c2', name: 'Two', start: 1, end: 2, state: 'queued' },
+      ],
+    },
+  };
+  const exports = [{ plan: { id: 'a' }, state: 'verified' }];
+  assert.equal(settleExports(record, exports), true);
+  assert.deepEqual(
+    record.final.exports.map((e) => e.state),
+    ['verified', 'queued'],
+  );
+  assert.equal(settleExports(record, exports), false, 'nothing left to change');
+  assert.equal(settleExports({}, exports), false, 'no final state yet');
+}
