@@ -239,6 +239,7 @@ try {
     recording_id: fixture.rid,
     proposals,
     agent_model: 'check-model',
+    run_intent: 'mic intent pass',
   });
   assert(!submitted.error, submitted.text);
   assert.equal(submitted.json().submitted[0].reworks, `mark cue at ${mic.lines[1].start} s`);
@@ -411,6 +412,100 @@ try {
     (await tool(client, 'get_proposal_decisions', { status: 'pending' })).json().proposals.length,
     0,
   );
+  // VC-182: exporting the batch saves its record, the first pass beside what went out; the
+  // agent reads it back.
+  const out = path.join(dir, 'exports');
+  await mkdir(out, { recursive: true });
+  for (const clip of annotated.clips) {
+    const plan = await main.evaluate(
+      ([id, clipId]) => window.virtualCut.project.exportPlan(id, clipId, 'source'),
+      [fixture.id, clip.id],
+    );
+    await app.evaluate(
+      ({ dialog }, file) => {
+        dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+      },
+      path.join(out, `${clip.id}.${plan.container}`),
+    );
+    await main.evaluate(
+      ([id, planId]) => window.virtualCut.project.exportClip(id, planId, true),
+      [fixture.id, plan.id],
+    );
+  }
+  const mine = new Set(annotated.clips.map((c) => c.id));
+  await expect
+    .poll(
+      async () =>
+        (await main.evaluate(() => window.virtualCut.project.current())).exports.filter(
+          (e) => mine.has(e.plan.clipId) && e.state === 'verified',
+        ).length,
+      { timeout: 60000 },
+    )
+    .toBe(2);
+  const listedAgain = (await client.call('tools/list', {})).result.tools;
+  assert.equal(
+    listedAgain.find((t) => t.name === 'get_batch_record').annotations.readOnlyHint,
+    true,
+  );
+  const batchRecord = await tool(client, 'get_batch_record');
+  assert(!batchRecord.error, batchRecord.text);
+  const kept = batchRecord.json();
+  await writeFile(path.join(dir, 'batch-record.json'), batchRecord.text);
+  assert.equal(kept.recordVersion, 1);
+  assert.deepEqual(
+    kept.runs.map((r) => [r.agent, r.model, r.intent, r.proposals]),
+    [['Claude Code', 'check-model', 'mic intent pass', 4]],
+  );
+  assert.equal(kept.runs[0].read.intentGuideVersion, '1');
+  assert.deepEqual(
+    kept.runs[0].read.transcripts.find((t) => t.role === 'mic'),
+    { role: 'mic', transcriptId: 'agent-mic', corrections: 0 },
+  );
+  const pass = kept.firstPass.find((f) => f.id === fixture.rid);
+  assert.deepEqual(
+    pass.before.clips.map((c) => [c.id, c.name]),
+    [['whole', 'Whole session']],
+  );
+  assert.deepEqual(pass.before.markers, [], 'frozen before any decision');
+  assert.deepEqual(
+    pass.proposals.map((p) => p.id),
+    ids,
+  );
+  const final = kept.final.recordings.find((r) => r.id === fixture.rid);
+  assert.deepEqual(
+    final.clips.map((c) => [c.name, c.origin, c.splitBy]),
+    [
+      ['Fort and siege', 'before-first-pass', ids[1]],
+      ['Bertrand talk', { proposalId: ids[1] }, undefined],
+    ],
+  );
+  assert.deepEqual(
+    final.markers.map((m) => [m.name, m.origin]),
+    [
+      ['Bertrand at the gate', { proposalId: ids[0] }],
+      ['Siege scene', { proposalId: ids[3] }],
+    ],
+  );
+  assert.deepEqual(final.removedSpans, []);
+  assert.deepEqual(
+    kept.final.proposals.map((p) => [p.status, p.firstPass]),
+    [
+      ['accepted', true],
+      ['accepted', true],
+      ['rejected', true],
+      ['accepted', true],
+    ],
+  );
+  // The copied fixture already holds an older export of this recording; it is listed too.
+  assert.deepEqual(
+    kept.final.exports
+      .filter((e) => mine.has(e.clipId))
+      .map((e) => e.name)
+      .sort(),
+    ['Bertrand talk', 'Fort and siege'],
+  );
+  assert(batchRecord.text.length < 20000, 'times, names and notes only');
+  assert(!batchRecord.text.includes(JSON.stringify(dir).slice(1, -1)), 'no file paths');
   client.end();
   await client.exited;
   assert.deepEqual(errors, []);

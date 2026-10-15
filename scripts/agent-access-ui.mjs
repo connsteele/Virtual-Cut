@@ -153,6 +153,7 @@ try {
   const listed = (await client.call('tools/list', {})).result.tools;
   assert.deepEqual(listed.map((t) => t.name).sort(), [
     'get_annotations',
+    'get_batch_record',
     'get_context',
     'get_current_view',
     'get_intent_guide',

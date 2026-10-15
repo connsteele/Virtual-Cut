@@ -13,6 +13,7 @@ export const fast = [
   'game-library.test.mjs',
   'agent-tools.test.mjs',
   'agent-proposals.test.mjs',
+  'batch-record.test.mjs',
   'intent-score.test.mjs',
 ];
 export const native = [
