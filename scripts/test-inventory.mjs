@@ -60,6 +60,7 @@ export const desktop = [
   'review-planning-ui.mjs',
   'agent-access-ui.mjs',
   'agent-proposals-ui.mjs',
+  'split-snap-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
