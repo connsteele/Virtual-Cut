@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   TranscriptCommand,
   TranscriptSegment,
@@ -12,6 +12,9 @@ import {
   cueReviewKey,
   reviewedCue,
 } from '../../electron/transcript-edits';
+import type { SplitSnap } from '../../electron/split-snap';
+import { background } from './background';
+import { formatTimecode } from './transcriptTime';
 import { ProposalCard } from './ProposalCard';
 import { Button, Field } from './ui';
 import { TimeField } from './TimeField';
@@ -54,12 +57,34 @@ export function TranscriptCue({
     first?: string;
     second?: string;
   }>();
+  const decision = reviewedCue(session.decisions, transcript, segment);
+  // VC-165: a pending Split proposes the end of a black screen just before the word, if any.
+  const [snap, setSnap] = useState<SplitSnap | null>(null);
+  const [spokenChosen, setSpokenChosen] = useState(false);
+  const decided = decision != null;
+  useEffect(() => {
+    const api = window.virtualCut?.transcript;
+    if (!split || decided || transcript.state !== 'complete' || !api) return;
+    let live = true;
+    background(
+      api
+        .splitSnap(session.projectId, transcript.sourceId, cue.time)
+        .then((found) => live && setSnap(found))
+        // Without a measurement the spoken time stands; the card stays usable.
+        .catch(() => live && setSnap(null)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [split, decided, transcript.state, session.projectId, transcript.sourceId, cue.time]);
+  const snapped = split && snap && !spokenChosen ? snap.time : undefined;
   const context = cueContext(segment, draft.contextEndSegmentId);
   const suggestedTitle = cueTitle(transcript, segment).slice(0, range ? 200 : 100);
   const title = draft.title ?? suggestedTitle;
   const text = draft.text ?? context.text;
   const start =
     draft.time ??
+    snapped ??
     (range && cue.kind === 'clip-end' ? (segment.cuePartner?.time ?? cue.time) : cue.time);
   const end =
     draft.end ?? (cue.kind === 'clip-end' ? cue.time : (segment.cuePartner?.time ?? cue.time));
@@ -68,7 +93,6 @@ export function TranscriptCue({
   const targetName = targetClips.find((c) => c.id === target)?.name ?? '';
   const first = draft.first ?? targetName;
   const second = draft.second ?? (first ? `${first} · 2` : '');
-  const decision = reviewedCue(session.decisions, transcript, segment);
   const kind = range
     ? 'Clip range'
     : split
@@ -143,7 +167,38 @@ export function TranscriptCue({
       meta={
         range && !segment.cuePartner
           ? ['No matching boundary: correct the cue wording, or create this clip in Cut.']
-          : []
+          : split && snap
+            ? [
+                <span key="snap" data-split-snap={spokenChosen ? 'spoken' : 'snapped'}>
+                  {spokenChosen
+                    ? 'Spoken time. Black screen ends at '
+                    : 'Snapped to where a black screen ends. Spoken at '}
+                  <button
+                    className={s.pcTime}
+                    title={
+                      spokenChosen ? 'Go to the end of the black screen' : 'Go to the spoken Split'
+                    }
+                    onClick={() => onSeek(spokenChosen ? snap.time : snap.spoken)}
+                  >
+                    {formatTimecode(spokenChosen ? snap.time : snap.spoken)}
+                  </button>{' '}
+                  <button
+                    className={s.pcQuiet}
+                    disabled={busy || draft.time != null}
+                    title={
+                      draft.time != null
+                        ? 'The position was edited; Esc puts it back'
+                        : spokenChosen
+                          ? 'Suggest the end of the black screen again'
+                          : 'Dismiss the snap and keep the spoken time'
+                    }
+                    onClick={() => setSpokenChosen(!spokenChosen)}
+                  >
+                    {spokenChosen ? 'Use snap' : 'Use spoken time'}
+                  </button>
+                </span>,
+              ]
+            : []
       }
       changedSince={
         decision?.status === 'accepted' &&

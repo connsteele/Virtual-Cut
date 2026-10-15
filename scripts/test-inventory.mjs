@@ -15,6 +15,7 @@ export const fast = [
   'agent-proposals.test.mjs',
   'batch-record.test.mjs',
   'intent-score.test.mjs',
+  'split-snap.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -59,6 +60,7 @@ export const desktop = [
   'review-planning-ui.mjs',
   'agent-access-ui.mjs',
   'agent-proposals-ui.mjs',
+  'split-snap-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],

@@ -114,6 +114,7 @@ const words = new Set([
   'start',
   'transport',
   'seek',
+  'splitSnap',
   'command',
   'apply',
   'finishCommand',

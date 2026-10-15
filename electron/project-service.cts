@@ -50,6 +50,15 @@ import {
   prepareDestination,
 } from './destination-plan.cjs';
 import { destinationSignature } from './review-plan.js';
+import {
+  SNAP_FOLLOW,
+  chooseSnap,
+  onFrame,
+  readBlacks,
+  snapArgs,
+  snapWindow,
+  type SplitSnap,
+} from './split-snap.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -395,6 +404,65 @@ export class ProjectService {
       throw new Error('Choose a recording.');
     return store.frameIndex(sourceId);
   }
+  /**
+   * The Split snap suggestion for one heard Split (VC-165), measured with FFmpeg on the 5 s
+   * before the word. Read only: nothing is stored in the project, and the card decides.
+   * Requests run one at a time and are remembered per file revision.
+   */
+  splitSnap(id: string, sourceId: string, spoken: number): Promise<SplitSnap | null> {
+    const store = this.require(id);
+    const source = store.sources().find((s) => s.id === sourceId);
+    const r = store.data.model.recordings.find((r) => r.id === sourceId);
+    if (!source || !r || r.availability !== 'ready')
+      throw new Error('Choose an available recording.');
+    if (!Number.isFinite(spoken) || spoken < 0 || spoken > r.duration)
+      throw new Error('Choose a Split inside this recording.');
+    const key = `${source.fingerprint}:${spoken.toFixed(3)}`;
+    const known = this.snaps.get(key);
+    if (known) return known;
+    const offset = r.sourceStart || 0;
+    const decode = async (from: number, to: number) => {
+      const lines: string[] = [];
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60_000);
+      try {
+        await launchTool(
+          this.tool('ffmpeg'),
+          snapArgs(source.file, offset + from, to - from),
+          controller.signal,
+          (line) => {
+            if (line.startsWith('lavfi.black_')) lines.push(line);
+          },
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      return readBlacks(lines, offset);
+    };
+    const run = this.snapQueue.then(async () => {
+      const window = snapWindow(spoken, r.duration);
+      const blacks = await decode(window.start, window.end);
+      let follow: number | null = null;
+      // A black still on screen when decoding stopped: follow it to the frame where it ends.
+      if (blacks.at(-1)?.end == null && blacks.length) {
+        const to = Math.min(r.duration, window.end + SNAP_FOLLOW);
+        // Overlap the window so the remaining black still lasts the detector's 0.1 s.
+        const from = Math.max(window.start, window.end - 0.5);
+        follow = to > window.end ? ((await decode(from, to))[0]?.end ?? null) : null;
+      }
+      const snap = chooseSnap(spoken, blacks, window.start, follow);
+      if (!snap) return null;
+      const frames = store.frameIndex(sourceId)?.frameTimes;
+      return { ...snap, time: onFrame(snap.time, frames) };
+    });
+    this.snapQueue = run.catch(() => undefined);
+    this.snaps.set(key, run);
+    run.catch(() => this.snaps.delete(key));
+    while (this.snaps.size > 500) this.snaps.delete(this.snaps.keys().next().value!);
+    return run;
+  }
+  private snaps = new Map<string, Promise<SplitSnap | null>>();
+  private snapQueue: Promise<unknown> = Promise.resolve();
   cancelFilmstrip(id: string, token: string, release = false) {
     this.require(id);
     this.filmstripCache.cancel(token, release === true);
