@@ -157,6 +157,13 @@ export function TranscriptWindow() {
     };
   }, [api, sourceId, acceptSession]);
   useEffect(() => api.onSource(setSourceId), [api]);
+  // Name the recording in the title bar, so a window left open on another one is obvious.
+  const sessionTitle = session?.title;
+  useEffect(() => {
+    document.title = sessionTitle
+      ? `${sessionTitle} · Transcription · Virtual Cut`
+      : 'Transcription · Virtual Cut';
+  }, [sessionTitle]);
   useEffect(() => {
     void api
       .runtime()
@@ -768,8 +775,8 @@ export function TranscriptWindow() {
         <>
           <details className={s.help}>
             <summary>
-              {selected.wordCount} words ·{' '}
-              {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
+              <strong data-transcript-recording>{session.title}</strong> · {selected.wordCount}{' '}
+              words · {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
               {selected.context.gameName || 'No game specified'}
               {selected.context.vocabulary ? ' · vocabulary hints used' : ''}
               {' · Help'}

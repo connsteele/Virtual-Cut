@@ -1633,7 +1633,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     disabled={!project || workspace.blocking}
                     onClick={() =>
                       background(
-                        workspace.flush().then(() => window.virtualCut?.transcript.open(rid)),
+                        // The recording on screen, which can differ from the last one clicked.
+                        workspace.flush().then(() => window.virtualCut?.transcript.open(r.id)),
                       )
                     }
                   >

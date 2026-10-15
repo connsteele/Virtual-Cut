@@ -4,7 +4,7 @@
 // the spoken time on the decision.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
@@ -141,6 +141,19 @@ await mkdir(blocked, { recursive: true });
 service.batchRecords.exported(store, batchId);
 assert(logged.includes('operation-failed'), 'The failed record save is logged');
 await rm(blocked, { recursive: true });
+// A renamed copy in a second batch, for the Transcript button check below.
+const copy = path.join(dir, 'renamed-copy.mp4');
+await copyFile(source, copy);
+await service.batch(id, 'Second');
+const second = (await service.snapshot()).activeBatchId;
+await service.importFiles(id, second, [copy], { game: 1, mic: 2 });
+for (const until = Date.now() + 60000; ;) {
+  snap = await service.snapshot();
+  if (!snap.jobs.some((j) => ['queued', 'running'].includes(j.state))) break;
+  assert(Date.now() < until, 'Copy import timed out');
+  await new Promise((r) => setTimeout(r, 100));
+}
+await service.selectBatch(id, batchId);
 await service.close();
 
 let app;
@@ -211,12 +224,23 @@ try {
   assert.equal(decision.time, 9.5, 'The spoken anchor is kept');
   assert.equal(decision.appliedTime, 8.5);
   assert.deepEqual(
-    current.model.clips.map((c) => [c.start, c.end]).sort((a, b) => a[0] - b[0]),
+    current.model.clips
+      .filter((c) => c.rid === recording.id)
+      .map((c) => [c.start, c.end])
+      .sort((a, b) => a[0] - b[0]),
     [
       [0, 8.5],
       [8.5, recording.duration],
     ],
   );
+  // Transcript opens the recording on screen: after switching to a batch whose recording was
+  // never clicked, it follows that recording and names it in the title bar.
+  await expect.poll(() => view.title()).toContain('black-screen');
+  await main.locator(`[data-recording="${recording.id}"]`).click();
+  await main.getByLabel('Current batch', { exact: true }).selectOption({ label: 'Second' });
+  await main.locator('[data-recording]', { hasText: 'renamed-copy' }).waitFor();
+  await main.getByRole('button', { name: 'Transcript', exact: true }).click();
+  await expect.poll(() => view.title()).toContain('renamed-copy');
   assert.deepEqual(errors, []);
   console.log(`Split snap card: snapped, kept, dismissed and accepted passed: ${dir}`);
 } finally {
