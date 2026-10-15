@@ -67,8 +67,13 @@ before changing cutting, timestamps, mic removal or transcription.
   decisions go on the review board; tickets live on the Notion development board. Decisions are
   applied only when Connor says "apply".
 - Spoken cues: Split and Clip start/end stay as commands; other mic speech becomes intent
-  proposals (VC-155), reviewed on the same card as every other proposal. Cue logic is no longer
-  frozen; change it only through VC-155 and VC-128 work, measured against Connor's tagged notes.
+  proposals (VC-155), reviewed on the same card as every other proposal. Cue words and cue
+  detection are frozen. The one exception is the Split snap (VC-165), which only suggests a
+  snapped time beside the spoken one. Measure any cue change against Connor's tagged notes
+  (VC-128).
+- A sprint gets its own branch (`sprint-N`) cut from the milestone branch. Each ticket works on
+  `sprint-N-vc-NNN` off it and is merged in before the next ticket starts. The sprint branch
+  goes back to the milestone branch once its review passes.
 - Whenever Connor has to check something, a build containing the change must exist and be
   linked first. Never describe unbuilt behavior as ready to check.
 - Push or merge only what Connor has approved.
