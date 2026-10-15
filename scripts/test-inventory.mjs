@@ -15,6 +15,7 @@ export const fast = [
   'agent-proposals.test.mjs',
   'batch-record.test.mjs',
   'intent-score.test.mjs',
+  'split-snap.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',

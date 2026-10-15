@@ -203,6 +203,12 @@ export interface TranscriptApi {
   job(projectId: string, id: string, action: 'cancel' | 'retry' | 'pause'): Promise<void>;
   command(command: TranscriptCommand): Promise<void>;
   seek(projectId: string, sourceId: string, time: number): Promise<void>;
+  /** Where a heard Split would snap to a black screen ending just before it (VC-165). */
+  splitSnap(
+    projectId: string,
+    sourceId: string,
+    time: number,
+  ): Promise<import('./split-snap.js').SplitSnap | null>;
   runtime(refresh?: boolean): Promise<{
     configured: boolean;
     /** Which file of a previously chosen setup is gone (moved or deleted outside the app). */

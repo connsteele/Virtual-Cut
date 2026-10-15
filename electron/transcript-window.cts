@@ -73,7 +73,7 @@ export function registerTranscriptWindow(
         operation: name,
       };
       if (
-        !['session', 'page', 'pageAt', 'runtime'].includes(name) &&
+        !['session', 'page', 'pageAt', 'runtime', 'splitSnap'].includes(name) &&
         !(name === 'speechSetup' && args[0] === 'status')
       )
         diagnostics.record('transcript-action', fields);
@@ -332,6 +332,7 @@ export function registerTranscriptWindow(
       throw new Error('This transcript location is unavailable.');
     main()?.webContents.send('transcript:seek-event', { projectId: id, sourceId, time });
   });
+  handle('splitSnap', (id, sourceId, time) => projects.splitSnap(id, sourceId, time));
   handle(
     'command',
     (command) =>

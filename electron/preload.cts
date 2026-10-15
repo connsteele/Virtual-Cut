@@ -31,6 +31,7 @@ const api: VirtualCutApi = {
       ipcRenderer.invoke('transcript:start', id, source, batch, options),
     job: (id, job, action) => ipcRenderer.invoke('transcript:job', id, job, action),
     seek: (id, source, time) => ipcRenderer.invoke('transcript:seek', id, source, time),
+    splitSnap: (id, source, time) => ipcRenderer.invoke('transcript:splitSnap', id, source, time),
     command: (command) => ipcRenderer.invoke('transcript:command', command),
     apply: (token) => ipcRenderer.invoke('transcript:apply', token),
     finishCommand: (token, error) => ipcRenderer.send('transcript:finishCommand', token, error),
