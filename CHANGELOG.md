@@ -2,6 +2,15 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.21 — Ready for real batches (October 15, 2026)
+
+Each export or filing now saves a batch record: the agent's first pass beside what was exported,
+with your own additions, changes after accepting and the spans cut away. Agents read it with
+`get_batch_record`. A spoken Split whose black screen ended in the 5 s before it now suggests
+cutting where the black ends, with the spoken time beside it. Transcription runs at batch 8 by
+default, about twice as fast with the same result; vocabulary hints stay at batch 1. See [the
+0.4.21 review](docs/review-0.4.21.md) and [decision 0018](docs/decisions/0018-batch-records.md).
+
 ## 0.4.20 — Lossless audio, ALAC included (October 9, 2026)
 
 ALAC recordings play with sound everywhere. Each track's listening copy is now lossless: audio
