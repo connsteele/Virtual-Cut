@@ -25,6 +25,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed |
 | [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed |
 | [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed |
+| [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed |
 
 ## Adding a record
 

@@ -26,6 +26,8 @@ export interface AgentReadSource {
   /** The tagged mic notes (.txt) beside a recording's file, if any (VC-155). */
   taggedNotes?: (recordingId: string) => string | undefined;
   proposals?: { list(sourceId?: string): import('./proposal-contracts.js').AgentProposal[] };
+  /** The batch's saved record of the agent's first pass and the exported state (VC-182). */
+  batchRecord?: (batchId: string) => import('./batch-record.js').BatchRecord | undefined;
 }
 export class AgentReadError extends Error {}
 /** A recording or batch named for the activity list; ids an agent made up stay as given. */
@@ -323,4 +325,15 @@ export function annotations(source: AgentReadSource, batchId?: string, recording
       })),
     projectRevision: source.revision,
   };
+}
+
+/** A batch's record: the agent's first pass beside the state at its latest export (VC-182). */
+export function batchRecordAnswer(source: AgentReadSource, batchId?: string) {
+  const batch = findBatch(source, batchId);
+  const record = source.batchRecord?.(batch.id);
+  if (!record)
+    throw new AgentReadError(
+      `"${batch.name}" has no batch record yet. One starts when proposals land on its recordings and is completed at export.`,
+    );
+  return { ...record, projectRevision: source.revision };
 }

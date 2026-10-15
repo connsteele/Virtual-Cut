@@ -66,6 +66,8 @@ import type {
   TranscriptOutputs,
 } from './export-contracts.js' with { 'resolution-mode': 'import' };
 import { transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
+import { BatchRecords } from './batch-records.cjs';
+import { batchOf } from './batch-record.js';
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -93,6 +95,8 @@ async function waveform(file: string, sampleRate: number) {
 
 export class ProjectService {
   readonly transcription: TranscriptionRuntime;
+  /** The agent's first pass beside the exported state, per batch (VC-182). */
+  readonly batchRecords: BatchRecords;
   transcriptSession(sourceId?: string): TranscriptSession | null {
     const s = this.store;
     if (!s) return null;
@@ -408,6 +412,8 @@ export class ProjectService {
     private diagnostics?: Diagnostics,
   ) {
     this.transcription = new TranscriptionRuntime(profile, toolsDirectory);
+    this.batchRecords = new BatchRecords(profile);
+    this.batchRecords.log = (event, details) => diagnostics?.record(event, details);
   }
   async logToolVersions() {
     for (const tool of ['ffmpeg', 'ffprobe'] as const) {
@@ -1458,6 +1464,10 @@ export class ProjectService {
       message: next.message,
       updated: next.updated,
     });
+    this.batchRecords.exported(
+      s,
+      batchOf(s.data.model, s.data.activeBatchId, record.plan.sourceId),
+    );
     this.pump();
     return this.snapshot();
   }
@@ -1654,6 +1664,7 @@ export class ProjectService {
         });
       }
     });
+    this.batchRecords.exported(s, saved.plan.batchId);
     this.pump();
     return this.snapshot();
   }

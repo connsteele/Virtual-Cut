@@ -108,6 +108,7 @@ assert.deepEqual(Object.keys(schema.properties).sort(), [
   'agent_model',
   'proposals',
   'recording_id',
+  'run_intent',
 ]);
 assert.deepEqual(schema.properties.proposals.items.properties.kind.enum, [
   'marker',

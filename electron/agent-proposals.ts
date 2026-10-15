@@ -99,6 +99,13 @@ export const submitInput = z.object({
   recording_id: z.string().max(200),
   proposals: z.array(proposalInput).min(1).max(50),
   agent_model: z.string().max(100).optional().describe('Your model name, kept as provenance.'),
+  run_intent: z
+    .string()
+    .max(200)
+    .optional()
+    .describe(
+      "What this pass is for, such as 'mic intent pass' or 'first pass: ranges and cuts'; kept in the batch record.",
+    ),
 });
 export const decisionsInput = z.object({
   recording_id: z.string().max(200).optional().describe('Limit to one recording.'),

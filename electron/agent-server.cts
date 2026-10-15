@@ -13,6 +13,8 @@ import type { AgentClient, AgentPairing, AgentView } from './agent-contracts.js'
 import {
   AgentReadError,
   annotations,
+  batchRecordAnswer,
+  currentTranscripts,
   readableName,
   contextPacket,
   currentView,
@@ -39,6 +41,8 @@ const instructions =
   'decisions. Times are seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
+  "get_batch_record keeps a batch's first pass beside what the user exported, for learning " +
+  'from the misses. ' +
   "Before proposing from the creator's mic speech, read get_intent_guide: it says what their " +
   'free speech means and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
@@ -82,6 +86,8 @@ export function registerAgentAccess(options: {
       fingerprints,
       transcripts: store.transcripts,
       proposals: store.proposals,
+      batchRecord: (batchId) =>
+        options.projects()?.batchRecords.read(store.data.project.id, batchId),
       view: access.view,
       taggedNotes: (recordingId) => {
         const file = store.sources().find((s) => s.id === recordingId)?.file;
@@ -237,6 +243,23 @@ export function registerAgentAccess(options: {
           proposalLimit,
         );
         store.proposals.add(proposals);
+        const read = currentTranscripts(s, a.recording_id);
+        options.projects()!.batchRecords.submitted(store, proposals, {
+          runIntent: a.run_intent,
+          transcripts: (['mic', 'game'] as const).flatMap((role) =>
+            read[role]
+              ? [
+                  {
+                    role,
+                    transcriptId: read[role].id,
+                    corrections: (s.model.transcriptEdits || []).filter(
+                      (e) => e.transcriptId === read[role]!.id,
+                    ).length,
+                  },
+                ]
+              : [],
+          ),
+        });
         return submissionAnswer(s, proposals);
       },
       (a, n) => `Proposed ${a.proposals?.length ?? 0} for ${n(a.recording_id)}`,
@@ -249,6 +272,17 @@ export function registerAgentAccess(options: {
       decisionsInput,
       (s, a) => proposalDecisions(s, a),
       (a, n) => `Proposal decisions${a.recording_id ? `: ${n(a.recording_id)}` : ''}`,
+    );
+    read<{ batch_id?: string }>(
+      'get_batch_record',
+      "A batch's record for learning from it: the agent's first pass (proposals as they landed, " +
+        'and what each recording held then) beside the state at its latest export: clips, ' +
+        'markers and notes, each linked to the proposal it came from or marked as the ' +
+        "user's own, changes made after accepting, removed items and spans, and pointers to " +
+        'what the agent read (transcripts, intent guide version, model, run intent).',
+      z.object({ batch_id: batch }),
+      (s, a) => batchRecordAnswer(s, a.batch_id),
+      (a, n) => `Batch record: ${a.batch_id ? n(a.batch_id) : 'active batch'}`,
     );
     const transport = new StdioServerTransport(socket, socket);
     void server.connect(transport).catch(() => socket.destroy());
