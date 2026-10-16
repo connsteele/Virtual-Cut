@@ -2,6 +2,17 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.22 — Review tools ahead of real batches (October 16, 2026)
+
+Sprint 8. Pending proposals now show dimmed on the Cut timeline in their proposer's colour: a
+striped band in the ruler for ranges, a marker shape for markers and notes, and a line through
+the track for Splits. Hovering or picking a card in the Transcript window lights its preview, and
+a pick pans a zoomed view to it. An agent's clip range can be accepted as a range marker, and an agent's
+range marker as a clip; the decision keeps the change of kind for the agent and the batch record.
+The Transcript window's new Both view reads mic and game lines together in time order, with the
+cards between them, and opens there while proposals wait. See [the 0.4.22
+review](docs/review-0.4.22.md).
+
 ## 0.4.21 — Ready for real batches (October 15, 2026)
 
 Each export or filing now saves a batch record: the agent's first pass beside what was exported,
