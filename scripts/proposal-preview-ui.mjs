@@ -150,7 +150,7 @@ try {
   assert((await spokenSplit.boundingBox()).width <= 4, 'a Split is a line');
   await expect(spokenClip).toHaveCSS('border-left-color', 'rgba(211, 178, 107, 0.85)');
   await expect(range).toHaveCSS('border-left-color', 'rgba(143, 123, 216, 0.85)');
-  await expect(range).toHaveCSS('opacity', '1');
+  await expect(range).toHaveCSS('opacity', '0.3');
   await timeline.screenshot({ path: path.join(dir, 'preview-faint.png') });
   // Read-only: a click on the band seeks the filmstrip beneath it.
   const strip = await timeline.locator('[data-seek-surface="filmstrip"]').boundingBox();
@@ -169,8 +169,8 @@ try {
   const card = (id) => view.locator(`[data-proposal-card="${id}"]`);
   await expect(card('Siege scene')).toBeVisible();
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(0);
-  // Hovering anywhere on a card brings its preview to full strength and dims the others;
-  // leaving lets it go.
+  // At rest every preview is dim. Hovering anywhere on a card brings its preview to full
+  // strength; leaving dims it again.
   await card('cue:preview-mic:1').hover({ position: { x: 40, y: 10 } });
   await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
   await expect(spokenSplit).toContainText('Spoken · Split');
@@ -178,7 +178,8 @@ try {
   await expect(spokenSplit).toHaveCSS('opacity', '1');
   await view.mouse.move(2, 2);
   await expect(spokenSplit).toHaveAttribute('data-focused', 'false');
-  await expect(range).toHaveCSS('opacity', '1');
+  await expect(range).toHaveCSS('opacity', '0.3');
+  await expect(spokenSplit).toHaveCSS('opacity', '0.3');
   // Keyboard focus: the card itself, then N to the next card waiting for review.
   await card('Siege scene').focus();
   await expect(range).toHaveAttribute('data-focused', 'true');
@@ -215,7 +216,12 @@ try {
   assert(Number(await scrubber.getAttribute('data-view-end')) > at(0.7), 'the band is in view');
   assert.equal(await main.locator('video').evaluate((v) => v.currentTime), playhead);
   await main.bringToFront();
-  await timeline.screenshot({ path: path.join(dir, 'preview-panned.png') });
+  // Zoomed in, the filmstrip may still be making tiles, so the timeline never settles for an
+  // element screenshot; capture its area of the window instead.
+  await main.screenshot({
+    path: path.join(dir, 'preview-panned.png'),
+    clip: await timeline.boundingBox(),
+  });
   await timeline.getByRole('button', { name: 'Fit full recording' }).click();
   await view.bringToFront();
   await card('cue:preview-mic:1')

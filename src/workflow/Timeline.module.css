@@ -574,8 +574,8 @@
 .proposalLine {
   transition: opacity 0.12s;
 }
-/* One proposal in focus: it goes full strength and every other preview steps back. */
-.proposalLayer[data-has-focus='true'] [data-focused='false'] {
+/* At rest every preview stays dim; only the proposal in focus goes full strength. */
+.proposalLayer [data-focused='false'] {
   opacity: 0.3;
 }
 .proposalLayer [data-focused='true'] {
