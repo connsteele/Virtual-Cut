@@ -234,6 +234,17 @@ try {
       reason: 'The opening of the fort chapter.',
       evidence: evidence([0]),
     },
+    // VC-186: and a range marker the user keeps as a clip instead.
+    {
+      kind: 'marker',
+      time_seconds: mic.lines[0].start,
+      end_seconds: mic.lines[1].end,
+      title: 'Opening talk',
+      note: 'The talk before Bertrand arrives.',
+      reason: 'One part of the opening scene.',
+      intents: ['marker'],
+      evidence: evidence([0]),
+    },
   ];
   // A stale citation refuses the whole call and names the field.
   const stale = await tool(client, 'submit_proposals', {
@@ -254,7 +265,7 @@ try {
   assert(!submitted.error, submitted.text);
   assert.equal(submitted.json().submitted[0].reworks, `mark cue at ${mic.lines[1].start} s`);
   const ids = submitted.json().submitted.map((p) => p.id);
-  assert.equal(ids.length, 5);
+  assert.equal(ids.length, 6);
   assert.equal(
     (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
       .markers.length,
@@ -268,7 +279,7 @@ try {
   assert.match(repeat.text, /repeats pending proposal/);
   await expect(
     panel.locator('[data-agent-activity] li', {
-      hasText: `Proposed 5 for ${recording.title} · waiting in the transcript window`,
+      hasText: `Proposed 6 for ${recording.title} · waiting in the transcript window`,
     }),
   ).toHaveCount(1);
 
@@ -278,11 +289,11 @@ try {
   view.on('pageerror', (e) => errors.push(e.message));
   await view.getByLabel('Select transcript', { exact: true }).selectOption('agent-mic');
   const cards = view.locator('[data-proposal-card]:not([data-proposal-card^="cue:"])');
-  await expect(cards).toHaveCount(5);
+  await expect(cards).toHaveCount(6);
   // The agent reworked the spoken Marker cue on line 1: one card with both tags, not two.
   await expect(view.locator('[data-proposal-card^="cue:"]')).toHaveCount(0);
-  await expect(view.locator('[data-filter="pending"] span')).toHaveText('5');
-  const [marker, split, clip, range, fort] = ids.map((id) =>
+  await expect(view.locator('[data-filter="pending"] span')).toHaveText('6');
+  const [marker, split, clip, range, fort, opening] = ids.map((id) =>
     view.locator(`[data-proposal-card="${id}"]`),
   );
   await expect(marker).toContainText('Spoken');
@@ -381,8 +392,19 @@ try {
   await expect(fort).toContainText('Clip range → Range marker');
   await fort.scrollIntoViewIfNeeded();
   await view.screenshot({ path: path.join(dir, 'proposal-clip-as-range.png') });
+  // ...and the reverse: an agent range marker offers Accept as clip (C), which makes a clip.
+  await expect(
+    opening.getByRole('button', { name: 'Accept as range marker', exact: true }),
+  ).toBeVisible();
+  await opening.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-range-choices.png') });
+  await opening.getByRole('button', { name: 'Accept as clip', exact: true }).click();
+  await expect(opening).toHaveAttribute('data-status', 'accepted');
+  await expect(opening).toContainText('Range marker → Clip range');
+  await opening.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-range-as-clip.png') });
   // Reopening an accepted range marker takes the marker back.
-  await range.getByRole('button', { name: 'Accept range marker', exact: true }).click();
+  await range.getByRole('button', { name: 'Accept as range marker', exact: true }).click();
   await expect(range).toHaveAttribute('data-status', 'accepted');
   await expect
     .poll(
@@ -393,7 +415,7 @@ try {
     .toBe(3);
   await range.getByRole('button', { name: 'Reopen', exact: true }).click();
   await expect(range).toHaveAttribute('data-status', 'pending');
-  await expect(view.locator('[data-filter="accepted"] span')).toHaveText('3');
+  await expect(view.locator('[data-filter="accepted"] span')).toHaveText('4');
   await view.locator('[data-filter="rejected"]').click();
   await expect(cards).toHaveCount(1);
   await view.screenshot({ path: path.join(dir, 'proposal-rejected-filter.png') });
@@ -402,7 +424,7 @@ try {
   const decisions = (
     await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
   ).json();
-  assert.deepEqual(decisions.counts, { pending: 1, accepted: 3, rejected: 1 });
+  assert.deepEqual(decisions.counts, { pending: 1, accepted: 4, rejected: 1 });
   const row = (id) => decisions.proposals.find((p) => p.id === id);
   assert.equal(row(ids[0]).chosen.time, moved);
   assert.equal(row(ids[0]).movedSeconds, 0.5);
@@ -418,6 +440,8 @@ try {
   assert.deepEqual(row(ids[4]).kindChange, { from: 'clip-range', to: 'range-marker' });
   assert.equal(row(ids[4]).chosen.end, Math.round(mic.lines[1].end * 1000) / 1000);
   assert.equal(row(ids[2]).kindChange, undefined);
+  assert.equal(row(ids[5]).kind, 'marker');
+  assert.deepEqual(row(ids[5]).kindChange, { from: 'range-marker', to: 'clip-range' });
   const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
   assert.deepEqual(
     annotated.recordings[0].markers.map((m) => m.name),
@@ -431,9 +455,11 @@ try {
   );
   assert.deepEqual(
     annotated.clips.map((c) => c.name),
-    ['Fort and siege', 'Bertrand talk'],
-    'the split made two clips with the names chosen on the card',
+    ['Fort and siege', 'Bertrand talk', 'Opening talk'],
+    'the split made two clips with the names chosen on the card; the range kept as a clip is one',
   );
+  const openingClip = annotated.clips[2];
+  assert.deepEqual([openingClip.start, openingClip.end], [mic.lines[0].start, mic.lines[1].end]);
   // Accepting the rework settled the spoken cue too.
   assert.equal(annotated.cueDecisions.filter((d) => d.kind === 'mark' && !d.proposalId).length, 1);
   assert.deepEqual(row(ids[1]).chosen.clipNames, {
@@ -478,7 +504,7 @@ try {
         ).length,
       { timeout: 60000 },
     )
-    .toBe(2);
+    .toBe(mine.size);
   const listedAgain = (await client.call('tools/list', {})).result.tools;
   assert.equal(
     listedAgain.find((t) => t.name === 'get_batch_record').annotations.readOnlyHint,
@@ -491,7 +517,7 @@ try {
   assert.equal(kept.recordVersion, 1);
   assert.deepEqual(
     kept.runs.map((r) => [r.agent, r.model, r.intent, r.proposals]),
-    [['Claude Code', 'check-model', 'mic intent pass', 5]],
+    [['Claude Code', 'check-model', 'mic intent pass', 6]],
   );
   assert.equal(kept.runs[0].read.intentGuideVersion, '1');
   assert.deepEqual(
@@ -520,6 +546,7 @@ try {
     [
       ['Fort and siege', 'before-first-pass', ids[1]],
       ['Bertrand talk', { proposalId: ids[1] }, undefined],
+      ['Opening talk', { proposalId: ids[5] }, undefined],
     ],
   );
   assert.deepEqual(
@@ -539,11 +566,16 @@ try {
       ['rejected', true],
       ['accepted', true],
       ['accepted', true],
+      ['accepted', true],
     ],
   );
   assert.deepEqual(kept.final.proposals[4].kindChange, {
     from: 'clip-range',
     to: 'range-marker',
+  });
+  assert.deepEqual(kept.final.proposals[5].kindChange, {
+    from: 'range-marker',
+    to: 'clip-range',
   });
   // The copied fixture already holds an older export of this recording; it is listed too.
   assert.deepEqual(
@@ -551,7 +583,7 @@ try {
       .filter((e) => mine.has(e.clipId))
       .map((e) => e.name)
       .sort(),
-    ['Bertrand talk', 'Fort and siege'],
+    ['Bertrand talk', 'Fort and siege', 'Opening talk'],
   );
   assert(batchRecord.text.length < 20000, 'times, names and notes only');
   assert(!batchRecord.text.includes(JSON.stringify(dir).slice(1, -1)), 'no file paths');

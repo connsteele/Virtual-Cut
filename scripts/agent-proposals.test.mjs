@@ -396,7 +396,7 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
     () =>
       validateEdits({
         ...structuredClone(asRange),
-        cueDecisions: [{ ...kept, kindChange: { from: 'range-marker', to: 'clip-range' } }],
+        cueDecisions: [{ ...kept, kindChange: { from: 'clip-range', to: 'note' } }],
       }),
     /Invalid cue decision/,
   );
@@ -435,11 +435,14 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
     [marker, { acceptAs: 'range-marker' }, 'a marker'],
     [split, { acceptAs: 'range-marker', clipId: 'c1' }, 'a split'],
     [note, { acceptAs: 'range-marker' }, 'a note'],
-    [clip, { acceptAs: 'clip' }, 'another kind'],
+    [clip, { acceptAs: 'clip' }, 'a clip as a clip'],
+    [marker, { acceptAs: 'clip' }, 'a point marker as a clip'],
+    [note, { acceptAs: 'clip' }, 'a note as a clip'],
+    [clip, { acceptAs: 'note' }, 'another kind'],
   ])
     assert.throws(
       () => applyProposalCommand(model, p, command(p, 'accept-proposal', values), newId),
-      /Only a clip range can be accepted as a range marker/,
+      /Only a clip range or a range marker can be accepted as the other kind/,
       why,
     );
   assert.throws(
@@ -450,7 +453,7 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
         command(clip, 'reject-proposal', { acceptAs: 'range-marker' }),
         newId,
       ),
-    /Only a clip range/,
+    /Only a clip range or a range marker/,
   );
   assert.throws(
     () =>
@@ -544,6 +547,29 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   const ranged = applyProposalCommand(model, range, command(range, 'accept-proposal', {}), newId);
   assert.equal(ranged.markers.r1.at(-1).end, 60);
   assert.equal(proposalDecision(ranged.cueDecisions, range.id).appliedEnd, 60);
+  // VC-186, the reverse: a range marker accepted as a clip makes a clip with its span, name and
+  // note, and the decision keeps the kind change.
+  const clipped = applyProposalCommand(
+    model,
+    range,
+    command(range, 'accept-proposal', { endTime: 55, acceptAs: 'clip' }),
+    newId,
+  );
+  assert.equal(clipped.markers.r1?.length || 0, model.markers.r1?.length || 0, 'no marker');
+  const madeClip = clipped.clips.at(-1);
+  assert.deepEqual(
+    [madeClip.start, madeClip.end, madeClip.name, madeClip.note, madeClip.folder],
+    [range.time, 55, range.title, range.text || undefined, '_Review'],
+  );
+  const clippedDecision = proposalDecision(clipped.cueDecisions, range.id);
+  assert.deepEqual(clippedDecision.kindChange, { from: 'range-marker', to: 'clip-range' });
+  assert.equal(clippedDecision.clipId, madeClip.id);
+  validateEdits(structuredClone(clipped));
+  assert.deepEqual(
+    proposalDecisions({ ...source, model: clipped }, { proposal_ids: [range.id] }).proposals[0]
+      .kindChange,
+    { from: 'range-marker', to: 'clip-range' },
+  );
   assert.throws(
     () =>
       applyProposalCommand(model, range, command(range, 'accept-proposal', { endTime: 10 }), newId),

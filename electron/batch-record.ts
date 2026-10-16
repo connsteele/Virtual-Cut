@@ -120,7 +120,7 @@ export interface FinalProposal {
     note?: string;
     clipNames?: { first: string; second: string };
   };
-  /** Accepted as another kind than proposed: a clip range kept as a range marker (VC-186). */
+  /** Accepted as the other range kind: clip range ↔ range marker (VC-186). */
   kindChange?: ProposalKindChange;
   firstPass: boolean;
 }

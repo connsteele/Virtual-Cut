@@ -96,15 +96,18 @@ export function applyProposalCommand(
     status: command.action === 'accept-proposal' ? 'accepted' : 'rejected',
     decided: now,
   };
-  // A clip range may be kept as a range marker instead (VC-186); no other kind changes.
-  const asRange = command.acceptAs != null;
+  // A clip range may be kept as a range marker and a range marker as a clip (VC-186); a point
+  // marker and the other kinds keep their kind.
+  const asRange = command.acceptAs === 'range-marker',
+    asClip = command.acceptAs === 'clip';
   if (
-    asRange &&
-    (command.acceptAs !== 'range-marker' ||
-      command.action !== 'accept-proposal' ||
-      proposal.kind !== 'clip')
+    command.acceptAs != null &&
+    (command.action !== 'accept-proposal' ||
+      !(asRange
+        ? proposal.kind === 'clip'
+        : asClip && proposal.kind === 'mark' && proposal.end !== undefined))
   )
-    throw new Error('Only a clip range can be accepted as a range marker.');
+    throw new Error('Only a clip range or a range marker can be accepted as the other kind.');
   if (command.action === 'reject-proposal') {
     return { ...structuredClone(model), cueDecisions: [...(model.cueDecisions || []), decision] };
   }
@@ -125,6 +128,7 @@ export function applyProposalCommand(
     decision.text = text;
   }
   if (asRange) decision.kindChange = { from: 'clip-range', to: 'range-marker' };
+  if (asClip) decision.kindChange = { from: 'range-marker', to: 'clip-range' };
   if (proposal.kind === 'cut') {
     const intersecting = next.clips.filter(
       (c) =>
@@ -163,7 +167,7 @@ export function applyProposalCommand(
       decision.title = clip.name;
       decision.text = second;
     }
-  } else if (proposal.kind === 'clip' && !asRange) {
+  } else if ((proposal.kind === 'clip' && !asRange) || asClip) {
     const end = command.endTime ?? proposal.end ?? Number.NaN;
     if (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
       throw new Error('Clip end must follow its start within this recording.');

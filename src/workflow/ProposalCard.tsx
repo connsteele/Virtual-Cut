@@ -5,7 +5,7 @@ import s from './TranscriptWindow.module.css';
 /**
  * One proposal in the transcript window (VC-155), spoken or from an agent: the same lines in
  * the same places every time. Line 1: who proposed it, the kind and the intents, with Accept,
- * Reject and Details at the right (an agent clip range offers Accept as clip or as range marker). Line 2: the name, then the time code. Line 3 only when there
+ * Reject and Details at the right (an agent clip range or range marker can also be accepted as the other kind). Line 2: the name, then the time code. Line 3 only when there
  * is something to say. Details open below, so nothing above them moves. A decided proposal
  * folds to one line; a rejected one can be reopened.
  */
@@ -26,7 +26,7 @@ export function ProposalCard({
   busy,
   acceptLabel,
   acceptDisabled,
-  acceptAsRange,
+  acceptOther,
   onToggle,
   onEdit,
   onAccept,
@@ -56,8 +56,17 @@ export function ProposalCard({
   busy: boolean;
   acceptLabel: string;
   acceptDisabled?: boolean;
-  /** An agent clip range (VC-186): a second choice, Accept as range marker (M). */
-  acceptAsRange?: () => void;
+  /**
+   * An agent range (VC-186): the primary button accepts it as proposed (`primary`), this one as
+   * the other range kind, e.g. "Accept as range marker" on key M.
+   */
+  acceptOther?: {
+    primary: string;
+    label: string;
+    key: string;
+    title: string;
+    onAccept: () => void;
+  };
   onToggle: () => void;
   onEdit: () => void;
   onAccept: () => void;
@@ -148,7 +157,7 @@ export function ProposalCard({
       const at = cards.indexOf(event.currentTarget);
       cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length]?.focus();
     } else if (key === 'a' && !busy && !acceptDisabled) onAccept();
-    else if (key === 'm' && acceptAsRange && !busy) acceptAsRange();
+    else if (acceptOther && key === acceptOther.key && !busy) acceptOther.onAccept();
     else if (key === 'r' && !busy) onReject();
     else if (key === 'd') onToggle();
     else if (key === 'e') onEdit();
@@ -183,18 +192,19 @@ export function ProposalCard({
             disabled={busy || acceptDisabled}
             onClick={onAccept}
           >
-            {acceptAsRange ? 'Accept as clip' : 'Accept'}
+            {acceptOther?.primary ?? 'Accept'}
             <kbd>A</kbd>
           </button>
-          {acceptAsRange && (
+          {acceptOther && (
             <button
               className={s.pcAccept}
-              title="Accept as a range marker with the same span, name and note"
-              aria-label="Accept as range marker"
+              title={acceptOther.title}
+              aria-label={acceptOther.label}
               disabled={busy}
-              onClick={acceptAsRange}
+              onClick={acceptOther.onAccept}
             >
-              Accept as range marker<kbd>M</kbd>
+              {acceptOther.label}
+              <kbd>{acceptOther.key.toUpperCase()}</kbd>
             </button>
           )}
           <button className={s.pcReject} aria-label="Reject" disabled={busy} onClick={onReject}>

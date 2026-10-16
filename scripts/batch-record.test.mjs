@@ -332,6 +332,33 @@ assert.deepEqual(
   assert.deepEqual(gone.final.recordings[0].removedItems, [
     { kind: 'marker', id: 'range1', origin: { proposalId: 'p6' } },
   ]);
+  // The reverse: a range marker kept as a clip links the clip to the suggestion.
+  const range = proposal('p7', 'mark', { time: 40, end: 60, title: 'Talk', text: 'Part' });
+  const asClip = applyProposalCommand(
+    base,
+    range,
+    {
+      action: 'accept-proposal',
+      proposalId: range.id,
+      sourceId: 'r1',
+      projectId: 'p1',
+      transcriptId: '',
+      segmentId: 0,
+      expected: 'null',
+      acceptAs: 'clip',
+    },
+    () => 'clip1',
+    '2026-10-15T03:00:00Z',
+  );
+  const clipped = finalState(undefined, { ...input, proposals: [range], model: asClip });
+  assert.deepEqual(
+    clipped.final.recordings[0].clips.map((c) => [c.id, c.start, c.end, c.name, c.origin]),
+    [['clip1', 40, 60, 'Talk', { proposalId: 'p7' }]],
+  );
+  assert.deepEqual(clipped.final.proposals[0].kindChange, {
+    from: 'range-marker',
+    to: 'clip-range',
+  });
 }
 assert.equal(batchOf(model, 'b1', 'r1'), 'b1');
 assert.equal(batchOf(model, 'b1', 'r2'), 'b2');

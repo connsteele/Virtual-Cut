@@ -50,8 +50,14 @@ export function TranscriptProposal({
     second?: string;
   }>();
   const decision = proposalDecision(session.decisions, proposal.id);
-  // A clip range kept as a range marker says so once decided (VC-186).
-  const kind = decision?.kindChange ? 'Clip range → Range marker' : proposalKindLabel(proposal);
+  // A range accepted as the other range kind says so once decided (VC-186).
+  const kind =
+    decision?.kindChange?.to === 'range-marker'
+      ? 'Clip range → Range marker'
+      : decision?.kindChange?.to === 'clip-range'
+        ? 'Range marker → Clip range'
+        : proposalKindLabel(proposal);
+  const ranged = proposal.kind === 'mark' && proposal.end != null;
   const split = proposal.kind === 'cut';
   const start = draft.time ?? proposal.time;
   const end = draft.end ?? proposal.end;
@@ -108,7 +114,7 @@ export function TranscriptProposal({
       who={cue ? 'both' : 'agent'}
       kind={kind}
       intents={proposalIntents(proposal)}
-      range={proposal.kind === 'mark' && proposal.end != null}
+      range={ranged}
       name={
         split ? (
           <>
@@ -178,7 +184,13 @@ export function TranscriptProposal({
       open={open}
       editing={editing}
       busy={busy}
-      acceptLabel={proposal.kind === 'clip' ? 'Accept as clip' : `Accept ${kind.toLowerCase()}`}
+      acceptLabel={
+        proposal.kind === 'clip'
+          ? 'Accept as clip'
+          : ranged
+            ? 'Accept as range marker'
+            : `Accept ${kind.toLowerCase()}`
+      }
       acceptDisabled={split && !target}
       onToggle={() => {
         setOpen(!open);
@@ -199,17 +211,38 @@ export function TranscriptProposal({
           secondName: split ? second : undefined,
         })
       }
-      acceptAsRange={
+      acceptOther={
         proposal.kind === 'clip'
-          ? () =>
-              onCommand('accept-proposal', {
-                title: title.slice(0, 100),
-                text,
-                time: start,
-                endTime: end,
-                acceptAs: 'range-marker',
-              })
-          : undefined
+          ? {
+              primary: 'Accept as clip',
+              label: 'Accept as range marker',
+              key: 'm',
+              title: 'Accept as a range marker with the same span, name and note',
+              onAccept: () =>
+                onCommand('accept-proposal', {
+                  title: title.slice(0, 100),
+                  text,
+                  time: start,
+                  endTime: end,
+                  acceptAs: 'range-marker',
+                }),
+            }
+          : ranged
+            ? {
+                primary: 'Accept as range marker',
+                label: 'Accept as clip',
+                key: 'c',
+                title: 'Accept as a clip with the same span, name and note',
+                onAccept: () =>
+                  onCommand('accept-proposal', {
+                    title,
+                    text,
+                    time: start,
+                    endTime: end,
+                    acceptAs: 'clip',
+                  }),
+              }
+            : undefined
       }
       onReject={() => onCommand('reject-proposal', {})}
       onReopen={() => onCommand('reopen-proposal', {})}
