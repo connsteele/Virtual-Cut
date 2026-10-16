@@ -161,8 +161,8 @@ export function TranscriptWindow() {
   const sessionTitle = session?.title;
   useEffect(() => {
     document.title = sessionTitle
-      ? `${sessionTitle} · Transcription · Virtual Cut`
-      : 'Transcription · Virtual Cut';
+      ? `Transcript · ${sessionTitle} · Virtual Cut`
+      : 'Transcript · Virtual Cut';
   }, [sessionTitle]);
   useEffect(() => {
     void api

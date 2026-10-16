@@ -53,7 +53,7 @@ try {
   const transcript = await newWindow;
   transcript.setDefaultTimeout(20000);
   transcript.on('pageerror', (e) => errors.push(e.message));
-  await expect(transcript).toHaveTitle('Transcription · Virtual Cut');
+  await expect(transcript).toHaveTitle(/^Transcript · .+ · Virtual Cut$/);
   await expect(transcript.getByLabel('Transcript phrases').locator('article')).not.toHaveCount(0);
   const alignment = await transcript.evaluate(() => {
     const recording = document.querySelector('select'),

@@ -132,7 +132,7 @@ export function registerTranscriptWindow(
         ...bounds,
         minWidth: 500,
         minHeight: 400,
-        title: 'Transcription · Virtual Cut',
+        title: 'Transcript · Virtual Cut',
         show: !hidden,
         backgroundColor: '#101918',
         autoHideMenuBar: true,

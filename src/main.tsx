@@ -9,7 +9,7 @@ const TranscriptWindow = React.lazy(() =>
 const transcript = window.location.hash === '#transcript';
 if (transcript) {
   document.body.classList.add('transcript-window');
-  document.title = 'Transcription · Virtual Cut';
+  document.title = 'Transcript · Virtual Cut';
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
