@@ -16,6 +16,7 @@ export const fast = [
   'batch-record.test.mjs',
   'intent-score.test.mjs',
   'split-snap.test.mjs',
+  'proposal-previews.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -61,12 +62,14 @@ export const desktop = [
   'agent-access-ui.mjs',
   'agent-proposals-ui.mjs',
   'split-snap-ui.mjs',
+  'proposal-preview-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
+  'proposal-preview-ui.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],

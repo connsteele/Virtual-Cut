@@ -68,6 +68,9 @@ export function Player({
   onEnded,
   onSourceOpen,
   autoPlay = false,
+  proposals,
+  proposalFocus,
+  proposalReveal,
   ref,
 }: {
   recording: Recording;
@@ -99,6 +102,9 @@ export function Player({
   onEnded?: () => void;
   onSourceOpen?: () => void;
   autoPlay?: boolean;
+  proposals?: import('../../electron/proposal-previews').ProposalPreview[];
+  proposalFocus?: string | null;
+  proposalReveal?: boolean;
   ref?: Ref<Transport>;
 }) {
   const video = useRef<HTMLVideoElement>(null),
@@ -870,6 +876,9 @@ export function Player({
         onMarkerMove={onMarkerMove}
         waveMode={waveMode}
         audioTracks={r.sourcePath ? monitored : []}
+        proposals={proposals}
+        proposalFocus={proposalFocus}
+        proposalReveal={proposalReveal}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>

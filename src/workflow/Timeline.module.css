@@ -515,3 +515,131 @@
     --clip-row: 28px;
   }
 }
+/* Pending proposals (VC-170): faint, read-only previews in the proposer's colour. Pointer events
+   pass through, so scrubbing, markers and clips work as before. */
+.proposalLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.proposalBand,
+.proposalLine {
+  --proposal: 143, 123, 216;
+  --proposal-edge: 143, 123, 216;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.proposalLayer [data-who='spoken'] {
+  --proposal: 211, 178, 107;
+  --proposal-edge: 211, 178, 107;
+}
+/* An agent's rework of a spoken cue: the agent's fill with the spoken edge, as on its card. */
+.proposalLayer [data-who='both'] {
+  --proposal-edge: 211, 178, 107;
+}
+/* Ranges sit in the ruler with the markers, so a Split is the only line through the footage. */
+.proposalBand {
+  bottom: auto;
+  height: 34px;
+  min-width: 3px;
+  /* Stripes: a proposal, not yet a real clip or range marker. */
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--proposal), 0.3) 0 6px,
+    rgba(var(--proposal), 0.12) 6px 12px
+  );
+  border-inline: 2px solid rgba(var(--proposal-edge), 0.85);
+}
+.proposalLine {
+  width: 0;
+  margin-left: -1px;
+  border-left: 2px solid rgba(var(--proposal-edge), 0.8);
+}
+/* Markers and notes live above the footage, as a marker shape in the ruler; a note's is
+   outlined. */
+.proposalMark {
+  --proposal: 143, 123, 216;
+  position: absolute;
+  top: 6px;
+  width: 0;
+}
+.proposalShape {
+  position: absolute;
+  left: -7px;
+  width: 14px;
+  height: 18px;
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+  background: rgb(var(--proposal));
+  transform-origin: top center;
+}
+.proposalMark[data-proposal-kind='note'] .proposalShape::after {
+  content: '';
+  position: absolute;
+  inset: 2.5px;
+  clip-path: inherit;
+  background: #111a18;
+}
+.proposalMark[data-focused='true'] .proposalShape {
+  transform: scale(1.3);
+}
+.proposalMark[data-focused='true'] {
+  filter: drop-shadow(0 0 5px rgb(var(--proposal)));
+}
+.proposalMark .proposalLabel {
+  top: 31px;
+}
+.proposalBand,
+.proposalLine,
+.proposalMark {
+  transition: opacity 0.12s;
+}
+/* At rest every preview stays dim; only the proposal in focus goes full strength. */
+.proposalLayer [data-focused='false'] {
+  opacity: 0.3;
+}
+.proposalLayer [data-focused='true'] {
+  z-index: 1;
+}
+.proposalBand[data-focused='true'] {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--proposal), 0.5) 0 6px,
+    rgba(var(--proposal), 0.28) 6px 12px
+  );
+  border-inline: 3px solid rgb(var(--proposal-edge));
+  box-shadow: 0 0 10px rgb(var(--proposal));
+}
+.proposalLine[data-focused='true'] {
+  margin-left: -1.5px;
+  border-left: 3px solid rgb(var(--proposal-edge));
+  box-shadow: 0 0 10px rgb(var(--proposal));
+}
+.proposalLabel {
+  position: absolute;
+  /* Below the ruler, so the time labels stay readable. */
+  top: 37px;
+  left: 6px;
+  max-width: min(260px, 60vw);
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgb(var(--proposal));
+  color: #141516;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.proposalLabel[data-flip='true'] {
+  left: auto;
+  right: 6px;
+}
+.proposalCount {
+  padding: 1px 7px;
+  border: 1px solid #4a4466;
+  border-radius: 9px;
+  color: #c9bff0;
+  font-size: 10px;
+}

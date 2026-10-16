@@ -473,6 +473,15 @@
   outline: 1px solid var(--teal-light);
   outline-offset: -1px;
 }
+/* The picked card (VC-170): its left border runs all the way round, in the proposer's colour. */
+.pc[data-picked='true'] {
+  outline: 2px solid #8f7bd8;
+  outline-offset: -2px;
+}
+.pcSpoken[data-picked='true'],
+.pcBoth[data-picked='true'] {
+  outline-color: #d3b26b;
+}
 .pcSpoken {
   border-left-color: #d3b26b;
   background: #24241d;

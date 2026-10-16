@@ -19,6 +19,7 @@ import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
 import { editSnap, editTargets, scrubSnap } from './playheadSnap';
 import { rulerTicks, parsePosition, positionText } from './timelineRuler';
 import { framePosition, parseFramePosition } from './framePosition';
+import { previewKindLabel, type ProposalPreview } from '../../electron/proposal-previews';
 
 export function Timeline({
   recording,
@@ -47,6 +48,9 @@ export function Timeline({
   onTrim,
   onTrimActive,
   onScrubActive,
+  proposals = [],
+  proposalFocus = null,
+  proposalReveal = false,
 }: {
   recording: Recording;
   projectId?: string;
@@ -74,6 +78,12 @@ export function Timeline({
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
   onScrubActive?: (active: boolean) => void;
+  /** Pending proposals for this recording, previewed faintly and read-only (VC-170). */
+  proposals?: ProposalPreview[];
+  /** The transcript window card in focus; its preview is drawn brighter. */
+  proposalFocus?: string | null;
+  /** The focused proposal's card was picked (clicked), so a zoomed view may pan to it. */
+  proposalReveal?: boolean;
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
@@ -194,6 +204,30 @@ export function Timeline({
   useEffect(() => {
     wheelState.current = { view, fullStart, fullEnd, minimum, identity };
   });
+  // VC-170: a proposal picked outside a zoomed view pans the view to it once; hovering a card
+  // never moves the view, and the playhead stays where it is.
+  const focusedPreview =
+    proposalFocus == null ? undefined : proposals.find((p) => p.cards.includes(proposalFocus));
+  const focusStart = focusedPreview?.start,
+    focusEnd = focusedPreview?.end ?? focusedPreview?.start;
+  useEffect(() => {
+    if (focusStart == null || focusEnd == null || !proposalReveal) return;
+    const { view, fullStart, fullEnd, minimum, identity } = wheelState.current;
+    if (focusStart >= view.start && focusEnd <= view.end) return;
+    if (drag.current || markerDrag.current || pointer.current != null) return;
+    const width = view.end - view.start;
+    const middle =
+      focusEnd - focusStart < width * 0.9 ? (focusStart + focusEnd) / 2 : focusStart + width * 0.45;
+    setViewport({
+      identity,
+      view: fitViewport(
+        { start: middle - width / 2, end: middle + width / 2 },
+        fullStart,
+        fullEnd,
+        minimum,
+      ),
+    });
+  }, [focusStart, focusEnd, proposalReveal]);
   useEffect(() => {
     const el = track.current!;
     const wheel = (e: WheelEvent) => {
@@ -452,6 +486,15 @@ export function Timeline({
         {positionError && (
           <span className={s.positionError} role="alert">
             {positionError}
+          </span>
+        )}
+        {proposals.length > 0 && (
+          <span
+            className={s.proposalCount}
+            data-proposal-count={proposals.length}
+            title="Shown faintly on the timeline. Decide them on the cards in the Transcript window."
+          >
+            {proposals.length} {proposals.length === 1 ? 'proposal' : 'proposals'} waiting
           </span>
         )}
         {legend && (
@@ -960,6 +1003,49 @@ export function Timeline({
                 </div>
               );
             })}
+          </div>
+        )}
+        {proposals.length > 0 && (
+          <div
+            className={s.proposalLayer}
+            data-proposal-previews={proposals.length}
+            data-has-focus={!!focusedPreview}
+          >
+            {proposals
+              .filter((p) => p.start <= end && (p.end ?? p.start) >= start)
+              .map((p) => {
+                const band = p.end != null && p.end > p.start;
+                // Splits cut through the track; markers and notes sit above it, in the ruler.
+                const mark = !band && (p.kind === 'marker' || p.kind === 'note');
+                const focused = proposalFocus != null && p.cards.includes(proposalFocus);
+                const who = p.who === 'spoken' ? 'Spoken' : 'Agent';
+                return (
+                  <div
+                    key={p.cards[0]}
+                    className={band ? s.proposalBand : mark ? s.proposalMark : s.proposalLine}
+                    data-proposal-preview={p.cards[0]}
+                    data-proposal-kind={p.kind}
+                    data-start={p.start}
+                    data-who={p.who}
+                    data-focused={focused}
+                    style={{
+                      left: percent(p.start),
+                      ...(band
+                        ? {
+                            width: `${(100 * (Math.min(end, p.end!) - Math.max(start, p.start))) / span}%`,
+                          }
+                        : {}),
+                    }}
+                  >
+                    {mark && <i className={s.proposalShape} />}
+                    {focused && (
+                      <span className={s.proposalLabel} data-flip={(p.start - start) / span > 0.7}>
+                        {who} · {previewKindLabel(p.kind)} · {p.label}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
         {current >= start && current <= end && (

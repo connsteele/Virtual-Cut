@@ -71,6 +71,25 @@ export function TranscriptWindow() {
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false);
   const [position, setPosition] = useState({ projectId: '', sourceId: '', time: 0 });
+  // VC-170: a card in focus (details open, time code hovered, keyboard focus) brightens its
+  // preview on the main timeline. While several are, the newest wins. Only a picked card
+  // (clicked, or its time code) may pan a zoomed timeline to it.
+  const previewCards = useRef<{ card: string; picked: boolean }[]>([]);
+  const previewOwner = useRef({ projectId: '', sourceId: '' });
+  const preview = useCallback(
+    (card: string, active: boolean, picked: boolean) => {
+      const before = previewCards.current.at(-1);
+      previewCards.current = previewCards.current.filter((c) => c.card !== card);
+      if (active) previewCards.current.push({ card, picked });
+      const after = previewCards.current.at(-1);
+      const { projectId, sourceId } = previewOwner.current;
+      if ((after?.card !== before?.card || after?.picked !== before?.picked) && projectId)
+        background(
+          api.focus(projectId, sourceId, after?.card ?? null, !!after?.picked).catch(() => {}),
+        );
+    },
+    [api],
+  );
   const [selection, setSelection] = useState<{
     transcriptId: string;
     segment: TranscriptSegment;
@@ -183,6 +202,10 @@ export function TranscriptWindow() {
     session?.transcripts[0];
   const currentId = selected?.id || '';
   const projectId = session?.projectId || '';
+  const previewSource = session?.sourceId || '';
+  useEffect(() => {
+    previewOwner.current = { projectId, sourceId: previewSource };
+  }, [projectId, previewSource]);
   const editRevision = JSON.stringify(session?.edits);
   const pageKey = JSON.stringify([identity.current, currentId, pageIndex, search, filter]);
   reading.current =
@@ -434,6 +457,7 @@ export function TranscriptWindow() {
           session={session}
           busy={busy}
           playhead={playhead}
+          onPreview={preview}
           onSeek={(time) => {
             setFollow(false);
             background(action(() => api.seek(projectId, session.sourceId, time)));
@@ -943,6 +967,7 @@ export function TranscriptWindow() {
                           session={session}
                           busy={busy}
                           playhead={playhead}
+                          onPreview={preview}
                           onSeek={(time) => {
                             setFollow(false);
                             background(action(() => api.seek(projectId, session.sourceId, time)));

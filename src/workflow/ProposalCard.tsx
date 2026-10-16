@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { formatTimecode } from './transcriptTime';
 import s from './TranscriptWindow.module.css';
 
@@ -35,6 +35,7 @@ export function ProposalCard({
   onCancel,
   onUndo,
   onSeek,
+  onPreview,
   children,
 }: {
   id: string;
@@ -67,8 +68,24 @@ export function ProposalCard({
   /** Ctrl+Z while editing: undo the last change on this card. */
   onUndo: () => void;
   onSeek: (time: number) => void;
+  /** In focus or not: the pointer over the card, or the card picked (clicked, or reached by key). */
+  onPreview?: (active: boolean, picked: boolean) => void;
   children?: ReactNode;
 }) {
+  // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
+  // details don't pick it; Esc, or focus moving elsewhere in this window, lets it go.
+  const [hovered, setHovered] = useState(false),
+    [picked, setPicked] = useState(false);
+  const active = status === 'pending' && (hovered || picked);
+  const previewed = useRef(onPreview);
+  useEffect(() => {
+    previewed.current = onPreview;
+  });
+  useEffect(() => {
+    if (!active) return;
+    previewed.current?.(true, picked);
+    return () => previewed.current?.(false, false);
+  }, [active, picked]);
   const tags = (
     <>
       {who !== 'agent' && <span className={`${s.whoTag} ${s.spokenTag}`}>Spoken</span>}
@@ -130,6 +147,14 @@ export function ProposalCard({
       event.stopPropagation();
       return;
     }
+    if (event.key === 'Escape' && picked) {
+      // Let go entirely: no pick and no keyboard focus ring left on the card.
+      setPicked(false);
+      event.currentTarget.blur();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -143,7 +168,10 @@ export function ProposalCard({
         ...document.querySelectorAll<HTMLElement>('[data-proposal-card][data-status="pending"]'),
       ];
       const at = cards.indexOf(event.currentTarget);
-      cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length]?.focus();
+      const next = cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length];
+      // N and P pick the card they land on.
+      if (next) next.dataset.pick = 'true';
+      next?.focus();
     } else if (key === 'a' && !busy && !acceptDisabled) onAccept();
     else if (key === 'r' && !busy) onReject();
     else if (key === 'd') onToggle();
@@ -157,8 +185,25 @@ export function ProposalCard({
       className={`${s.pc} ${tone}${open ? ` ${s.pcOpen}` : ''}`}
       data-proposal-card={id}
       data-status="pending"
+      data-picked={picked}
       tabIndex={0}
       onKeyDown={keys}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest('button,input,textarea,select,a')) setPicked(true);
+      }}
+      onFocus={(e) => {
+        const card = e.currentTarget;
+        if (e.target === card && (card.dataset.pick || card.matches(':focus-visible')))
+          setPicked(true);
+        delete card.dataset.pick;
+      }}
+      onBlur={(e) => {
+        // Switching to the main window keeps the pick, so its preview stays where you look.
+        if (document.hasFocus() && !e.currentTarget.contains(e.relatedTarget as Node | null))
+          setPicked(false);
+      }}
     >
       <div className={s.pcLine1}>
         {tags}
@@ -217,13 +262,27 @@ export function ProposalCard({
           </button>
           {/* A range has two times to jump to: its start and its end. */}
           <span className={s.pcTimes}>
-            <button className={s.pcTime} title="Go to the start" onClick={() => onSeek(time)}>
+            <button
+              className={s.pcTime}
+              title="Go to the start"
+              onClick={() => {
+                setPicked(true);
+                onSeek(time);
+              }}
+            >
               {formatTimecode(time)}
             </button>
             {end != null && (
               <>
                 <span className={s.pcCut}>–</span>
-                <button className={s.pcTime} title="Go to the end" onClick={() => onSeek(end)}>
+                <button
+                  className={s.pcTime}
+                  title="Go to the end"
+                  onClick={() => {
+                    setPicked(true);
+                    onSeek(end);
+                  }}
+                >
                   {formatTimecode(end)}
                 </button>
               </>
