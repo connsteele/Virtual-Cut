@@ -180,21 +180,44 @@ try {
   await expect(spokenSplit).toHaveAttribute('data-focused', 'false');
   await expect(range).toHaveCSS('opacity', '0.3');
   await expect(spokenSplit).toHaveCSS('opacity', '0.3');
-  // Keyboard focus: the card itself, then N to the next card waiting for review.
-  await card('Siege scene').focus();
+  // Clicking the card itself picks it: a full outline in the proposer's colour, and its preview
+  // stays lit after the pointer leaves, and while you look at the main window.
+  const pick = (id) => card(id).locator('[class*="pcKind"]').click();
+  await pick('Siege scene');
+  await view.mouse.move(2, 2);
+  await expect(card('Siege scene')).toHaveAttribute('data-picked', 'true');
+  await expect(card('Siege scene')).toHaveCSS('outline-color', 'rgb(143, 123, 216)');
+  await card('Siege scene').screenshot({ path: path.join(dir, 'card-picked.png') });
   await expect(range).toHaveAttribute('data-focused', 'true');
   await expect(range).toContainText('Agent · Range marker · Siege scene');
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(1);
   await main.bringToFront();
+  await expect(range).toHaveAttribute('data-focused', 'true');
   await timeline.screenshot({ path: path.join(dir, 'preview-range-focused.png') });
+  // N picks the next card waiting for review; Esc lets the pick go.
   await view.bringToFront();
   await card('Siege scene').focus();
   await view.keyboard.press('n');
   await expect(range).toHaveAttribute('data-focused', 'false');
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(1);
-  // Details open keep a preview bright after focus leaves the card.
+  await view.keyboard.press('Escape');
+  await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(0);
+  // Opening details or using a card's buttons doesn't pick it.
   await card('cue:preview-mic:1').getByRole('button', { name: 'Details', exact: true }).click();
-  await view.evaluate(() => document.activeElement?.blur());
+  await view.mouse.move(2, 2);
+  await expect(card('cue:preview-mic:1')).toHaveAttribute('data-picked', 'false');
+  await expect(spokenSplit).toHaveAttribute('data-focused', 'false');
+  // A Split cuts through the track; a marker sits above it in the ruler, a note outlined.
+  const marker = preview('Bertrand arrives');
+  const shape = await marker.locator('i').boundingBox();
+  assert(shape.height < 30 && shape.y < track.y + 34, `a marker sits in the ruler: ${shape.y}`);
+  assert((await spokenSplit.boundingBox()).height > track.height * 0.8, 'a Split cuts through');
+  await card('Bertrand arrives').hover({ position: { x: 40, y: 10 } });
+  await expect(marker).toHaveAttribute('data-focused', 'true');
+  await main.bringToFront();
+  await timeline.screenshot({ path: path.join(dir, 'preview-marker-focused.png') });
+  await view.bringToFront();
+  await pick('cue:preview-mic:1');
   await view.mouse.move(2, 2);
   await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
   await main.bringToFront();
@@ -208,7 +231,8 @@ try {
   assert(viewEnd < at(0.7), `zoomed in before the clip band: ${viewEnd}`);
   const playhead = await main.locator('video').evaluate((v) => v.currentTime);
   await view.bringToFront();
-  await card('cue:preview-mic:2').focus();
+  await pick('cue:preview-mic:2');
+  await view.mouse.move(2, 2);
   await expect(spokenClip).toHaveAttribute('data-focused', 'true');
   await expect
     .poll(async () => Number(await scrubber.getAttribute('data-view-start')))
@@ -224,11 +248,8 @@ try {
   });
   await timeline.getByRole('button', { name: 'Fit full recording' }).click();
   await view.bringToFront();
-  await card('cue:preview-mic:1')
-    .getByRole('button', { name: 'Hide details', exact: true })
-    .click();
-  await card('cue:preview-mic:1').getByRole('button', { name: 'Details', exact: true }).click();
-  await view.evaluate(() => document.activeElement?.blur());
+  await pick('cue:preview-mic:1');
+  await view.mouse.move(2, 2);
   await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
 
   // The compact window keeps every preview on the track, and the track keeps arrow keys.

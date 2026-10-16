@@ -68,13 +68,15 @@ export function ProposalCard({
   /** Ctrl+Z while editing: undo the last change on this card. */
   onUndo: () => void;
   onSeek: (time: number) => void;
-  /** In focus or not: details open, the pointer over the card, or keyboard focus on it. */
+  /** In focus or not: the pointer over the card, or the card picked (clicked, or reached by key). */
   onPreview?: (active: boolean) => void;
   children?: ReactNode;
 }) {
+  // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
+  // details don't pick it; Esc, or focus moving elsewhere in this window, lets it go.
   const [hovered, setHovered] = useState(false),
-    [focused, setFocused] = useState(false);
-  const active = status === 'pending' && (open || hovered || focused);
+    [picked, setPicked] = useState(false);
+  const active = status === 'pending' && (hovered || picked);
   const previewed = useRef(onPreview);
   useEffect(() => {
     previewed.current = onPreview;
@@ -145,6 +147,12 @@ export function ProposalCard({
       event.stopPropagation();
       return;
     }
+    if (event.key === 'Escape' && picked) {
+      setPicked(false);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -158,7 +166,10 @@ export function ProposalCard({
         ...document.querySelectorAll<HTMLElement>('[data-proposal-card][data-status="pending"]'),
       ];
       const at = cards.indexOf(event.currentTarget);
-      cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length]?.focus();
+      const next = cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length];
+      // N and P pick the card they land on.
+      if (next) next.dataset.pick = 'true';
+      next?.focus();
     } else if (key === 'a' && !busy && !acceptDisabled) onAccept();
     else if (key === 'r' && !busy) onReject();
     else if (key === 'd') onToggle();
@@ -172,13 +183,24 @@ export function ProposalCard({
       className={`${s.pc} ${tone}${open ? ` ${s.pcOpen}` : ''}`}
       data-proposal-card={id}
       data-status="pending"
+      data-picked={picked}
       tabIndex={0}
       onKeyDown={keys}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest('button,input,textarea,select,a')) setPicked(true);
+      }}
+      onFocus={(e) => {
+        const card = e.currentTarget;
+        if (e.target === card && (card.dataset.pick || card.matches(':focus-visible')))
+          setPicked(true);
+        delete card.dataset.pick;
+      }}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+        // Switching to the main window keeps the pick, so its preview stays where you look.
+        if (document.hasFocus() && !e.currentTarget.contains(e.relatedTarget as Node | null))
+          setPicked(false);
       }}
     >
       <div className={s.pcLine1}>

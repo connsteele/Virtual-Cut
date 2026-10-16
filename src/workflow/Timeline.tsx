@@ -1012,12 +1012,14 @@ export function Timeline({
               .filter((p) => p.start <= end && (p.end ?? p.start) >= start)
               .map((p) => {
                 const band = p.end != null && p.end > p.start;
+                // Splits cut through the track; markers and notes sit above it, in the ruler.
+                const mark = !band && (p.kind === 'marker' || p.kind === 'note');
                 const focused = proposalFocus != null && p.cards.includes(proposalFocus);
                 const who = p.who === 'spoken' ? 'Spoken' : 'Agent';
                 return (
                   <div
                     key={p.cards[0]}
-                    className={band ? s.proposalBand : s.proposalLine}
+                    className={band ? s.proposalBand : mark ? s.proposalMark : s.proposalLine}
                     data-proposal-preview={p.cards[0]}
                     data-proposal-kind={p.kind}
                     data-who={p.who}
@@ -1031,6 +1033,7 @@ export function Timeline({
                         : {}),
                     }}
                   >
+                    {mark && <i className={s.proposalShape} />}
                     {focused && (
                       <span className={s.proposalLabel} data-flip={(p.start - start) / span > 0.7}>
                         {who} · {previewKindLabel(p.kind)} · {p.label}

@@ -549,29 +549,47 @@
   );
   border-inline: 2px solid rgba(var(--proposal-edge), 0.85);
 }
-.proposalBand::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 5px;
-  background: rgb(var(--proposal));
-}
 .proposalLine {
   width: 0;
   margin-left: -1px;
   border-left: 2px solid rgba(var(--proposal-edge), 0.8);
 }
-/* A flag in the ruler, like a real marker's, so a line is easy to find zoomed out. */
-.proposalLine::before {
+/* Markers and notes live above the footage, as a marker shape in the ruler; a note's is
+   outlined. */
+.proposalMark {
+  --proposal: 143, 123, 216;
+  position: absolute;
+  top: 6px;
+  width: 0;
+}
+.proposalShape {
+  position: absolute;
+  left: -7px;
+  width: 14px;
+  height: 18px;
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+  background: rgb(var(--proposal));
+  transform-origin: top center;
+}
+.proposalMark[data-proposal-kind='note'] .proposalShape::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: -6px;
-  border-inline: 5px solid transparent;
-  border-top: 10px solid rgb(var(--proposal));
+  inset: 2.5px;
+  clip-path: inherit;
+  background: #111a18;
+}
+.proposalMark[data-focused='true'] .proposalShape {
+  transform: scale(1.3);
+}
+.proposalMark[data-focused='true'] {
+  filter: drop-shadow(0 0 5px rgb(var(--proposal)));
+}
+.proposalMark .proposalLabel {
+  top: 31px;
 }
 .proposalBand,
-.proposalLine {
+.proposalLine,
+.proposalMark {
   transition: opacity 0.12s;
 }
 /* At rest every preview stays dim; only the proposal in focus goes full strength. */
