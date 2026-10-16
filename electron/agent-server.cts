@@ -268,7 +268,9 @@ export function registerAgentAccess(options: {
     read<DecisionsInput>(
       'get_proposal_decisions',
       "The user's decisions on proposals: pending, accepted (with the position, end, title and note " +
-        'chosen, and how far it moved) or rejected. Filter by recording, proposal ids or status.',
+        'chosen, how far it moved, and kindChange when a clip range was kept as a range marker or ' +
+        'a range marker as a clip) ' +
+        'or rejected. Filter by recording, proposal ids or status.',
       decisionsInput,
       (s, a) => proposalDecisions(s, a),
       (a, n) => `Proposal decisions${a.recording_id ? `: ${n(a.recording_id)}` : ''}`,

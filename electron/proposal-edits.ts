@@ -96,6 +96,18 @@ export function applyProposalCommand(
     status: command.action === 'accept-proposal' ? 'accepted' : 'rejected',
     decided: now,
   };
+  // A clip range may be kept as a range marker and a range marker as a clip (VC-186); a point
+  // marker and the other kinds keep their kind.
+  const asRange = command.acceptAs === 'range-marker',
+    asClip = command.acceptAs === 'clip';
+  if (
+    command.acceptAs != null &&
+    (command.action !== 'accept-proposal' ||
+      !(asRange
+        ? proposal.kind === 'clip'
+        : asClip && proposal.kind === 'mark' && proposal.end !== undefined))
+  )
+    throw new Error('Only a clip range or a range marker can be accepted as the other kind.');
   if (command.action === 'reject-proposal') {
     return { ...structuredClone(model), cueDecisions: [...(model.cueDecisions || []), decision] };
   }
@@ -112,9 +124,11 @@ export function applyProposalCommand(
   const title = (command.title ?? proposal.title).trim(),
     text = (command.text ?? proposal.text).trim();
   if (proposal.kind !== 'cut') {
-    decision.title = title.slice(0, 200);
+    decision.title = title.slice(0, asRange ? 100 : 200);
     decision.text = text;
   }
+  if (asRange) decision.kindChange = { from: 'clip-range', to: 'range-marker' };
+  if (asClip) decision.kindChange = { from: 'range-marker', to: 'clip-range' };
   if (proposal.kind === 'cut') {
     const intersecting = next.clips.filter(
       (c) =>
@@ -153,7 +167,7 @@ export function applyProposalCommand(
       decision.title = clip.name;
       decision.text = second;
     }
-  } else if (proposal.kind === 'clip') {
+  } else if ((proposal.kind === 'clip' && !asRange) || asClip) {
     const end = command.endTime ?? proposal.end ?? Number.NaN;
     if (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
       throw new Error('Clip end must follow its start within this recording.');
@@ -181,11 +195,11 @@ export function applyProposalCommand(
       time: start,
     });
   } else {
-    // A range marker labels part of a continuous scene (VC-155).
+    // A range marker labels part of a continuous scene (VC-155), a clip range kept as one too.
     const end = command.endTime ?? proposal.end;
     if (
-      end !== undefined &&
-      (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
+      (end !== undefined || asRange) &&
+      (!Number.isFinite(end) || end! > record.duration || end! - start < 0.001)
     )
       throw new Error('Marker end must follow its start within this recording.');
     if (end !== undefined) decision.appliedEnd = end;

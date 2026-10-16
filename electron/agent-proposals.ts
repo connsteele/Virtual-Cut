@@ -392,6 +392,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
       submitted: p.submitted,
       status,
       decided: d?.decided,
+      // A clip range the user kept as a range marker instead (VC-186).
+      ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
       ...(chosen
         ? {
             chosen,

@@ -1,6 +1,6 @@
 import type { Clip, Marker, Model, Note } from './workflow-types.js';
 import type { AgentProposal } from './proposal-contracts.js';
-import type { CueDecision } from './transcript-contracts.js';
+import type { CueDecision, ProposalKindChange } from './transcript-contracts.js';
 import type { ExportRecord } from './export-contracts.js';
 import { proposalDecision, proposalIntents } from './proposal-edits.js';
 
@@ -120,6 +120,8 @@ export interface FinalProposal {
     note?: string;
     clipNames?: { first: string; second: string };
   };
+  /** Accepted as the other range kind: clip range ↔ range marker (VC-186). */
+  kindChange?: ProposalKindChange;
   firstPass: boolean;
 }
 export interface BatchRecord {
@@ -382,7 +384,10 @@ export function finalState(
   }
   const inFirstPass = new Set(next.firstPass.flatMap((f) => f.proposals.map((p) => p.id)));
   // What accepting made, by item id, with the values chosen on the card.
-  const made = new Map<string, { proposalId: string; chosen: Comparable }>(),
+  const made = new Map<
+      string,
+      { proposalId: string; kind: 'clip' | 'marker' | 'note'; chosen: Comparable }
+    >(),
     splitBy = new Map<string, { proposalId: string; chosen: Comparable }>();
   for (const p of proposals) {
     const d = proposalDecision(decisions, p.id);
@@ -391,6 +396,7 @@ export function finalState(
     if (d.markerId)
       made.set(d.markerId, {
         proposalId: p.id,
+        kind: 'marker',
         chosen: {
           start: round(time),
           end: d.appliedEnd === undefined ? undefined : round(d.appliedEnd),
@@ -401,6 +407,7 @@ export function finalState(
     if (d.noteId)
       made.set(d.noteId, {
         proposalId: p.id,
+        kind: 'note',
         chosen: { start: round(time), name: d.title ?? p.title, note: d.text ?? p.text },
       });
     if (d.clipId && p.kind === 'cut') {
@@ -420,6 +427,7 @@ export function finalState(
         });
       made.set(d.clipId, {
         proposalId: p.id,
+        kind: 'clip',
         chosen: {
           start: round(time),
           ...(split ? { end: split.end } : {}),
@@ -429,6 +437,7 @@ export function finalState(
     } else if (d.clipId)
       made.set(d.clipId, {
         proposalId: p.id,
+        kind: 'clip',
         chosen: {
           start: round(time),
           end: d.appliedEnd === undefined ? undefined : round(d.appliedEnd),
@@ -466,14 +475,8 @@ export function finalState(
     const present = new Set([...now.clips, ...now.markers, ...now.notes].map((x) => x.id));
     const removedItems: FinalRecording['removedItems'] = [];
     for (const [id, m] of made)
-      if (!present.has(id) && proposals.find((p) => p.id === m.proposalId)?.sourceId === r.id) {
-        const kind = proposals.find((p) => p.id === m.proposalId)!.kind;
-        removedItems.push({
-          kind: kind === 'mark' ? 'marker' : kind === 'note' ? 'note' : 'clip',
-          id,
-          origin: { proposalId: m.proposalId },
-        });
-      }
+      if (!present.has(id) && proposals.find((p) => p.id === m.proposalId)?.sourceId === r.id)
+        removedItems.push({ kind: m.kind, id, origin: { proposalId: m.proposalId } });
     for (const kind of ['clips', 'markers', 'notes'] as const)
       for (const x of before?.[kind] || [])
         if (!present.has(x.id))
@@ -521,6 +524,7 @@ export function finalState(
         status: d?.status || 'pending',
         ...(d?.decided ? { decided: d.decided } : {}),
         ...(chosen ? { chosen } : {}),
+        ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
         firstPass: inFirstPass.has(p.id),
       };
     }),

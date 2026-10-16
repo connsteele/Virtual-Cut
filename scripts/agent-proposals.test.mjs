@@ -365,6 +365,107 @@ assert.equal(
 assert.throws(() => proposalDecisions(source, { proposal_ids: ['nope'] }), /no proposal "nope"/);
 assert.throws(() => proposalDecisions(source, { status: 'maybe' }), /status: Invalid option/);
 assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs');
+// VC-186: a clip range can be accepted as a range marker with the card's span, name and note.
+// The decision keeps the kind change; reopening takes the marker back. One way only.
+{
+  const before = model.markers.r1?.length || 0;
+  const asRange = applyProposalCommand(
+    model,
+    clip,
+    command(clip, 'accept-proposal', {
+      title: 'The fort battle',
+      text: 'Kept as part of the scene.',
+      time: 50,
+      endTime: 95,
+      acceptAs: 'range-marker',
+    }),
+    newId,
+  );
+  assert.equal(asRange.clips.length, model.clips.length, 'no clip is made');
+  assert.deepEqual(
+    (({ time, end, name, note }) => ({ time, end, name, note }))(asRange.markers.r1.at(-1)),
+    { time: 50, end: 95, name: 'The fort battle', note: 'Kept as part of the scene.' },
+  );
+  const kept = proposalDecision(asRange.cueDecisions, clip.id);
+  assert.equal(kept.status, 'accepted');
+  assert.deepEqual(kept.kindChange, { from: 'clip-range', to: 'range-marker' });
+  assert.equal(kept.clipId, undefined);
+  assert.equal(kept.markerId, asRange.markers.r1.at(-1).id);
+  validateEdits(structuredClone(asRange));
+  assert.throws(
+    () =>
+      validateEdits({
+        ...structuredClone(asRange),
+        cueDecisions: [{ ...kept, kindChange: { from: 'clip-range', to: 'note' } }],
+      }),
+    /Invalid cue decision/,
+  );
+  const row = proposalDecisions({ ...source, model: asRange }, { proposal_ids: [clip.id] })
+    .proposals[0];
+  assert.equal(row.kind, 'clip');
+  assert.deepEqual(row.kindChange, { from: 'clip-range', to: 'range-marker' });
+  assert.deepEqual(
+    [row.chosen.time, row.chosen.end, row.chosen.title],
+    [50, 95, 'The fort battle'],
+  );
+  assert.equal(
+    proposalDecisions({ ...source, model: next }, { proposal_ids: [clip.id] }).proposals[0]
+      .kindChange,
+    undefined,
+    'accepted as a clip: no kind change',
+  );
+  // Long clip titles are cut to a marker's 100 characters.
+  const long = applyProposalCommand(
+    model,
+    clip,
+    command(clip, 'accept-proposal', { title: 'x'.repeat(150), acceptAs: 'range-marker' }),
+    newId,
+  );
+  assert.equal(long.markers.r1.at(-1).name.length, 100);
+  assert.equal(proposalDecision(long.cueDecisions, clip.id).title.length, 100);
+  const reopened = applyProposalCommand(
+    asRange,
+    clip,
+    { ...command(clip, 'reopen-proposal'), expected: 'accepted' },
+    newId,
+  );
+  assert.equal(reopened.markers.r1?.length || 0, before, 'reopening takes the marker back');
+  assert.equal(proposalStatus(reopened.cueDecisions, clip.id), 'pending');
+  for (const [p, values, why] of [
+    [marker, { acceptAs: 'range-marker' }, 'a marker'],
+    [split, { acceptAs: 'range-marker', clipId: 'c1' }, 'a split'],
+    [note, { acceptAs: 'range-marker' }, 'a note'],
+    [clip, { acceptAs: 'clip' }, 'a clip as a clip'],
+    [marker, { acceptAs: 'clip' }, 'a point marker as a clip'],
+    [note, { acceptAs: 'clip' }, 'a note as a clip'],
+    [clip, { acceptAs: 'note' }, 'another kind'],
+  ])
+    assert.throws(
+      () => applyProposalCommand(model, p, command(p, 'accept-proposal', values), newId),
+      /Only a clip range or a range marker can be accepted as the other kind/,
+      why,
+    );
+  assert.throws(
+    () =>
+      applyProposalCommand(
+        model,
+        clip,
+        command(clip, 'reject-proposal', { acceptAs: 'range-marker' }),
+        newId,
+      ),
+    /Only a clip range or a range marker/,
+  );
+  assert.throws(
+    () =>
+      applyProposalCommand(
+        model,
+        clip,
+        command(clip, 'accept-proposal', { acceptAs: 'range-marker', endTime: 40 }),
+        newId,
+      ),
+    /Marker end must follow/,
+  );
+}
 // VC-155: several intents, Notion targets, range markers, and reworking a spoken cue.
 {
   const [range, notion, rework, retitle] = submit([
@@ -446,6 +547,29 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   const ranged = applyProposalCommand(model, range, command(range, 'accept-proposal', {}), newId);
   assert.equal(ranged.markers.r1.at(-1).end, 60);
   assert.equal(proposalDecision(ranged.cueDecisions, range.id).appliedEnd, 60);
+  // VC-186, the reverse: a range marker accepted as a clip makes a clip with its span, name and
+  // note, and the decision keeps the kind change.
+  const clipped = applyProposalCommand(
+    model,
+    range,
+    command(range, 'accept-proposal', { endTime: 55, acceptAs: 'clip' }),
+    newId,
+  );
+  assert.equal(clipped.markers.r1?.length || 0, model.markers.r1?.length || 0, 'no marker');
+  const madeClip = clipped.clips.at(-1);
+  assert.deepEqual(
+    [madeClip.start, madeClip.end, madeClip.name, madeClip.note, madeClip.folder],
+    [range.time, 55, range.title, range.text || undefined, '_Review'],
+  );
+  const clippedDecision = proposalDecision(clipped.cueDecisions, range.id);
+  assert.deepEqual(clippedDecision.kindChange, { from: 'range-marker', to: 'clip-range' });
+  assert.equal(clippedDecision.clipId, madeClip.id);
+  validateEdits(structuredClone(clipped));
+  assert.deepEqual(
+    proposalDecisions({ ...source, model: clipped }, { proposal_ids: [range.id] }).proposals[0]
+      .kindChange,
+    { from: 'range-marker', to: 'clip-range' },
+  );
   assert.throws(
     () =>
       applyProposalCommand(model, range, command(range, 'accept-proposal', { endTime: 10 }), newId),

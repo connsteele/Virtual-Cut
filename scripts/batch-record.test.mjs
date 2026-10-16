@@ -283,6 +283,83 @@ assert.deepEqual(
     { start: 5, end: 10 },
   ],
 );
+// VC-186: a clip range accepted as a range marker is the agent's suggestion, kept as a range:
+// the marker links to it, the proposal carries the kind change, and removing the marker later
+// lists a marker, not a clip.
+{
+  const clip = proposal('p6', 'clip', { time: 20, end: 30, title: 'Fort scene', text: 'Part' });
+  const base = { ...emptyModel(), recordings: [recording] };
+  const kept = applyProposalCommand(
+    base,
+    clip,
+    {
+      action: 'accept-proposal',
+      proposalId: clip.id,
+      sourceId: 'r1',
+      projectId: 'p1',
+      transcriptId: '',
+      segmentId: 0,
+      expected: 'null',
+      acceptAs: 'range-marker',
+    },
+    () => 'range1',
+    '2026-10-15T03:00:00Z',
+  );
+  const input = {
+    project,
+    batch,
+    proposals: [clip],
+    exports: [],
+    projectRevision: 12,
+    now: '2026-10-15T03:05:00Z',
+  };
+  const ranged = finalState(undefined, { ...input, model: kept });
+  assert.deepEqual(
+    ranged.final.recordings[0].markers.map((m) => [m.id, m.time, m.end, m.name, m.origin]),
+    [['range1', 20, 30, 'Fort scene', { proposalId: 'p6' }]],
+  );
+  assert.deepEqual(ranged.final.recordings[0].clips, []);
+  assert.deepEqual(ranged.final.proposals[0], {
+    id: 'p6',
+    status: 'accepted',
+    decided: '2026-10-15T03:00:00Z',
+    chosen: { time: 20, end: 30, title: 'Fort scene', note: 'Part' },
+    kindChange: { from: 'clip-range', to: 'range-marker' },
+    firstPass: true,
+  });
+  assert.equal(ranged.firstPass[0].proposals[0].kind, 'clip', 'the first pass keeps what it was');
+  const gone = finalState(undefined, { ...input, model: { ...kept, markers: { r1: [] } } });
+  assert.deepEqual(gone.final.recordings[0].removedItems, [
+    { kind: 'marker', id: 'range1', origin: { proposalId: 'p6' } },
+  ]);
+  // The reverse: a range marker kept as a clip links the clip to the suggestion.
+  const range = proposal('p7', 'mark', { time: 40, end: 60, title: 'Talk', text: 'Part' });
+  const asClip = applyProposalCommand(
+    base,
+    range,
+    {
+      action: 'accept-proposal',
+      proposalId: range.id,
+      sourceId: 'r1',
+      projectId: 'p1',
+      transcriptId: '',
+      segmentId: 0,
+      expected: 'null',
+      acceptAs: 'clip',
+    },
+    () => 'clip1',
+    '2026-10-15T03:00:00Z',
+  );
+  const clipped = finalState(undefined, { ...input, proposals: [range], model: asClip });
+  assert.deepEqual(
+    clipped.final.recordings[0].clips.map((c) => [c.id, c.start, c.end, c.name, c.origin]),
+    [['clip1', 40, 60, 'Talk', { proposalId: 'p7' }]],
+  );
+  assert.deepEqual(clipped.final.proposals[0].kindChange, {
+    from: 'range-marker',
+    to: 'clip-range',
+  });
+}
 assert.equal(batchOf(model, 'b1', 'r1'), 'b1');
 assert.equal(batchOf(model, 'b1', 'r2'), 'b2');
 assert.equal(batchOf(model, 'b1', 'gone'), undefined);
