@@ -72,8 +72,14 @@ before changing cutting, timestamps, mic removal or transcription.
   snapped time beside the spoken one. Measure any cue change against Connor's tagged notes
   (VC-128).
 - A sprint gets its own branch (`sprint-N`) cut from the milestone branch. Each ticket works on
-  `sprint-N-vc-NNN` off it and is merged in before the next ticket starts. The sprint branch
-  goes back to the milestone branch once its review passes.
+  `sprint-N-vc-NNN` off it. Tickets that share no files may run side by side, each in its own
+  git worktree with a node_modules junction to the main install. A ticket is merged into the
+  sprint branch after Connor accepts it in its own thread. After every merge, run the focused
+  desktop checks of all tickets merged so far before the next ticket starts or merges, because
+  parallel tickets can't see each other's changes. The sprint branch goes back to the milestone
+  branch once its review passes.
+- When a review changes a ticket's scope, the ticket thread writes the new behavior down as a
+  pending edit to the ticket, so it is ready when Connor says "apply".
 - Whenever Connor has to check something, a build containing the change must exist and be
   linked first. Never describe unbuilt behavior as ready to check.
 - Push or merge only what Connor has approved.
