@@ -32,6 +32,19 @@ beside what was exported, a Split snap to the end of a black screen, and transcr
       that already has an older transcript runs it again instead of skipping it. Older transcripts
       are kept.
 
+## Review round (October 15)
+
+Connor reviewed on his first real batch. Fixes, in test builds 0.4.21-2 to -4:
+
+- Transcript opened the previous recording after a batch switch, because the button sent the
+  last recording clicked rather than the one on screen. It now opens the shown recording, and
+  the window title reads "Transcript · <recording> · Virtual Cut" (M353).
+- A batch record kept its exports as "queued" after they finished. A finished export now updates
+  its state in the record (M350).
+
+Decisions: keep `run_intent`; the latest export or filing rewrites the final state; batch
+records stay in the profile after a project is deleted.
+
 ## Evidence
 
 Commits since 0.4.20 on branch `sprint-7` (from `m4-agents-mcp`), one ticket branch each, plus

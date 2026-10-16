@@ -11,6 +11,10 @@ cutting where the black ends, with the spoken time beside it. Transcription runs
 default, about twice as fast with the same result; vocabulary hints stay at batch 1. See [the
 0.4.21 review](docs/review-0.4.21.md) and [decision 0018](docs/decisions/0018-batch-records.md).
 
+Review round (test builds 0.4.21-2 to -4): Transcript opens the recording on screen, not the
+last one clicked, and its window title reads "Transcript · <recording> · Virtual Cut"; a batch
+record follows each export to its end instead of saying "queued".
+
 ## 0.4.20 — Lossless audio, ALAC included (October 9, 2026)
 
 ALAC recordings play with sound everywhere. Each track's listening copy is now lossless: audio
