@@ -18,6 +18,17 @@ const source = path.join(dir, 'black-screen.mp4'),
   cache = path.join(dir, 'cache'),
   file = path.join(dir, 'split-snap.vcut');
 await mkdir(cache);
+// Background media work after import can still hold the source open for a moment on Windows.
+const renameWhenFree = async (from, to) => {
+  for (let wait = 100; ; wait *= 2) {
+    try {
+      return await rename(from, to);
+    } catch (error) {
+      if (!['EBUSY', 'EPERM'].includes(error.code) || wait > 6400) throw error;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+};
 await new Promise((resolve, reject) => {
   const scene = (d) => `color=c=0x183c36:size=640x360:rate=30:d=${d}`;
   const p = spawn(
@@ -131,9 +142,9 @@ store.save(before, {
 await service.checkpoint(id);
 // A snap whose FFmpeg pass fails rejects, is not remembered, and leaves the queue working.
 const moved = `${source}.away`;
-await rename(source, moved);
+await renameWhenFree(source, moved);
 await assert.rejects(service.splitSnap(id, recording.id, 9.5));
-await rename(moved, source);
+await renameWhenFree(moved, source);
 assert.equal((await service.splitSnap(id, recording.id, 9.5))?.time, 8.5);
 // A batch record that cannot be saved is logged, and the export carries on (VC-182).
 const blocked = service.batchRecords.file(id, batchId);

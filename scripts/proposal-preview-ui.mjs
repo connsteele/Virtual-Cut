@@ -290,7 +290,7 @@ try {
   // Deciding a proposal takes its preview off; accepted ones are real markers or clips.
   await view.bringToFront();
   await card('Siege scene')
-    .getByRole('button', { name: 'Accept range marker', exact: true })
+    .getByRole('button', { name: 'Accept as range marker', exact: true })
     .click();
   await expect(card('Siege scene')).toHaveAttribute('data-status', 'accepted');
   await expect(range).toHaveCount(0);
