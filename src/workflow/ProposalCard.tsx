@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { formatTimecode } from './transcriptTime';
 import s from './TranscriptWindow.module.css';
 
@@ -35,6 +35,7 @@ export function ProposalCard({
   onCancel,
   onUndo,
   onSeek,
+  onPreview,
   children,
 }: {
   id: string;
@@ -67,8 +68,26 @@ export function ProposalCard({
   /** Ctrl+Z while editing: undo the last change on this card. */
   onUndo: () => void;
   onSeek: (time: number) => void;
+  /** In focus or not: details open, time code hovered, or keyboard focus on the card. */
+  onPreview?: (active: boolean) => void;
   children?: ReactNode;
 }) {
+  const [hovered, setHovered] = useState(false),
+    [focused, setFocused] = useState(false);
+  const active = status === 'pending' && (open || hovered || focused);
+  const previewed = useRef(onPreview);
+  useEffect(() => {
+    previewed.current = onPreview;
+  });
+  // Editing swaps the time codes for fields, so the pointer never leaves them.
+  useEffect(() => {
+    if (editing) setHovered(false);
+  }, [editing]);
+  useEffect(() => {
+    if (!active) return;
+    previewed.current?.(true);
+    return () => previewed.current?.(false);
+  }, [active]);
   const tags = (
     <>
       {who !== 'agent' && <span className={`${s.whoTag} ${s.spokenTag}`}>Spoken</span>}
@@ -159,6 +178,10 @@ export function ProposalCard({
       data-status="pending"
       tabIndex={0}
       onKeyDown={keys}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+      }}
     >
       <div className={s.pcLine1}>
         {tags}
@@ -216,7 +239,11 @@ export function ProposalCard({
             {name}
           </button>
           {/* A range has two times to jump to: its start and its end. */}
-          <span className={s.pcTimes}>
+          <span
+            className={s.pcTimes}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+          >
             <button className={s.pcTime} title="Go to the start" onClick={() => onSeek(time)}>
               {formatTimecode(time)}
             </button>

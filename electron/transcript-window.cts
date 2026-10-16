@@ -10,6 +10,7 @@ import { SpeechSetup } from './speech-setup.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
 import { applyProposalCommand, proposalStatus } from './proposal-edits.js';
+import { proposalPreviews } from './proposal-previews.js';
 import { transcriptHandoff, transcriptSrt, transcriptSaveSuggestion } from './transcript-export.js';
 import type { TranscriptApi, TranscriptCommand } from './transcript-contracts.js' with {
   'resolution-mode': 'import',
@@ -73,7 +74,9 @@ export function registerTranscriptWindow(
         operation: name,
       };
       if (
-        !['session', 'page', 'pageAt', 'runtime', 'splitSnap'].includes(name) &&
+        !['session', 'page', 'pageAt', 'runtime', 'splitSnap', 'previews', 'focus'].includes(
+          name,
+        ) &&
         !(name === 'speechSetup' && args[0] === 'status')
       )
         diagnostics.record('transcript-action', fields);
@@ -156,6 +159,15 @@ export function registerTranscriptWindow(
       });
       window.on('closed', () => {
         window = null;
+        // No card is in focus once the transcript window is gone (VC-170).
+        const projectId = projects.store?.data.project.id,
+          editor = main();
+        if (projectId && editor && !editor.isDestroyed())
+          editor.webContents.send('transcript:focus-event', {
+            projectId,
+            sourceId: '',
+            card: null,
+          });
       });
       await window.loadURL(rendererUrl() + '#transcript');
     },
@@ -333,6 +345,31 @@ export function registerTranscriptWindow(
     main()?.webContents.send('transcript:seek-event', { projectId: id, sourceId, time });
   });
   handle('splitSnap', (id, sourceId, time) => projects.splitSnap(id, sourceId, time));
+  handle(
+    'previews',
+    async (id, sourceId) => {
+      const s = projects.require(id);
+      if (!s.data.model.recordings.some((r) => r.id === sourceId))
+        throw new Error('This recording is unavailable.');
+      // The newest finished mic transcript is the one whose cues wait on cards.
+      const mic = s.transcripts
+        .list(sourceId)
+        .find((t) => t.role === 'mic' && t.state === 'complete');
+      return proposalPreviews(
+        s.proposals.list(sourceId),
+        s.data.model,
+        mic,
+        mic ? s.transcripts.segments(mic.id) : [],
+      );
+    },
+    true,
+  );
+  handle('focus', async (id, sourceId, card) => {
+    if (card !== null && (typeof card !== 'string' || !card || card.length > 300))
+      throw new Error('Invalid proposal card.');
+    if (projects.store?.data.project.id !== id) return;
+    main()?.webContents.send('transcript:focus-event', { projectId: id, sourceId, card });
+  });
   handle(
     'command',
     (command) =>

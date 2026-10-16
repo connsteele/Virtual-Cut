@@ -88,6 +88,7 @@ import {
 import { clipColor } from './clipLayout';
 import { frameIndexes, useFrameIndexes } from './frameIndexes';
 import type { MediaJob } from '../../electron/project-contracts';
+import type { ProposalPreview } from '../../electron/proposal-previews';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
 import { background } from './background';
@@ -1033,6 +1034,49 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     };
   });
   const transcriptPositionSent = useRef(0);
+  // VC-170: every pending proposal for the recording on screen shows faintly on its timeline;
+  // the card in focus in the Transcript window is drawn brighter.
+  const [previews, setPreviews] = useState<{ sourceId: string; items: ProposalPreview[] }>({
+    sourceId: '',
+    items: [],
+  });
+  const [previewFocus, setPreviewFocus] = useState<{ sourceId: string; card: string | null }>({
+    sourceId: '',
+    card: null,
+  });
+  const [agentActivity, setAgentActivity] = useState(0);
+  const previewProject = project?.project.id,
+    previewRevision = project?.revision,
+    previewRoles = (project?.transcriptRoles?.[r.id] || []).join();
+  // A submission from an agent app changes no project revision; its activity says it landed.
+  useEffect(() => window.virtualCut?.agent?.onChanged(() => setAgentActivity((n) => n + 1)), []);
+  useEffect(() => {
+    const api = window.virtualCut?.transcript;
+    if (!api || !previewProject || !r.id) {
+      setPreviews({ sourceId: '', items: [] });
+      return;
+    }
+    let live = true;
+    const sourceId = r.id;
+    background(
+      api
+        .previews(previewProject, sourceId)
+        .then((items) => live && setPreviews({ sourceId, items }))
+        // Previews are a reading aid; the cards in the Transcript window stay the record.
+        .catch(() => live && setPreviews({ sourceId, items: [] })),
+    );
+    return () => {
+      live = false;
+    };
+  }, [previewProject, r.id, previewRevision, previewRoles, agentActivity]);
+  useEffect(
+    () =>
+      window.virtualCut?.transcript?.onFocus((event) => {
+        if (event.projectId === previewProject)
+          setPreviewFocus({ sourceId: event.sourceId, card: event.card });
+      }),
+    [previewProject],
+  );
   function addClip() {
     if (!r.duration) return;
     const start = Math.min(r.duration - 0.1, transport.current?.current() || 0),
@@ -1344,6 +1388,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         onActivityChange={workspace.setPlaybackActive}
         recording={indexed(record)}
         onSourceOpen={onSourceOpen}
+        proposals={!sequence && previews.sourceId === record.id ? previews.items : undefined}
+        proposalFocus={previewFocus.sourceId === record.id ? previewFocus.card : null}
         projectId={project?.project.id}
         bounds={bounds}
         selectedId={mid ? undefined : cid}

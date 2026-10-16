@@ -515,3 +515,79 @@
     --clip-row: 28px;
   }
 }
+/* Pending proposals (VC-170): faint, read-only previews in the proposer's colour. Pointer events
+   pass through, so scrubbing, markers and clips work as before. */
+.proposalLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.proposalBand,
+.proposalLine {
+  --proposal: 143, 123, 216;
+  --proposal-edge: 143, 123, 216;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.proposalLayer [data-who='spoken'] {
+  --proposal: 211, 178, 107;
+  --proposal-edge: 211, 178, 107;
+}
+/* An agent's rework of a spoken cue: the agent's fill with the spoken edge, as on its card. */
+.proposalLayer [data-who='both'] {
+  --proposal-edge: 211, 178, 107;
+}
+.proposalBand {
+  min-width: 2px;
+  background: rgba(var(--proposal), 0.13);
+  border-inline: 1px dashed rgba(var(--proposal-edge), 0.6);
+}
+.proposalLine {
+  width: 0;
+  border-left: 1px dashed rgba(var(--proposal-edge), 0.75);
+}
+.proposalLine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -5px;
+  border: 4.5px solid transparent;
+  border-top: 6px solid rgba(var(--proposal), 0.8);
+}
+.proposalBand[data-focused='true'] {
+  background: rgba(var(--proposal), 0.32);
+  border-inline: 2px solid rgb(var(--proposal-edge));
+}
+.proposalLine[data-focused='true'] {
+  border-left: 2px solid rgb(var(--proposal-edge));
+  box-shadow: 0 0 6px rgb(var(--proposal));
+}
+.proposalLabel {
+  position: absolute;
+  /* Below the ruler, so the time labels stay readable. */
+  top: 37px;
+  left: 6px;
+  max-width: min(260px, 60vw);
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgb(var(--proposal));
+  color: #141516;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.proposalLabel[data-flip='true'] {
+  left: auto;
+  right: 6px;
+}
+.proposalCount {
+  padding: 1px 7px;
+  border: 1px solid #4a4466;
+  border-radius: 9px;
+  color: #c9bff0;
+  font-size: 10px;
+}

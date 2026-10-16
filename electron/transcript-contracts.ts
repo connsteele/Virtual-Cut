@@ -203,6 +203,16 @@ export interface TranscriptApi {
   job(projectId: string, id: string, action: 'cancel' | 'retry' | 'pause'): Promise<void>;
   command(command: TranscriptCommand): Promise<void>;
   seek(projectId: string, sourceId: string, time: number): Promise<void>;
+  /** Pending proposals for one recording, as the main timeline previews them (VC-170). */
+  previews(
+    projectId: string,
+    sourceId: string,
+  ): Promise<import('./proposal-previews.js').ProposalPreview[]>;
+  /** The card in focus in the transcript window, or null; relayed to the main window. */
+  focus(projectId: string, sourceId: string, card: string | null): Promise<void>;
+  onFocus(
+    callback: (event: { projectId: string; sourceId: string; card: string | null }) => void,
+  ): () => void;
   /** Where a heard Split would snap to a black screen ending just before it (VC-165). */
   splitSnap(
     projectId: string,

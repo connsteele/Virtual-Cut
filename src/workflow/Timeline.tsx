@@ -19,6 +19,7 @@ import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
 import { editSnap, editTargets, scrubSnap } from './playheadSnap';
 import { rulerTicks, parsePosition, positionText } from './timelineRuler';
 import { framePosition, parseFramePosition } from './framePosition';
+import { previewKindLabel, type ProposalPreview } from '../../electron/proposal-previews';
 
 export function Timeline({
   recording,
@@ -47,6 +48,8 @@ export function Timeline({
   onTrim,
   onTrimActive,
   onScrubActive,
+  proposals = [],
+  proposalFocus = null,
 }: {
   recording: Recording;
   projectId?: string;
@@ -74,6 +77,10 @@ export function Timeline({
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
   onScrubActive?: (active: boolean) => void;
+  /** Pending proposals for this recording, previewed faintly and read-only (VC-170). */
+  proposals?: ProposalPreview[];
+  /** The transcript window card in focus; its preview is drawn brighter. */
+  proposalFocus?: string | null;
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
@@ -452,6 +459,15 @@ export function Timeline({
         {positionError && (
           <span className={s.positionError} role="alert">
             {positionError}
+          </span>
+        )}
+        {proposals.length > 0 && (
+          <span
+            className={s.proposalCount}
+            data-proposal-count={proposals.length}
+            title="Shown faintly on the timeline. Decide them on the cards in the Transcript window."
+          >
+            {proposals.length} {proposals.length === 1 ? 'proposal' : 'proposals'} waiting
           </span>
         )}
         {legend && (
@@ -960,6 +976,41 @@ export function Timeline({
                 </div>
               );
             })}
+          </div>
+        )}
+        {proposals.length > 0 && (
+          <div className={s.proposalLayer} data-proposal-previews={proposals.length}>
+            {proposals
+              .filter((p) => p.start <= end && (p.end ?? p.start) >= start)
+              .map((p) => {
+                const band = p.end != null && p.end > p.start;
+                const focused = proposalFocus != null && p.cards.includes(proposalFocus);
+                const who = p.who === 'spoken' ? 'Spoken' : 'Agent';
+                return (
+                  <div
+                    key={p.cards[0]}
+                    className={band ? s.proposalBand : s.proposalLine}
+                    data-proposal-preview={p.cards[0]}
+                    data-proposal-kind={p.kind}
+                    data-who={p.who}
+                    data-focused={focused}
+                    style={{
+                      left: percent(p.start),
+                      ...(band
+                        ? {
+                            width: `${(100 * (Math.min(end, p.end!) - Math.max(start, p.start))) / span}%`,
+                          }
+                        : {}),
+                    }}
+                  >
+                    {focused && (
+                      <span className={s.proposalLabel} data-flip={(p.start - start) / span > 0.7}>
+                        {who} · {previewKindLabel(p.kind)} · {p.label}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
         {current >= start && current <= end && (
