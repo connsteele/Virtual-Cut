@@ -224,6 +224,16 @@ try {
       notion: { target: 'new' },
       evidence: evidence([2, 3]),
     },
+    // VC-186: a clip range the user keeps as a range marker instead.
+    {
+      kind: 'clip',
+      time_seconds: mic.lines[0].start,
+      end_seconds: mic.lines[1].end,
+      title: 'Fort chapter opening',
+      note: 'From the chapter start to Bertrand.',
+      reason: 'The opening of the fort chapter.',
+      evidence: evidence([0]),
+    },
   ];
   // A stale citation refuses the whole call and names the field.
   const stale = await tool(client, 'submit_proposals', {
@@ -244,7 +254,7 @@ try {
   assert(!submitted.error, submitted.text);
   assert.equal(submitted.json().submitted[0].reworks, `mark cue at ${mic.lines[1].start} s`);
   const ids = submitted.json().submitted.map((p) => p.id);
-  assert.equal(ids.length, 4);
+  assert.equal(ids.length, 5);
   assert.equal(
     (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
       .markers.length,
@@ -258,7 +268,7 @@ try {
   assert.match(repeat.text, /repeats pending proposal/);
   await expect(
     panel.locator('[data-agent-activity] li', {
-      hasText: `Proposed 4 for ${recording.title} · waiting in the transcript window`,
+      hasText: `Proposed 5 for ${recording.title} · waiting in the transcript window`,
     }),
   ).toHaveCount(1);
 
@@ -268,11 +278,11 @@ try {
   view.on('pageerror', (e) => errors.push(e.message));
   await view.getByLabel('Select transcript', { exact: true }).selectOption('agent-mic');
   const cards = view.locator('[data-proposal-card]:not([data-proposal-card^="cue:"])');
-  await expect(cards).toHaveCount(4);
+  await expect(cards).toHaveCount(5);
   // The agent reworked the spoken Marker cue on line 1: one card with both tags, not two.
   await expect(view.locator('[data-proposal-card^="cue:"]')).toHaveCount(0);
-  await expect(view.locator('[data-filter="pending"] span')).toHaveText('4');
-  const [marker, split, clip, range] = ids.map((id) =>
+  await expect(view.locator('[data-filter="pending"] span')).toHaveText('5');
+  const [marker, split, clip, range, fort] = ids.map((id) =>
     view.locator(`[data-proposal-card="${id}"]`),
   );
   await expect(marker).toContainText('Spoken');
@@ -310,6 +320,13 @@ try {
   await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);
   await marker.scrollIntoViewIfNeeded();
   await view.screenshot({ path: path.join(dir, 'proposal-compact.png') });
+  // VC-186: both accept choices on an agent clip range stay on the card when compact.
+  await fort.scrollIntoViewIfNeeded();
+  for (const name of ['Accept as clip', 'Accept as range marker']) {
+    const box = await fort.getByRole('button', { name, exact: true }).boundingBox();
+    assert(box && box.x + box.width <= 500, `${name} fits the compact window`);
+  }
+  await view.screenshot({ path: path.join(dir, 'proposal-clip-choices-compact.png') });
   await resize(false);
 
   // Edit opens the fields in place; the nudges move the position by tenths.
@@ -353,6 +370,17 @@ try {
   await clip.focus();
   await view.keyboard.press('r');
   await expect(clip).toHaveAttribute('data-status', 'rejected');
+  // VC-186: an agent clip range offers Accept as clip and Accept as range marker; the second
+  // makes a range marker with the card's span, name and note.
+  await expect(fort.getByRole('button', { name: 'Accept as clip', exact: true })).toBeVisible();
+  await expect(marker.getByRole('button', { name: 'Accept as range marker' })).toHaveCount(0);
+  await fort.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-clip-choices.png') });
+  await fort.getByRole('button', { name: 'Accept as range marker', exact: true }).click();
+  await expect(fort).toHaveAttribute('data-status', 'accepted');
+  await expect(fort).toContainText('Clip range → Range marker');
+  await fort.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-clip-as-range.png') });
   // Reopening an accepted range marker takes the marker back.
   await range.getByRole('button', { name: 'Accept range marker', exact: true }).click();
   await expect(range).toHaveAttribute('data-status', 'accepted');
@@ -362,10 +390,10 @@ try {
         (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json().recordings[0]
           .markers.length,
     )
-    .toBe(2);
+    .toBe(3);
   await range.getByRole('button', { name: 'Reopen', exact: true }).click();
   await expect(range).toHaveAttribute('data-status', 'pending');
-  await expect(view.locator('[data-filter="accepted"] span')).toHaveText('2');
+  await expect(view.locator('[data-filter="accepted"] span')).toHaveText('3');
   await view.locator('[data-filter="rejected"]').click();
   await expect(cards).toHaveCount(1);
   await view.screenshot({ path: path.join(dir, 'proposal-rejected-filter.png') });
@@ -374,7 +402,7 @@ try {
   const decisions = (
     await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
   ).json();
-  assert.deepEqual(decisions.counts, { pending: 1, accepted: 2, rejected: 1 });
+  assert.deepEqual(decisions.counts, { pending: 1, accepted: 3, rejected: 1 });
   const row = (id) => decisions.proposals.find((p) => p.id === id);
   assert.equal(row(ids[0]).chosen.time, moved);
   assert.equal(row(ids[0]).movedSeconds, 0.5);
@@ -386,11 +414,20 @@ try {
   assert.equal(row(ids[2]).status, 'rejected');
   assert.equal(row(ids[3]).status, 'pending');
   assert.deepEqual(row(ids[3]).notion, { target: 'new' });
+  assert.equal(row(ids[4]).kind, 'clip');
+  assert.deepEqual(row(ids[4]).kindChange, { from: 'clip-range', to: 'range-marker' });
+  assert.equal(row(ids[4]).chosen.end, Math.round(mic.lines[1].end * 1000) / 1000);
+  assert.equal(row(ids[2]).kindChange, undefined);
   const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
   assert.deepEqual(
     annotated.recordings[0].markers.map((m) => m.name),
-    ['Bertrand at the gate'],
-    'the reopened range marker is gone',
+    ['Bertrand at the gate', 'Fort chapter opening'],
+    'the reopened range marker is gone; the clip range kept as a range marker stays',
+  );
+  const fortMarker = annotated.recordings[0].markers[1];
+  assert.deepEqual(
+    [fortMarker.time, fortMarker.end, fortMarker.note],
+    [mic.lines[0].start, mic.lines[1].end, 'From the chapter start to Bertrand.'],
   );
   assert.deepEqual(
     annotated.clips.map((c) => c.name),
@@ -454,7 +491,7 @@ try {
   assert.equal(kept.recordVersion, 1);
   assert.deepEqual(
     kept.runs.map((r) => [r.agent, r.model, r.intent, r.proposals]),
-    [['Claude Code', 'check-model', 'mic intent pass', 4]],
+    [['Claude Code', 'check-model', 'mic intent pass', 5]],
   );
   assert.equal(kept.runs[0].read.intentGuideVersion, '1');
   assert.deepEqual(
@@ -489,6 +526,7 @@ try {
     final.markers.map((m) => [m.name, m.origin]),
     [
       ['Bertrand at the gate', { proposalId: ids[0] }],
+      ['Fort chapter opening', { proposalId: ids[4] }],
       ['Siege scene', { proposalId: ids[3] }],
     ],
   );
@@ -500,8 +538,13 @@ try {
       ['accepted', true],
       ['rejected', true],
       ['accepted', true],
+      ['accepted', true],
     ],
   );
+  assert.deepEqual(kept.final.proposals[4].kindChange, {
+    from: 'clip-range',
+    to: 'range-marker',
+  });
   // The copied fixture already holds an older export of this recording; it is listed too.
   assert.deepEqual(
     kept.final.exports

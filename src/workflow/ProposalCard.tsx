@@ -5,7 +5,7 @@ import s from './TranscriptWindow.module.css';
 /**
  * One proposal in the transcript window (VC-155), spoken or from an agent: the same lines in
  * the same places every time. Line 1: who proposed it, the kind and the intents, with Accept,
- * Reject and Details at the right. Line 2: the name, then the time code. Line 3 only when there
+ * Reject and Details at the right (an agent clip range offers Accept as clip or as range marker). Line 2: the name, then the time code. Line 3 only when there
  * is something to say. Details open below, so nothing above them moves. A decided proposal
  * folds to one line; a rejected one can be reopened.
  */
@@ -26,6 +26,7 @@ export function ProposalCard({
   busy,
   acceptLabel,
   acceptDisabled,
+  acceptAsRange,
   onToggle,
   onEdit,
   onAccept,
@@ -55,6 +56,8 @@ export function ProposalCard({
   busy: boolean;
   acceptLabel: string;
   acceptDisabled?: boolean;
+  /** An agent clip range (VC-186): a second choice, Accept as range marker (M). */
+  acceptAsRange?: () => void;
   onToggle: () => void;
   onEdit: () => void;
   onAccept: () => void;
@@ -145,6 +148,7 @@ export function ProposalCard({
       const at = cards.indexOf(event.currentTarget);
       cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length]?.focus();
     } else if (key === 'a' && !busy && !acceptDisabled) onAccept();
+    else if (key === 'm' && acceptAsRange && !busy) acceptAsRange();
     else if (key === 'r' && !busy) onReject();
     else if (key === 'd') onToggle();
     else if (key === 'e') onEdit();
@@ -179,8 +183,20 @@ export function ProposalCard({
             disabled={busy || acceptDisabled}
             onClick={onAccept}
           >
-            Accept<kbd>A</kbd>
+            {acceptAsRange ? 'Accept as clip' : 'Accept'}
+            <kbd>A</kbd>
           </button>
+          {acceptAsRange && (
+            <button
+              className={s.pcAccept}
+              title="Accept as a range marker with the same span, name and note"
+              aria-label="Accept as range marker"
+              disabled={busy}
+              onClick={acceptAsRange}
+            >
+              Accept as range marker<kbd>M</kbd>
+            </button>
+          )}
           <button className={s.pcReject} aria-label="Reject" disabled={busy} onClick={onReject}>
             Reject<kbd>R</kbd>
           </button>

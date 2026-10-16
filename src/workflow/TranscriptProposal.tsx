@@ -50,7 +50,8 @@ export function TranscriptProposal({
     second?: string;
   }>();
   const decision = proposalDecision(session.decisions, proposal.id);
-  const kind = proposalKindLabel(proposal);
+  // A clip range kept as a range marker says so once decided (VC-186).
+  const kind = decision?.kindChange ? 'Clip range → Range marker' : proposalKindLabel(proposal);
   const split = proposal.kind === 'cut';
   const start = draft.time ?? proposal.time;
   const end = draft.end ?? proposal.end;
@@ -177,7 +178,7 @@ export function TranscriptProposal({
       open={open}
       editing={editing}
       busy={busy}
-      acceptLabel={`Accept ${kind.toLowerCase()}`}
+      acceptLabel={proposal.kind === 'clip' ? 'Accept as clip' : `Accept ${kind.toLowerCase()}`}
       acceptDisabled={split && !target}
       onToggle={() => {
         setOpen(!open);
@@ -197,6 +198,18 @@ export function TranscriptProposal({
           firstName: split ? first : undefined,
           secondName: split ? second : undefined,
         })
+      }
+      acceptAsRange={
+        proposal.kind === 'clip'
+          ? () =>
+              onCommand('accept-proposal', {
+                title: title.slice(0, 100),
+                text,
+                time: start,
+                endTime: end,
+                acceptAs: 'range-marker',
+              })
+          : undefined
       }
       onReject={() => onCommand('reject-proposal', {})}
       onReopen={() => onCommand('reopen-proposal', {})}

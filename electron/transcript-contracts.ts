@@ -92,6 +92,13 @@ export interface CueDecision {
   settledBy?: string;
   /** A split: the clip's name before it, so reopening can put the clip back as it was. */
   priorName?: string;
+  /** A clip range accepted as a range marker (VC-186): the kind the user chose over the agent's. */
+  kindChange?: ProposalKindChange;
+}
+/** The one kind change accepting allows: an agent's clip range kept as a range marker. */
+export interface ProposalKindChange {
+  from: 'clip-range';
+  to: 'range-marker';
 }
 export interface TranscriptPage {
   followStart?: number;
@@ -166,6 +173,8 @@ export interface TranscriptCommand {
   /** Accepting a split (spoken or proposed): names for the clips before and after it. */
   firstName?: string;
   secondName?: string;
+  /** Accepting an agent clip range as a range marker instead of a clip (VC-186). */
+  acceptAs?: 'range-marker';
   segmentId: number;
   wordIndex?: number;
   text?: string;

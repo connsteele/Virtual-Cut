@@ -28,6 +28,9 @@ renames, moved edges) and what was cut away were not kept anywhere an agent coul
   linked to the proposal it came from, marked as there before the first pass, or as the user's
   own. Items carry what changed after accepting (start, end, name, note); removed items and the
   spans outside every included clip are listed; each proposal's status and chosen values are kept.
+  A clip range accepted as a range marker (VC-186) carries
+  `kindChange: { from: 'clip-range', to: 'range-marker' }`, in this record and in
+  `get_proposal_decisions`, so the marker still counts as the agent's suggestion.
 - **Size:** JSON only, no media and no file paths.
 - **Read:** one read-only MCP tool, `get_batch_record`.
 

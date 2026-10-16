@@ -96,6 +96,15 @@ export function applyProposalCommand(
     status: command.action === 'accept-proposal' ? 'accepted' : 'rejected',
     decided: now,
   };
+  // A clip range may be kept as a range marker instead (VC-186); no other kind changes.
+  const asRange = command.acceptAs != null;
+  if (
+    asRange &&
+    (command.acceptAs !== 'range-marker' ||
+      command.action !== 'accept-proposal' ||
+      proposal.kind !== 'clip')
+  )
+    throw new Error('Only a clip range can be accepted as a range marker.');
   if (command.action === 'reject-proposal') {
     return { ...structuredClone(model), cueDecisions: [...(model.cueDecisions || []), decision] };
   }
@@ -112,9 +121,10 @@ export function applyProposalCommand(
   const title = (command.title ?? proposal.title).trim(),
     text = (command.text ?? proposal.text).trim();
   if (proposal.kind !== 'cut') {
-    decision.title = title.slice(0, 200);
+    decision.title = title.slice(0, asRange ? 100 : 200);
     decision.text = text;
   }
+  if (asRange) decision.kindChange = { from: 'clip-range', to: 'range-marker' };
   if (proposal.kind === 'cut') {
     const intersecting = next.clips.filter(
       (c) =>
@@ -153,7 +163,7 @@ export function applyProposalCommand(
       decision.title = clip.name;
       decision.text = second;
     }
-  } else if (proposal.kind === 'clip') {
+  } else if (proposal.kind === 'clip' && !asRange) {
     const end = command.endTime ?? proposal.end ?? Number.NaN;
     if (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
       throw new Error('Clip end must follow its start within this recording.');
@@ -181,11 +191,11 @@ export function applyProposalCommand(
       time: start,
     });
   } else {
-    // A range marker labels part of a continuous scene (VC-155).
+    // A range marker labels part of a continuous scene (VC-155), a clip range kept as one too.
     const end = command.endTime ?? proposal.end;
     if (
-      end !== undefined &&
-      (!Number.isFinite(end) || end > record.duration || end - start < 0.001)
+      (end !== undefined || asRange) &&
+      (!Number.isFinite(end) || end! > record.duration || end! - start < 0.001)
     )
       throw new Error('Marker end must follow its start within this recording.');
     if (end !== undefined) decision.appliedEnd = end;

@@ -198,6 +198,8 @@ export function validateEdits(model: Model): Model {
       (decision.proposalId != null && !text(decision.proposalId, 200)) ||
       (decision.settledBy != null && !text(decision.settledBy, 200)) ||
       (decision.priorName != null && !text(decision.priorName, 200)) ||
+      (decision.kindChange != null &&
+        (decision.kindChange.from !== 'clip-range' || decision.kindChange.to !== 'range-marker')) ||
       (decision.appliedEnd != null &&
         (!Number.isFinite(decision.appliedEnd) ||
           !(decision.appliedEnd > (decision.appliedTime ?? -1)))) ||
