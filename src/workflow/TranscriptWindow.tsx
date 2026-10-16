@@ -7,6 +7,7 @@ import type {
   TranscriptPage,
   TranscriptSegment,
   TranscriptSession,
+  TranscriptSummary,
 } from '../../electron/transcript-contracts';
 import { correctionId, cueCandidate, reviewedCue } from '../../electron/transcript-edits';
 import { readTranscriptView, saveTranscriptView } from '../../electron/transcript-view';
@@ -45,6 +46,20 @@ const filters: [TranscriptFilter, string][] = [
   ['accepted', 'Accepted'],
   ['rejected', 'Rejected'],
 ];
+// Both (VC-185): microphone and game phrases read together in time order. Each role's newest
+// finished transcript, or its newest if none has finished; storage stays one per role.
+const both = 'both';
+function readTogether(transcripts: TranscriptSummary[]) {
+  const newest = (role: TranscriptSummary['role']) => {
+    const own = transcripts
+      .filter((t) => t.role === role)
+      .sort((a, b) => Date.parse(a.created) - Date.parse(b.created));
+    return own.filter((t) => t.state === 'complete').at(-1) || own.at(-1);
+  };
+  const mic = newest('mic'),
+    game = newest('game');
+  return mic && game ? { mic, game } : undefined;
+}
 export function TranscriptWindow() {
   const api = window.virtualCut!.transcript;
   const [session, setSession] = useState<TranscriptSession | null>(null);
@@ -56,7 +71,7 @@ export function TranscriptWindow() {
   const [loadedPageKey, setLoadedPageKey] = useState('');
   const [filter, setFilter] = useState<TranscriptFilter>('all');
   const [follow, setFollow] = useState(true);
-  const [focusedWord, setFocusedWord] = useState<{ segment: number; word?: number }>();
+  const [focusedWord, setFocusedWord] = useState<TranscriptView['focus']>();
   const [options, setOptions] = useState(initialTranscriptionOptions);
   const [transcriptionReady, setTranscriptionReady] = useState(false);
   const [exportId, setExportId] = useState(''),
@@ -116,18 +131,20 @@ export function TranscriptWindow() {
         remember();
         identity.current = nextIdentity;
         const storage = viewStorage();
+        const pair = value && readTogether(value.transcripts);
         const saved =
           value?.viewSessionId && storage
-            ? readTranscriptView(
-                storage,
-                value.viewSessionId,
-                value.projectId,
-                value.sourceId,
-                value.transcripts.map((t) => t.id),
-              )
+            ? readTranscriptView(storage, value.viewSessionId, value.projectId, value.sourceId, [
+                ...value.transcripts.map((t) => t.id),
+                ...(pair ? [both] : []),
+              ])
             : undefined;
+        // Pending proposals open on Both, where their game evidence sits beside them (VC-185).
+        const reviewing =
+          !!pair &&
+          (value.proposals || []).some((p) => proposalStatus(value.decisions, p.id) === 'pending');
         restore.current = { identity: nextIdentity, scroll: saved?.scroll || 0 };
-        setTranscriptId(saved?.transcriptId || '');
+        setTranscriptId(saved?.transcriptId || (reviewing ? both : ''));
         setPageIndex(saved?.page || 0);
         setSearch(saved?.search || '');
         setFilter(saved?.filter || 'all');
@@ -196,18 +213,25 @@ export function TranscriptWindow() {
     async (refresh?: boolean) => setRuntime(await api.runtime(refresh)),
     [api],
   );
+  const pair = session ? readTogether(session.transcripts) : undefined;
+  const combined = transcriptId === both ? pair : undefined;
+  // Under Both, the microphone transcript holds the cues and proposals; game lines join it.
   const selected =
+    combined?.mic ||
     session?.transcripts.find((t) => t.id === transcriptId) ||
+    session?.transcripts.find((t) => t.role === 'mic' && t.state === 'complete') ||
     session?.transcripts.find((t) => t.state === 'complete') ||
     session?.transcripts[0];
   const currentId = selected?.id || '';
+  const viewId = combined ? both : currentId;
+  const gameId = combined?.game.id;
   const projectId = session?.projectId || '';
   const previewSource = session?.sourceId || '';
   useEffect(() => {
     previewOwner.current = { projectId, sourceId: previewSource };
   }, [projectId, previewSource]);
   const editRevision = JSON.stringify(session?.edits);
-  const pageKey = JSON.stringify([identity.current, currentId, pageIndex, search, filter]);
+  const pageKey = JSON.stringify([identity.current, viewId, gameId, pageIndex, search, filter]);
   reading.current =
     session?.viewSessionId && currentId
       ? {
@@ -215,7 +239,7 @@ export function TranscriptWindow() {
           view: {
             projectId,
             sourceId: session.sourceId,
-            transcriptId: currentId,
+            transcriptId: viewId,
             page: pageIndex,
             search,
             filter,
@@ -226,10 +250,13 @@ export function TranscriptWindow() {
           },
         }
       : undefined;
-  const usablePage =
-    loadedPageKey === pageKey && page?.transcript.id === currentId ? page : undefined;
+  const ours = page?.transcript.id === currentId && page.partner?.id === gameId;
+  const usablePage = loadedPageKey === pageKey && ours ? page : undefined;
   // Chip counts cover the whole transcript, so the previous page's counts stay while loading.
-  const counts = page?.transcript.id === currentId ? page.counts : undefined;
+  const counts = ours ? page.counts : undefined;
+  // Each row's own transcript: under Both, game lines belong to the game transcript.
+  const ownerOf = (row: number) =>
+    combined && usablePage?.owners?.[row] === combined.game.id ? combined.game : selected!;
   // Agent proposals (VC-162) sit in time order between phrases while reading, and at the top of
   // the first page under a cue filter. Search shows phrases only.
   const placed = new Map<number, AgentProposal[]>();
@@ -249,7 +276,9 @@ export function TranscriptWindow() {
     for (const proposal of session.proposals || []) {
       let row = -1;
       const cueRow = reworks(proposal)
-        ? usablePage.segments.findIndex((s) => s.id === proposal.refines!.lineId)
+        ? usablePage.segments.findIndex(
+            (s, index) => s.id === proposal.refines!.lineId && ownerOf(index).id === currentId,
+          )
         : -1;
       if (cueRow >= 0) row = cueRow;
       else if (filter === 'all') {
@@ -276,7 +305,7 @@ export function TranscriptWindow() {
     !selection &&
     position.projectId === projectId &&
     position.sourceId === session?.sourceId
-      ? JSON.stringify([identity.current, projectId, currentId, session?.sourceId])
+      ? JSON.stringify([identity.current, projectId, viewId, gameId, session?.sourceId])
       : '';
   useEffect(() => {
     const pending = restore.current;
@@ -295,7 +324,7 @@ export function TranscriptWindow() {
     const timer = setTimeout(
       () => {
         void api
-          .page(projectId, currentId, pageIndex, search, filter)
+          .page(projectId, currentId, pageIndex, search, filter, gameId)
           .then((value) => {
             if (alive) {
               setPage(value);
@@ -316,10 +345,12 @@ export function TranscriptWindow() {
     api,
     projectId,
     currentId,
+    gameId,
     pageIndex,
     search,
     filter,
     selected?.state,
+    combined?.game.state,
     editRevision,
     session?.revision,
     pageKey,
@@ -386,7 +417,7 @@ export function TranscriptWindow() {
     const request = { owner };
     followLookup.current = request;
     void api
-      .pageAt(projectId, currentId, position.time)
+      .pageAt(projectId, currentId, position.time, gameId)
       .then((index) => {
         if (followOwner.current === owner && followLookup.current === request) setPageIndex(index);
       })
@@ -399,6 +430,7 @@ export function TranscriptWindow() {
   }, [
     api,
     currentId,
+    gameId,
     projectId,
     position,
     session?.sourceId,
@@ -421,24 +453,29 @@ export function TranscriptWindow() {
       setBusy(false);
     }
   }
-  function seek(segment: TranscriptSegment, wordIndex?: number, edit = false) {
-    if (!session || !selected) return;
+  function seek(
+    segment: TranscriptSegment,
+    wordIndex?: number,
+    edit = false,
+    transcript = selected,
+  ) {
+    if (!session || !transcript) return;
     const word = wordIndex == null ? undefined : segment.words[wordIndex];
     const correction = session.edits.find(
-      (e) => e.id === correctionId(selected.id, segment.id, wordIndex),
+      (e) => e.id === correctionId(transcript.id, segment.id, wordIndex),
     );
-    setFocusedWord({ segment: segment.id, word: wordIndex });
+    setFocusedWord({ segment: segment.id, word: wordIndex, transcript: transcript.id });
     if (edit) {
       setFollow(false);
       setSelection({
-        transcriptId: selected.id,
+        transcriptId: transcript.id,
         segment,
         wordIndex,
         text: correction?.text ?? word?.text ?? segment.text,
       });
     } else if (
       selection &&
-      (selection.transcriptId !== selected.id ||
+      (selection.transcriptId !== transcript.id ||
         selection.segment.id !== segment.id ||
         selection.wordIndex !== wordIndex)
     ) {
@@ -492,16 +529,17 @@ export function TranscriptWindow() {
     text?: string,
     wordIndex?: number,
     values: Partial<TranscriptCommand> = {},
+    transcript = selected,
   ) {
-    if (!session || !selected) return Promise.resolve();
+    if (!session || !transcript) return Promise.resolve();
     const expected = type.endsWith('cue')
-      ? reviewedCue(session.decisions, selected, segment)
-      : session.edits.find((e) => e.id === correctionId(selected.id, segment.id, wordIndex));
+      ? reviewedCue(session.decisions, transcript, segment)
+      : session.edits.find((e) => e.id === correctionId(transcript.id, segment.id, wordIndex));
     return api.command({
       ...values,
       projectId: session.projectId,
       sourceId: session.sourceId,
-      transcriptId: selected.id,
+      transcriptId: transcript.id,
       segmentId: segment.id,
       wordIndex,
       text,
@@ -522,6 +560,8 @@ export function TranscriptWindow() {
     // The main window would refuse this with a generic message; say what to do instead.
     if (wordIndex != null && text.trim().split(/\s+/).length > 1)
       return setError('A word correction is one word. Use Edit phrase to add or remove words.');
+    // The line's own transcript, which under Both may be the game's.
+    const transcript = session.transcripts.find((t) => t.id === selection.transcriptId);
     let saved = false;
     await action(async () => {
       await command(
@@ -529,12 +569,13 @@ export function TranscriptWindow() {
         restore ? 'restore' : 'correct',
         restore ? undefined : text,
         wordIndex,
+        {},
+        transcript,
       );
       saved = true;
     });
     if (saved) setSelection(undefined);
   }
-  const hasSelection = selection && selection.transcriptId === currentId;
   return (
     <main className={s.window}>
       <h1 className={s.screenReaderTitle}>Transcription</h1>
@@ -549,13 +590,14 @@ export function TranscriptWindow() {
               <select
                 aria-label="Select transcript"
                 title="Transcript"
-                value={currentId}
+                value={viewId}
                 onChange={(e) => {
                   setTranscriptId(e.target.value);
                   setPageIndex(0);
                   setSelection(undefined);
                 }}
               >
+                {pair && <option value={both}>Both · Microphone and game</option>}
                 {session.transcripts.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.role === 'mic' ? 'Microphone' : 'Game'} · {t.language || 'Auto'} · {t.state}{' '}
@@ -585,8 +627,12 @@ export function TranscriptWindow() {
                 <Button
                   aria-haspopup="dialog"
                   aria-expanded={exportOpen}
-                  title="Export this transcript as SRT or JSON"
-                  disabled={selected.state !== 'complete'}
+                  title={
+                    combined
+                      ? 'Pick Microphone or Game to export that transcript'
+                      : 'Export this transcript as SRT or JSON'
+                  }
+                  disabled={!!combined || selected.state !== 'complete'}
                   onClick={() => setExportOpen(!exportOpen)}
                 >
                   Export <ChevronDown size={14} />
@@ -799,8 +845,10 @@ export function TranscriptWindow() {
         <>
           <details className={s.help}>
             <summary>
-              <strong data-transcript-recording>{session.title}</strong> · {selected.wordCount}{' '}
-              words · {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
+              <strong data-transcript-recording>{session.title}</strong>
+              {combined ? ' · Microphone and game · ' : ' · '}
+              {selected.wordCount + (combined?.game.wordCount || 0)} words ·{' '}
+              {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
               {selected.context.gameName || 'No game specified'}
               {selected.context.vocabulary ? ' · vocabulary hints used' : ''}
               {' · Help'}
@@ -819,7 +867,7 @@ export function TranscriptWindow() {
             </p>
           </details>
           {selected.deviceMessage && <p className={s.muted}>{selected.deviceMessage}</p>}
-          {selected.state !== 'complete' && (
+          {(selected.state !== 'complete' || (combined && combined.game.state !== 'complete')) && (
             <p>
               Recognition is incomplete. Corrections and cue decisions become available when it
               finishes.
@@ -832,24 +880,27 @@ export function TranscriptWindow() {
           >
             {placed.get(-1)?.map(proposalCard)}
             {usablePage?.segments.map((segment, row, segments) => {
+              const owner = ownerOf(row);
               const phraseEdit = session.edits.find(
-                (e) => e.id === correctionId(currentId, segment.id),
+                (e) => e.id === correctionId(owner.id, segment.id),
               );
-              const cue = cueCandidate(selected, segment);
+              const cue = cueCandidate(owner, segment);
               const active =
                 position.projectId === projectId && position.sourceId === session.sourceId;
               const editing =
-                hasSelection && selection.segment.id === segment.id ? selection : undefined;
+                selection?.transcriptId === owner.id && selection.segment.id === segment.id
+                  ? selection
+                  : undefined;
               const originalText = (
                 editing?.wordIndex == null ? segment.text : segment.words[editing.wordIndex].text
               ).trim();
-              const previous = segments[row - 1];
-              // Gaps only make sense in the unfiltered, time-ordered reading view.
-              const pause =
-                previous && filter === 'all' && !search ? segment.start - previous.end : 0;
+              // Gaps only make sense in the unfiltered, time-ordered reading view. Under Both,
+              // speech from either transcript ends the silence.
+              const spoken = row ? Math.max(...segments.slice(0, row).map((p) => p.end)) : 0;
+              const pause = row && filter === 'all' && !search ? segment.start - spoken : 0;
               const editor = (initial: string, phrase: boolean) => (
                 <TranscriptInlineEdit
-                  key={`${segment.id}:${editing?.wordIndex ?? 'phrase'}`}
+                  key={`${owner.id}:${segment.id}:${editing?.wordIndex ?? 'phrase'}`}
                   initial={initial}
                   phrase={phrase}
                   disabled={busy}
@@ -858,16 +909,28 @@ export function TranscriptWindow() {
                 />
               );
               return (
-                <Fragment key={segment.id}>
+                <Fragment key={`${owner.id}:${segment.id}`}>
                   {pause >= silenceGap && <div className={s.gap}>{gapLabel(pause)}</div>}
-                  <article className={s.segment} data-cue={cue?.kind}>
+                  <article
+                    className={s.segment}
+                    data-cue={cue?.kind}
+                    data-source={combined ? owner.role : undefined}
+                  >
                     <button
                       className={s.rowTime}
                       title={time(segment.start)}
-                      onClick={() => seek(segment)}
+                      onClick={() => seek(segment, undefined, false, owner)}
                     >
                       {rowTime(segment.start)}
                     </button>
+                    {combined && (
+                      <span
+                        className={s.source}
+                        title={owner.role === 'mic' ? 'Microphone' : 'Game'}
+                      >
+                        {owner.role === 'mic' ? 'Mic' : 'Game'}
+                      </span>
+                    )}
                     <div className={s.words}>
                       {editing && editing.wordIndex == null ? (
                         editor(editing.text, true)
@@ -875,8 +938,8 @@ export function TranscriptWindow() {
                         <button
                           className={s.phrase}
                           title={`Original: ${segment.text.trim()}`}
-                          onClick={() => seek(segment)}
-                          onDoubleClick={() => seek(segment, undefined, true)}
+                          onClick={() => seek(segment, undefined, false, owner)}
+                          onDoubleClick={() => seek(segment, undefined, true, owner)}
                         >
                           {phraseEdit.text}
                           <small> · phrase timing</small>
@@ -893,10 +956,12 @@ export function TranscriptWindow() {
                               </Fragment>
                             );
                           const correction = session.edits.find(
-                            (e) => e.id === correctionId(currentId, segment.id, index),
+                            (e) => e.id === correctionId(owner.id, segment.id, index),
                           );
                           const focused =
-                            focusedWord?.segment === segment.id && focusedWord.word === index;
+                            focusedWord?.segment === segment.id &&
+                            focusedWord.word === index &&
+                            (focusedWord.transcript ?? currentId) === owner.id;
                           const playing =
                             active && position.time >= word.start && position.time < word.end;
                           return (
@@ -905,9 +970,9 @@ export function TranscriptWindow() {
                               className={`${playing ? s.active : ''} ${focused ? s.selected : ''} ${word.probability < 0.5 ? s.uncertain : ''} ${correction && !original ? s.corrected : ''}`}
                               data-active-word={playing ? 'true' : undefined}
                               title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
-                              onClick={() => seek(segment, index)}
+                              onClick={() => seek(segment, index, false, owner)}
                               onDoubleClick={() =>
-                                selected.state === 'complete' && seek(segment, index, true)
+                                owner.state === 'complete' && seek(segment, index, true, owner)
                               }
                             >
                               {!original && correction ? correction.text : word.text}
@@ -915,17 +980,19 @@ export function TranscriptWindow() {
                           );
                         })
                       ) : (
-                        <button onClick={() => seek(segment)}>{segment.text}</button>
+                        <button onClick={() => seek(segment, undefined, false, owner)}>
+                          {segment.text}
+                        </button>
                       )}
                     </div>
                     <div className={s.rowTools}>
                       <Button
-                        disabled={busy || selected.state !== 'complete'}
+                        disabled={busy || owner.state !== 'complete'}
                         onClick={() => (
                           setFollow(false),
-                          setFocusedWord({ segment: segment.id }),
+                          setFocusedWord({ segment: segment.id, transcript: owner.id }),
                           setSelection({
-                            transcriptId: currentId,
+                            transcriptId: owner.id,
                             segment,
                             text: phraseEdit?.text ?? segment.text,
                           })
@@ -946,7 +1013,7 @@ export function TranscriptWindow() {
                           .map((c) => c.name)
                           .join(', ') || 'No clip at this phrase'}
                         {session.edits.some(
-                          (e) => e.id === correctionId(currentId, segment.id, editing.wordIndex),
+                          (e) => e.id === correctionId(owner.id, segment.id, editing.wordIndex),
                         ) && (
                           <button
                             className={s.linkButton}
@@ -961,9 +1028,9 @@ export function TranscriptWindow() {
                     {cue && !reworked.has(segment.id) && (
                       <div className={s.rowCue}>
                         <TranscriptCue
-                          key={`${currentId}:${segment.id}:${JSON.stringify(session.edits)}`}
+                          key={`${owner.id}:${segment.id}:${JSON.stringify(session.edits)}`}
                           segment={segment}
-                          transcript={selected}
+                          transcript={owner}
                           session={session}
                           busy={busy}
                           playhead={playhead}
@@ -975,7 +1042,9 @@ export function TranscriptWindow() {
                           onCommand={(type, values) => {
                             setFollow(false);
                             background(
-                              action(() => command(segment, type, values.text, undefined, values)),
+                              action(() =>
+                                command(segment, type, values.text, undefined, values, owner),
+                              ),
                             );
                           }}
                         />
@@ -992,7 +1061,9 @@ export function TranscriptWindow() {
                   ? 'No matching cues.'
                   : search
                     ? 'No matching phrases.'
-                    : 'No speech recognized in this track.'}
+                    : combined
+                      ? 'No speech recognized in either track.'
+                      : 'No speech recognized in this track.'}
               </p>
             )}
           </div>

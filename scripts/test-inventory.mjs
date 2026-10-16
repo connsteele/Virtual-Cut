@@ -63,6 +63,7 @@ export const desktop = [
   'agent-proposals-ui.mjs',
   'split-snap-ui.mjs',
   'proposal-preview-ui.mjs',
+  'combined-transcript-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
@@ -70,6 +71,7 @@ export const dependencies = {
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
   'proposal-preview-ui.mjs': ['transcript-storage-checks.mjs'],
+  'combined-transcript-ui.mjs': ['transcript-storage-checks.mjs'],
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],

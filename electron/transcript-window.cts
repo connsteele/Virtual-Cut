@@ -173,6 +173,13 @@ export function registerTranscriptWindow(
     },
     true,
   );
+  // The game transcript a combined page reads beside the microphone one (VC-185).
+  const readTogether = (also: unknown) => {
+    if (also == null) return undefined;
+    if (typeof also !== 'string' || !also || also.length > 180)
+      throw new Error('Invalid transcript pairing.');
+    return also;
+  };
   handle('session', async (sourceId) => {
     if (projects.store !== viewStore) {
       viewStore = projects.store;
@@ -181,8 +188,8 @@ export function registerTranscriptWindow(
     const session = projects.transcriptSession(sourceId || preferredSource);
     return session ? { ...session, viewSessionId } : null;
   });
-  handle('pageAt', async (id, transcriptId, time) =>
-    projects.require(id).transcripts.pageAt(transcriptId, time),
+  handle('pageAt', async (id, transcriptId, time, also) =>
+    projects.require(id).transcripts.pageAt(transcriptId, time, readTogether(also)),
   );
   handle('transport', async (id, sourceId, key) => {
     if (
@@ -192,18 +199,28 @@ export function registerTranscriptWindow(
       throw new Error('This transcript recording is unavailable.');
     main()?.webContents.send('transcript:transport-event', { projectId: id, sourceId, key });
   });
-  handle('page', async (id, transcriptId, page, search, filter = 'all') => {
+  handle('page', async (id, transcriptId, page, search, filter = 'all', also) => {
     const s = projects.require(id);
     if (typeof search !== 'string' || search.length > 300)
       throw new Error('Invalid transcript search.');
-    const matches = (s.data.model.transcriptEdits || [])
-      .filter(
-        (e) =>
-          e.transcriptId === transcriptId &&
-          e.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
-      )
-      .map((e) => e.segmentId);
-    const result = s.transcripts.page(transcriptId, page, search, matches, s.data.model, filter);
+    const game = readTogether(also);
+    const matches = (owner: string) =>
+      (s.data.model.transcriptEdits || [])
+        .filter(
+          (e) =>
+            e.transcriptId === owner &&
+            e.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+        )
+        .map((e) => e.segmentId);
+    const result = s.transcripts.page(
+      transcriptId,
+      page,
+      search,
+      matches(transcriptId),
+      s.data.model,
+      filter,
+      game ? { id: game, matches: matches(game) } : undefined,
+    );
     // Agent proposals belong to the recording and count with its cues (VC-162).
     const decisions = s.data.model.cueDecisions || [];
     for (const proposal of s.proposals.list(result.transcript.sourceId)) {
