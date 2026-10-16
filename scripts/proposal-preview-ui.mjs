@@ -147,9 +147,11 @@ try {
   assert(Math.abs(box.x - x(at(0.15))) < 3, `band starts at its time: ${box.x}`);
   assert(Math.abs(box.x + box.width - x(at(0.4))) < 3, `band ends at its end: ${box.width}`);
   assert(box.height > track.height * 0.8, 'the band covers the track');
-  assert((await spokenSplit.boundingBox()).width <= 2, 'a Split is a line');
-  await expect(spokenClip).toHaveCSS('background-color', 'rgba(211, 178, 107, 0.13)');
-  await expect(range).toHaveCSS('background-color', 'rgba(143, 123, 216, 0.13)');
+  assert((await spokenSplit.boundingBox()).width <= 4, 'a Split is a line');
+  await expect(spokenClip).toHaveCSS('border-left-color', 'rgba(211, 178, 107, 0.85)');
+  await expect(range).toHaveCSS('border-left-color', 'rgba(143, 123, 216, 0.85)');
+  await expect(range).toHaveCSS('opacity', '1');
+  await timeline.screenshot({ path: path.join(dir, 'preview-faint.png') });
   // Read-only: a click on the band seeks the filmstrip beneath it.
   const strip = await timeline.locator('[data-seek-surface="filmstrip"]').boundingBox();
   await main.mouse.click(x(at(0.3)), strip.y + strip.height / 2);
@@ -167,12 +169,16 @@ try {
   const card = (id) => view.locator(`[data-proposal-card="${id}"]`);
   await expect(card('Siege scene')).toBeVisible();
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(0);
-  // Hovering a card's time code brightens its preview; leaving lets it go.
-  await card('cue:preview-mic:1').getByTitle('Go to the start', { exact: true }).hover();
+  // Hovering anywhere on a card brings its preview to full strength and dims the others;
+  // leaving lets it go.
+  await card('cue:preview-mic:1').hover({ position: { x: 40, y: 10 } });
   await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
   await expect(spokenSplit).toContainText('Spoken · Split');
+  await expect(range).toHaveCSS('opacity', '0.3');
+  await expect(spokenSplit).toHaveCSS('opacity', '1');
   await view.mouse.move(2, 2);
   await expect(spokenSplit).toHaveAttribute('data-focused', 'false');
+  await expect(range).toHaveCSS('opacity', '1');
   // Keyboard focus: the card itself, then N to the next card waiting for review.
   await card('Siege scene').focus();
   await expect(range).toHaveAttribute('data-focused', 'true');
@@ -188,9 +194,36 @@ try {
   // Details open keep a preview bright after focus leaves the card.
   await card('cue:preview-mic:1').getByRole('button', { name: 'Details', exact: true }).click();
   await view.evaluate(() => document.activeElement?.blur());
+  await view.mouse.move(2, 2);
   await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
   await main.bringToFront();
   await timeline.screenshot({ path: path.join(dir, 'preview-split-focused.png') });
+
+  // Zoomed in, a focused proposal out of view pans the timeline to it; the playhead stays.
+  const scrubber = timeline.locator('[data-testid="scrub-surface"]');
+  for (let i = 0; i < 4; i++)
+    await timeline.getByRole('button', { name: 'Zoom in timeline', exact: true }).click();
+  const viewEnd = Number(await scrubber.getAttribute('data-view-end'));
+  assert(viewEnd < at(0.7), `zoomed in before the clip band: ${viewEnd}`);
+  const playhead = await main.locator('video').evaluate((v) => v.currentTime);
+  await view.bringToFront();
+  await card('cue:preview-mic:2').focus();
+  await expect(spokenClip).toHaveAttribute('data-focused', 'true');
+  await expect
+    .poll(async () => Number(await scrubber.getAttribute('data-view-start')))
+    .toBeLessThanOrEqual(at(0.7));
+  assert(Number(await scrubber.getAttribute('data-view-end')) > at(0.7), 'the band is in view');
+  assert.equal(await main.locator('video').evaluate((v) => v.currentTime), playhead);
+  await main.bringToFront();
+  await timeline.screenshot({ path: path.join(dir, 'preview-panned.png') });
+  await timeline.getByRole('button', { name: 'Fit full recording' }).click();
+  await view.bringToFront();
+  await card('cue:preview-mic:1')
+    .getByRole('button', { name: 'Hide details', exact: true })
+    .click();
+  await card('cue:preview-mic:1').getByRole('button', { name: 'Details', exact: true }).click();
+  await view.evaluate(() => document.activeElement?.blur());
+  await expect(spokenSplit).toHaveAttribute('data-focused', 'true');
 
   // The compact window keeps every preview on the track, and the track keeps arrow keys.
   await app.evaluate(({ BrowserWindow }) =>

@@ -68,7 +68,7 @@ export function ProposalCard({
   /** Ctrl+Z while editing: undo the last change on this card. */
   onUndo: () => void;
   onSeek: (time: number) => void;
-  /** In focus or not: details open, time code hovered, or keyboard focus on the card. */
+  /** In focus or not: details open, the pointer over the card, or keyboard focus on it. */
   onPreview?: (active: boolean) => void;
   children?: ReactNode;
 }) {
@@ -79,10 +79,6 @@ export function ProposalCard({
   useEffect(() => {
     previewed.current = onPreview;
   });
-  // Editing swaps the time codes for fields, so the pointer never leaves them.
-  useEffect(() => {
-    if (editing) setHovered(false);
-  }, [editing]);
   useEffect(() => {
     if (!active) return;
     previewed.current?.(true);
@@ -178,6 +174,8 @@ export function ProposalCard({
       data-status="pending"
       tabIndex={0}
       onKeyDown={keys}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
@@ -239,11 +237,7 @@ export function ProposalCard({
             {name}
           </button>
           {/* A range has two times to jump to: its start and its end. */}
-          <span
-            className={s.pcTimes}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-          >
+          <span className={s.pcTimes}>
             <button className={s.pcTime} title="Go to the start" onClick={() => onSeek(time)}>
               {formatTimecode(time)}
             </button>

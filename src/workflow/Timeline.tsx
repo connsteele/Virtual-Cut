@@ -201,6 +201,30 @@ export function Timeline({
   useEffect(() => {
     wheelState.current = { view, fullStart, fullEnd, minimum, identity };
   });
+  // VC-170: a proposal brought into focus outside a zoomed view pans the view to it once; the
+  // playhead stays where it is.
+  const focusedPreview =
+    proposalFocus == null ? undefined : proposals.find((p) => p.cards.includes(proposalFocus));
+  const focusStart = focusedPreview?.start,
+    focusEnd = focusedPreview?.end ?? focusedPreview?.start;
+  useEffect(() => {
+    if (focusStart == null || focusEnd == null) return;
+    const { view, fullStart, fullEnd, minimum, identity } = wheelState.current;
+    if (focusStart >= view.start && focusEnd <= view.end) return;
+    if (drag.current || markerDrag.current || pointer.current != null) return;
+    const width = view.end - view.start;
+    const middle =
+      focusEnd - focusStart < width * 0.9 ? (focusStart + focusEnd) / 2 : focusStart + width * 0.45;
+    setViewport({
+      identity,
+      view: fitViewport(
+        { start: middle - width / 2, end: middle + width / 2 },
+        fullStart,
+        fullEnd,
+        minimum,
+      ),
+    });
+  }, [focusStart, focusEnd]);
   useEffect(() => {
     const el = track.current!;
     const wheel = (e: WheelEvent) => {
@@ -979,7 +1003,11 @@ export function Timeline({
           </div>
         )}
         {proposals.length > 0 && (
-          <div className={s.proposalLayer} data-proposal-previews={proposals.length}>
+          <div
+            className={s.proposalLayer}
+            data-proposal-previews={proposals.length}
+            data-has-focus={!!focusedPreview}
+          >
             {proposals
               .filter((p) => p.start <= end && (p.end ?? p.start) >= start)
               .map((p) => {

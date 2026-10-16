@@ -540,29 +540,60 @@
   --proposal-edge: 211, 178, 107;
 }
 .proposalBand {
-  min-width: 2px;
-  background: rgba(var(--proposal), 0.13);
-  border-inline: 1px dashed rgba(var(--proposal-edge), 0.6);
+  min-width: 3px;
+  /* Stripes: a proposal, not yet a real clip or range marker. */
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--proposal), 0.3) 0 6px,
+    rgba(var(--proposal), 0.12) 6px 12px
+  );
+  border-inline: 2px solid rgba(var(--proposal-edge), 0.85);
+}
+.proposalBand::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: rgb(var(--proposal));
 }
 .proposalLine {
   width: 0;
-  border-left: 1px dashed rgba(var(--proposal-edge), 0.75);
+  margin-left: -1px;
+  border-left: 2px solid rgba(var(--proposal-edge), 0.8);
 }
+/* A flag in the ruler, like a real marker's, so a line is easy to find zoomed out. */
 .proposalLine::before {
   content: '';
   position: absolute;
   top: 0;
-  left: -5px;
-  border: 4.5px solid transparent;
-  border-top: 6px solid rgba(var(--proposal), 0.8);
+  left: -6px;
+  border-inline: 5px solid transparent;
+  border-top: 10px solid rgb(var(--proposal));
+}
+.proposalBand,
+.proposalLine {
+  transition: opacity 0.12s;
+}
+/* One proposal in focus: it goes full strength and every other preview steps back. */
+.proposalLayer[data-has-focus='true'] [data-focused='false'] {
+  opacity: 0.3;
+}
+.proposalLayer [data-focused='true'] {
+  z-index: 1;
 }
 .proposalBand[data-focused='true'] {
-  background: rgba(var(--proposal), 0.32);
-  border-inline: 2px solid rgb(var(--proposal-edge));
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--proposal), 0.5) 0 6px,
+    rgba(var(--proposal), 0.28) 6px 12px
+  );
+  border-inline: 3px solid rgb(var(--proposal-edge));
+  box-shadow: 0 0 10px rgb(var(--proposal));
 }
 .proposalLine[data-focused='true'] {
-  border-left: 2px solid rgb(var(--proposal-edge));
-  box-shadow: 0 0 6px rgb(var(--proposal));
+  margin-left: -1.5px;
+  border-left: 3px solid rgb(var(--proposal-edge));
+  box-shadow: 0 0 10px rgb(var(--proposal));
 }
 .proposalLabel {
   position: absolute;
