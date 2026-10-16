@@ -140,13 +140,13 @@ try {
   const range = preview('Siege scene'),
     spokenSplit = preview('cue:preview-mic:1'),
     spokenClip = preview('cue:preview-mic:2');
-  // A band spans its range on the track; a line marks its point.
+  // A band spans its range in the ruler; a Split's line cuts through the track.
   const track = await timeline.locator('[data-testid="scrub-surface"]').boundingBox();
   const x = (t) => track.x + (track.width * t) / recording.duration;
   const box = await range.boundingBox();
   assert(Math.abs(box.x - x(at(0.15))) < 3, `band starts at its time: ${box.x}`);
   assert(Math.abs(box.x + box.width - x(at(0.4))) < 3, `band ends at its end: ${box.width}`);
-  assert(box.height > track.height * 0.8, 'the band covers the track');
+  assert(box.height <= 35 && box.y < track.y + 2, `a band sits in the ruler: ${box.height}`);
   assert((await spokenSplit.boundingBox()).width <= 4, 'a Split is a line');
   await expect(spokenClip).toHaveCSS('border-left-color', 'rgba(211, 178, 107, 0.85)');
   await expect(range).toHaveCSS('border-left-color', 'rgba(143, 123, 216, 0.85)');

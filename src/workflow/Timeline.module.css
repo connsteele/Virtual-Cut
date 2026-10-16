@@ -539,7 +539,10 @@
 .proposalLayer [data-who='both'] {
   --proposal-edge: 211, 178, 107;
 }
+/* Ranges sit in the ruler with the markers, so a Split is the only line through the footage. */
 .proposalBand {
+  bottom: auto;
+  height: 34px;
   min-width: 3px;
   /* Stripes: a proposal, not yet a real clip or range marker. */
   background: repeating-linear-gradient(
