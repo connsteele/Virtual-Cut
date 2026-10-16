@@ -344,7 +344,27 @@ export function registerTranscriptWindow(
       throw new Error('This transcript location is unavailable.');
     main()?.webContents.send('transcript:seek-event', { projectId: id, sourceId, time });
   });
-  handle('splitSnap', (id, sourceId, time) => projects.splitSnap(id, sourceId, time));
+  // VC-170: a spoken Split previews where its card suggests cutting (VC-165). Snaps measured for
+  // the cards, or for the previews themselves, are kept here by spoken time; one that can't be
+  // measured keeps the spoken time.
+  const snaps = new Map<string, number | null>();
+  let snapStore: unknown;
+  const snapKey = (id: string, sourceId: string, time: number) =>
+    `${id}:${sourceId}:${time.toFixed(3)}`;
+  const measureSnap = (id: string, sourceId: string, time: number) =>
+    Promise.resolve()
+      .then(() => projects.splitSnap(id, sourceId, time))
+      .then(
+        (snap) => {
+          snaps.set(snapKey(id, sourceId, time), snap ? snap.time : null);
+          return snap;
+        },
+        (error: unknown) => {
+          snaps.set(snapKey(id, sourceId, time), null);
+          throw error;
+        },
+      );
+  handle('splitSnap', (id, sourceId, time) => measureSnap(id, sourceId, time));
   handle(
     'previews',
     async (id, sourceId) => {
@@ -355,20 +375,44 @@ export function registerTranscriptWindow(
       const mic = s.transcripts
         .list(sourceId)
         .find((t) => t.role === 'mic' && t.state === 'complete');
-      return proposalPreviews(
+      const previews = proposalPreviews(
         s.proposals.list(sourceId),
         s.data.model,
         mic,
         mic ? s.transcripts.segments(mic.id) : [],
       );
+      if (snapStore !== s) {
+        snaps.clear();
+        snapStore = s;
+      }
+      const measuring: Promise<unknown>[] = [];
+      for (const p of previews) {
+        if (p.who !== 'spoken' || p.kind !== 'split') continue;
+        const key = snapKey(id, sourceId, p.start);
+        if (!snaps.has(key)) measuring.push(measureSnap(id, sourceId, p.start).catch(() => null));
+        else if (snaps.get(key) != null) p.start = snaps.get(key)!;
+      }
+      // Answer now with what is known; once the rest are measured, the main window asks again.
+      if (measuring.length)
+        Promise.all(measuring)
+          .then((found) => {
+            const editor = main();
+            if (found.some(Boolean) && editor && !editor.isDestroyed())
+              editor.webContents.send('transcript:previews-event', { projectId: id, sourceId });
+          })
+          .catch(() => {});
+      return previews.sort((a, b) => a.start - b.start);
     },
     true,
   );
-  handle('focus', async (id, sourceId, card) => {
-    if (card !== null && (typeof card !== 'string' || !card || card.length > 300))
+  handle('focus', async (id, sourceId, card, picked = false) => {
+    if (
+      (card !== null && (typeof card !== 'string' || !card || card.length > 300)) ||
+      typeof picked !== 'boolean'
+    )
       throw new Error('Invalid proposal card.');
     if (projects.store?.data.project.id !== id) return;
-    main()?.webContents.send('transcript:focus-event', { projectId: id, sourceId, card });
+    main()?.webContents.send('transcript:focus-event', { projectId: id, sourceId, card, picked });
   });
   handle(
     'command',

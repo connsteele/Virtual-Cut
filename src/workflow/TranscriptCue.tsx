@@ -43,7 +43,7 @@ export function TranscriptCue({
   ) => void;
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
-  onPreview?: (card: string, active: boolean) => void;
+  onPreview?: (card: string, active: boolean, picked: boolean) => void;
 }) {
   const cue = cueCandidate(transcript, segment)!;
   const range = cue.kind === 'clip-start' || cue.kind === 'clip-end';
@@ -244,7 +244,9 @@ export function TranscriptCue({
       }}
       onUndo={undo}
       onSeek={onSeek}
-      onPreview={(active) => onPreview?.(`cue:${transcript.id}:${segment.id}`, active)}
+      onPreview={(active, picked) =>
+        onPreview?.(`cue:${transcript.id}:${segment.id}`, active, picked)
+      }
     >
       <div className={s.pcDetails}>
         {!split && editing && (

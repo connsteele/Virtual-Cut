@@ -206,6 +206,14 @@ try {
   // Kept: the only black ended 5.5 s before this Split.
   await expect(card(2).locator('button[title="Go to the start"]')).toHaveText('00:00:14.00');
   await expect(card(2).locator('[data-split-snap]')).toHaveCount(0);
+  // VC-170: the Split's preview on the main timeline sits on the snap too.
+  await main
+    .getByRole('navigation', { name: 'Workspace pages' })
+    .getByRole('button', { name: 'Cut', exact: true })
+    .click();
+  const splitPreview = (n) => main.locator(`[data-proposal-preview="cue:${transcriptId}:${n}"]`);
+  await expect(splitPreview(1)).toHaveAttribute('data-start', '8.5');
+  await expect(splitPreview(2)).toHaveAttribute('data-start', '14');
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
       .find((w) => w.webContents.getURL().endsWith('#transcript'))

@@ -39,7 +39,7 @@ export function TranscriptProposal({
   ) => void;
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
-  onPreview?: (card: string, active: boolean) => void;
+  onPreview?: (card: string, active: boolean, picked: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -209,7 +209,7 @@ export function TranscriptProposal({
       }}
       onUndo={undo}
       onSeek={onSeek}
-      onPreview={(active) => onPreview?.(proposal.id, active)}
+      onPreview={(active, picked) => onPreview?.(proposal.id, active, picked)}
     >
       <div className={s.pcDetails} data-proposal={proposal.id}>
         {!split && editing && (

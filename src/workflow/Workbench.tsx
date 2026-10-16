@@ -1040,7 +1040,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     sourceId: '',
     items: [],
   });
-  const [previewFocus, setPreviewFocus] = useState<{ sourceId: string; card: string | null }>({
+  const [previewFocus, setPreviewFocus] = useState<{
+    sourceId: string;
+    card: string | null;
+    picked?: boolean;
+  }>({
     sourceId: '',
     card: null,
   });
@@ -1050,6 +1054,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     previewRoles = (project?.transcriptRoles?.[r.id] || []).join();
   // A submission from an agent app changes no project revision; its activity says it landed.
   useEffect(() => window.virtualCut?.agent?.onChanged(() => setAgentActivity((n) => n + 1)), []);
+  // A spoken Split's snap was measured after the previews were read.
+  useEffect(
+    () =>
+      window.virtualCut?.transcript?.onPreviews((event) => {
+        if (event.projectId === previewProject) setAgentActivity((n) => n + 1);
+      }),
+    [previewProject],
+  );
   useEffect(() => {
     const api = window.virtualCut?.transcript;
     if (!api || !previewProject || !r.id) {
@@ -1073,7 +1085,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     () =>
       window.virtualCut?.transcript?.onFocus((event) => {
         if (event.projectId === previewProject)
-          setPreviewFocus({ sourceId: event.sourceId, card: event.card });
+          setPreviewFocus({ sourceId: event.sourceId, card: event.card, picked: event.picked });
       }),
     [previewProject],
   );
@@ -1390,6 +1402,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         onSourceOpen={onSourceOpen}
         proposals={!sequence && previews.sourceId === record.id ? previews.items : undefined}
         proposalFocus={previewFocus.sourceId === record.id ? previewFocus.card : null}
+        proposalReveal={previewFocus.sourceId === record.id && !!previewFocus.picked}
         projectId={project?.project.id}
         bounds={bounds}
         selectedId={mid ? undefined : cid}

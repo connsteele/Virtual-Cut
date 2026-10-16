@@ -200,8 +200,16 @@ try {
   await view.keyboard.press('n');
   await expect(range).toHaveAttribute('data-focused', 'false');
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(1);
+  const picked = view.locator('[data-proposal-card][data-picked="true"]');
+  await expect(picked).toHaveCount(1);
   await view.keyboard.press('Escape');
   await expect(main.locator('[data-proposal-preview][data-focused="true"]')).toHaveCount(0);
+  // Esc lets go entirely: no outline and no focus ring left behind.
+  await expect(picked).toHaveCount(0);
+  assert.equal(
+    await view.evaluate(() => document.activeElement?.closest('[data-proposal-card]')),
+    null,
+  );
   // Opening details or using a card's buttons doesn't pick it.
   await card('cue:preview-mic:1').getByRole('button', { name: 'Details', exact: true }).click();
   await view.mouse.move(2, 2);
@@ -231,6 +239,11 @@ try {
   assert(viewEnd < at(0.7), `zoomed in before the clip band: ${viewEnd}`);
   const playhead = await main.locator('video').evaluate((v) => v.currentTime);
   await view.bringToFront();
+  // Hovering only lights the preview; the view stays where it is.
+  await card('cue:preview-mic:2').hover({ position: { x: 40, y: 10 } });
+  await main.waitForTimeout(300);
+  await expect(spokenClip).toHaveCount(0);
+  assert.equal(Number(await scrubber.getAttribute('data-view-end')), viewEnd, 'hover does not pan');
   await pick('cue:preview-mic:2');
   await view.mouse.move(2, 2);
   await expect(spokenClip).toHaveAttribute('data-focused', 'true');

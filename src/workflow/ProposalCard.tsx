@@ -69,7 +69,7 @@ export function ProposalCard({
   onUndo: () => void;
   onSeek: (time: number) => void;
   /** In focus or not: the pointer over the card, or the card picked (clicked, or reached by key). */
-  onPreview?: (active: boolean) => void;
+  onPreview?: (active: boolean, picked: boolean) => void;
   children?: ReactNode;
 }) {
   // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
@@ -83,9 +83,9 @@ export function ProposalCard({
   });
   useEffect(() => {
     if (!active) return;
-    previewed.current?.(true);
-    return () => previewed.current?.(false);
-  }, [active]);
+    previewed.current?.(true, picked);
+    return () => previewed.current?.(false, false);
+  }, [active, picked]);
   const tags = (
     <>
       {who !== 'agent' && <span className={`${s.whoTag} ${s.spokenTag}`}>Spoken</span>}
@@ -148,7 +148,9 @@ export function ProposalCard({
       return;
     }
     if (event.key === 'Escape' && picked) {
+      // Let go entirely: no pick and no keyboard focus ring left on the card.
       setPicked(false);
+      event.currentTarget.blur();
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -260,13 +262,27 @@ export function ProposalCard({
           </button>
           {/* A range has two times to jump to: its start and its end. */}
           <span className={s.pcTimes}>
-            <button className={s.pcTime} title="Go to the start" onClick={() => onSeek(time)}>
+            <button
+              className={s.pcTime}
+              title="Go to the start"
+              onClick={() => {
+                setPicked(true);
+                onSeek(time);
+              }}
+            >
               {formatTimecode(time)}
             </button>
             {end != null && (
               <>
                 <span className={s.pcCut}>–</span>
-                <button className={s.pcTime} title="Go to the end" onClick={() => onSeek(end)}>
+                <button
+                  className={s.pcTime}
+                  title="Go to the end"
+                  onClick={() => {
+                    setPicked(true);
+                    onSeek(end);
+                  }}
+                >
                   {formatTimecode(end)}
                 </button>
               </>

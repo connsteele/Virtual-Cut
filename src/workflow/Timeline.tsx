@@ -50,6 +50,7 @@ export function Timeline({
   onScrubActive,
   proposals = [],
   proposalFocus = null,
+  proposalReveal = false,
 }: {
   recording: Recording;
   projectId?: string;
@@ -81,6 +82,8 @@ export function Timeline({
   proposals?: ProposalPreview[];
   /** The transcript window card in focus; its preview is drawn brighter. */
   proposalFocus?: string | null;
+  /** The focused proposal's card was picked (clicked), so a zoomed view may pan to it. */
+  proposalReveal?: boolean;
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
@@ -201,14 +204,14 @@ export function Timeline({
   useEffect(() => {
     wheelState.current = { view, fullStart, fullEnd, minimum, identity };
   });
-  // VC-170: a proposal brought into focus outside a zoomed view pans the view to it once; the
-  // playhead stays where it is.
+  // VC-170: a proposal picked outside a zoomed view pans the view to it once; hovering a card
+  // never moves the view, and the playhead stays where it is.
   const focusedPreview =
     proposalFocus == null ? undefined : proposals.find((p) => p.cards.includes(proposalFocus));
   const focusStart = focusedPreview?.start,
     focusEnd = focusedPreview?.end ?? focusedPreview?.start;
   useEffect(() => {
-    if (focusStart == null || focusEnd == null) return;
+    if (focusStart == null || focusEnd == null || !proposalReveal) return;
     const { view, fullStart, fullEnd, minimum, identity } = wheelState.current;
     if (focusStart >= view.start && focusEnd <= view.end) return;
     if (drag.current || markerDrag.current || pointer.current != null) return;
@@ -224,7 +227,7 @@ export function Timeline({
         minimum,
       ),
     });
-  }, [focusStart, focusEnd]);
+  }, [focusStart, focusEnd, proposalReveal]);
   useEffect(() => {
     const el = track.current!;
     const wheel = (e: WheelEvent) => {
@@ -1022,6 +1025,7 @@ export function Timeline({
                     className={band ? s.proposalBand : mark ? s.proposalMark : s.proposalLine}
                     data-proposal-preview={p.cards[0]}
                     data-proposal-kind={p.kind}
+                    data-start={p.start}
                     data-who={p.who}
                     data-focused={focused}
                     style={{

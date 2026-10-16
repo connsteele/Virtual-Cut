@@ -70,6 +70,7 @@ export function Player({
   autoPlay = false,
   proposals,
   proposalFocus,
+  proposalReveal,
   ref,
 }: {
   recording: Recording;
@@ -103,6 +104,7 @@ export function Player({
   autoPlay?: boolean;
   proposals?: import('../../electron/proposal-previews').ProposalPreview[];
   proposalFocus?: string | null;
+  proposalReveal?: boolean;
   ref?: Ref<Transport>;
 }) {
   const video = useRef<HTMLVideoElement>(null),
@@ -876,6 +878,7 @@ export function Player({
         audioTracks={r.sourcePath ? monitored : []}
         proposals={proposals}
         proposalFocus={proposalFocus}
+        proposalReveal={proposalReveal}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>
