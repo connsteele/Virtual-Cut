@@ -154,6 +154,8 @@ for (const until = Date.now() + 60000; ;) {
   await new Promise((r) => setTimeout(r, 100));
 }
 await service.selectBatch(id, batchId);
+// Without a requested recording, the window falls back to the selected one.
+assert.equal(service.transcriptSession().sourceId, recording.id);
 await service.close();
 
 let app;
