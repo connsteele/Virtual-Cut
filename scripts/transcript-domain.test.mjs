@@ -847,3 +847,103 @@ test('export SRT sidecars follow the verified cut, are named after the video and
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('Both reads microphone and game phrases in one time order, with their own owners (VC-185)', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const store = new TranscriptStore(db);
+    store.put({ ...transcript, duration: 200 });
+    store.put({ ...transcript, id: 'dialogue', role: 'game', track: 1, duration: 200 });
+    store.put({ ...transcript, id: 'elsewhere', sourceId: 'other', role: 'game', duration: 200 });
+    const timed = (id, text, start) => {
+      const segment = phrase(id, text);
+      return {
+        ...segment,
+        start,
+        end: start + 0.5,
+        words: segment.words.map((w, n) => ({ ...w, start: start + n * 0.1 })),
+      };
+    };
+    for (let i = 0; i < 40; i++) {
+      store.append('speech', timed(i, i === 5 ? 'Clip start opening' : 'mic talk', i * 2));
+      store.append('dialogue', timed(i, i === 7 ? 'Lapis speaks' : 'game line', i * 2 + 1));
+    }
+    // A game line at the same time as a microphone line comes after it.
+    store.append('dialogue', timed(40, 'game line', 0));
+    const page = store.page('speech', 0, '', [], {}, 'all', { id: 'dialogue', matches: [] });
+    assert.equal(page.total, 81);
+    assert.equal(page.segments.length, 60);
+    assert.equal(page.partner.id, 'dialogue');
+    assert.deepEqual(page.owners.slice(0, 4), ['speech', 'dialogue', 'dialogue', 'speech']);
+    assert.deepEqual(
+      page.segments.slice(0, 4).map((s) => s.start),
+      [0, 0, 1, 2],
+    );
+    assert.equal(
+      page.segments.find((s, i) => page.owners[i] === 'speech' && s.id === 5).cueKind,
+      'clip-start',
+    );
+    // Counts cover both transcripts; only the microphone holds cues.
+    assert.deepEqual(page.counts, { all: 81, cues: 1, pending: 1, accepted: 0, rejected: 0 });
+    assert.equal(page.followEnd, 59);
+    const second = store.page('speech', 1, '', [], {}, 'all', { id: 'dialogue', matches: [] });
+    assert.equal(second.segments.length, 21);
+    assert.equal(second.followStart, 59);
+    // Search covers both, corrected game phrases included; a cue filter leaves the microphone's.
+    const found = store.page('speech', 0, 'Lapis', [], {}, 'all', { id: 'dialogue', matches: [9] });
+    assert.deepEqual(found.owners, ['dialogue', 'dialogue']);
+    assert.deepEqual(
+      found.segments.map((s) => s.id),
+      [7, 9],
+    );
+    const cues = store.page('speech', 0, '', [], {}, 'pending', { id: 'dialogue', matches: [] });
+    assert.deepEqual(cues.owners, ['speech']);
+    // Following playback lands on the combined page that holds the time.
+    assert.equal(store.pageAt('speech', 0, 'dialogue'), 0);
+    assert.equal(store.pageAt('speech', 58.5, 'dialogue'), 0);
+    assert.equal(store.pageAt('speech', 59, 'dialogue'), 1);
+    assert.equal(store.pageAt('speech', 59), 0);
+    // Only a microphone and a game transcript of the same recording read together.
+    for (const other of ['speech', 'elsewhere'])
+      assert.throws(
+        () => store.page('speech', 0, '', [], {}, 'all', { id: other, matches: [] }),
+        /cannot be read together/,
+      );
+    assert.throws(() => store.pageAt('dialogue', 1, 'speech'), /cannot be read together/);
+  } finally {
+    db.close();
+  }
+});
+
+test('reading state remembers Both and which transcript a focused word belongs to (VC-185)', () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  const view = {
+    projectId: 'project',
+    sourceId: 'source',
+    transcriptId: 'both',
+    page: 0,
+    search: '',
+    filter: 'all',
+    follow: true,
+    original: false,
+    scroll: 0,
+    focus: { segment: 4, word: 1, transcript: 'dialogue' },
+  };
+  saveTranscriptView(storage, 'session', view);
+  assert.deepEqual(
+    readTranscriptView(storage, 'session', 'project', 'source', ['speech', 'dialogue', 'both']),
+    view,
+  );
+  // Without a game transcript there is no Both to return to.
+  assert.equal(readTranscriptView(storage, 'session', 'project', 'source', ['speech']), undefined);
+  saveTranscriptView(storage, 'session', {
+    ...view,
+    sourceId: 'next',
+    focus: { segment: 1, transcript: '' },
+  });
+  assert.equal(readTranscriptView(storage, 'session', 'project', 'next', ['both']), undefined);
+});

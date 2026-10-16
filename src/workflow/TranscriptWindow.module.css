@@ -308,6 +308,51 @@
 .segment[data-cue='clip-end'] {
   border-left-color: #6fcf9a;
 }
+/* Both (VC-185): a coloured edge and a small label say whose line it is. A cue's colour keeps
+   the edge on its microphone line; the label still says Mic. */
+.segment[data-source] {
+  grid-template-columns: 92px 38px minmax(0, 1fr) auto;
+}
+.segment[data-source='mic'] {
+  border-left-color: var(--teal-light);
+}
+.segment[data-source='game'] {
+  border-left-color: #e3a6c8;
+}
+.segment[data-source][data-cue='mark'] {
+  border-left-color: #d3b26b;
+}
+.segment[data-source][data-cue='note'] {
+  border-left-color: #8fb3e8;
+}
+.segment[data-source][data-cue='cut'] {
+  border-left-color: #e08f7a;
+}
+.segment[data-source][data-cue='clip-start'],
+.segment[data-source][data-cue='clip-end'] {
+  border-left-color: #6fcf9a;
+}
+.segment[data-source] .rowCue,
+.segment[data-source] .editHint {
+  grid-column: 3 / 5;
+}
+.source {
+  justify-self: start;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+}
+.segment[data-source='mic'] .source {
+  background: #173c39;
+  color: var(--teal-light);
+}
+.segment[data-source='game'] .source {
+  background: #3a2532;
+  color: #e3a6c8;
+}
 .rowTime {
   font:
     12px ui-monospace,

@@ -106,6 +106,9 @@ export interface TranscriptPage {
   total: number;
   /** Phrases per filter across the whole transcript, ignoring search (the filter chips). */
   counts?: Record<TranscriptFilter, number>;
+  /** Read together with a game transcript (VC-185): that transcript, and each phrase's owner. */
+  partner?: TranscriptSummary;
+  owners?: string[];
 }
 export type TranscriptFilter = 'all' | 'cues' | 'pending' | 'accepted' | 'rejected';
 export interface AsrRuntime {
@@ -189,7 +192,8 @@ export interface TranscriptApi {
   onTransport(
     callback: (event: { projectId: string; sourceId: string; key: 'j' | 'k' | 'l' }) => void,
   ): () => void;
-  pageAt(projectId: string, transcriptId: string, time: number): Promise<number>;
+  /** `also` names a game transcript read together with this microphone one (VC-185). */
+  pageAt(projectId: string, transcriptId: string, time: number, also?: string): Promise<number>;
   apply(token: string): Promise<import('./project-contracts.js').ProjectSnapshot>;
   open(sourceId?: string): Promise<void>;
   onSource(callback: (sourceId: string) => void): () => void;
@@ -200,6 +204,7 @@ export interface TranscriptApi {
     page: number,
     search: string,
     filter?: 'all' | 'cues' | 'pending' | 'accepted' | 'rejected',
+    also?: string,
   ): Promise<TranscriptPage>;
   start(
     projectId: string,

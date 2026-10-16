@@ -142,6 +142,11 @@ export class TranscriptStore {
       cuePartner,
     };
   }
+  /**
+   * One page of phrases, or of a microphone and a game transcript interleaved in time order
+   * (VC-185, `also` names the game transcript and its corrected-search matches). The combined
+   * page lists each phrase's transcript in `owners`; only the microphone can hold cues.
+   */
   page(
     id: string,
     page: number,
@@ -149,6 +154,7 @@ export class TranscriptStore {
     editedMatches: number[] = [],
     model: Pick<Model, 'transcriptEdits' | 'cueDecisions'> = {},
     mode: 'all' | 'cues' | 'pending' | 'accepted' | 'rejected' = 'all',
+    also?: { id: string; matches: number[] },
   ): TranscriptPage {
     if (
       !Number.isInteger(page) ||
@@ -161,13 +167,16 @@ export class TranscriptStore {
     const transcript = this.get(id);
     if (!['all', 'cues', 'pending', 'accepted', 'rejected'].includes(mode))
       throw new Error('Invalid cue filter.');
+    const partner = also && this.pair(transcript, also.id);
     const cueIds: number[] = [];
-    const counts = {
-      all: Number(
+    const counted = (transcriptId: string) =>
+      Number(
         this.db
           .prepare('SELECT count(*) AS n FROM transcript_segments WHERE transcript_id=?')
-          .get(id)?.n || 0,
-      ),
+          .get(transcriptId)?.n || 0,
+      );
+    const counts = {
+      all: counted(id) + (partner ? counted(partner.id) : 0),
       cues: 0,
       pending: 0,
       accepted: 0,
@@ -186,28 +195,42 @@ export class TranscriptStore {
       }
     // Bound each IPC response. Literal substring matching also treats % and _ literally.
     const filter = `transcript_id=? AND (instr(lower(json_extract(body,'$.text')),lower(?))>0 OR ordinal IN (SELECT value FROM json_each(?))) AND (?='all' OR ordinal IN (SELECT value FROM json_each(?)))`;
-    const matches = JSON.stringify(editedMatches);
-    const args = [id, search, matches, mode, JSON.stringify(cueIds)];
+    const args: (string | number)[] = [
+      id,
+      search,
+      JSON.stringify(editedMatches),
+      mode,
+      JSON.stringify(cueIds),
+    ];
+    // Game phrases hold no cues, so a cue filter leaves only the microphone's.
+    const where = partner ? `(${filter}) OR (${filter})` : filter;
+    if (partner) args.push(partner.id, search, JSON.stringify(also.matches), mode, '[]');
+    // Time order across both; at the same start the microphone comes first.
+    const order = partner ? `json_extract(body,'$.start'), transcript_id<>?, ordinal` : 'ordinal';
+    const orderArgs = partner ? [id] : [];
     const total = Number(
-      this.db.prepare(`SELECT count(*) AS n FROM transcript_segments WHERE ${filter}`).get(...args)
+      this.db.prepare(`SELECT count(*) AS n FROM transcript_segments WHERE ${where}`).get(...args)
         ?.n || 0,
     );
-    const segments = this.db
+    const rows = this.db
       .prepare(
-        `SELECT body FROM transcript_segments WHERE ${filter} ORDER BY ordinal LIMIT 60 OFFSET ?`,
+        `SELECT transcript_id, body FROM transcript_segments WHERE ${where} ORDER BY ${order} LIMIT 60 OFFSET ?`,
       )
-      .all(...args, page * 60)
-      .map((r) => {
-        const segment = JSON.parse(String(r.body));
-        return cueCandidate(transcript, { ...segment, text: correctedText(model, id, segment) })
-          ? this.cueSegment(id, segment.id, model)
-          : segment;
-      });
+      .all(...args, ...orderArgs, page * 60);
+    const segments = rows.map((r) => {
+      const segment = JSON.parse(String(r.body));
+      return String(r.transcript_id) === id &&
+        cueCandidate(transcript, { ...segment, text: correctedText(model, id, segment) })
+        ? this.cueSegment(id, segment.id, model)
+        : segment;
+    });
     const next = this.db
       .prepare(
-        'SELECT body FROM transcript_segments WHERE transcript_id=? ORDER BY ordinal LIMIT 1 OFFSET ?',
+        partner
+          ? `SELECT body FROM transcript_segments WHERE transcript_id IN (?,?) ORDER BY ${order} LIMIT 1 OFFSET ?`
+          : 'SELECT body FROM transcript_segments WHERE transcript_id=? ORDER BY ordinal LIMIT 1 OFFSET ?',
       )
-      .get(id, (page + 1) * 60);
+      .get(...(partner ? [id, partner.id, id] : [id]), (page + 1) * 60);
     return {
       transcript,
       segments,
@@ -215,12 +238,32 @@ export class TranscriptStore {
       counts,
       followStart: page === 0 ? 0 : segments[0]?.start,
       followEnd: next ? JSON.parse(String(next.body)).start : undefined,
+      ...(partner ? { partner, owners: rows.map((r) => String(r.transcript_id)) } : {}),
     };
   }
-  pageAt(id: string, time: number) {
+  /** The game transcript read beside a microphone transcript: same recording, other role. */
+  private pair(mic: TranscriptSummary, gameId: string) {
+    const game = this.get(gameId);
+    if (mic.role !== 'mic' || game.role !== 'game' || game.sourceId !== mic.sourceId)
+      throw new Error('These transcripts cannot be read together.');
+    return game;
+  }
+  pageAt(id: string, time: number, also?: string) {
     const transcript = this.get(id);
     if (!Number.isFinite(time) || time < 0 || time > transcript.duration + 1)
       throw new Error('Invalid transcript time.');
+    if (also) {
+      // The combined page holding the last phrase, of either transcript, started by `time`.
+      const partner = this.pair(transcript, also);
+      const before = Number(
+        this.db
+          .prepare(
+            "SELECT count(*) AS n FROM transcript_segments WHERE transcript_id IN (?,?) AND json_extract(body,'$.start')<=?",
+          )
+          .get(id, partner.id, time)?.n || 0,
+      );
+      return Math.floor(Math.max(0, before - 1) / 60);
+    }
     const row = this.db
       .prepare(
         "SELECT ordinal FROM transcript_segments WHERE transcript_id=? AND json_extract(body,'$.start')<=? ORDER BY ordinal DESC LIMIT 1",

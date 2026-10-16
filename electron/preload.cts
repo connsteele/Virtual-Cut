@@ -14,8 +14,8 @@ const api: VirtualCutApi = {
       ipcRenderer.on('transcript:transport-event', f);
       return () => ipcRenderer.removeListener('transcript:transport-event', f);
     },
-    pageAt: (id, transcriptId, time) =>
-      ipcRenderer.invoke('transcript:pageAt', id, transcriptId, time),
+    pageAt: (id, transcriptId, time, also) =>
+      ipcRenderer.invoke('transcript:pageAt', id, transcriptId, time, also),
     open: (source) => ipcRenderer.invoke('transcript:open', source),
     onSource: (callback) => {
       const f = (_event: Electron.IpcRendererEvent, source: string) => callback(source);
@@ -23,8 +23,8 @@ const api: VirtualCutApi = {
       return () => ipcRenderer.removeListener('transcript:source-event', f);
     },
     session: (source) => ipcRenderer.invoke('transcript:session', source),
-    page: (id, transcriptId, page, search, filter) =>
-      ipcRenderer.invoke('transcript:page', id, transcriptId, page, search, filter),
+    page: (id, transcriptId, page, search, filter, also) =>
+      ipcRenderer.invoke('transcript:page', id, transcriptId, page, search, filter, also),
     runtime: (refresh) => ipcRenderer.invoke('transcript:runtime', refresh),
     configure: (part, device) => ipcRenderer.invoke('transcript:configure', part, device),
     start: (id, source, batch, options) =>

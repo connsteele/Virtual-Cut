@@ -2,6 +2,7 @@
 export interface TranscriptView {
   projectId: string;
   sourceId: string;
+  /** A transcript id, or `both` for microphone and game read together (VC-185). */
   transcriptId: string;
   page: number;
   search: string;
@@ -9,7 +10,8 @@ export interface TranscriptView {
   follow: boolean;
   original: boolean;
   scroll: number;
-  focus?: { segment: number; word?: number };
+  /** The focused word; `transcript` tells the two apart when both are read together. */
+  focus?: { segment: number; word?: number; transcript?: string };
 }
 interface ViewStorage {
   getItem(key: string): string | null;
@@ -36,7 +38,10 @@ function valid(value: unknown): value is TranscriptView {
     Number.isFinite(v.scroll) &&
     v.scroll >= 0 &&
     v.scroll <= 10000000 &&
-    (v.focus == null || (index(v.focus.segment) && (v.focus.word == null || index(v.focus.word))))
+    (v.focus == null ||
+      (index(v.focus.segment) &&
+        (v.focus.word == null || index(v.focus.word)) &&
+        (v.focus.transcript == null || identifier(v.focus.transcript))))
   );
 }
 function views(storage: ViewStorage, owner: string): TranscriptView[] {
@@ -77,7 +82,15 @@ export function saveTranscriptView(storage: ViewStorage, owner: string, view: Tr
     follow: view.follow,
     original: view.original,
     scroll: view.scroll,
-    ...(view.focus ? { focus: { segment: view.focus.segment, word: view.focus.word } } : {}),
+    ...(view.focus
+      ? {
+          focus: {
+            segment: view.focus.segment,
+            word: view.focus.word,
+            transcript: view.focus.transcript,
+          },
+        }
+      : {}),
   };
   const previous = views(storage, owner).filter(
     (v) => v.projectId !== view.projectId || v.sourceId !== view.sourceId,
