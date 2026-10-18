@@ -27,7 +27,7 @@ const samples = path.resolve(
   process.argv[2] || process.env.VIRTUAL_CUT_CUE_SAMPLES || 'G:/VC Audio Cues',
 );
 const output = path.resolve(
-  process.env.VIRTUAL_CUT_CUE_OUTPUT || 'G:/Claude/Virtual Cut/cue-accuracy',
+  process.env.VIRTUAL_CUT_CUE_OUTPUT || 'W:/AI/Claude/Virtual Cut/cue-accuracy',
 );
 const tolerance = Number(process.env.VIRTUAL_CUT_CUE_TOLERANCE || 1);
 

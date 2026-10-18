@@ -5,7 +5,7 @@
 //
 // --version updates package.json and package-lock.json first. Stops at the first failed step
 // and names it. Everything it writes stays under VIRTUAL_CUT_DELIVERY_ROOT
-// (default G:/Claude/Virtual Cut): test-runs, builds, evidence/<version> and temp.
+// (default W:/AI/Claude/Virtual Cut): test-runs, builds, evidence/<version> and temp.
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -17,7 +17,7 @@ const option = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const base = path.resolve(process.env.VIRTUAL_CUT_DELIVERY_ROOT || 'G:/Claude/Virtual Cut');
+const base = path.resolve(process.env.VIRTUAL_CUT_DELIVERY_ROOT || 'W:/AI/Claude/Virtual Cut');
 const transport = !args.includes('--no-transport');
 
 const requested = option('--version');

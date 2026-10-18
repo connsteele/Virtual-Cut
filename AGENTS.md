@@ -39,7 +39,7 @@ before changing cutting, timestamps, mic removal or transcription.
 - Never test against or write to original recordings; use copies. Nothing may move or modify
   originals.
 - Downloads, caches, screenshots, test runs, builds and packaging intermediates follow the
-  user's storage preference (on Connor's workstation: `G:\Claude\Virtual Cut`). Never commit
+  user's storage preference (on Connor's workstation: `W:\AI\Claude\Virtual Cut`). Never commit
   node_modules, profiles, media, personal notes or build output.
 
 ## Checks and delivery

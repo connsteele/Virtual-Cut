@@ -13,7 +13,7 @@
 // Plain Node after a build:
 //   node scripts/intent-score.mjs --notes "G:/VC Audio Cues/Cai Chapter 4 Battle.txt" \
 //     --transcript mic.json --proposals decisions.json --label cai-ch4
-// Writes report.md and report.json to G:/Claude/Virtual Cut/intent-score/<label> unless
+// Writes report.md and report.json to W:/AI/Claude/Virtual Cut/intent-score/<label> unless
 // --output says otherwise. Nothing is read from or written to a project.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -131,7 +131,7 @@ const score = scoreRecording(notes.entries, proposals, {
 const recording = path.basename(values.notes, path.extname(values.notes));
 const label = values.label || new Date().toISOString().replace(/[:.]/g, '-');
 const output = path.resolve(
-  values.output || path.join('G:/Claude/Virtual Cut/intent-score', label),
+  values.output || path.join('W:/AI/Claude/Virtual Cut/intent-score', label),
 );
 const clock = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–');
