@@ -64,7 +64,7 @@ floors pass. Seven selected final-package scripts plus build also pass. See
 exact reports and measurement boundaries.
 
 `scripts/cue-accuracy-study.mjs` scores spoken-cue recognition against labelled recordings
-(`G:\VC Audio Cues` by default: each recording with a `.txt` of what was said and when). It copies
+(`F:\VC Audio Cues` by default: each recording with a `.txt` of what was said and when). It copies
 each recording, runs the app's own import, local recognition and cue logic, and reports cues found,
 timing error, Note wording, false triggers and per-phrase word error rate. It needs a local speech
 engine (`VIRTUAL_CUT_ASR_RUNTIME` pointing at a `transcription-runtime.json`, read only) and is not

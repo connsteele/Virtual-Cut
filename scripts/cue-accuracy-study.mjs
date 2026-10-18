@@ -24,7 +24,7 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const samples = path.resolve(
-  process.argv[2] || process.env.VIRTUAL_CUT_CUE_SAMPLES || 'G:/VC Audio Cues',
+  process.argv[2] || process.env.VIRTUAL_CUT_CUE_SAMPLES || 'F:/VC Audio Cues',
 );
 const output = path.resolve(
   process.env.VIRTUAL_CUT_CUE_OUTPUT || 'W:/AI/Claude/Virtual Cut/cue-accuracy',

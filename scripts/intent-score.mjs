@@ -11,7 +11,7 @@
 // part; default 60 s after the last note), --output <folder>.
 //
 // Plain Node after a build:
-//   node scripts/intent-score.mjs --notes "G:/VC Audio Cues/Cai Chapter 4 Battle.txt" \
+//   node scripts/intent-score.mjs --notes "F:/VC Audio Cues/Cai Chapter 4 Battle.txt" \
 //     --transcript mic.json --proposals decisions.json --label cai-ch4
 // Writes report.md and report.json to W:/AI/Claude/Virtual Cut/intent-score/<label> unless
 // --output says otherwise. Nothing is read from or written to a project.
