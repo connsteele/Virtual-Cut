@@ -35,7 +35,8 @@ export async function runNode(script, args = []) {
 }
 
 export function tsc(args) {
-  return runNode(require.resolve('typescript/bin/tsc'), args);
+  // TypeScript 7 does not export bin/tsc, so require.resolve cannot find it.
+  return runNode(path.join(root, 'node_modules/typescript/bin/tsc'), args);
 }
 
 export function assertBuilt() {

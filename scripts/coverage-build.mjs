@@ -1,5 +1,6 @@
 import { createInstrumenter } from 'istanbul-lib-instrument';
-import ts from 'typescript';
+// TypeScript 7 has no compiler API yet (expected in 7.1), so coverage transpiles with TypeScript 6.
+import ts from '@typescript/typescript6';
 import path from 'node:path';
 import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

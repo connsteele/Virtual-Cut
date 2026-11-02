@@ -1,6 +1,6 @@
 # Regression gates
 
-`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.8 has eleven fast, seventeen native and twenty desktop scripts (48 total); `project-capacity-checks.mjs` guards long-project save/reopen and snapshot cost. `npm run lint` includes type-aware promise checks. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
+`scripts/test-inventory.mjs` is the maintained inventory. Version 0.4.8 has eleven fast, seventeen native and twenty desktop scripts (48 total); `project-capacity-checks.mjs` guards long-project save/reopen and snapshot cost. `npm run lint` (oxlint) includes type-aware promise checks. New test/check files must be classified or the runner fails. Historical sample walkthroughs and measurements needing copied real footage remain explicitly listed outside automatic gates.
 
 The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Current measured results and module gates are in [coverage](coverage.md); version-specific sections below preserve historical evidence. Closeout expands the existing deletion test with ownership/schema rejection, pending writes, lock contention, unavailable peers, linked ancestors and referenced-project protection. Storage tests report unavailable or linked locations honestly. These use disposable files and do not alter app behavior.
 
@@ -13,6 +13,28 @@ The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Curre
 | `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                       |
 
 The Windows GitHub workflow runs build/lint/fast checks followed by measured native/desktop coverage with synthetic media. Packaged and human hardware/Resolve checks are separate. The workflow uses the official [checkout](https://github.com/actions/checkout), [Node setup](https://github.com/actions/setup-node), and [artifact upload](https://github.com/actions/upload-artifact) actions. A first hosted run is still required after publishing the branch.
+
+## Toolchain
+
+The fast gate's tools were chosen for speed (VC-188, November 2026):
+
+- **TypeScript 7** (`typescript`) type-checks and emits `dist-electron`. Its package does not
+  export `bin/tsc`, so `scripts/shared.mjs` runs `node_modules/typescript/bin/tsc` directly.
+- **TypeScript 6** (`@typescript/typescript6`) stays only for the coverage hooks
+  (`coverage-build.mjs`, `coverage-fast.mjs`), which call `ts.transpileModule`. TypeScript 7 has
+  no compiler API until 7.1; remove the TS6 package then.
+- **oxlint** with `oxlint-tsgolint` replaces ESLint. `.oxlintrc.json` turns off oxlint's default
+  categories and lists the rules ESLint applied, per file group, including the type-aware
+  promise rules (VC-102) and the React hooks rules. `eslint-disable` comments still work. The
+  root `tsconfig.json` references the app, electron and node projects so the type-aware rules
+  see each file with its own project (Electron files need Node types); builds still name a
+  project explicitly.
+- **Prettier** runs with `--cache` in `format`, `format:check` and the fast gate. The cache lives
+  in `node_modules/.cache/prettier` and compares file contents.
+
+On Connor's PC a warm `npm test` went from about 22 s to about 6 s: build 5.7 s to 1.5 s, lint
+9.2 s to 0.5 s and format 3.2 s to 0.4 s. The first run after a fresh install takes about 9 s
+while the Prettier cache fills.
 
 ## Speed
 

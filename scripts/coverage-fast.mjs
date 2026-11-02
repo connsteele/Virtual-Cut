@@ -2,7 +2,7 @@ import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { instrument } from './coverage-build.mjs';
 import './coverage-native.cjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
