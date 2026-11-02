@@ -354,19 +354,16 @@ Note I like the crowd
     'Keep a Split where it was said unless a black screen ends within 5 s before it. Propose a ' +
       "cut up to 12 s back only when what's said shows the call came late, and say why.",
   );
-  has('Propose a spelling only when it was seen written on screen.');
+  assert.ok(!/spelling/.test(text), 'the spelling sentence waits for screen text (VC-171)');
   has('A part of one continuous scene is a range marker (end_seconds), not a clip range.');
   has('mic speech is optional evidence, never a requirement');
   has('"No commentary on this recording; proposals come from the game alone"');
   has('Never read silence as "nothing worth keeping".');
-  has(`"First few" is set in the game's section below (3 unless it says otherwise)`);
+  has(`"First few" is 3 unless the game's section below says otherwise`);
   has('such as "clip this one", overrides the count');
   assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
   assert.equal(intentGuide.games.general.recurringClips, 3);
-  assert.deepEqual(
-    intentGuide.games.sections.map((g) => [g.game, g.platform, g.recurringClips]),
-    [['Calling', 'Wii', 3]],
-  );
+  assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
   const doc = (await readFile(new URL('../docs/intent-guide.md', import.meta.url), 'utf8')).replace(
     /\s+/g,
     ' ',
@@ -374,11 +371,11 @@ Note I like the crowd
   assert.ok(doc.startsWith(`# Intent guide (version ${intentGuide.version})`));
   for (const words of [
     'unless a black screen ends within 5 s before it',
-    'Propose a spelling only when it was seen written on screen.',
+    'Held for a later version: "Propose a spelling only when it was seen written on screen"',
     'marker, not a clip range',
     'No mic, or a silent mic',
     'Recurring moments',
-    '| Calling (Wii)',
+    '| General | first 3',
   ])
     assert.ok(doc.includes(words), `docs/intent-guide.md says: ${words}`);
 }

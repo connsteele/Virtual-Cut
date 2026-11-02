@@ -52,21 +52,24 @@ A line can carry several intents.
   never means "nothing worth keeping".
 - **Recurring moments** (MVP screen, level-up, rewards, victory poses): clips for the first few
   instances in a game, so the edit has variations; after that a point marker at most, or nothing.
-  "First few" is set in the game's section (3 unless it says otherwise) and counts within one batch
-  for now. Anything said on the mic, such as "clip this one", overrides the count.
-- Use the game vocabulary and glossary for names. Propose a spelling only when it was seen written
-  on screen. Keep titles plain and under 100 characters.
+  "First few" is 3 unless the game's section says otherwise, and counts within one batch for now.
+  Anything said on the mic, such as "clip this one", overrides the count.
+- Use the game vocabulary and glossary for names. Keep titles plain and under 100 characters.
+
+Held for a later version: "Propose a spelling only when it was seen written on screen" (decision
+D6) waits for screen text through MCP (VC-141, VC-171). Without it, agents mark names unsure rather
+than fixing them.
 
 ## Games
 
 Lessons that hold for one game stay under that game's header so they don't leak into others. The
 agent uses the section whose game matches `get_context`; the general section applies to every
-game. A lesson moves to general only when it holds in a second game or the creator says so.
+game. A lesson moves to general only when it holds in a second game or the creator says so. A game
+gets its own section when its footage comes through and it has lessons of its own.
 
-| Section       | Recurring moments clipped | Lessons  |
-| ------------- | ------------------------- | -------- |
-| General       | first 3                   | none yet |
-| Calling (Wii) | first 3                   | none yet |
+| Section | Recurring moments clipped | Lessons  |
+| ------- | ------------------------- | -------- |
+| General | first 3                   | none yet |
 
 ## The user's layer
 

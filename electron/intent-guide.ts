@@ -83,14 +83,13 @@ export const intentGuide = {
       'menus and battles. Never read silence as "nothing worth keeping".',
     'Recurring moments (MVP screen, level-up, rewards, victory poses): propose clips for the ' +
       'first few instances in a game, so there are variations for the edit. After that, ' +
-      `propose a point marker at most, or nothing. "First few" is set in the game's section ` +
-      `below (${defaultRecurringClips} unless it says otherwise) and counts within this batch. ` +
+      `propose a point marker at most, or nothing. "First few" is ${defaultRecurringClips} unless ` +
+      "the game's section below says otherwise, and counts within this batch. " +
       'Anything said on the mic, such as "clip this one", overrides the count.',
     'Skip coughs, false starts ("never mind"), filler and lines the recognizer invented over noise.',
     'Mic lines about one idea across a session can add up to one composite note: propose a ' +
       'single note with the notion intent and cite every supporting line.',
-    'Use the game vocabulary and glossary from get_context for names. Propose a spelling only ' +
-      'when it was seen written on screen.',
+    'Use the game vocabulary and glossary from get_context for names.',
     'Keep titles under 100 characters and plain; no tags or braces in titles.',
     "Learn from the creator's examples and decisions below: what they accepted, moved, retitled " +
       'or rejected.',
@@ -104,14 +103,13 @@ export const intentGuide = {
       recurringClips: defaultRecurringClips,
       lessons: [] as string[],
     },
-    sections: [
-      {
-        game: 'Calling',
-        platform: 'Wii',
-        recurringClips: defaultRecurringClips,
-        lessons: [] as string[],
-      },
-    ],
+    // A game gets a section when its footage comes through and it has lessons of its own.
+    sections: [] as {
+      game: string;
+      platform?: string;
+      recurringClips: number;
+      lessons: string[];
+    }[],
   },
   pass: [
     'get_current_view or get_project_summary: find the recording.',
