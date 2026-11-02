@@ -114,7 +114,7 @@ Connor approved separate selection, editing and seeking. Single-click marker/cli
 
 ## Repository
 
-The application repository is `F:\Repos\Virtual-Cut` with remote `https://github.com/connsteele/Virtual-Cut.git`. The current decisions are also stored under `docs/design-decisions.md` there; local-transcription research and a local copy of the published deferred proxy request accompany them. No implementation or model benchmark is claimed by these planning documents.
+The application repository is `G:\Dev\Repos\Virtual-Cut` with remote `https://github.com/connsteele/Virtual-Cut.git`. The current decisions are also stored under `docs/design-decisions.md` there; local-transcription research and a local copy of the published deferred proxy request accompany them. No implementation or model benchmark is claimed by these planning documents.
 
 ## Engineering proof still required
 

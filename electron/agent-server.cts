@@ -43,8 +43,8 @@ const instructions =
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
   "get_batch_record keeps a batch's first pass beside what the user exported, for learning " +
   'from the misses. ' +
-  "Before proposing from the creator's mic speech, read get_intent_guide: it says what their " +
-  'free speech means and how to turn it into proposals, with their own examples. ' +
+  'Before proposing, read get_intent_guide: it says what their free mic speech means, what to ' +
+  'propose when there is none, and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
   'never return file paths or media.';
 
@@ -214,9 +214,10 @@ export function registerAgentAccess(options: {
     read<{ recording_id?: string; max_examples?: number }>(
       'get_intent_guide',
       "How to read the creator's free mic speech and turn it into proposals: the intents " +
-        '(marker, general, notion, edit), spoken commands, rules and the steps of a mic intent ' +
-        'pass, with their own labelled examples, earlier decisions and habits. Read it before ' +
-        'proposing from mic speech. Give recording_id to leave that recording out of the examples.',
+        '(marker, general, notion, edit), spoken commands, rules (including recordings with no ' +
+        'mic and recurring moments), per-game sections and the steps of an intent pass, with ' +
+        'their own labelled examples, earlier decisions and habits. Read it before proposing. ' +
+        'Give recording_id to leave that recording out of the examples.',
       z.object({
         recording_id: z.string().max(200).optional().describe('The recording you will work on.'),
         max_examples: z.number().int().min(0).max(200).optional().describe('Default 40.'),
