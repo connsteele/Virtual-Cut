@@ -160,17 +160,18 @@ try {
   const build = await run('build', process.execPath, ['scripts/build.mjs']);
   if (profile === 'fast' || profile === 'all') {
     await run('lint', process.execPath, [
-      path.join(root, 'node_modules/eslint/bin/eslint.js'),
-      '.',
+      path.join(root, 'node_modules/oxlint/bin/oxlint'),
+      '--type-aware',
     ]);
     // The same files as npm run format:check, so formatting drift fails the fast gate.
     const formatCheck = manifest.scripts['format:check'];
-    if (!formatCheck?.startsWith('prettier --check '))
-      throw new Error('Keep format:check as "prettier --check <paths>" for the fast gate.');
+    if (!formatCheck?.startsWith('prettier --check --cache '))
+      throw new Error('Keep format:check as "prettier --check --cache <paths>" for the fast gate.');
     await run('format', process.execPath, [
       path.join(root, 'node_modules/prettier/bin/prettier.cjs'),
       '--check',
-      ...formatCheck.slice('prettier --check '.length).split(' '),
+      '--cache',
+      ...formatCheck.slice('prettier --check --cache '.length).split(' '),
     ]);
   }
   for (const name of known.filter((s) => wanted.has(s))) {
