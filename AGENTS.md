@@ -46,6 +46,9 @@ before changing cutting, timestamps, mic removal or transcription.
 
 - `npm test` is the fast gate (lint, typecheck, format, unit tests). Judge a run by the first
   line of its `report.md`; a suite-level failure shows as `failed: suite`, not `FAILED`.
+- Lint is type-aware oxlint (`.oxlintrc.json`), not ESLint; keep its rules in step with the
+  file groups there. TypeScript 7 type-checks and builds; TypeScript 6 stays only for the
+  coverage hooks until TypeScript 7.1 has an API (`docs/testing.md`, Toolchain).
 - `node scripts/test-suite.mjs desktop --only=a.mjs,b.mjs` runs focused desktop checks (`native`
   likewise). Set `VIRTUAL_CUT_SUITE_OUTPUT` to a disposable folder.
 - Every script in `scripts/` is listed in `scripts/test-inventory.mjs`, as a check or as an
