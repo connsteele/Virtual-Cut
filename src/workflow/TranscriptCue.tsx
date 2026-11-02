@@ -15,7 +15,7 @@ import {
 import type { SplitSnap } from '../../electron/split-snap';
 import { background } from './background';
 import { formatTimecode } from './transcriptTime';
-import { ProposalCard } from './ProposalCard';
+import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { Button, Field } from './ui';
 import { TimeField } from './TimeField';
 import { useCardDraft } from './useCardDraft';
@@ -43,7 +43,7 @@ export function TranscriptCue({
   ) => void;
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
-  onPreview?: (card: string, active: boolean, picked: boolean) => void;
+  onPreview?: (card: string, active: boolean, picked: boolean, at?: PreviewAt) => void;
 }) {
   const cue = cueCandidate(transcript, segment)!;
   const range = cue.kind === 'clip-start' || cue.kind === 'clip-end';
@@ -244,8 +244,13 @@ export function TranscriptCue({
       }}
       onUndo={undo}
       onSeek={onSeek}
-      onPreview={(active, picked) =>
-        onPreview?.(`cue:${transcript.id}:${segment.id}`, active, picked)
+      onPreview={(active, picked, at) =>
+        onPreview?.(`cue:${transcript.id}:${segment.id}`, active, picked, at)
+      }
+      at={
+        draft.time != null || draft.end != null
+          ? { start, end: range ? end : undefined }
+          : undefined
       }
     >
       <div className={s.pcDetails}>

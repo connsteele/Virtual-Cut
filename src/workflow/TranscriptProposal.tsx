@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { TranscriptCommand, TranscriptSession } from '../../electron/transcript-contracts';
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
-import { ProposalCard } from './ProposalCard';
+import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { TimeField } from './TimeField';
 import { useCardDraft } from './useCardDraft';
 import { formatTimecode } from './transcriptTime';
@@ -39,7 +39,7 @@ export function TranscriptProposal({
   ) => void;
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
-  onPreview?: (card: string, active: boolean, picked: boolean) => void;
+  onPreview?: (card: string, active: boolean, picked: boolean, at?: PreviewAt) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -255,7 +255,8 @@ export function TranscriptProposal({
       }}
       onUndo={undo}
       onSeek={onSeek}
-      onPreview={(active, picked) => onPreview?.(proposal.id, active, picked)}
+      onPreview={(active, picked, at) => onPreview?.(proposal.id, active, picked, at)}
+      at={draft.time != null || draft.end != null ? { start, end } : undefined}
     >
       <div className={s.pcDetails} data-proposal={proposal.id}>
         {!split && editing && (

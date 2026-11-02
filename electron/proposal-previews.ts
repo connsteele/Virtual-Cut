@@ -133,3 +133,37 @@ export function proposalPreviews(
   }
   return previews.sort((a, b) => a.start - b.start);
 }
+
+/** A card's times while they are edited (VC-174): a start, and an end for a range. */
+export interface PreviewTimes {
+  start: number;
+  end?: number;
+}
+
+/** Times a transcript window may send with its focused card: finite and not negative. */
+export function previewTimes(value: unknown): value is PreviewTimes {
+  if (!value || typeof value !== 'object') return false;
+  const { start, end, ...rest } = value as Record<string, unknown>;
+  const time = (t: unknown) => typeof t === 'number' && Number.isFinite(t) && t >= 0;
+  return !Object.keys(rest).length && time(start) && (end === undefined || time(end));
+}
+
+/**
+ * The previews with the focused card's edited times in place of its saved ones, so the timeline
+ * shows where a nudge lands before the proposal is accepted (VC-174).
+ */
+export function previewsAt(
+  previews: ProposalPreview[],
+  card: string | null,
+  at: PreviewTimes | undefined,
+): ProposalPreview[] {
+  if (card == null || !at) return previews;
+  return previews.map((p) => {
+    if (!p.cards.includes(card)) return p;
+    const end = at.end ?? p.end;
+    // A start nudged past its end still draws, edges in order, until the card says otherwise.
+    return end === undefined
+      ? { ...p, start: at.start }
+      : { ...p, start: Math.min(at.start, end), end: Math.max(at.start, end) };
+  });
+}

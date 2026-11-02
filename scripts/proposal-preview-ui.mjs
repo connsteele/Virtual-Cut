@@ -287,6 +287,34 @@ try {
     .poll(async () => (await main.locator('video').evaluate((v) => v.currentTime)) - was)
     .toBeGreaterThan(0.5);
 
+  // VC-174: a nudge on a card being edited moves its preview live, before anything is accepted;
+  // the preview stays lit while the field has keyboard focus, and Esc puts it back.
+  await view.bringToFront();
+  const markerAt = async () => {
+    const b = await marker.boundingBox();
+    return ((b.x + b.width / 2 - compact.x) / compact.width) * recording.duration;
+  };
+  const markerWas = await markerAt();
+  await card('Bertrand arrives').getByRole('button', { name: 'Edit', exact: true }).click();
+  const field = view.getByLabel('Proposal position Bertrand arrives', { exact: true });
+  await field.focus();
+  await view.mouse.move(2, 2);
+  for (let i = 0; i < 5; i++) await view.keyboard.press('Shift+ArrowUp');
+  await expect(marker).toHaveAttribute('data-focused', 'true');
+  await expect.poll(async () => (await markerAt()) - markerWas).toBeGreaterThan(4.5);
+  assert((await markerAt()) - markerWas < 5.5, 'the preview moved by the nudge');
+  await view.getByLabel('Proposal position Bertrand arrives −1 s', { exact: true }).click();
+  await expect.poll(async () => (await markerAt()) - markerWas).toBeLessThan(4.5);
+  await main.bringToFront();
+  await timeline.screenshot({ path: path.join(dir, 'preview-nudged.png') });
+  await view.bringToFront();
+  await field.focus();
+  await view.keyboard.press('Escape');
+  await expect.poll(async () => Math.abs((await markerAt()) - markerWas)).toBeLessThan(0.3);
+  await view.mouse.move(2, 2);
+  await view.locator('body').click({ position: { x: 2, y: 2 } });
+  await expect(marker).toHaveAttribute('data-focused', 'false');
+
   // Deciding a proposal takes its preview off; accepted ones are real markers or clips.
   await view.bringToFront();
   await card('Siege scene')

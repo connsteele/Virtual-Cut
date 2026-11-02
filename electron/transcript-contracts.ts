@@ -220,14 +220,24 @@ export interface TranscriptApi {
     projectId: string,
     sourceId: string,
   ): Promise<import('./proposal-previews.js').ProposalPreview[]>;
-  /** The card in focus in the transcript window, or null; relayed to the main window. */
-  focus(projectId: string, sourceId: string, card: string | null, picked?: boolean): Promise<void>;
+  /**
+   * The card in focus in the transcript window, or null; relayed to the main window. `at` is the
+   * card's times while they are being edited, so its preview follows each nudge (VC-174).
+   */
+  focus(
+    projectId: string,
+    sourceId: string,
+    card: string | null,
+    picked?: boolean,
+    at?: { start: number; end?: number },
+  ): Promise<void>;
   onFocus(
     callback: (event: {
       projectId: string;
       sourceId: string;
       card: string | null;
       picked?: boolean;
+      at?: { start: number; end?: number };
     }) => void,
   ): () => void;
   /** A spoken Split's snap was measured, so its preview moved (VC-170, VC-165). */
