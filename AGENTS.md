@@ -2,8 +2,9 @@
 
 Shared instructions for any coding agent working in this repo. Start with `README.md` (current
 version and milestone), `CHANGELOG.md`, `docs/decisions/` (short decision records),
-`docs/user-guide.md` (current controls) and `docs/testing.md`. Read `docs/design-decisions.md`
-before changing cutting, timestamps, mic removal or transcription.
+`docs/user-guide.md` (current controls), `docs/agent-apps.md` (MCP pairing and proposal review)
+and `docs/testing.md`. Read `docs/design-decisions.md` before changing cutting, timestamps, mic
+removal or transcription.
 
 ## Product
 

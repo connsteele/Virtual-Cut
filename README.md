@@ -35,6 +35,7 @@ The app launches maximized; see the [user guide](docs/user-guide.md) for project
 ## Documentation
 
 - [User guide: projects, Cut controls, playback and saving](docs/user-guide.md)
+- [Agent apps: pairing, proposals and review](docs/agent-apps.md)
 - [Changelog](CHANGELOG.md)
 - [Decision records](docs/decisions/README.md) and [design decisions](docs/design-decisions.md)
 - [Foundation guide: architecture, commands, verification, and current limits](docs/foundation.md)
