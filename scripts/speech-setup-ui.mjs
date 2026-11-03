@@ -164,6 +164,15 @@ try {
     setup.getByRole('button', { name: 'Download and install', exact: true }),
   ).toHaveCount(0);
   await setup.getByRole('button', { name: 'Download speech engine…', exact: true }).click();
+  // The CPU-only plan replaces the NVIDIA one once main has re-planned; poll rather than read
+  // the status the instant the click lands.
+  await expect
+    .poll(
+      async () =>
+        (await transcript.evaluate(() => window.virtualCut.transcript.speechSetup('status')))
+          .includeGpu,
+    )
+    .toBe(false);
   const cpu = await transcript.evaluate(() => window.virtualCut.transcript.speechSetup('status'));
   assert.ok(cpu.downloadBytes < planned.downloadBytes);
   assert.deepEqual(
@@ -282,12 +291,15 @@ try {
   await expect(
     reopenedWindow.getByLabel('Include NVIDIA acceleration (compatible NVIDIA driver required)'),
   ).not.toBeChecked();
+  const status = () =>
+    reopenedWindow.evaluate(() => window.virtualCut.transcript.speechSetup('status'));
+  const stale = (await status()).folder;
   await reopenedWindow
     .getByRole('button', { name: 'Download speech engine…', exact: true })
     .click();
-  const reopenedCpu = await reopenedWindow.evaluate(() =>
-    window.virtualCut.transcript.speechSetup('status'),
-  );
+  // Each plan gets a fresh install folder; wait for it rather than read the old plan.
+  await expect.poll(async () => (await status()).folder).not.toBe(stale);
+  const reopenedCpu = await status();
   assert.equal(reopenedCpu.includeGpu, false);
   const keepFile = path.join(dir, 'user-file-to-keep.txt');
   await writeFile(keepFile, 'Keep this unrelated file.');
