@@ -17,6 +17,7 @@ import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { TranscriptProposal } from './TranscriptProposal';
+import type { PreviewAt } from './ProposalCard';
 import { formatTimecode, time } from './transcriptTime';
 import { proposalStatus } from '../../electron/proposal-edits';
 import type { AgentProposal } from '../../electron/proposal-contracts';
@@ -89,18 +90,27 @@ export function TranscriptWindow() {
   // VC-170: a card in focus (details open, time code hovered, keyboard focus) brightens its
   // preview on the main timeline. While several are, the newest wins. Only a picked card
   // (clicked, or its time code) may pan a zoomed timeline to it.
-  const previewCards = useRef<{ card: string; picked: boolean }[]>([]);
+  // A card being edited also sends its drafted times, so the preview follows each nudge (VC-174).
+  const previewCards = useRef<{ card: string; picked: boolean; at?: PreviewAt }[]>([]);
   const previewOwner = useRef({ projectId: '', sourceId: '' });
   const preview = useCallback(
-    (card: string, active: boolean, picked: boolean) => {
+    (card: string, active: boolean, picked: boolean, at?: PreviewAt) => {
       const before = previewCards.current.at(-1);
       previewCards.current = previewCards.current.filter((c) => c.card !== card);
-      if (active) previewCards.current.push({ card, picked });
+      if (active) previewCards.current.push({ card, picked, at });
       const after = previewCards.current.at(-1);
       const { projectId, sourceId } = previewOwner.current;
-      if ((after?.card !== before?.card || after?.picked !== before?.picked) && projectId)
+      if (
+        (after?.card !== before?.card ||
+          after?.picked !== before?.picked ||
+          after?.at?.start !== before?.at?.start ||
+          after?.at?.end !== before?.at?.end) &&
+        projectId
+      )
         background(
-          api.focus(projectId, sourceId, after?.card ?? null, !!after?.picked).catch(() => {}),
+          api
+            .focus(projectId, sourceId, after?.card ?? null, !!after?.picked, after?.at)
+            .catch(() => {}),
         );
     },
     [api],

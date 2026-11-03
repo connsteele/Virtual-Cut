@@ -358,6 +358,76 @@ try {
   await expect(position).toHaveValue(ruler(moved - 0.1));
   await view.getByLabel(`Proposal position ${ids[0]} +0.1 s`).click();
   await expect(position).toHaveValue(ruler(moved));
+  // VC-174: with the field focused, ↑/↓ nudge 0.1 s and Shift+↑/↓ 1 s; each is one undo step.
+  await position.focus();
+  await view.keyboard.press('ArrowUp');
+  await expect(position).toHaveValue(ruler(moved + 0.1));
+  await view.keyboard.press('Shift+ArrowUp');
+  await expect(position).toHaveValue(ruler(moved + 1.1));
+  await view.keyboard.press('Shift+ArrowDown');
+  await view.keyboard.press('ArrowDown');
+  await expect(position).toHaveValue(ruler(moved));
+  await view.keyboard.press('Control+z');
+  await expect(position).toHaveValue(ruler(moved + 0.1));
+  await view.keyboard.press('ArrowDown');
+  await expect(position).toHaveValue(ruler(moved));
+  // One row under the field, in order, at the card's button size.
+  const nudgeRow = await Promise.all(
+    ['−1 s', '−0.1 s', 'to playhead', '+0.1 s', '+1 s'].map((n) =>
+      view.getByLabel(`Proposal position ${ids[0]} ${n}`, { exact: true }).boundingBox(),
+    ),
+  );
+  const field = await position.boundingBox();
+  assert(
+    nudgeRow.every((b) => Math.abs(b.y - nudgeRow[0].y) < 2 && b.y >= field.y + field.height - 1),
+    'the nudges sit in one row under the field',
+  );
+  assert(
+    nudgeRow.every((b, i) => !i || b.x > nudgeRow[i - 1].x),
+    'the nudges read −1 s, −0.1 s, Playhead, +0.1 s, +1 s',
+  );
+  assert(
+    nudgeRow.every((b) => b.height >= 18),
+    'the nudges are normal-size buttons',
+  );
+  // The field and its jump button sit centered over the row, on Playhead; the jump goes to the
+  // time as edited, before anything is accepted.
+  const jump = view.getByLabel(`Proposal position ${ids[0]} go to`, { exact: true });
+  const jumpBox = await jump.boundingBox();
+  const centre = (field.x + jumpBox.x + jumpBox.width) / 2;
+  assert(
+    Math.abs(centre - (nudgeRow[2].x + nudgeRow[2].width / 2)) < 4,
+    `field and jump centered over Playhead: ${centre}`,
+  );
+  await expect(jump).toHaveAttribute('title', 'Go to this time');
+  await jump.click();
+  await expect
+    .poll(async () =>
+      Math.abs((await main.locator('video').evaluate((v) => v.currentTime)) - moved),
+    )
+    .toBeLessThan(0.05);
+  // The field fits the full ruler time at any length, in the compact window too.
+  await resize(true);
+  await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);
+  await position.fill('01:02:54.7');
+  await position.press('Tab');
+  await expect(position).toHaveValue('01:02:54.700');
+  await position.focus();
+  assert(
+    await position.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    'the full time shows in the field',
+  );
+  for (const b of await Promise.all(
+    ['−1 s', '+1 s'].map((n) =>
+      view.getByLabel(`Proposal position ${ids[0]} ${n}`, { exact: true }).boundingBox(),
+    ),
+  ))
+    assert(b.x + b.width <= 500, 'the nudge row fits the compact window');
+  await view.screenshot({ path: path.join(dir, 'proposal-nudges-compact.png') });
+  await resize(false);
+  await position.fill(ruler(moved));
+  await position.press('Tab');
+  await expect(position).toHaveValue(ruler(moved));
   await view.getByLabel(`Proposal title ${ids[0]}`).fill('Bertrand at the gate');
   await view.screenshot({ path: path.join(dir, 'proposal-edit.png') });
   await marker.getByRole('button', { name: 'Accept marker', exact: true }).click();

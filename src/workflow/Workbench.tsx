@@ -88,7 +88,11 @@ import {
 import { clipColor } from './clipLayout';
 import { frameIndexes, useFrameIndexes } from './frameIndexes';
 import type { MediaJob } from '../../electron/project-contracts';
-import type { ProposalPreview } from '../../electron/proposal-previews';
+import {
+  previewsAt,
+  type PreviewTimes,
+  type ProposalPreview,
+} from '../../electron/proposal-previews';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
 import { background } from './background';
@@ -1044,6 +1048,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     sourceId: string;
     card: string | null;
     picked?: boolean;
+    /** The focused card's times while it is edited (VC-174). */
+    at?: PreviewTimes;
   }>({
     sourceId: '',
     card: null,
@@ -1085,7 +1091,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     () =>
       window.virtualCut?.transcript?.onFocus((event) => {
         if (event.projectId === previewProject)
-          setPreviewFocus({ sourceId: event.sourceId, card: event.card, picked: event.picked });
+          setPreviewFocus({
+            sourceId: event.sourceId,
+            card: event.card,
+            picked: event.picked,
+            at: event.at,
+          });
       }),
     [previewProject],
   );
@@ -1400,7 +1411,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         onActivityChange={workspace.setPlaybackActive}
         recording={indexed(record)}
         onSourceOpen={onSourceOpen}
-        proposals={!sequence && previews.sourceId === record.id ? previews.items : undefined}
+        proposals={
+          !sequence && previews.sourceId === record.id
+            ? previewFocus.sourceId === record.id
+              ? previewsAt(previews.items, previewFocus.card, previewFocus.at)
+              : previews.items
+            : undefined
+        }
         proposalFocus={previewFocus.sourceId === record.id ? previewFocus.card : null}
         proposalReveal={previewFocus.sourceId === record.id && !!previewFocus.picked}
         projectId={project?.project.id}

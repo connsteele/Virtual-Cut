@@ -32,8 +32,8 @@ const api: VirtualCutApi = {
     job: (id, job, action) => ipcRenderer.invoke('transcript:job', id, job, action),
     seek: (id, source, time) => ipcRenderer.invoke('transcript:seek', id, source, time),
     previews: (id, source) => ipcRenderer.invoke('transcript:previews', id, source),
-    focus: (id, source, card, picked) =>
-      ipcRenderer.invoke('transcript:focus', id, source, card, picked),
+    focus: (id, source, card, picked, at) =>
+      ipcRenderer.invoke('transcript:focus', id, source, card, picked, at),
     onPreviews: (callback) => {
       const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
         callback(value);

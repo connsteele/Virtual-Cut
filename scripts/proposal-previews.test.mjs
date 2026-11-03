@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { proposalPreviews, previewKindLabel } from '../dist-electron/proposal-previews.js';
+import {
+  proposalPreviews,
+  previewKindLabel,
+  previewTimes,
+  previewsAt,
+} from '../dist-electron/proposal-previews.js';
 
 // VC-170: every pending proposal for a recording previews on the main timeline, a band for
 // ranges and clip ranges and a line for the rest; decided ones drop off, and a spoken cue an
@@ -107,4 +112,41 @@ assert.deepEqual(
   ['point', 'range', 'note', 'split', 'clip'],
 );
 assert.deepEqual(proposalPreviews([], {}, { ...mic, role: 'game' }, segments), []);
+
+// VC-174: while a card is edited its drafted times stand in for the saved ones, so a nudge
+// shows on the timeline before the proposal is accepted.
+const shown = proposalPreviews(proposals, model);
+assert.equal(previewsAt(shown, null, { start: 1 }), shown, 'no focused card, nothing moves');
+assert.equal(previewsAt(shown, 'point', undefined), shown, 'no drafted times, nothing moves');
+const nudged = previewsAt(shown, 'point', { start: 12.3 });
+assert.equal(nudged.find((p) => p.cards[0] === 'point').start, 12.3);
+assert.equal(nudged.find((p) => p.cards[0] === 'point').end, undefined, 'a point stays a point');
+assert.deepEqual(
+  nudged.filter((p) => p.cards[0] !== 'point'),
+  shown.filter((p) => p.cards[0] !== 'point'),
+  'other previews stay put',
+);
+const range = shown.find((p) => p.cards[0] === 'range');
+const startOnly = previewsAt(shown, 'range', { start: range.start + 1 }).find(
+  (p) => p.cards[0] === 'range',
+);
+assert.deepEqual([startOnly.start, startOnly.end], [range.start + 1, range.end]);
+const both = previewsAt(shown, 'range', { start: 2, end: 9 }).find((p) => p.cards[0] === 'range');
+assert.deepEqual([both.start, both.end], [2, 9]);
+const crossed = previewsAt(shown, 'range', { start: range.end + 5 }).find(
+  (p) => p.cards[0] === 'range',
+);
+assert.deepEqual([crossed.start, crossed.end], [range.end, range.end + 5], 'edges stay in order');
+assert(previewTimes({ start: 0 }) && previewTimes({ start: 1.5, end: 0.5 }));
+for (const bad of [
+  null,
+  3,
+  {},
+  { start: -1 },
+  { start: Infinity },
+  { start: '1' },
+  { start: 1, end: NaN },
+  { start: 1, x: 2 },
+])
+  assert(!previewTimes(bad), `rejects ${JSON.stringify(bad)}`);
 console.log('proposal previews: ok');

@@ -2,6 +2,12 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { formatTimecode } from './transcriptTime';
 import s from './TranscriptWindow.module.css';
 
+/** A card's times as drafted, for its timeline preview. */
+export interface PreviewAt {
+  start: number;
+  end?: number;
+}
+
 /**
  * One proposal in the transcript window (VC-155), spoken or from an agent: the same lines in
  * the same places every time. Line 1: who proposed it, the kind and the intents, with Accept,
@@ -37,6 +43,7 @@ export function ProposalCard({
   onUndo,
   onSeek,
   onPreview,
+  at,
   children,
 }: {
   id: string;
@@ -81,23 +88,33 @@ export function ProposalCard({
   onUndo: () => void;
   onSeek: (time: number) => void;
   /** In focus or not: the pointer over the card, or the card picked (clicked, or reached by key). */
-  onPreview?: (active: boolean, picked: boolean) => void;
+  onPreview?: (active: boolean, picked: boolean, at?: PreviewAt) => void;
+  /** While editing: the times as drafted, so the preview follows each nudge (VC-174). */
+  at?: PreviewAt;
   children?: ReactNode;
 }) {
   // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
   // details don't pick it; Esc, or focus moving elsewhere in this window, lets it go.
   const [hovered, setHovered] = useState(false),
-    [picked, setPicked] = useState(false);
-  const active = status === 'pending' && (hovered || picked);
+    [picked, setPicked] = useState(false),
+    [within, setWithin] = useState(false);
+  // A field in focus while editing counts as picked, so the preview stays lit and in view while
+  // its time is nudged by key (VC-174).
+  const held = picked || (editing && within);
+  const active = status === 'pending' && (hovered || held);
   const previewed = useRef(onPreview);
   useEffect(() => {
     previewed.current = onPreview;
   });
+  const atStart = at?.start,
+    atEnd = at?.end;
   useEffect(() => {
     if (!active) return;
-    previewed.current?.(true, picked);
-    return () => previewed.current?.(false, false);
-  }, [active, picked]);
+    previewed.current?.(true, held, atStart == null ? undefined : { start: atStart, end: atEnd });
+  }, [active, held, atStart, atEnd]);
+  useEffect(() => {
+    if (active) return () => previewed.current?.(false, false);
+  }, [active]);
   const tags = (
     <>
       {who !== 'agent' && <span className={`${s.whoTag} ${s.spokenTag}`}>Spoken</span>}
@@ -208,14 +225,17 @@ export function ProposalCard({
       }}
       onFocus={(e) => {
         const card = e.currentTarget;
+        setWithin(e.target !== card);
         if (e.target === card && (card.dataset.pick || card.matches(':focus-visible')))
           setPicked(true);
         delete card.dataset.pick;
       }}
       onBlur={(e) => {
         // Switching to the main window keeps the pick, so its preview stays where you look.
-        if (document.hasFocus() && !e.currentTarget.contains(e.relatedTarget as Node | null))
+        if (document.hasFocus() && !e.currentTarget.contains(e.relatedTarget as Node | null)) {
           setPicked(false);
+          setWithin(false);
+        }
       }}
     >
       <div className={s.pcLine1}>

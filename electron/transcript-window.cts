@@ -10,7 +10,7 @@ import { SpeechSetup } from './speech-setup.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
 import { applyProposalCommand, proposalStatus } from './proposal-edits.js';
-import { proposalPreviews } from './proposal-previews.js';
+import { previewTimes, proposalPreviews } from './proposal-previews.js';
 import { transcriptHandoff, transcriptSrt, transcriptSaveSuggestion } from './transcript-export.js';
 import type { TranscriptApi, TranscriptCommand } from './transcript-contracts.js' with {
   'resolution-mode': 'import',
@@ -422,14 +422,21 @@ export function registerTranscriptWindow(
     },
     true,
   );
-  handle('focus', async (id, sourceId, card, picked = false) => {
+  handle('focus', async (id, sourceId, card, picked = false, at?: unknown) => {
     if (
       (card !== null && (typeof card !== 'string' || !card || card.length > 300)) ||
-      typeof picked !== 'boolean'
+      typeof picked !== 'boolean' ||
+      (at !== undefined && (card === null || !previewTimes(at)))
     )
       throw new Error('Invalid proposal card.');
     if (projects.store?.data.project.id !== id) return;
-    main()?.webContents.send('transcript:focus-event', { projectId: id, sourceId, card, picked });
+    main()?.webContents.send('transcript:focus-event', {
+      projectId: id,
+      sourceId,
+      card,
+      picked,
+      ...(at === undefined ? {} : { at }),
+    });
   });
   handle(
     'command',
