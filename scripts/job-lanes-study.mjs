@@ -4,7 +4,8 @@
 // export started and how much the media work slowed the transcription.
 //
 //   VIRTUAL_CUT_LANES_STUDY_OUTPUT  output folder (required)
-//   VIRTUAL_CUT_LANES_STUDY         JSON {transcribe, track, imported, exported, clipSeconds}
+//   VIRTUAL_CUT_LANES_STUDY         JSON {transcribe, track, imported, exported, clipSeconds,
+//                                   device?, order?}
 //   VIRTUAL_CUT_ASR_PYTHON / _LIBRARIES / _MODEL / _GPU_LIBRARIES  the local speech engine
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -51,12 +52,17 @@ async function run(name, withMedia) {
     roles: [study.track === 1 ? 'game' : 'mic'],
     language: 'en',
     vocabulary: false,
+    ...(study.device ? { device: study.device } : {}),
   });
   const speech = () => jobs().find((j) => j.kind === 'transcribe');
   const began = performance.now();
-  // Media work starts once recognition is under way (past model load).
-  while (speech().state === 'running' && !/words/.test(speech().message)) await sleep(50);
-  result.recognizingAtMs = Math.round(performance.now() - began);
+  // Recognition starts after audio extraction and model load; noted for each run.
+  void (async () => {
+    while (speech().state === 'running' && !/words/.test(speech().message)) await sleep(50);
+    result.recognizingAtMs = Math.round(performance.now() - began);
+  })();
+  // Media work starts as soon as the transcription does and continues until it ends.
+  while (speech().state === 'queued') await sleep(10);
   if (withMedia) {
     const asked = performance.now();
     await service.importFiles(project, batch, [study.imported], { game: 1, mic: 2 });
@@ -110,19 +116,21 @@ async function run(name, withMedia) {
   console.log(JSON.stringify(result));
 }
 
-await run('alone-1', false);
-await run('with-media', true);
-await run('alone-2', false);
-const alone = report.runs.filter((r) => !r.withMedia);
-const media = report.runs.find((r) => r.withMedia);
-const mean = (key) => alone.reduce((n, r) => n + r[key], 0) / alone.length;
+// Alternating order spreads warm-up and background load over both kinds of run.
+const order = (study.order || 'alone,media,alone,media').split(',');
+for (const [n, kind] of order.entries()) await run(`${n + 1}-${kind}`, kind === 'media');
+const mean = (runs, key) => runs.reduce((n, r) => n + r[key], 0) / runs.length;
+const alone = report.runs.filter((r) => !r.withMedia),
+  media = report.runs.filter((r) => r.withMedia);
 report.summary = {
-  device: media.device,
-  importStartMs: media.importStartMs,
-  exportStartMs: media.exports.map((e) => e.startMs),
-  exportsDuringTranscription: media.exports.filter((e) => e.overlapped).length,
-  slowdownWhole: +(media.transcriptionMs / mean('transcriptionMs')).toFixed(2),
-  slowdownRecognition: +(media.recognitionMs / mean('recognitionMs')).toFixed(2),
+  device: [...new Set(report.runs.map((r) => r.device))].join(', '),
+  importStartMs: media.map((r) => r.importStartMs),
+  exportStartMs: media.flatMap((r) => r.exports.map((e) => e.startMs)),
+  exportsDuringTranscription: media.map((r) => r.exports.filter((e) => e.overlapped).length),
+  transcriptionAloneMs: alone.map((r) => r.transcriptionMs),
+  transcriptionWithMediaMs: media.map((r) => r.transcriptionMs),
+  slowdownWhole: +(mean(media, 'transcriptionMs') / mean(alone, 'transcriptionMs')).toFixed(2),
+  slowdownRecognition: +(mean(media, 'recognitionMs') / mean(alone, 'recognitionMs')).toFixed(2),
 };
 await writeFile(path.join(dir, 'report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report.summary, null, 2));
