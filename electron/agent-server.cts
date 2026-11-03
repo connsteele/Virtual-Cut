@@ -281,7 +281,8 @@ export function registerAgentAccess(options: {
       "A batch's record for learning from it: the agent's first pass (proposals as they landed, " +
         'and what each recording held then) beside the state at its latest export: clips, ' +
         'markers and notes, each linked to the proposal it came from or marked as the ' +
-        "user's own, changes made after accepting, removed items and spans, and pointers to " +
+        "user's own, how each accepted proposal differs from what was proposed, changes made " +
+        'after accepting, removed items and spans, and pointers to ' +
         'what the agent read (transcripts, intent guide version, model, run intent).',
       z.object({ batch_id: batch }),
       (s, a) => batchRecordAnswer(s, a.batch_id),

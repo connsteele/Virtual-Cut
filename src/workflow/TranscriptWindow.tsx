@@ -18,6 +18,7 @@ import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { TranscriptProposal } from './TranscriptProposal';
 import type { PreviewAt } from './ProposalCard';
+import type { CardAdjust } from './useCardDraft';
 import { formatTimecode, time } from './transcriptTime';
 import { proposalStatus } from '../../electron/proposal-edits';
 import type { AgentProposal } from '../../electron/proposal-contracts';
@@ -93,6 +94,17 @@ export function TranscriptWindow() {
   // A card being edited also sends its drafted times, so the preview follows each nudge (VC-174).
   const previewCards = useRef<{ card: string; picked: boolean; at?: PreviewAt }[]>([]);
   const previewOwner = useRef({ projectId: '', sourceId: '' });
+  // VC-184: a preview dropped on the main timeline; its card takes the new times.
+  const [adjust, setAdjust] = useState<CardAdjust>();
+  useEffect(
+    () =>
+      api.onAdjust((event) => {
+        const owner = previewOwner.current;
+        if (event.projectId === owner.projectId && event.sourceId === owner.sourceId)
+          setAdjust({ card: event.card, at: event.at });
+      }),
+    [api],
+  );
   const preview = useCallback(
     (card: string, active: boolean, picked: boolean, at?: PreviewAt) => {
       const before = previewCards.current.at(-1);
@@ -505,6 +517,7 @@ export function TranscriptWindow() {
           busy={busy}
           playhead={playhead}
           onPreview={preview}
+          adjust={adjust}
           onSeek={(time) => {
             setFollow(false);
             background(action(() => api.seek(projectId, session.sourceId, time)));
@@ -1045,6 +1058,7 @@ export function TranscriptWindow() {
                           busy={busy}
                           playhead={playhead}
                           onPreview={preview}
+                          adjust={adjust}
                           onSeek={(time) => {
                             setFollow(false);
                             background(action(() => api.seek(projectId, session.sourceId, time)));

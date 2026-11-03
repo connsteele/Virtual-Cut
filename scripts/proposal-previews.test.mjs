@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  adjustPreview,
   proposalPreviews,
   previewKindLabel,
   previewTimes,
@@ -149,4 +150,16 @@ for (const bad of [
   { start: 1, x: 2 },
 ])
   assert(!previewTimes(bad), `rejects ${JSON.stringify(bad)}`);
+
+// VC-184: a dragged edge lands inside the recording, in milliseconds, and never past the other
+// edge; a point moves whole.
+assert.deepEqual(adjustPreview({ start: 10 }, 'start', 12.34567, 100, 0.05), { start: 12.346 });
+assert.deepEqual(adjustPreview({ start: 10 }, 'start', -3, 100, 0.05), { start: 0 });
+assert.deepEqual(adjustPreview({ start: 10 }, 'start', 140, 100, 0.05), { start: 100 });
+const span = { start: 10, end: 20 };
+assert.deepEqual(adjustPreview(span, 'start', 8.5, 100, 0.05), { start: 8.5, end: 20 });
+assert.deepEqual(adjustPreview(span, 'start', 25, 100, 0.05), { start: 19.95, end: 20 });
+assert.deepEqual(adjustPreview(span, 'end', 31.2, 100, 0.05), { start: 10, end: 31.2 });
+assert.deepEqual(adjustPreview(span, 'end', 2, 100, 0.05), { start: 10, end: 10.05 });
+assert.deepEqual(adjustPreview(span, 'end', 140, 100, 0.05), { start: 10, end: 100 });
 console.log('proposal previews: ok');

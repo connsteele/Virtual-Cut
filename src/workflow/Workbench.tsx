@@ -1420,6 +1420,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         }
         proposalFocus={previewFocus.sourceId === record.id ? previewFocus.card : null}
         proposalReveal={previewFocus.sourceId === record.id && !!previewFocus.picked}
+        onProposalAdjust={(card, at) => {
+          const api = window.virtualCut?.transcript;
+          if (!api || !previewProject) return;
+          // Drawn where it was dropped at once; the card echoes the same times back (VC-184).
+          setPreviewFocus((f) => (f.card === card ? { ...f, at } : f));
+          background(api.adjust(previewProject, record.id, card, at).catch(() => {}));
+        }}
         projectId={project?.project.id}
         bounds={bounds}
         selectedId={mid ? undefined : cid}

@@ -19,7 +19,12 @@ import { markerTime, adjustMarker, layoutMarkers } from './markerTiming';
 import { editSnap, editTargets, scrubSnap } from './playheadSnap';
 import { rulerTicks, parsePosition, positionText } from './timelineRuler';
 import { framePosition, parseFramePosition } from './framePosition';
-import { previewKindLabel, type ProposalPreview } from '../../electron/proposal-previews';
+import {
+  adjustPreview,
+  previewKindLabel,
+  type PreviewTimes,
+  type ProposalPreview,
+} from '../../electron/proposal-previews';
 
 export function Timeline({
   recording,
@@ -51,6 +56,7 @@ export function Timeline({
   proposals = [],
   proposalFocus = null,
   proposalReveal = false,
+  onProposalAdjust,
 }: {
   recording: Recording;
   projectId?: string;
@@ -84,6 +90,11 @@ export function Timeline({
   proposalFocus?: string | null;
   /** The focused proposal's card was picked (clicked), so a zoomed view may pan to it. */
   proposalReveal?: boolean;
+  /**
+   * An edge of the picked proposal's preview was dragged (VC-184); its card takes the times as
+   * edited. Hover never grabs: only a picked card's preview has handles.
+   */
+  onProposalAdjust?: (card: string, at: PreviewTimes) => void;
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
@@ -119,12 +130,28 @@ export function Timeline({
     recording: string;
     targets: number[];
   } | null>(null);
-  const callbacks = useRef({ onTrimActive, onScrubActive });
+  const callbacks = useRef({ onTrimActive, onScrubActive, onSeek });
   const [preview, setPreview] = useState<{
     id: string;
     edge: 'start' | 'end';
     value: number;
   } | null>(null);
+  const proposalDrag = useRef<{
+    card: string;
+    edge: 'start' | 'end';
+    from: PreviewTimes;
+    value: PreviewTimes;
+    x: number;
+    pointer: number;
+    recording: string;
+    moved: boolean;
+    targets: number[];
+    /** Where the playhead was; the viewer follows the edge and goes back on Esc. */
+    playhead: number;
+  } | null>(null);
+  const [proposalDraft, setProposalDraft] = useState<({ card: string } & PreviewTimes) | null>(
+    null,
+  );
   const [pointerFocus, setPointerFocus] = useState(false);
   const [snapGuide, setSnapGuide] = useState<number | null>(null);
   const snapTargets = (exclude: { marker?: string; clip?: string }) =>
@@ -137,17 +164,23 @@ export function Timeline({
         )
       : [];
   useEffect(() => {
-    callbacks.current = { onTrimActive, onScrubActive };
-  }, [onTrimActive, onScrubActive]);
+    callbacks.current = { onTrimActive, onScrubActive, onSeek };
+  }, [onTrimActive, onScrubActive, onSeek]);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || (!drag.current && !markerDrag.current)) return;
+      if (e.key !== 'Escape' || (!drag.current && !markerDrag.current && !proposalDrag.current))
+        return;
       e.preventDefault();
       stationaryMarkerClick.current = null;
       drag.current = null;
       setPreview(null);
       markerDrag.current = null;
       setMarkerPreview(null);
+      // VC-184: Esc during a proposal drag puts its preview and the playhead back; the card never
+      // heard of it.
+      if (proposalDrag.current?.moved) callbacks.current.onSeek(proposalDrag.current.playhead);
+      proposalDrag.current = null;
+      setProposalDraft(null);
       setSnapGuide(null);
       callbacks.current.onTrimActive?.(false);
       pointer.current = null;
@@ -159,6 +192,8 @@ export function Timeline({
       drag.current = null;
       markerDrag.current = null;
       setMarkerPreview(null);
+      proposalDrag.current = null;
+      setProposalDraft(null);
       setSnapGuide(null);
       pointer.current = null;
       setPreview(null);
@@ -197,7 +232,7 @@ export function Timeline({
     factor: number,
     anchor = current >= start && current <= end ? current : start + span / 2,
   ) => {
-    if (!drag.current && !markerDrag.current && pointer.current == null)
+    if (!drag.current && !markerDrag.current && !proposalDrag.current && pointer.current == null)
       changeView(zoomViewport(view, factor, anchor, fullStart, fullEnd, minimum));
   };
   const wheelState = useRef({ view, fullStart, fullEnd, minimum, identity });
@@ -214,7 +249,8 @@ export function Timeline({
     if (focusStart == null || focusEnd == null || !proposalReveal) return;
     const { view, fullStart, fullEnd, minimum, identity } = wheelState.current;
     if (focusStart >= view.start && focusEnd <= view.end) return;
-    if (drag.current || markerDrag.current || pointer.current != null) return;
+    if (drag.current || markerDrag.current || proposalDrag.current || pointer.current != null)
+      return;
     const width = view.end - view.start;
     const middle =
       focusEnd - focusStart < width * 0.9 ? (focusStart + focusEnd) / 2 : focusStart + width * 0.45;
@@ -233,7 +269,8 @@ export function Timeline({
     const wheel = (e: WheelEvent) => {
       if (!e.altKey && !e.ctrlKey) return;
       e.preventDefault();
-      if (drag.current || markerDrag.current || pointer.current != null) return;
+      if (drag.current || markerDrag.current || proposalDrag.current || pointer.current != null)
+        return;
       const state = wheelState.current,
         rect = el.getBoundingClientRect();
       const delta = e.deltaY || e.deltaX;
@@ -351,6 +388,43 @@ export function Timeline({
       (d.value.time !== d.marker.time || d.value.end !== d.marker.end)
     )
       onMarkerMove?.(d.marker.id, d.value.time, d.value.end);
+    onTrimActive?.(false);
+  }
+  // VC-184: the picked proposal's edge (or its line) follows the pointer and snaps like a marker.
+  const proposalMin = Math.max(1 / (recording.fps || 30), 0.021);
+  function moveProposal(x: number) {
+    const d = proposalDrag.current;
+    if (!d || (!d.moved && Math.abs(x - d.x) < 3)) return;
+    d.moved = true;
+    const width = track.current!.getBoundingClientRect().width;
+    const origin = d.edge === 'end' ? d.from.end! : d.from.start;
+    const raw = origin + ((x - d.x) / width) * span;
+    const at = (value: number) =>
+      adjustPreview(d.from, d.edge, value, recording.duration, proposalMin);
+    const snap = editSnap(raw, [0], d.targets, start, end, width, (value, _offset, target) => {
+      const moved = at(value);
+      return Math.abs((d.edge === 'end' ? moved.end! : moved.start) - target) < 0.0005;
+    });
+    d.value = at(snap?.value ?? raw);
+    setSnapGuide(snap?.target ?? null);
+    setProposalDraft({ card: d.card, ...d.value });
+    // The viewer shows the frame under the dragged edge, as when scrubbing.
+    onSeek(d.edge === 'end' ? d.value.end! : d.value.start);
+  }
+  function finishProposal(commit: boolean) {
+    const d = proposalDrag.current;
+    if (!d) return;
+    proposalDrag.current = null;
+    setSnapGuide(null);
+    setProposalDraft(null);
+    if (!commit && d.moved) onSeek(d.playhead);
+    if (
+      commit &&
+      d.moved &&
+      d.recording === recording.id &&
+      (d.value.start !== d.from.start || d.value.end !== d.from.end)
+    )
+      onProposalAdjust?.(d.card, d.value);
     onTrimActive?.(false);
   }
   function trimTime(c: Clip, edge: 'start' | 'end', value: number, step?: number) {
@@ -587,6 +661,10 @@ export function Timeline({
           scrub(e.clientX);
         }}
         onPointerMove={(e) => {
+          if (proposalDrag.current?.pointer === e.pointerId) {
+            moveProposal(e.clientX);
+            return;
+          }
           if (markerDrag.current?.pointer === e.pointerId) {
             moveMarker(e.clientX);
             return;
@@ -598,6 +676,13 @@ export function Timeline({
           if (pointer.current === e.pointerId) scrub(e.clientX);
         }}
         onPointerUp={(e) => {
+          if (proposalDrag.current?.pointer === e.pointerId) {
+            moveProposal(e.clientX);
+            finishProposal(true);
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            return;
+          }
           if (markerDrag.current?.pointer === e.pointerId) {
             moveMarker(e.clientX);
             finishMarker(true);
@@ -622,6 +707,7 @@ export function Timeline({
         }}
         onPointerCancel={() => {
           setSnapGuide(null);
+          finishProposal(false);
           finishMarker(false);
           finishHandle(false);
           pointer.current = null;
@@ -629,6 +715,7 @@ export function Timeline({
         }}
         onLostPointerCapture={() => {
           setSnapGuide(null);
+          finishProposal(false);
           finishMarker(false);
           finishHandle(false);
           pointer.current = null;
@@ -1012,6 +1099,15 @@ export function Timeline({
             data-has-focus={!!focusedPreview}
           >
             {proposals
+              .map((p) =>
+                proposalDraft && p.cards.includes(proposalDraft.card)
+                  ? {
+                      ...p,
+                      start: proposalDraft.start,
+                      ...(p.end != null ? { end: proposalDraft.end } : {}),
+                    }
+                  : p,
+              )
               .filter((p) => p.start <= end && (p.end ?? p.start) >= start)
               .map((p) => {
                 const band = p.end != null && p.end > p.start;
@@ -1019,6 +1115,40 @@ export function Timeline({
                 const mark = !band && (p.kind === 'marker' || p.kind === 'note');
                 const focused = proposalFocus != null && p.cards.includes(proposalFocus);
                 const who = p.who === 'spoken' ? 'Spoken' : 'Agent';
+                // VC-184: only the picked card's preview can be dragged, never one just hovered.
+                const grab = (edge: 'start' | 'end') =>
+                  focused && proposalReveal && onProposalAdjust ? (
+                    <span
+                      className={s.proposalGrab}
+                      data-proposal-grab={edge}
+                      data-at={edge === 'end' ? 'end' : band ? 'start' : 'point'}
+                      title={
+                        band
+                          ? `Drag to move the ${edge}; Esc while dragging puts it back`
+                          : 'Drag to move it; Esc while dragging puts it back'
+                      }
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onTrimActive?.(true);
+                        const from = { start: p.start, ...(band ? { end: p.end } : {}) };
+                        proposalDrag.current = {
+                          card: proposalFocus!,
+                          edge,
+                          from,
+                          value: from,
+                          x: e.clientX,
+                          pointer: e.pointerId,
+                          recording: recording.id,
+                          moved: false,
+                          targets: snapTargets({}),
+                          playhead: current,
+                        };
+                        track.current!.setPointerCapture(e.pointerId);
+                      }}
+                    />
+                  ) : null;
                 return (
                   <div
                     key={p.cards[0]}
@@ -1028,6 +1158,7 @@ export function Timeline({
                     data-start={p.start}
                     data-who={p.who}
                     data-focused={focused}
+                    data-dragging={proposalDraft != null && p.cards.includes(proposalDraft.card)}
                     style={{
                       left: percent(p.start),
                       ...(band
@@ -1038,6 +1169,8 @@ export function Timeline({
                     }}
                   >
                     {mark && <i className={s.proposalShape} />}
+                    {p.start >= start && grab('start')}
+                    {band && p.end! <= end && grab('end')}
                     {focused && (
                       <span className={s.proposalLabel} data-flip={(p.start - start) / span > 0.7}>
                         {who} · {previewKindLabel(p.kind)} · {p.label}

@@ -240,6 +240,24 @@ export interface TranscriptApi {
       at?: { start: number; end?: number };
     }) => void,
   ): () => void;
+  /**
+   * The main timeline moved an edge of the picked card's preview (VC-184); relayed to the
+   * transcript window, where the card takes the times as edited, as a nudge would.
+   */
+  adjust(
+    projectId: string,
+    sourceId: string,
+    card: string,
+    at: { start: number; end?: number },
+  ): Promise<void>;
+  onAdjust(
+    callback: (event: {
+      projectId: string;
+      sourceId: string;
+      card: string;
+      at: { start: number; end?: number };
+    }) => void,
+  ): () => void;
   /** A spoken Split's snap was measured, so its preview moved (VC-170, VC-165). */
   onPreviews(callback: (event: { projectId: string; sourceId: string }) => void): () => void;
   /** Where a heard Split would snap to a black screen ending just before it (VC-165). */

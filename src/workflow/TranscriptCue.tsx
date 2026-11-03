@@ -18,7 +18,7 @@ import { formatTimecode } from './transcriptTime';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { Button, Field } from './ui';
 import { TimeField } from './TimeField';
-import { useCardDraft } from './useCardDraft';
+import { useCardAdjust, useCardDraft, type CardAdjust } from './useCardDraft';
 import s from './TranscriptWindow.module.css';
 
 /** A spoken cue on the shared proposal card (VC-155), decided where it was said. */
@@ -31,6 +31,7 @@ export function TranscriptCue({
   onCommand,
   onSeek,
   onPreview,
+  adjust,
 }: {
   segment: TranscriptSegment;
   transcript: TranscriptSummary;
@@ -44,6 +45,8 @@ export function TranscriptCue({
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
   onPreview?: (card: string, active: boolean, picked: boolean, at?: PreviewAt) => void;
+  /** The latest drop on a timeline preview; this card takes it if it is the card's (VC-184). */
+  adjust?: CardAdjust;
 }) {
   const cue = cueCandidate(transcript, segment)!;
   const range = cue.kind === 'clip-start' || cue.kind === 'clip-end';
@@ -85,12 +88,16 @@ export function TranscriptCue({
   const suggestedTitle = cueTitle(transcript, segment).slice(0, range ? 200 : 100);
   const title = draft.title ?? suggestedTitle;
   const text = draft.text ?? context.text;
-  const start =
-    draft.time ??
+  // As proposed: the spoken times, or the snapped one for a Split (VC-165).
+  const proposedStart =
     snapped ??
     (range && cue.kind === 'clip-end' ? (segment.cuePartner?.time ?? cue.time) : cue.time);
-  const end =
-    draft.end ?? (cue.kind === 'clip-end' ? cue.time : (segment.cuePartner?.time ?? cue.time));
+  const proposedEnd = cue.kind === 'clip-end' ? cue.time : (segment.cuePartner?.time ?? cue.time);
+  const start = draft.time ?? proposedStart;
+  const end = draft.end ?? proposedEnd;
+  useCardAdjust(`cue:${transcript.id}:${segment.id}`, adjust, (at) =>
+    setDraft({ ...draft, time: at.start, ...(at.end !== undefined ? { end: at.end } : {}) }),
+  );
   const targetClips = session.clips.filter((c) => start > c.start && start < c.end);
   const target = draft.clipId || (targetClips.length === 1 ? targetClips[0].id : '');
   const targetName = targetClips.find((c) => c.id === target)?.name ?? '';
@@ -256,6 +263,7 @@ export function TranscriptCue({
           ? { start, end: range ? end : undefined }
           : undefined
       }
+      was={{ start: proposedStart, end: range ? proposedEnd : undefined }}
     >
       <div className={s.pcDetails}>
         {!split && editing && (

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * A proposal card's unsaved edits with their own undo (VC-155): the edits are not project changes
@@ -30,4 +30,27 @@ export function useCardDraft<T extends object>() {
     set({} as T);
   };
   return { draft, setDraft, undo, reset };
+}
+
+/** A proposal preview dropped on the main timeline (VC-184): the card and its new times. */
+export interface CardAdjust {
+  card: string;
+  at: { start: number; end?: number };
+}
+
+/**
+ * Hands this card a drop on its timeline preview once, as a nudge would set its times. A card
+ * mounted after the drop ignores it.
+ */
+export function useCardAdjust(
+  id: string,
+  adjust: CardAdjust | undefined,
+  apply: (at: CardAdjust['at']) => void,
+) {
+  const seen = useRef(adjust);
+  useEffect(() => {
+    if (!adjust || adjust === seen.current) return;
+    seen.current = adjust;
+    if (adjust.card === id) apply(adjust.at);
+  });
 }
