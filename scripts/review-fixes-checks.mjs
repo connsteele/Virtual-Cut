@@ -139,6 +139,11 @@ if (process.argv.includes('--reopen')) {
     }, at);
     await expect.poll(() => page.locator('video').evaluate((v) => v.seeking)).toBe(false);
   };
+  // Waits for the 2 s settle save to carry the playhead into the live session.
+  const settledAt = (at) =>
+    expect
+      .poll(async () => (await state()).model.recordings.find((r) => r.id === f.rid).position)
+      .toBeCloseTo(at, 2);
   async function capture(name) {
     const data = await app.evaluate(async ({ BrowserWindow }) => {
       const wc = BrowserWindow.getAllWindows()[0].webContents;
@@ -283,16 +288,29 @@ if (process.argv.includes('--reopen')) {
     await go('Cut');
     await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
     await seek(1);
-    await page.waitForTimeout(2400);
+    await settledAt(1);
     const before = await state();
+    assert(before.unsavedChanges, 'An interval save is pending');
+    // Move the page clock (where the autosave timer runs) to 30 s before the 10-minute
+    // interval save is due, while idle. Then step it 90 s through the due time in 1.5 s
+    // steps alongside the seeks: one large jump would make the last seek look old.
+    await page.evaluate((savedAt) => {
+      window.originalNow = Date.now;
+      window.clockOffset = savedAt + 10 * 60000 - 30000 - Date.now();
+      window.pendingClock = 90000;
+      Date.now = () => window.originalNow() + window.clockOffset;
+    }, before.savedAt);
     // Real decoding while continuously seeking stresses the navigation save cadence.
     await page.evaluate(() => {
       let n = 0;
       window.seekTest = setInterval(() => {
+        const step = Math.min(1500, window.pendingClock);
+        window.pendingClock -= step;
+        window.clockOffset += step;
         document.querySelector('video').currentTime = 1 + (n++ % 50) / 10;
       }, 120);
     });
-    await page.waitForTimeout(33000);
+    await page.waitForFunction(() => window.pendingClock === 0, null, { timeout: 30000 });
     const during = await state();
     assert.equal(during.revision, before.revision, 'No automatic writes during navigation');
     assert.deepEqual(
@@ -300,6 +318,8 @@ if (process.argv.includes('--reopen')) {
       before.saves,
       'Navigation does not generate save-history copies',
     );
+    // Back to real time; the next edit refreshes the last-interaction time.
+    await page.evaluate(() => (window.clockOffset = 0));
     await clip.locator('input').first().fill('Saved after seeking');
     await page.waitForTimeout(2800);
     assert.equal(
@@ -317,7 +337,7 @@ if (process.argv.includes('--reopen')) {
     await expect
       .poll(async () => (await state()).model.recordings.find((r) => r.id === f.rid).position)
       .toBeCloseTo(4.25, 2);
-    evidence.savesIn33Seconds = during.revision - before.revision;
+    evidence.savesWhileSeekingPastDue = during.revision - before.revision;
     // Holding the scrub pointer still is not an idle transport.
     const settled = await state();
     const box = await track.boundingBox();
@@ -330,7 +350,7 @@ if (process.argv.includes('--reopen')) {
       .poll(async () => (await state()).revision, 'Released scrub saves after settling')
       .toBeGreaterThan(settled.revision);
     await seek(1);
-    await page.waitForTimeout(2400);
+    await settledAt(1);
     const beforePlaying = await state();
     await page.locator('video').evaluate((v) => v.play());
     await page.waitForTimeout(3200);
@@ -345,22 +365,24 @@ if (process.argv.includes('--reopen')) {
       .poll(async () => (await state()).revision, 'Paused playback saves')
       .toBeGreaterThan(beforePlaying.revision);
     await seek(7);
-    await page.waitForTimeout(2400);
+    await settledAt(7);
     const beforeReverse = await state();
     await page.getByRole('button', { name: 'Reverse · J', exact: true }).click();
     await page.waitForTimeout(2800);
     assert.equal((await state()).revision, beforeReverse.revision, 'Reverse scan does not save');
     await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
-    await page.waitForTimeout(2400);
+    await expect
+      .poll(async () => (await state()).revision, 'Paused reverse scan saves')
+      .toBeGreaterThan(beforeReverse.revision);
     // Navigation does not hide the last edit behind position-only Undo steps or
     // clear Redo. Undo/Redo of the name must also leave the decoded frame alone.
     await seek(4.75);
-    await page.waitForTimeout(2400);
+    await settledAt(4.75);
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect(clip.locator('input').first()).toHaveValue('Overlap 1');
     await expect.poll(position).toBeCloseTo(4.75, 2);
     await seek(5);
-    await page.waitForTimeout(2400);
+    await settledAt(5);
     await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Redo', exact: true }).click();
     await expect(clip.locator('input').first()).toHaveValue('Saved after seeking');

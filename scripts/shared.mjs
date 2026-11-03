@@ -9,6 +9,11 @@ export const require = createRequire(import.meta.url);
 
 if (process.env.VIRTUAL_CUT_COVERAGE_DIR && process.env.VIRTUAL_CUT_COVERAGE_CHECK)
   (await import('./coverage-desktop.mjs')).installCoverageCollector();
+if (process.env.VIRTUAL_CUT_HANG_REQUEST)
+  (await import('./hang-capture.mjs')).watchForHang(
+    process.env.VIRTUAL_CUT_HANG_REQUEST,
+    process.env.VIRTUAL_CUT_HANG_OUTPUT,
+  );
 
 export function electronEnvironment(extra = {}) {
   const env = { ...process.env, ...extra };

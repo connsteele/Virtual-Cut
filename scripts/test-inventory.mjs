@@ -90,6 +90,20 @@ export const dependencies = {
   'filmstrip-reuse-checks.mjs': ['filmstrip-checks.mjs'],
   'review-planning-ui.mjs': ['review-planning-native.mjs'],
 };
+// With --jobs above 1, these run with nothing beside them: they measure real decoding and
+// timers while seeking or playing.
+export const exclusive = ['timing-checks.mjs', 'playback-ui-checks.mjs', 'review-fixes-checks.mjs'];
+// Checks that open, or copy, the same fixture project run one after another in this order.
+// Projects take a .lock and use SQLite WAL, so a copy taken while another check has the
+// project open can miss its latest writes.
+export const sharedFixtures = [
+  ['save-policy-ui.mjs', 'feedback-ui-checks.mjs', 'playback-ui-checks.mjs'],
+  ['filmstrip-ui-checks.mjs', 'filmstrip-reuse-checks.mjs'],
+];
+// The suite stops a check after three minutes (the slowest, review-fixes, takes under one).
+// A check that needs longer is named here with its own limit in milliseconds.
+export const checkTimeout = 3 * 60 * 1000;
+export const longerTimeouts = {};
 // Explicit inventory: a new test script must join a gate or receive a reason here.
 export const other = {
   'playback-speed-study.mjs':

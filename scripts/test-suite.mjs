@@ -3,7 +3,17 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile, realpath, rm } from 'node
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { root, require, stopChild } from './shared.mjs';
-import { fast, native, desktop, dependencies, other } from './test-inventory.mjs';
+import {
+  fast,
+  native,
+  desktop,
+  dependencies,
+  exclusive,
+  sharedFixtures,
+  checkTimeout,
+  longerTimeouts,
+  other,
+} from './test-inventory.mjs';
 
 const profile = process.argv[2] || 'fast';
 const profiles = ['fast', 'native', 'desktop', 'packaged', 'all'];
@@ -15,6 +25,8 @@ const only = process.argv
 const known = [...fast, ...native, ...desktop];
 if (only?.some((s) => !known.includes(s)))
   throw new Error('Unknown --only test. Use names from test-inventory.mjs.');
+const jobs = Number(process.argv.find((a) => a.startsWith('--jobs='))?.slice(7) || 4);
+if (!Number.isInteger(jobs) || jobs < 1) throw new Error('--jobs takes a whole number from 1.');
 const base = path.resolve(
   process.env.VIRTUAL_CUT_SUITE_OUTPUT || 'G:/GPT/Work/virtual-cut/test-runs',
 );
@@ -68,24 +80,45 @@ for (const name of ['ffmpeg', 'ffprobe']) {
   };
   if (result.status === 0) env[`VIRTUAL_CUT_${name.toUpperCase()}`] = file;
 }
-let child,
-  interrupted = false;
+const children = new Set();
+let interrupted = false,
+  // The first check that fails; the checks running beside it are stopped.
+  halted = null;
+const fileName = (name) => name.replaceAll(/[^a-zA-Z0-9.-]/g, '-');
+const lastLines = (output, count = 40) =>
+  output.trim() ? output.trimEnd().split(/\r?\n/).slice(-count) : ['(the check printed nothing)'];
+const stopAll = () => Promise.all([...children].map((c) => stopChild(c)));
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
     interrupted = true;
-    void stopChild(child);
+    void stopAll();
   });
 async function run(name, command, args, extra = {}) {
   const started = performance.now();
   console.log(`Running ${name}…`);
   let output = '',
     timedOut = false;
+  // Each check gets its own TEMP, so checks running side by side never share scratch files.
+  const temp = path.join(directory, 'temp', fileName(name));
+  await mkdir(temp, { recursive: true });
+  const limit = longerTimeouts[name] ?? checkTimeout;
+  // A desktop check that runs out of time saves screenshots of its windows when this file
+  // appears (scripts/hang-capture.mjs), before it is stopped.
+  const hang = desktop.includes(name) ? path.join(directory, `${fileName(name)}.hang`) : null;
   const code = await new Promise((resolve) => {
-    child = spawn(command, args, {
+    const child = spawn(command, args, {
       cwd: root,
       windowsHide: true,
       env: {
         ...env,
+        TEMP: temp,
+        TMP: temp,
+        ...(hang
+          ? {
+              VIRTUAL_CUT_HANG_REQUEST: hang,
+              VIRTUAL_CUT_HANG_OUTPUT: path.join(directory, `${fileName(name)}-timeout`),
+            }
+          : {}),
         ...extra,
         ...(process.env.VIRTUAL_CUT_COVERAGE_DIR && known.includes(name)
           ? { VIRTUAL_CUT_COVERAGE_CHECK: name }
@@ -93,45 +126,79 @@ async function run(name, command, args, extra = {}) {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    children.add(child);
     const capture = (data) => {
       if (output.length < 2 * 1024 * 1024)
         output += data.toString().slice(0, 2 * 1024 * 1024 - output.length);
     };
     child.stdout.on('data', capture);
     child.stderr.on('data', capture);
-    const timer = setTimeout(
-      () => {
-        timedOut = true;
-        void stopChild(child);
-      },
-      10 * 60 * 1000,
-    );
+    const timer = setTimeout(async () => {
+      timedOut = true;
+      if (hang) {
+        await writeFile(hang, 'capture');
+        const asked = performance.now();
+        while (
+          child.exitCode === null &&
+          !existsSync(hang + '.done') &&
+          performance.now() - asked < 15000
+        )
+          await new Promise((r) => setTimeout(r, 250));
+      }
+      void stopChild(child);
+    }, limit);
     child.on('error', (e) => {
       capture(String(e));
       clearTimeout(timer);
+      children.delete(child);
       resolve(-1);
     });
     child.on('exit', (code) => {
       clearTimeout(timer);
+      children.delete(child);
       resolve(code);
     });
   });
+  const stopped = code !== 0 && !timedOut && halted && halted !== name;
   const result = {
     name,
-    status: code === 0 && !timedOut && !interrupted ? 'passed' : 'failed',
+    status: code === 0 && !timedOut && !interrupted ? 'passed' : stopped ? 'skipped' : 'failed',
     code,
     durationMs: Math.round(performance.now() - started),
-    ...(timedOut ? { reason: 'Ten minute timeout' } : {}),
+    ...(timedOut ? { reason: `Timed out after ${Math.round(limit / 1000)} s` } : {}),
+    ...(stopped ? { reason: `Stopped because ${halted} failed` } : {}),
   };
+  if (timedOut) {
+    result.lastLines = lastLines(output);
+    if (hang) {
+      const done = await readFile(hang + '.done', 'utf8').catch(() => null);
+      result.screenshots = done ? JSON.parse(done).screenshots : 'The check saved no screenshots';
+      await rm(hang, { force: true });
+      await rm(hang + '.done', { force: true });
+    }
+  }
   report.checks.push(result);
-  await writeFile(path.join(directory, name.replaceAll(/[^a-zA-Z0-9.-]/g, '-') + '.log'), output);
+  await writeFile(path.join(directory, fileName(name) + '.log'), output);
   console.log(`${result.status.toUpperCase()} ${name} (${(result.durationMs / 1000).toFixed(1)}s)`);
-  if (result.status === 'failed') console.log(output.slice(-5000));
+  if (result.status === 'failed') {
+    console.log(output.slice(-5000));
+    if (result.screenshots) console.log('Screenshots at the timeout:', result.screenshots);
+    // Stop the checks running beside the first failure and start no more.
+    if (known.includes(name) && !halted) {
+      halted = name;
+      void stopAll();
+    }
+  }
   return result.status === 'passed';
 }
+// A timed-out check also lists its screenshots; its last log lines are in report.json.
+const reportLine = (r) =>
+  `- ${r.status}: ${r.name}${r.reason ? ' — ' + r.reason : ''}` +
+  (Array.isArray(r.screenshots) ? `. Screenshots: ${r.screenshots.join(', ')}` : '');
 const skip = (name, reason) => {
   report.checks.push({ name, status: 'skipped', reason });
   console.log(`SKIPPED ${name}: ${reason}`);
+  return false;
 };
 try {
   const classified = new Set([...known, ...Object.keys(other)]);
@@ -174,32 +241,24 @@ try {
       ...formatCheck.slice('prettier --check --cache '.length).split(' '),
     ]);
   }
-  for (const name of known.filter((s) => wanted.has(s))) {
+  const ready = (name) => {
     const deps = dependencies[name] || [];
     const failedDependency = deps.find(
       (d) => !report.checks.some((r) => r.name === d && r.status === 'passed'),
     );
-    if (!build || interrupted) {
-      skip(name, interrupted ? 'Run interrupted' : 'Build failed');
-      continue;
-    }
-    if (failedDependency) {
-      skip(name, `Prerequisite ${failedDependency} did not pass in this run`);
-      continue;
-    }
-    if (
-      !fast.includes(name) &&
-      (!report.tools.ffmpeg.available || !report.tools.ffprobe.available)
-    ) {
-      skip(name, 'FFmpeg and FFprobe are required');
-      continue;
-    }
-    if (packaged && desktop.includes(name) && (!executable || !existsSync(executable))) {
-      skip(name, 'Set VIRTUAL_CUT_TEST_EXECUTABLE to the packaged Windows application');
-      continue;
-    }
+    if (!build || interrupted) return skip(name, interrupted ? 'Run interrupted' : 'Build failed');
+    if (halted) return skip(name, `Not started because ${halted} failed`);
+    if (failedDependency)
+      return skip(name, `Prerequisite ${failedDependency} did not pass in this run`);
+    if (!fast.includes(name) && (!report.tools.ffmpeg.available || !report.tools.ffprobe.available))
+      return skip(name, 'FFmpeg and FFprobe are required');
+    if (packaged && desktop.includes(name) && (!executable || !existsSync(executable)))
+      return skip(name, 'Set VIRTUAL_CUT_TEST_EXECUTABLE to the packaged Windows application');
+    return true;
+  };
+  const start = (name) => {
     if (fast.includes(name))
-      await run(name, process.execPath, [
+      return run(name, process.execPath, [
         ...(process.env.VIRTUAL_CUT_COVERAGE_DIR
           ? ['--import', './scripts/coverage-fast.mjs']
           : []),
@@ -207,14 +266,43 @@ try {
         '--test',
         `scripts/${name}`,
       ]);
-    else if (native.includes(name))
-      await run(name, require('electron'), [`scripts/${name}`], { ELECTRON_RUN_AS_NODE: '1' });
-    else await run(name, process.execPath, [`scripts/${name}`]);
+    if (native.includes(name))
+      return run(name, require('electron'), [`scripts/${name}`], { ELECTRON_RUN_AS_NODE: '1' });
+    return run(name, process.execPath, [`scripts/${name}`]);
+  };
+  // Up to --jobs checks (default 4) run at once, in inventory order: a check starts once its
+  // prerequisites have finished, after any earlier check sharing its fixture project, and
+  // timing-sensitive checks run with nothing beside them. --jobs=1 is the serial order.
+  // The first failure stops the checks beside it and skips the rest.
+  const pending = known.filter((s) => wanted.has(s));
+  const running = new Map();
+  const lane = (name) => sharedFixtures.find((group) => group.includes(name));
+  while (pending.length || running.size) {
+    let started = false;
+    for (const name of [...pending]) {
+      if (running.size >= jobs || [...running.keys()].some((r) => exclusive.includes(r))) break;
+      const waiting = (other) => pending.includes(other) || running.has(other);
+      if ((dependencies[name] || []).some(waiting)) continue;
+      const shared = lane(name);
+      if (shared?.slice(0, shared.indexOf(name)).some(waiting)) continue;
+      // Hold the queue for an exclusive check, so it is not starved by the others.
+      if (exclusive.includes(name) && running.size) break;
+      pending.splice(pending.indexOf(name), 1);
+      started = true;
+      if (ready(name) !== true) continue;
+      running.set(
+        name,
+        start(name).finally(() => running.delete(name)),
+      );
+      if (exclusive.includes(name)) break;
+    }
+    if (!started && running.size) await Promise.race(running.values());
+    else if (!started && pending.length) throw new Error(`Cannot schedule ${pending.join(', ')}`);
   }
 } catch (error) {
   report.checks.push({ name: 'suite', status: 'failed', reason: String(error) });
 } finally {
-  await stopChild(child);
+  await stopAll();
   report.finished = new Date().toISOString();
   report.status = report.checks.some((r) => r.status === 'failed')
     ? 'failed'
@@ -225,9 +313,7 @@ try {
   await writeFile(
     path.join(directory, 'report.md'),
     `# ${profile}: ${report.status}\n\nApp ${report.appVersion}; commit ${report.commit}${report.dirty ? ' + local changes' : ''}.\n\n` +
-      report.checks
-        .map((r) => `- ${r.status}: ${r.name}${r.reason ? ' — ' + r.reason : ''}`)
-        .join('\n'),
+      report.checks.map(reportLine).join('\n'),
   );
   await writeFile(path.join(directory, '.virtual-cut-tests-owned'), 'complete');
   console.log(`Report: ${path.join(directory, 'report.json')}`);
@@ -248,9 +334,7 @@ try {
     await writeFile(
       path.join(directory, 'report.md'),
       `# ${profile}: ${report.status}\n\n` +
-        report.checks
-          .map((r) => `- ${r.status}: ${r.name}${r.reason ? ' — ' + r.reason : ''}`)
-          .join('\n') +
+        report.checks.map(reportLine).join('\n') +
         `\n\nCoverage: ${coverage.status}. See ${report.coverage.summary}\n`,
     );
   }
