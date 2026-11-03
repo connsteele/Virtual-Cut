@@ -293,8 +293,9 @@ export class ProjectService {
   private filmstripCache = Object.assign(new FilmstripCache(), {
     onMissing: (sourceId: string) => this.wantFilmstrip(sourceId),
   });
-  // Filmstrips are made in the background, one recording at a time, only while no job is queued;
-  // any job that starts stops the current pass, which is retried later.
+  // Filmstrips are made in the background, one recording at a time, only while the media lane
+  // has nothing to start (VC-145); any media job that starts stops the current pass, which is
+  // retried later.
   private filmstripBuild: {
     sourceId: string;
     controller: AbortController;
