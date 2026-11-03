@@ -169,7 +169,7 @@ try {
 
   // The intent guide: the shipped guide plus the tagged notes beside other recordings only.
   const guide = (await tool(client, 'get_intent_guide')).json();
-  assert.equal(guide.guide.version, '1');
+  assert.equal(guide.guide.version, '2');
   assert.deepEqual(
     guide.examples.map((e) => [e.from, e.time, e.intents.join('+'), e.context]),
     [['tagged notes', 1, 'marker+general', 'Peter']],
@@ -589,7 +589,7 @@ try {
     kept.runs.map((r) => [r.agent, r.model, r.intent, r.proposals]),
     [['Claude Code', 'check-model', 'mic intent pass', 6]],
   );
-  assert.equal(kept.runs[0].read.intentGuideVersion, '1');
+  assert.equal(kept.runs[0].read.intentGuideVersion, '2');
   assert.deepEqual(
     kept.runs[0].read.transcripts.find((t) => t.role === 'mic'),
     { role: 'mic', transcriptId: 'agent-mic', corrections: 0 },

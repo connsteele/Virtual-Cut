@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { parseTaggedNotes, splitTarget } from '../dist-electron/intent-notes.js';
 import { scoreRecording } from '../dist-electron/intent-score.js';
 import { intentGuide, intentGuideAnswer } from '../dist-electron/intent-guide.js';
@@ -280,7 +281,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '1');
+  assert.equal(all.guide.version, '2');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -337,5 +338,45 @@ Note I like the crowd
   ]);
   assert.throws(() => intentGuideAnswer(source, { max_examples: 500 }), /max_examples/);
   assert.throws(() => intentGuideAnswer(source, { recording_id: 'nope' }), /No recording/);
+}
+// Guide v2 (VC-187): the accepted sentences ship word for word, the rules for recordings with no
+// mic and for recurring moments, per-game sections, and a readable copy that stays in step.
+{
+  const strings = (v) =>
+    typeof v === 'string'
+      ? [v]
+      : v && typeof v === 'object'
+        ? Object.values(v).flatMap(strings)
+        : [];
+  const text = strings(intentGuide).join('\n');
+  const has = (sentence) => assert.ok(text.includes(sentence), `guide says: ${sentence}`);
+  has(
+    'Keep a Split where it was said unless a black screen ends within 5 s before it. Propose a ' +
+      "cut up to 12 s back only when what's said shows the call came late, and say why.",
+  );
+  assert.ok(!/spelling/.test(text), 'the spelling sentence waits for screen text (VC-171)');
+  has('A part of one continuous scene is a range marker (end_seconds), not a clip range.');
+  has('mic speech is optional evidence, never a requirement');
+  has('"No commentary on this recording; proposals come from the game alone"');
+  has('Never read silence as "nothing worth keeping".');
+  has(`"First few" is 3 unless the game's section below says otherwise`);
+  has('such as "clip this one", overrides the count');
+  assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
+  assert.equal(intentGuide.games.general.recurringClips, 3);
+  assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
+  const doc = (await readFile(new URL('../docs/intent-guide.md', import.meta.url), 'utf8')).replace(
+    /\s+/g,
+    ' ',
+  );
+  assert.ok(doc.startsWith(`# Intent guide (version ${intentGuide.version})`));
+  for (const words of [
+    'unless a black screen ends within 5 s before it',
+    'Held for a later version: "Propose a spelling only when it was seen written on screen"',
+    'marker, not a clip range',
+    'No mic, or a silent mic',
+    'Recurring moments',
+    '| General | first 3',
+  ])
+    assert.ok(doc.includes(words), `docs/intent-guide.md says: ${words}`);
 }
 console.log('Intent notes, scoring and guide checks passed.');

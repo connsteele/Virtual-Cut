@@ -1,4 +1,4 @@
-# Mic intent guide (version 1)
+# Intent guide (version 2)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -9,8 +9,10 @@ meaning changes.
 
 The creator talks into the microphone while playing. Apart from a few spoken commands, that speech
 is free: it says what they want marked, noted or cut, or gives context for the video. The agent
-works out what each mic line is for and proposes it with `submit_proposals`. Every proposal is
-reviewed in the transcript window; nothing is applied until the creator accepts it.
+works out what each mic line is for and proposes it with `submit_proposals`. Mic speech is optional
+evidence, never a requirement: some sessions have no commentary, and then the game alone says what
+to propose. Every proposal is reviewed in the transcript window; nothing is applied until the
+creator accepts it.
 
 ## Intents
 
@@ -25,10 +27,11 @@ A line can carry several intents.
 
 ## Spoken commands
 
-- **Split** (or Cut) is a command; the app offers it as a Split cue. When the creator means the
-  scene change, the cut usually belongs where a black or loading screen ends a few seconds before
-  the word. An agent that moves it or names the clips proposes a split with `refines` pointing at
-  the cue line, and the creator sees one card with the cue as heard and the agent's changes.
+- **Split** (or Cut) is a command; the app offers it as a Split cue. Keep a Split where it was said
+  unless a black screen ends within 5 s before it. Propose a cut up to 12 s back only when what's
+  said shows the call came late, and say why (decision D6, October 10, 2026). An agent that moves
+  it or names the clips proposes a split with `refines` pointing at the cue line, and the creator
+  sees one card with the cue as heard and the agent's changes.
 - **Clip start/in** and **Clip end/out** pair into a clip range.
 - **Marker**, **Mark** and **Note** are no longer needed as cue words. Older recordings use them;
   the line is still free speech to interpret, and an agent reworks the cue rather than adding a
@@ -41,7 +44,32 @@ A line can carry several intents.
 - Skip coughs, false starts ("never mind"), filler and lines invented over noise.
 - Lines about one idea across a session can add up to one composite note: a single note with the
   notion intent that cites every supporting line.
+- A part of one continuous scene (a conversation, a cutscene, a battle that carries on) is a range
+  marker, not a clip range: the creator keeps the scene as one clip and labels its parts.
+- **No mic, or a silent mic.** Some sessions are recorded just to relax, with no commentary. The
+  agent says so first in its summary ("No commentary on this recording; proposals come from the
+  game alone") and proposes from the game: game dialogue, scene changes, menus and battles. Silence
+  never means "nothing worth keeping".
+- **Recurring moments** (MVP screen, level-up, rewards, victory poses): clips for the first few
+  instances in a game, so the edit has variations; after that a point marker at most, or nothing.
+  "First few" is 3 unless the game's section says otherwise, and counts within one batch for now.
+  Anything said on the mic, such as "clip this one", overrides the count.
 - Use the game vocabulary and glossary for names. Keep titles plain and under 100 characters.
+
+Held for a later version: "Propose a spelling only when it was seen written on screen" (decision
+D6) waits for screen text through MCP (VC-141, VC-171). Without it, agents mark names unsure rather
+than fixing them.
+
+## Games
+
+Lessons that hold for one game stay under that game's header so they don't leak into others. The
+agent uses the section whose game matches `get_context`; the general section applies to every
+game. A lesson moves to general only when it holds in a second game or the creator says so. A game
+gets its own section when its footage comes through and it has lessons of its own.
+
+| Section | Recurring moments clipped | Lessons  |
+| ------- | ------------------------- | -------- |
+| General | first 3                   | none yet |
 
 ## The user's layer
 

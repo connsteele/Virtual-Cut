@@ -3,28 +3,33 @@ import { proposalDecision, proposalIntents } from './proposal-edits.js';
 import { AgentReadError, findRecording, type AgentReadSource } from './agent-tools.js';
 
 /**
- * The mic intent guide (VC-155): what a creator means by free mic speech, and how an agent turns
- * it into proposals. It ships with Virtual Cut and is versioned, so every agent reads the same
- * instructions; the user's own labelled examples and habits come with it from their data.
- * docs/intent-guide.md is the readable copy and must match.
+ * The intent guide (VC-155, v2 VC-187): what a creator means by free mic speech, what to propose
+ * when there is none, and how an agent turns it into proposals. It ships with Virtual Cut and is
+ * versioned, so every agent reads the same instructions; the user's own labelled examples and
+ * habits come with it from their data. docs/intent-guide.md is the readable copy and must match.
  */
-export const intentGuideVersion = '1';
+export const intentGuideVersion = '2';
+
+/** How many instances of a recurring moment get a clip before it drops to a marker or nothing. */
+export const defaultRecurringClips = 3;
 
 export const intentGuide = {
   version: intentGuideVersion,
   purpose:
     'The creator talks into the microphone while playing. Apart from a few spoken commands, ' +
     'that speech is free: it says what they want marked, noted or cut, or gives context for the ' +
-    'video. Work out what each mic line is for and propose it with submit_proposals. Every ' +
-    'proposal is reviewed by the creator; nothing is applied until they accept it.',
+    'video. Work out what each mic line is for and propose it with submit_proposals. Mic speech ' +
+    'is optional evidence, never a requirement: some sessions have no commentary, and then the ' +
+    'game alone says what to propose. Every proposal is reviewed by the creator; nothing is ' +
+    'applied until they accept it.',
   intents: [
     {
       tag: 'marker',
       meaning: 'Something worth finding again at this moment: a reaction, a good line, a play.',
       propose:
         'A marker at the moment it refers to, often the game line or action just before the ' +
-        'speech, with a short title and a note. Use a range marker (end_seconds) to label part ' +
-        'of a continuous scene instead of cutting it.',
+        'speech, with a short title and a note. A part of one continuous scene is a range marker ' +
+        '(end_seconds), not a clip range.',
     },
     {
       tag: 'general',
@@ -48,15 +53,16 @@ export const intentGuide = {
       meaning: 'An editing instruction, such as "cut before this transition".',
       propose:
         'A split or clip range near where the instruction points, not at the moment it was said. ' +
-        'Say in the reason where it was placed and why.',
+        'Say in the reason where it was placed and why. Inside one continuous scene, propose a ' +
+        'range marker rather than a clip range.',
     },
   ] satisfies { tag: IntentTag; meaning: string; propose: string }[],
   commands: [
-    'Split (or Cut) is a spoken command: the app already offers it as a Split cue. When the ' +
-      'creator means the scene change, the cut usually belongs where a black or loading screen ' +
-      'ends a few seconds before the word. To move it or name the clips, propose a split with ' +
-      'refines pointing at the cue line; the creator sees one card with the cue as heard and ' +
-      'your changes.',
+    'Split (or Cut) is a spoken command: the app already offers it as a Split cue. Keep a Split ' +
+      'where it was said unless a black screen ends within 5 s before it. Propose a cut up to ' +
+      "12 s back only when what's said shows the call came late, and say why. To move it or " +
+      'name the clips, propose a split with refines pointing at the cue line; the creator sees ' +
+      'one card with the cue as heard and your changes.',
     'Clip start/in and Clip end/out are commands too and pair into a clip range.',
     'Marker, Mark and Note are no longer needed as cue words, but older recordings use them. A ' +
       'line that starts with one is still free speech to interpret; rework the cue with refines ' +
@@ -67,6 +73,19 @@ export const intentGuide = {
     'Read the game dialogue around each mic line (get_transcript with role "game"): it usually ' +
       'says what just happened, fixes misheard names, and is the best source for a note.',
     'Cite the mic line and the game lines you used as evidence.',
+    'A part of one continuous scene (a conversation, a cutscene, a battle that carries on) is a ' +
+      'range marker, not a clip range: the creator keeps the scene as one clip and labels its ' +
+      'parts. Propose a clip range only for footage that stands on its own.',
+    'No mic, or a silent mic: mic speech is optional evidence, never a requirement. Some ' +
+      'sessions are recorded just to relax, with no commentary. When there is no mic track, or ' +
+      'it is silent, say so first in your summary ("No commentary on this recording; proposals ' +
+      'come from the game alone") and propose from the game: game dialogue, scene changes, ' +
+      'menus and battles. Never read silence as "nothing worth keeping".',
+    'Recurring moments (MVP screen, level-up, rewards, victory poses): propose clips for the ' +
+      'first few instances in a game, so there are variations for the edit. After that, ' +
+      `propose a point marker at most, or nothing. "First few" is ${defaultRecurringClips} unless ` +
+      "the game's section below says otherwise, and counts within this batch. " +
+      'Anything said on the mic, such as "clip this one", overrides the count.',
     'Skip coughs, false starts ("never mind"), filler and lines the recognizer invented over noise.',
     'Mic lines about one idea across a session can add up to one composite note: propose a ' +
       'single note with the notion intent and cite every supporting line.',
@@ -75,11 +94,29 @@ export const intentGuide = {
     "Learn from the creator's examples and decisions below: what they accepted, moved, retitled " +
       'or rejected.',
   ],
+  games: {
+    note:
+      'Lessons that hold for one game stay in its section so they do not leak into others. Use ' +
+      'the section whose game matches get_context; the general section applies to every game. ' +
+      'A lesson moves to general only when it holds in a second game or the creator says so.',
+    general: {
+      recurringClips: defaultRecurringClips,
+      lessons: [] as string[],
+    },
+    // A game gets a section when its footage comes through and it has lessons of its own.
+    sections: [] as {
+      game: string;
+      platform?: string;
+      recurringClips: number;
+      lessons: string[];
+    }[],
+  },
   pass: [
     'get_current_view or get_project_summary: find the recording.',
     'get_context: game, vocabulary, brief and glossary.',
     'get_intent_guide with the recording_id: this guide, examples and habits.',
-    'get_transcript role "mic", all pages; then role "game" around each mic line.',
+    'get_transcript role "mic", all pages; then role "game" around each mic line. With no mic ' +
+      'transcript, or only silence, read role "game" in full instead.',
     'get_annotations for the recording: skip what is already marked or decided.',
     'submit_proposals in batches of up to 50, then tell the creator to review the cards in the ' +
       'transcript window.',
