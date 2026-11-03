@@ -249,6 +249,8 @@ Note I like the crowd
     revision: 4,
     model: {
       ...emptyModel(),
+      // Later in Cut, the accepted marker was dragged into a range (VC-173).
+      markers: { r2: [{ id: 'mk', time: 11.5, end: 14, name: 'New title', note: '' }] },
       recordings: [
         rec('r1', 'Session one'),
         rec('r2', 'Session two'),
@@ -261,8 +263,15 @@ Note I like the crowd
           status: 'accepted',
           appliedTime: 11.5,
           title: 'New title',
+          markerId: 'mk',
+          why: { note: 'Good catch' },
         },
-        { id: 'agent:b', proposalId: 'b', status: 'rejected' },
+        {
+          id: 'agent:b',
+          proposalId: 'b',
+          status: 'rejected',
+          why: { reason: 'other', note: 'Said twice' },
+        },
         { id: 'agent:d', proposalId: 'd', status: 'accepted', appliedTime: 40, title: 'A | B' },
       ],
     },
@@ -310,12 +319,26 @@ Note I like the crowd
     ],
   );
   assert.equal(all.examples[2].said, 'Split.', 'a reworked cue says what was heard');
+  assert.deepEqual(
+    all.examples.slice(0, 3).map((e) => [e.why, e.later]),
+    [
+      ['Good catch', 'marker given an end'],
+      ['other: Said twice', undefined],
+      [undefined, undefined],
+    ],
+  );
   assert.equal(all.examples[3].context, 'Peter');
   assert.deepEqual(all.profile, {
     taggedLines: 3,
     intents: { marker: 1, general: 1, notion: 1, edit: 0 },
     cueWordShare: 0.33,
-    decisions: { accepted: 2, rejected: 1, moved: 1 },
+    decisions: {
+      accepted: 2,
+      rejected: 1,
+      moved: 1,
+      rejectReasons: { 'wrong-moment': 0, 'not-needed': 0, 'wrong-intent': 0, other: 1 },
+      changedAfterAccepting: 1,
+    },
     notes: [],
   });
   assert.equal(all.projectRevision, 4);
@@ -361,6 +384,7 @@ Note I like the crowd
   has('Never read silence as "nothing worth keeping".');
   has(`"First few" is 3 unless the game's section below says otherwise`);
   has('such as "clip this one", overrides the count');
+  has('A reject for the wrong moment means the idea was right but the time was not.');
   assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
   assert.equal(intentGuide.games.general.recurringClips, 3);
   assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
@@ -376,6 +400,9 @@ Note I like the crowd
     'No mic, or a silent mic',
     'Recurring moments',
     '| General | first 3',
+    // VC-173: decisions carry the creator's reason and later changes.
+    'rejected, why when they said, and what they changed after accepting',
+    'A reject for the wrong moment means the idea was right but the time was not.',
   ])
     assert.ok(doc.includes(words), `docs/intent-guide.md says: ${words}`);
 }

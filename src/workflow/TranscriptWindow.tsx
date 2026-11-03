@@ -96,6 +96,8 @@ export function TranscriptWindow() {
   const previewOwner = useRef({ projectId: '', sourceId: '' });
   // VC-184: a preview dropped on the main timeline; its card takes the new times.
   const [adjust, setAdjust] = useState<CardAdjust>();
+  // The proposal decided last asks why on its folded line (VC-173).
+  const [asked, setAsked] = useState<{ id: string; focus: boolean } | null>(null);
   useEffect(
     () =>
       api.onAdjust((event) => {
@@ -518,6 +520,8 @@ export function TranscriptWindow() {
           playhead={playhead}
           onPreview={preview}
           adjust={adjust}
+          asking={asked?.id === proposal.id ? asked : undefined}
+          onAsk={setAsked}
           onSeek={(time) => {
             setFollow(false);
             background(action(() => api.seek(projectId, session.sourceId, time)));
@@ -535,7 +539,7 @@ export function TranscriptWindow() {
                   proposalId: proposal.id,
                   action: type,
                   expected:
-                    type === 'reopen-proposal'
+                    type === 'reopen-proposal' || type === 'why-proposal'
                       ? proposalStatus(session.decisions, proposal.id)
                       : 'null',
                 }),

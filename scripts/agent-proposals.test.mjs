@@ -715,4 +715,83 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
     ],
   );
 }
+// VC-173: a reason is added after deciding and changes nothing else; the read-back carries it
+// and what the user changed later to what accepting made.
+{
+  const why = (p, value, expected) =>
+    applyProposalCommand(next, p, { ...command(p, 'why-proposal'), why: value, expected }, newId);
+  const rejected = why(note, { reason: 'wrong-moment' }, 'rejected');
+  assert.deepEqual(proposalDecision(rejected.cueDecisions, note.id).why, {
+    reason: 'wrong-moment',
+  });
+  assert.deepEqual(
+    { ...rejected, cueDecisions: undefined },
+    { ...next, cueDecisions: undefined },
+    'only the decision changes',
+  );
+  validateEdits(structuredClone(rejected));
+  assert.deepEqual(
+    proposalDecision(
+      why(note, { reason: 'other', note: '  Said twice  ' }, 'rejected').cueDecisions,
+      note.id,
+    ).why,
+    { reason: 'other', note: 'Said twice' },
+  );
+  assert.throws(() => why(note, { reason: 'other' }, 'rejected'), /"Other" needs a line/);
+  assert.throws(() => why(note, { reason: 'late' }, 'rejected'), /Pick a reason/);
+  assert.throws(() => why(note, { reason: 'not-needed' }, 'accepted'), /changed elsewhere/);
+  assert.throws(() => why(marker, { reason: 'not-needed' }, 'accepted'), /one line/);
+  assert.throws(() => why(marker, { note: 'x'.repeat(301) }, 'accepted'), /one line/);
+  assert.throws(
+    () => applyProposalCommand(model, note, { ...command(note, 'why-proposal'), why: {} }),
+    /changed elsewhere/,
+    'an undecided proposal has no reason',
+  );
+  const lined = why(marker, { note: 'Right moment, better name' }, 'accepted');
+  assert.deepEqual(proposalDecision(lined.cueDecisions, marker.id).why, {
+    note: 'Right moment, better name',
+  });
+  const cleared = applyProposalCommand(
+    lined,
+    marker,
+    { ...command(marker, 'why-proposal'), why: { note: '  ' }, expected: 'accepted' },
+    newId,
+  );
+  assert.equal(proposalDecision(cleared.cueDecisions, marker.id).why, undefined);
+  assert.throws(
+    () =>
+      validateEdits({
+        ...structuredClone(rejected),
+        cueDecisions: rejected.cueDecisions.map((d) =>
+          d.proposalId === note.id ? { ...d, why: { reason: 'wrong-moment', extra: 1 } } : d,
+        ),
+      }),
+    /Invalid cue decision/,
+  );
+  // Later in Cut: the marker moved and dragged into a range, the clip deleted, the note's
+  // reason given. The read-back links each change to its proposal.
+  const madeClip = proposalDecision(next.cueDecisions, clip.id).clipId;
+  const later = structuredClone(lined);
+  later.markers.r1 = later.markers.r1.map((m) =>
+    m.id === 'new1' ? { ...m, time: 20, end: 30 } : m,
+  );
+  later.clips = later.clips.filter((c) => c.id !== madeClip);
+  later.cueDecisions = rejected.cueDecisions.map((d) =>
+    d.proposalId === marker.id ? proposalDecision(lined.cueDecisions, marker.id) : d,
+  );
+  const back = proposalDecisions({ ...source, model: later });
+  const row = (p) => back.proposals.find((r) => r.id === p.id);
+  assert.deepEqual(row(marker).why, { note: 'Right moment, better name' });
+  assert.deepEqual(row(marker).afterAccepting, [
+    {
+      item: 'marker',
+      id: 'new1',
+      changed: { start: { from: 17.5, to: 20 }, end: { from: undefined, to: 30 } },
+    },
+  ]);
+  assert.deepEqual(row(clip).afterAccepting, [{ item: 'clip', id: madeClip, removed: true }]);
+  assert.deepEqual(row(note).why, { reason: 'wrong-moment' });
+  assert.equal(row(note).afterAccepting, undefined, 'a reject made nothing to change');
+  assert.equal(row(split).afterAccepting, undefined, 'unchanged since accepting');
+}
 console.log('Agent proposals: submission checks, decisions and read-back passed.');

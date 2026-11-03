@@ -1,5 +1,6 @@
 import type { Model, Recording, Clip, Marker } from './workflow-types.js';
 import { validateContexts } from './project-context.js';
+import { validWhy } from './proposal-edits.js';
 
 export function emptyModel(): Model {
   return {
@@ -206,6 +207,7 @@ export function validateEdits(model: Model): Model {
         (!Number.isFinite(decision.appliedEnd) ||
           !(decision.appliedEnd > (decision.appliedTime ?? -1)))) ||
       (decision.text != null && !text(decision.text, 10000)) ||
+      (decision.why != null && !validWhy(decision.why, decision.status)) ||
       (decision.decided != null && !text(decision.decided, 40))
     )
       throw new Error('Invalid cue decision.');

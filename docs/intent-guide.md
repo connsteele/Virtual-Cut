@@ -55,6 +55,9 @@ A line can carry several intents.
   "First few" is 3 unless the game's section says otherwise, and counts within one batch for now.
   Anything said on the mic, such as "clip this one", overrides the count.
 - Use the game vocabulary and glossary for names. Keep titles plain and under 100 characters.
+- Learn from the creator's examples and decisions: what they accepted, moved, retitled or
+  rejected, why when they said, and what they changed after accepting. A reject for the wrong
+  moment means the idea was right but the time was not.
 
 Held for a later version: "Propose a spelling only when it was seen written on screen" (decision
 D6) waits for screen text through MCP (VC-141, VC-171). Without it, agents mark names unsure rather
@@ -78,5 +81,9 @@ gets its own section when its footage comes through and it has lessons of its ow
 - **Tagged notes:** a `.txt` beside a recording's file, in the format described in
   `electron/intent-notes.ts`. Notes of the recording being worked on are left out, so they can
   serve as ground truth for `scripts/intent-score.mjs`.
-- **Decisions:** every accepted, moved, retitled or rejected agent proposal.
-- **Profile:** how often each intent is tagged, how often cue words are used, and decision counts.
+- **Decisions:** every accepted, moved, retitled or rejected agent proposal, with the creator's
+  reason when they gave one (`why`: Wrong moment, Not needed, Wrong intent, Other with a line, or a
+  line about an accept) and what they changed later to what accepting made (`later`: moved,
+  renamed, given an end, removed).
+- **Profile:** how often each intent is tagged, how often cue words are used, and decision counts,
+  including each reject reason and how many accepts were changed later.

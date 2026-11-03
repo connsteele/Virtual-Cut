@@ -271,7 +271,10 @@ export function registerAgentAccess(options: {
       "The user's decisions on proposals: pending, accepted (with the position, end, title and note " +
         'chosen, how far it moved, and kindChange when a clip range was kept as a range marker or ' +
         'a range marker as a clip) ' +
-        'or rejected. Filter by recording, proposal ids or status.',
+        'or rejected. why holds the reason when the user gave one: a reject reason (wrong-moment, ' +
+        'not-needed, wrong-intent, or other with a note) or a note about an accept. ' +
+        'afterAccepting lists what the user changed later to what accepting made (moved, ' +
+        'retitled, given or cleared an end, removed). Filter by recording, proposal ids or status.',
       decisionsInput,
       (s, a) => proposalDecisions(s, a),
       (a, n) => `Proposal decisions${a.recording_id ? `: ${n(a.recording_id)}` : ''}`,
