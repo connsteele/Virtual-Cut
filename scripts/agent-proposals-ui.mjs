@@ -433,6 +433,18 @@ try {
   await marker.getByRole('button', { name: 'Accept marker', exact: true }).click();
   await expect(marker).toHaveAttribute('data-status', 'accepted');
   await expect(marker).toContainText('✓ Accepted');
+  // VC-173: after an accept the folded line says what changed, gathered from the decision, and
+  // takes an optional line; Enter saves it.
+  const markerWhy = view.locator(`[data-proposal-why="${ids[0]}"]`);
+  await expect(markerWhy).toHaveAttribute('data-asking', 'true');
+  await expect(markerWhy).toContainText('Kept: marker + general intent · moved +0.5 s · retitled');
+  await marker.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-why-accept.png') });
+  await view.getByLabel(`Reason line ${ids[0]}`).fill('Right moment, the gate is the better name');
+  await view.getByLabel(`Reason line ${ids[0]}`).press('Enter');
+  await expect(markerWhy).toContainText('“Right moment, the gate is the better name”');
+  await expect(markerWhy).toHaveAttribute('data-asking', 'false');
+  // Only the latest decision asks: deciding the next card lets an unanswered prompt go.
   await split.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(split.getByLabel(`Proposal split target ${ids[1]}`)).toHaveValue('whole');
   await expect(split.getByLabel(`Proposal first clip name ${ids[1]}`)).toHaveValue(
@@ -443,14 +455,43 @@ try {
   await view.screenshot({ path: path.join(dir, 'proposal-split-names.png') });
   await split.getByRole('button', { name: 'Accept split', exact: true }).click();
   await expect(split).toHaveAttribute('data-status', 'accepted');
+  const splitWhy = view.locator(`[data-proposal-why="${ids[1]}"]`);
+  await expect(splitWhy).toContainText('Kept: edit intent · clips named');
   // Reject folds in place; Reopen brings it back for review, here and for the agent.
   await clip.getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(clip).toHaveAttribute('data-status', 'rejected');
+  const clipWhy = view.locator(`[data-proposal-why="${ids[2]}"]`);
+  await expect(clipWhy).toContainText('Why?');
+  await expect(splitWhy).toHaveCount(0);
   await clip.getByRole('button', { name: 'Reopen', exact: true }).click();
   await expect(clip).toHaveAttribute('data-status', 'pending');
+  await expect(clipWhy).toHaveCount(0);
+  // VC-173: rejected from the keyboard, the reason line takes focus; keys 1–4 pick a reason in
+  // one tap and move on to the next card waiting, as N would. It fits the compact window.
+  await resize(true);
+  await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);
   await clip.focus();
   await view.keyboard.press('r');
   await expect(clip).toHaveAttribute('data-status', 'rejected');
+  await expect(clipWhy).toBeFocused();
+  for (const name of ['Wrong moment', 'Not needed', 'Wrong intent', 'Other…', 'Skip']) {
+    const box = await clipWhy.getByRole('button', { name, exact: false }).first().boundingBox();
+    assert(box && box.x + box.width <= 500, `${name} fits the compact window`);
+  }
+  await clip.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-why-reject-compact.png') });
+  await view.keyboard.press('1');
+  await expect(clipWhy).toContainText('Why: Wrong moment');
+  await expect(view.locator('[data-proposal-card][data-status="pending"]:focus')).toHaveCount(1);
+  await view.screenshot({ path: path.join(dir, 'proposal-why-reject-saved-compact.png') });
+  await resize(false);
+  // Change reopens the choice; Other takes a short line, Esc backs out without saving.
+  await clipWhy.getByRole('button', { name: 'Change', exact: true }).click();
+  await clipWhy.getByRole('button', { name: /^Other/ }).click();
+  await view.getByLabel(`Reason line ${ids[2]}`).fill('Said twice');
+  await view.getByLabel(`Reason line ${ids[2]}`).press('Escape');
+  await clipWhy.getByRole('button', { name: 'Cancel' }).click();
+  await expect(clipWhy).toContainText('Why: Wrong moment');
   // VC-186: an agent clip range offers Accept as clip and Accept as range marker; the second
   // makes a range marker with the card's span, name and note.
   await expect(fort.getByRole('button', { name: 'Accept as clip', exact: true })).toBeVisible();
@@ -512,6 +553,10 @@ try {
   assert.equal(row(ids[2]).kindChange, undefined);
   assert.equal(row(ids[5]).kind, 'marker');
   assert.deepEqual(row(ids[5]).kindChange, { from: 'range-marker', to: 'clip-range' });
+  // VC-173: the reasons given on the folded lines.
+  assert.deepEqual(row(ids[0]).why, { note: 'Right moment, the gate is the better name' });
+  assert.deepEqual(row(ids[2]).why, { reason: 'wrong-moment' });
+  assert.equal(row(ids[1]).why, undefined, 'skipped, never required');
   const annotated = (await tool(client, 'get_annotations', { recording_id: fixture.rid })).json();
   assert.deepEqual(
     annotated.recordings[0].markers.map((m) => m.name),
@@ -545,6 +590,33 @@ try {
     (await tool(client, 'get_proposal_decisions', { status: 'pending' })).json().proposals.length,
     0,
   );
+  // VC-173: later in Cut the accepted point marker is dragged into a range. The read-back links
+  // the change to the proposal that made the marker, and so does the batch record below.
+  const gateMarker = annotated.recordings[0].markers[0];
+  await main.evaluate(
+    async ([id, rid, markerId]) => {
+      const before = (await window.virtualCut.project.current()).model;
+      const after = structuredClone(before);
+      after.markers[rid] = after.markers[rid].map((m) =>
+        m.id === markerId ? { ...m, end: m.time + 4 } : m,
+      );
+      await window.virtualCut.project.save(id, before, after);
+    },
+    [fixture.id, fixture.rid, gateMarker.id],
+  );
+  await expect
+    .poll(
+      async () =>
+        (await tool(client, 'get_proposal_decisions', { proposal_ids: [ids[0]] })).json()
+          .proposals[0].afterAccepting,
+    )
+    .toEqual([
+      {
+        item: 'marker',
+        id: gateMarker.id,
+        changed: { end: { to: Math.round((moved + 4) * 1000) / 1000 } },
+      },
+    ]);
   // VC-182: exporting the batch saves its record, the first pass beside what went out; the
   // agent reads it back.
   const out = path.join(dir, 'exports');
@@ -647,6 +719,14 @@ try {
     from: 'range-marker',
     to: 'clip-range',
   });
+  assert.deepEqual(kept.final.proposals[0].why, {
+    note: 'Right moment, the gate is the better name',
+  });
+  assert.deepEqual(kept.final.proposals[2].why, { reason: 'wrong-moment' });
+  assert.deepEqual(
+    kept.final.proposals[0].afterAccepting.map((c) => [c.item, c.id, Object.keys(c.changed)]),
+    [['marker', gateMarker.id, ['end']]],
+  );
   // The copied fixture already holds an older export of this recording; it is listed too.
   assert.deepEqual(
     kept.final.exports

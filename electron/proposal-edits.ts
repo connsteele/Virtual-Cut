@@ -1,5 +1,12 @@
 import type { Model } from './workflow-types.js';
-import type { CueDecision, CueKind, TranscriptCommand } from './transcript-contracts.js';
+import {
+  rejectReasons,
+  type CueDecision,
+  type CueKind,
+  type ProposalWhy,
+  type RejectReason,
+  type TranscriptCommand,
+} from './transcript-contracts.js';
 import type { AgentProposal } from './proposal-contracts.js';
 import { reopenDecision } from './decision-reopen.js';
 
@@ -67,6 +74,42 @@ export const proposalLabel = (kind: AgentProposal['kind']) =>
         ? 'Timed note'
         : 'Point marker';
 
+/** The longest reason line: a short sentence, not a note. */
+export const whyNoteLimit = 300;
+export const rejectReasonLabel: Record<RejectReason, string> = {
+  'wrong-moment': 'Wrong moment',
+  'not-needed': 'Not needed',
+  'wrong-intent': 'Wrong intent',
+  other: 'Other',
+};
+/** Whether a stored reason is well formed for a decision with this status. */
+export function validWhy(why: unknown, status: CueDecision['status']): why is ProposalWhy {
+  if (!why || typeof why !== 'object') return false;
+  const { reason, note, ...rest } = why as Record<string, unknown>;
+  if (Object.keys(rest).length) return false;
+  if (note != null && (typeof note !== 'string' || !note.trim() || note.length > whyNoteLimit))
+    return false;
+  if (reason == null) return note != null;
+  // Only a reject has a one-tap reason, and "other" says what in its line.
+  return (
+    status === 'rejected' &&
+    rejectReasons.includes(reason as RejectReason) &&
+    (reason !== 'other' || note != null)
+  );
+}
+function cleanWhy(why: ProposalWhy, status: CueDecision['status']): ProposalWhy | undefined {
+  const note = typeof why.note === 'string' ? why.note.trim() : undefined;
+  const value = { ...(why.reason ? { reason: why.reason } : {}), ...(note ? { note } : {}) };
+  if (!value.reason && !value.note) return undefined;
+  if (!validWhy(value, status))
+    throw new Error(
+      status === 'accepted'
+        ? `An accept takes one line of up to ${whyNoteLimit} characters.`
+        : `Pick a reason; "Other" needs a line of up to ${whyNoteLimit} characters.`,
+    );
+  return value;
+}
+
 export function applyProposalCommand(
   model: Model,
   proposal: AgentProposal,
@@ -84,6 +127,20 @@ export function applyProposalCommand(
     if (!current || command.expected !== current.status)
       throw new Error('This proposal changed elsewhere. Reopen the transcript.');
     return reopenDecision(model, current);
+  }
+  // The reason is added after deciding, on the folded card, and changes nothing else (VC-173).
+  if (command.action === 'why-proposal') {
+    if (!current || command.expected !== current.status)
+      throw new Error('This proposal changed elsewhere. Reopen the transcript.');
+    const why = command.why && cleanWhy(command.why, current.status);
+    return {
+      ...structuredClone(model),
+      cueDecisions: (model.cueDecisions || []).map((d) => {
+        if (d !== current) return d;
+        const { why: _, ...rest } = d;
+        return why ? { ...rest, why } : rest;
+      }),
+    };
   }
   if (current || command.expected !== 'null')
     throw new Error('This proposal was already decided. Undo its decision before changing it.');

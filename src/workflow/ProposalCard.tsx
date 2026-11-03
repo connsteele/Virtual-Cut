@@ -9,6 +9,24 @@ export interface PreviewAt {
 }
 
 /**
+ * N and P: pick the next or previous proposal waiting for review, from any card or the reason
+ * line of a decided one (VC-173), wrapping round.
+ */
+export function pickPending(from: Element, step: 1 | -1) {
+  const cards = [...document.querySelectorAll<HTMLElement>('[data-proposal-card]')];
+  const card = from.closest<HTMLElement>('[data-proposal-card]');
+  const at = card ? cards.indexOf(card) : -1;
+  for (let i = 1; i <= cards.length; i++) {
+    const next = cards[(at + step * i + cards.length * 2) % cards.length];
+    if (next.dataset.status !== 'pending' || next === card) continue;
+    // N and P pick the card they land on.
+    next.dataset.pick = 'true';
+    next.focus();
+    return;
+  }
+}
+
+/**
  * One proposal in the transcript window (VC-155), spoken or from an agent: the same lines in
  * the same places every time. Line 1: who proposed it, the kind and the intents, with Accept,
  * Reject and Details at the right (an agent clip range or range marker can also be accepted as the other kind). Line 2: the name, then the time code. Line 3 only when there
@@ -39,6 +57,7 @@ export function ProposalCard({
   onReject,
   onReopen,
   changedSince = false,
+  after,
   onCancel,
   onUndo,
   onSeek,
@@ -83,6 +102,8 @@ export function ProposalCard({
   onReopen?: () => void;
   /** Accepted, but the clip it made is gone (joined or deleted in Cut). */
   changedSince?: boolean;
+  /** Once decided: a line under the folded one, for the reason (VC-173). */
+  after?: ReactNode;
   /** Esc anywhere on the card: drop the edits and leave editing. */
   onCancel: () => void;
   /** Ctrl+Z while editing: undo the last change on this card. */
@@ -177,6 +198,7 @@ export function ProposalCard({
             )}
           </span>
         </div>
+        {after}
       </div>
     );
   // Keys on a focused proposal, outside its fields: A accept, R reject, D details, E edit,
@@ -214,16 +236,8 @@ export function ProposalCard({
     )
       return;
     const key = event.key.toLowerCase();
-    if (key === 'n' || key === 'p') {
-      const cards = [
-        ...document.querySelectorAll<HTMLElement>('[data-proposal-card][data-status="pending"]'),
-      ];
-      const at = cards.indexOf(event.currentTarget);
-      const next = cards[(at + (key === 'n' ? 1 : -1) + cards.length) % cards.length];
-      // N and P pick the card they land on.
-      if (next) next.dataset.pick = 'true';
-      next?.focus();
-    } else if (key === 'a' && !busy && !acceptDisabled) onAccept();
+    if (key === 'n' || key === 'p') pickPending(event.currentTarget, key === 'n' ? 1 : -1);
+    else if (key === 'a' && !busy && !acceptDisabled) onAccept();
     else if (acceptOther && key === acceptOther.key && !busy) acceptOther.onAccept();
     else if (key === 'r' && !busy) onReject();
     else if (key === 'd') onToggle();

@@ -9,6 +9,7 @@ import { correctedText, cueCandidate } from './transcript-edits.js';
 import { proposalDecision, proposalIntents, proposalStatus } from './proposal-edits.js';
 import type { AgentProposal, ProposalEvidence, ProposalKind } from './proposal-contracts.js';
 import type { TranscriptSegment } from './transcript-contracts.js';
+import { changesSinceAccepting } from './batch-record.js';
 
 /**
  * Agent proposals over MCP (VC-161/VC-162). `submit_proposals` validates a whole submission
@@ -327,7 +328,10 @@ export function submissionAnswer(source: AgentReadSource, proposals: AgentPropos
   };
 }
 
-/** The user's decision on each proposal, as accepted, moved, retitled or rejected. */
+/**
+ * The user's decision on each proposal, as accepted, moved, retitled or rejected, with their
+ * reason when they gave one and what they changed later to what accepting made.
+ */
 export function proposalDecisions(source: AgentReadSource, input: DecisionsInput = {}) {
   const parsed = decisionsInput.safeParse(input);
   if (!parsed.success) {
@@ -344,6 +348,11 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
   );
   const unknown = value.proposal_ids?.find((id) => !all.some((p) => p.id === id));
   if (unknown) throw new AgentReadError(`proposal_ids: no proposal "${unknown}".`);
+  // What the user did later to what accepting made: moved, retitled, ranged or removed (VC-173).
+  const afterAccepting = (p: AgentProposal, d: ReturnType<typeof proposalDecision>) => {
+    const later = changesSinceAccepting(source.model, p, d);
+    return later.length ? { afterAccepting: later } : {};
+  };
   const mapped = all.map((p) => {
     const d = proposalDecision(decisions, p.id);
     const status = d?.status || 'pending';
@@ -394,6 +403,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
       decided: d?.decided,
       // A clip range the user kept as a range marker instead (VC-186).
       ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
+      // The user's reason, when they gave one (VC-173).
+      ...(d?.why ? { why: d.why } : {}),
       ...(chosen
         ? {
             chosen,
@@ -411,6 +422,7 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
                   retitled: d!.title !== p.title,
                   noteEdited: (d!.text ?? '') !== p.text,
                 }),
+            ...afterAccepting(p, d),
           }
         : {}),
     };

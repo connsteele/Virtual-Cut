@@ -3,6 +3,7 @@ import type { TranscriptCommand, TranscriptSession } from '../../electron/transc
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
+import { ProposalWhy } from './ProposalWhy';
 import { TimeField } from './TimeField';
 import { useCardAdjust, useCardDraft, type CardAdjust } from './useCardDraft';
 import { formatTimecode } from './transcriptTime';
@@ -29,13 +30,15 @@ export function TranscriptProposal({
   onSeek,
   onPreview,
   adjust,
+  asking,
+  onAsk,
 }: {
   proposal: AgentProposal;
   session: TranscriptSession;
   busy: boolean;
   playhead: number;
   onCommand: (
-    action: 'accept-proposal' | 'reject-proposal' | 'reopen-proposal',
+    action: 'accept-proposal' | 'reject-proposal' | 'reopen-proposal' | 'why-proposal',
     values: Partial<TranscriptCommand>,
   ) => void;
   onSeek: (time: number) => void;
@@ -43,9 +46,27 @@ export function TranscriptProposal({
   onPreview?: (card: string, active: boolean, picked: boolean, at?: PreviewAt) => void;
   /** The latest drop on a timeline preview; this card takes it if it is the card's (VC-184). */
   adjust?: CardAdjust;
+  /**
+   * Decided on this card last: ask why on its folded line (VC-173). Only the latest decision
+   * asks, so earlier prompts don't pile up. `focus` when the card had keyboard focus, so the
+   * reason keys work straight away.
+   */
+  asking?: { focus: boolean };
+  onAsk: (asking: { id: string; focus: boolean } | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const setAsking = (value: { focus: boolean } | null) => {
+    if (value || asking) onAsk(value && { id: proposal.id, ...value });
+  };
+  const decide = (
+    action: 'accept-proposal' | 'reject-proposal',
+    values: Partial<TranscriptCommand>,
+  ) => {
+    const focused = document.activeElement?.closest('[data-proposal-card]');
+    setAsking({ focus: focused?.getAttribute('data-proposal-card') === proposal.id });
+    onCommand(action, values);
+  };
   const { draft, setDraft, undo, reset } = useCardDraft<{
     title?: string;
     text?: string;
@@ -113,6 +134,26 @@ export function TranscriptProposal({
           : `${proposal.notion.target === 'expands' ? 'expands' : 'duplicate of'} “${proposal.notion.existing}”`
       }`,
     );
+  // What accepting changed, gathered from the decision rather than asked for (VC-173).
+  const kept: string[] = [];
+  if (decision?.status === 'accepted') {
+    const intents = proposalIntents(proposal);
+    if (intents.length) kept.push(`${intents.join(' + ')} intent`);
+    if (decision.kindChange)
+      kept.push(`as ${decision.kindChange.to === 'range-marker' ? 'range marker' : 'clip'}`);
+    const shift = (decision.appliedTime ?? proposal.time) - proposal.time;
+    if (Math.abs(shift) >= 0.05) kept.push(`moved ${signed(shift)}`);
+    if (proposal.end != null && decision.appliedEnd != null) {
+      const endShift = decision.appliedEnd - proposal.end;
+      if (Math.abs(endShift) >= 0.05) kept.push(`end ${signed(endShift)}`);
+    }
+    if (split) {
+      if (decision.title != null) kept.push('clips named');
+    } else {
+      if (decision.title != null && decision.title !== proposal.title) kept.push('retitled');
+      if ((decision.text ?? '') !== proposal.text) kept.push('note edited');
+    }
+  }
   const micLines = proposal.evidence
     .filter((e) => e.role === 'mic')
     .reduce((n, e) => n + e.lineIds.length, 0);
@@ -194,6 +235,24 @@ export function TranscriptProposal({
         !session.clips.some((c) => c.id === decision.clipId)
       }
       status={decision?.status || 'pending'}
+      after={
+        decision && (
+          <ProposalWhy
+            id={proposal.id}
+            status={decision.status}
+            why={decision.why}
+            kept={kept}
+            asking={asking != null}
+            focus={asking?.focus ?? false}
+            busy={busy}
+            onSave={(why) => {
+              setAsking(null);
+              onCommand('why-proposal', { why });
+            }}
+            onSkip={() => setAsking(null)}
+          />
+        )
+      }
       open={open}
       editing={editing}
       busy={busy}
@@ -214,7 +273,7 @@ export function TranscriptProposal({
         setEditing(!editing);
       }}
       onAccept={() =>
-        onCommand('accept-proposal', {
+        decide('accept-proposal', {
           title: split ? undefined : title,
           text: split ? undefined : text,
           time: start,
@@ -232,7 +291,7 @@ export function TranscriptProposal({
               key: 'm',
               title: 'Accept as a range marker with the same span, name and note',
               onAccept: () =>
-                onCommand('accept-proposal', {
+                decide('accept-proposal', {
                   title: title.slice(0, 100),
                   text,
                   time: start,
@@ -247,7 +306,7 @@ export function TranscriptProposal({
                 key: 'c',
                 title: 'Accept as a clip with the same span, name and note',
                 onAccept: () =>
-                  onCommand('accept-proposal', {
+                  decide('accept-proposal', {
                     title,
                     text,
                     time: start,
@@ -257,8 +316,11 @@ export function TranscriptProposal({
               }
             : undefined
       }
-      onReject={() => onCommand('reject-proposal', {})}
-      onReopen={() => onCommand('reopen-proposal', {})}
+      onReject={() => decide('reject-proposal', {})}
+      onReopen={() => {
+        setAsking(null);
+        onCommand('reopen-proposal', {});
+      }}
       onCancel={() => {
         reset();
         setEditing(false);

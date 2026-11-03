@@ -33,6 +33,11 @@ renames, moved edges) and what was cut away were not kept anywhere an agent coul
   A clip range accepted as a range marker, or a range marker accepted as a clip (VC-186), carries
   `kindChange` (`clip-range` → `range-marker` or the reverse), in this record and in
   `get_proposal_decisions`, so what it made still counts as the agent's suggestion.
+  Each proposal also carries the user's reason when they gave one (`why`: a reject's one-tap
+  reason, `wrong-moment`, `not-needed`, `wrong-intent` or `other` with a line, or a line about an
+  accept) and `afterAccepting`: the later changes to what accepting made, each linked back to the
+  proposal (VC-173). `get_proposal_decisions` reports the same between exports. These are optional
+  fields, so `recordVersion` stays 1.
 - **Size:** JSON only, no media and no file paths.
 - **Read:** one read-only MCP tool, `get_batch_record`.
 

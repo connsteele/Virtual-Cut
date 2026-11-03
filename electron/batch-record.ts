@@ -1,6 +1,6 @@
 import type { Clip, Marker, Model, Note } from './workflow-types.js';
 import type { AgentProposal } from './proposal-contracts.js';
-import type { CueDecision, ProposalKindChange } from './transcript-contracts.js';
+import type { CueDecision, ProposalKindChange, ProposalWhy } from './transcript-contracts.js';
 import type { ExportRecord } from './export-contracts.js';
 import { proposalDecision, proposalIntents } from './proposal-edits.js';
 
@@ -128,7 +128,23 @@ export interface FinalProposal {
   changed?: Changes;
   /** Accepted as the other range kind: clip range ↔ range marker (VC-186). */
   kindChange?: ProposalKindChange;
+  /** The user's reason: a reject's one-tap reason, or a line about either (VC-173). */
+  why?: ProposalWhy;
+  /**
+   * What happened later to what accepting made (VC-173): moved, retitled, given or cleared an end
+   * (a point marker dragged into a range in Cut), or removed. The same items carry `changed` in
+   * `recordings`; this links them back to the proposal.
+   */
+  afterAccepting?: LaterChange[];
   firstPass: boolean;
+}
+export interface LaterChange {
+  item: 'clip' | 'marker' | 'note';
+  id: string;
+  /** A clip from before the first pass that this split cut, not one accepting made. */
+  splitClip?: true;
+  changed?: Changes;
+  removed?: true;
 }
 export interface BatchRecord {
   recordVersion: typeof batchRecordVersion;
@@ -342,6 +358,76 @@ function changes(was: Comparable, now: Comparable): Changes | undefined {
     out.note = { from: was.note ?? '', to: now.note ?? '' };
   return Object.keys(out).length ? out : undefined;
 }
+/** How an item differs from what was chosen, comparing only what was chosen. */
+function changedFrom(chosen: Comparable, current: Comparable) {
+  // A split's new clip has no chosen note, nor an end unless the clip it cut is known.
+  return changes(chosen, {
+    ...current,
+    end: 'end' in chosen ? current.end : undefined,
+    note: 'note' in chosen ? current.note : undefined,
+  });
+}
+/**
+ * What accepting a proposal made, with the values chosen on its card. A split's new clip runs
+ * to where the clip it cut ended, when that is known (`splitEnd`).
+ */
+function madeBy(
+  p: AgentProposal,
+  d: CueDecision | undefined,
+  splitEnd?: number,
+): { id: string; kind: 'clip' | 'marker' | 'note'; chosen: Comparable } | undefined {
+  if (d?.status !== 'accepted') return undefined;
+  const start = round(d.appliedTime ?? p.time);
+  const end = d.appliedEnd === undefined ? undefined : round(d.appliedEnd);
+  if (d.markerId)
+    return {
+      id: d.markerId,
+      kind: 'marker',
+      chosen: { start, end, name: d.title ?? p.title, note: d.text ?? p.text },
+    };
+  if (d.noteId)
+    return {
+      id: d.noteId,
+      kind: 'note',
+      chosen: { start, name: d.title ?? p.title, note: d.text ?? p.text },
+    };
+  if (d.clipId && p.kind === 'cut')
+    return {
+      id: d.clipId,
+      kind: 'clip',
+      chosen: {
+        start,
+        ...(splitEnd !== undefined ? { end: splitEnd } : {}),
+        ...(d.text != null ? { name: d.text } : {}),
+      },
+    };
+  if (d.clipId)
+    return {
+      id: d.clipId,
+      kind: 'clip',
+      chosen: { start, end, name: d.title ?? p.title, note: d.text ?? p.text },
+    };
+  return undefined;
+}
+/**
+ * Later changes to what accepting a proposal made, read from the project as it is now (VC-173):
+ * for get_proposal_decisions, between exports. A split reports its new clip only.
+ */
+export function changesSinceAccepting(
+  model: Model,
+  p: AgentProposal,
+  d: CueDecision | undefined,
+): LaterChange[] {
+  const m = madeBy(p, d);
+  if (!m) return [];
+  const now = recordingState(model, p.sourceId);
+  const items: (RecordClip | RecordMarker | RecordNote)[] =
+    m.kind === 'clip' ? now.clips : m.kind === 'marker' ? now.markers : now.notes;
+  const item = items.find((x) => x.id === m.id);
+  if (!item) return [{ item: m.kind, id: m.id, removed: true }];
+  const changed = changedFrom(m.chosen, comparable(item));
+  return changed ? [{ item: m.kind, id: m.id, changed }] : [];
+}
 /** The spans of a recording no included clip covers. */
 export function removedSpans(
   duration: number,
@@ -411,23 +497,7 @@ export function finalState(
     const d = proposalDecision(decisions, p.id);
     if (d?.status !== 'accepted') continue;
     const time = d.appliedTime ?? p.time;
-    if (d.markerId)
-      made.set(d.markerId, {
-        proposalId: p.id,
-        kind: 'marker',
-        chosen: {
-          start: round(time),
-          end: d.appliedEnd === undefined ? undefined : round(d.appliedEnd),
-          name: d.title ?? p.title,
-          note: d.text ?? p.text,
-        },
-      });
-    if (d.noteId)
-      made.set(d.noteId, {
-        proposalId: p.id,
-        kind: 'note',
-        chosen: { start: round(time), name: d.title ?? p.title, note: d.text ?? p.text },
-      });
+    let splitEnd: number | undefined;
     if (d.clipId && p.kind === 'cut') {
       // The clip it split, as it was when the first pass froze: it ends at the split now, and
       // the new clip runs from the split to its old end. Later changes to either are the user's.
@@ -438,31 +508,16 @@ export function finalState(
         held.find((c) =>
           input.model.clips.some((x) => x.id === c.id && Math.abs(x.end - time) < 0.001),
         ) || (held.length === 1 ? held[0] : undefined);
-      if (split)
+      if (split) {
         splitBy.set(split.id, {
           proposalId: p.id,
           chosen: { start: split.start, end: round(time), name: d.title ?? split.name },
         });
-      made.set(d.clipId, {
-        proposalId: p.id,
-        kind: 'clip',
-        chosen: {
-          start: round(time),
-          ...(split ? { end: split.end } : {}),
-          ...(d.text != null ? { name: d.text } : {}),
-        },
-      });
-    } else if (d.clipId)
-      made.set(d.clipId, {
-        proposalId: p.id,
-        kind: 'clip',
-        chosen: {
-          start: round(time),
-          end: d.appliedEnd === undefined ? undefined : round(d.appliedEnd),
-          name: d.title ?? p.title,
-          note: d.text ?? p.text,
-        },
-      });
+        splitEnd = split.end;
+      }
+    }
+    const m = madeBy(p, d, splitEnd);
+    if (m) made.set(m.id, { proposalId: p.id, kind: m.kind, chosen: m.chosen });
   }
   const finals: FinalRecording[] = recordings.map((r) => {
     const now = recordingState(input.model, r.id);
@@ -480,13 +535,7 @@ export function finalState(
     };
     const changed = (kind: keyof RecordingState, id: string, current: Comparable) => {
       const w = was(kind, id);
-      if (!w) return undefined;
-      // Compare only what the card chose: a split's new clip has no chosen end or note.
-      return changes(w, {
-        ...current,
-        end: 'end' in w ? current.end : undefined,
-        note: 'note' in w ? current.note : undefined,
-      });
+      return w && changedFrom(w, current);
     };
     const withChanges = <T extends object>(item: T, c: Changes | undefined) =>
       c ? { ...item, changed: c } : item;
@@ -530,6 +579,31 @@ export function finalState(
       ...(now.clips.length ? { removedSpans: removedSpans(r.duration, now.clips) } : {}),
     };
   });
+  // Later changes per proposal, from the items above that point back to it.
+  const later = new Map<string, LaterChange[]>();
+  const link = (proposalId: string, change: LaterChange) =>
+    later.set(proposalId, [...(later.get(proposalId) || []), change]);
+  for (const r of finals) {
+    for (const [item, list] of [
+      ['clip', r.clips],
+      ['marker', r.markers],
+      ['note', r.notes],
+    ] as const)
+      for (const x of list as (
+        | FinalRecording['clips'][number]
+        | FinalRecording['markers'][number]
+        | FinalRecording['notes'][number]
+      )[]) {
+        if (!x.changed) continue;
+        if (typeof x.origin === 'object')
+          link(x.origin.proposalId, { item, id: x.id, changed: x.changed });
+        else if ('splitBy' in x && x.splitBy)
+          link(x.splitBy, { item, id: x.id, splitClip: true, changed: x.changed });
+      }
+    for (const x of r.removedItems)
+      if (typeof x.origin === 'object')
+        link(x.origin.proposalId, { item: x.kind, id: x.id, removed: true });
+  }
   next.final = {
     exported: input.now,
     projectRevision: input.projectRevision,
@@ -545,6 +619,8 @@ export function finalState(
         ...(chosen ? { chosen } : {}),
         ...(changed ? { changed } : {}),
         ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
+        ...(d?.why ? { why: d.why } : {}),
+        ...(later.has(p.id) ? { afterAccepting: later.get(p.id) } : {}),
         firstPass: inFirstPass.has(p.id),
       };
     }),

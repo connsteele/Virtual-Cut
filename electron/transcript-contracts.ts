@@ -94,6 +94,19 @@ export interface CueDecision {
   priorName?: string;
   /** A range accepted as the other range kind (VC-186): the kind the user chose over the agent's. */
   kindChange?: ProposalKindChange;
+  /** Why the user decided an agent proposal as they did (VC-173); never required. */
+  why?: ProposalWhy;
+}
+/** The one-tap reasons for rejecting an agent proposal (VC-173). */
+export const rejectReasons = ['wrong-moment', 'not-needed', 'wrong-intent', 'other'] as const;
+export type RejectReason = (typeof rejectReasons)[number];
+/**
+ * A reject's reason, with a short line for "other"; an accept's optional line. What accepting
+ * changed (time, title, kind) is read from the decision itself, not stored here.
+ */
+export interface ProposalWhy {
+  reason?: RejectReason;
+  note?: string;
 }
 /** The kind changes accepting allows: a clip range kept as a range marker, or the reverse. */
 export type ProposalKindChange =
@@ -168,7 +181,8 @@ export interface TranscriptCommand {
     | 'reopen-cue'
     | 'accept-proposal'
     | 'reject-proposal'
-    | 'reopen-proposal';
+    | 'reopen-proposal'
+    | 'why-proposal';
   /** Proposal actions name the proposal; their transcript and phrase fields are not used. */
   proposalId?: string;
   /** Accepting a split (spoken or proposed): names for the clips before and after it. */
@@ -176,6 +190,8 @@ export interface TranscriptCommand {
   secondName?: string;
   /** Accepting an agent range as the other range kind: clip range ↔ range marker (VC-186). */
   acceptAs?: 'range-marker' | 'clip';
+  /** `why-proposal`: the reason for a decided proposal, or none to clear it (VC-173). */
+  why?: ProposalWhy;
   segmentId: number;
   wordIndex?: number;
   text?: string;

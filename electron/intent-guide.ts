@@ -1,5 +1,7 @@
 import { parseTaggedNotes, type IntentTag } from './intent-notes.js';
-import { proposalDecision, proposalIntents } from './proposal-edits.js';
+import { proposalDecision, proposalIntents, rejectReasonLabel } from './proposal-edits.js';
+import { changesSinceAccepting, type LaterChange } from './batch-record.js';
+import { rejectReasons, type RejectReason } from './transcript-contracts.js';
 import { AgentReadError, findRecording, type AgentReadSource } from './agent-tools.js';
 
 /**
@@ -92,7 +94,8 @@ export const intentGuide = {
     'Use the game vocabulary and glossary from get_context for names.',
     'Keep titles under 100 characters and plain; no tags or braces in titles.',
     "Learn from the creator's examples and decisions below: what they accepted, moved, retitled " +
-      'or rejected.',
+      'or rejected, why when they said (why), and what they changed after accepting (later). ' +
+      'A reject for the wrong moment means the idea was right but the time was not.',
   ],
   games: {
     note:
@@ -133,7 +136,28 @@ export interface IntentExample {
   command?: string;
   context?: string;
   outcome?: string;
+  /** The creator's reason for the decision, in their words or as the reason they tapped. */
+  why?: string;
+  /** What they changed later to what accepting made, such as "marker given an end". */
+  later?: string;
 }
+
+const itemChange = (c: LaterChange) => {
+  if (c.removed) return `${c.item} removed`;
+  const bits = [
+    c.changed?.start && `moved ${signedSeconds(c.changed.start.to - c.changed.start.from)}`,
+    c.changed?.end &&
+      (c.changed.end.from === undefined
+        ? 'given an end'
+        : c.changed.end.to === undefined
+          ? 'end cleared'
+          : `end moved ${signedSeconds(c.changed.end.to - c.changed.end.from)}`),
+    c.changed?.name && `renamed "${c.changed.name.to}"`,
+    c.changed?.note && 'note edited',
+  ].filter(Boolean);
+  return `${c.splitClip ? 'clip it split' : c.item} ${bits.join(', ')}`;
+};
+const signedSeconds = (n: number) => `${n > 0 ? '+' : ''}${Math.round(n * 100) / 100} s`;
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -175,11 +199,20 @@ export function intentGuideAnswer(
     }
   }
   const titles = new Map(source.model.recordings.map((r) => [r.id, r.title]));
+  const reasons = Object.fromEntries(rejectReasons.map((r) => [r, 0])) as Record<
+    RejectReason,
+    number
+  >;
   for (const p of source.proposals?.list() || []) {
     const d = proposalDecision(source.model.cueDecisions || [], p.id);
     if (!d || !titles.has(p.sourceId)) continue;
     const mic = p.evidence.find((e) => e.role === 'mic');
     const moved = d.appliedTime != null ? round(d.appliedTime - p.time) : 0;
+    const why = d.why?.reason
+      ? rejectReasonLabel[d.why.reason].toLowerCase() + (d.why.note ? `: ${d.why.note}` : '')
+      : d.why?.note;
+    if (d.why?.reason) reasons[d.why.reason]++;
+    const later = changesSinceAccepting(source.model, p, d).map(itemChange).join('; ');
     examples.push({
       from: 'decision',
       recording: titles.get(p.sourceId)!,
@@ -193,7 +226,10 @@ export function intentGuideAnswer(
             (moved ? `, moved ${moved > 0 ? '+' : ''}${moved} s` : '') +
             (d.title != null && d.title !== p.title && p.kind !== 'cut'
               ? `, retitled "${p.title}" → "${d.title}"`
-              : ` "${d.title ?? p.title}"`),
+              : ` "${d.title ?? p.title}"`) +
+            (d.kindChange ? `, kept as ${d.kindChange.to.replace('-', ' ')}` : ''),
+      ...(why ? { why } : {}),
+      ...(later ? { later } : {}),
     });
   }
   // Decisions first (they say what the creator actually kept), then the tagged lines.
@@ -209,6 +245,8 @@ export function intentGuideAnswer(
         accepted: decided.filter((e) => e.outcome!.startsWith('accepted')).length,
         rejected: decided.filter((e) => e.outcome!.startsWith('rejected')).length,
         moved: decided.filter((e) => /moved/.test(e.outcome!)).length,
+        rejectReasons: reasons,
+        changedAfterAccepting: decided.filter((e) => e.later).length,
       },
       notes:
         lines && cueWords / lines < 0.2

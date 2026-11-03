@@ -130,6 +130,7 @@ const decide = (p, action, extra = {}) => {
 decide(first[0], 'accept-proposal', { time: 16.5, title: 'Bertrand at the gate' });
 decide(first[1], 'accept-proposal', { firstName: 'Fort', secondName: 'Talk' });
 decide(first[2], 'reject-proposal');
+decide(first[2], 'why-proposal', { why: { reason: 'not-needed' }, expected: 'rejected' });
 
 // A later submission is a run, but not first pass.
 const late = [proposal('p5', 'mark', { time: 170, title: 'Late', submissionId: 's2' })];
@@ -234,6 +235,27 @@ assert.deepEqual(
     ['p5', undefined],
   ],
 );
+// VC-173: the reason, and later changes linked back to the proposal that made the item.
+assert.deepEqual(
+  exported.final.proposals.map((p) => [p.id, p.why, p.afterAccepting]),
+  [
+    [
+      'p1',
+      undefined,
+      [
+        {
+          item: 'marker',
+          id: 'new1',
+          changed: { name: { from: 'Bertrand at the gate', to: 'Bertrand, gate' } },
+        },
+      ],
+    ],
+    ['p2', undefined, [{ item: 'clip', id: 'new2', changed: { end: { from: 200, to: 180 } } }]],
+    ['p3', { reason: 'not-needed' }, undefined],
+    ['p4', undefined, undefined],
+    ['p5', undefined, undefined],
+  ],
+);
 assert.deepEqual(exported.final.exports, [
   { exportId: 'e1', clipId: 'c1', name: 'Fort', start: 0, end: 100, state: 'verified' },
 ]);
@@ -261,6 +283,25 @@ assert.deepEqual(again.final.recordings[0].removedItems[0], {
 assert.deepEqual(again.final.recordings[0].clips[0].changed, {
   name: { from: 'Fort', to: 'Fort gate' },
 });
+assert.deepEqual(
+  again.final.proposals.map((p) => [
+    p.id,
+    p.afterAccepting?.map((c) => [c.item, c.splitClip, c.removed]),
+  ]),
+  [
+    ['p1', [['marker', undefined, undefined]]],
+    [
+      'p2',
+      [
+        ['clip', true, undefined],
+        ['clip', undefined, undefined],
+      ],
+    ],
+    ['p3', undefined],
+    ['p4', [['note', undefined, true]]],
+  ],
+  'the clip a split cut, renamed later, links to the split too',
+);
 
 // Proposals older than batch records: the first pass is rebuilt from them, without a before.
 const rebuilt = finalState(undefined, {
