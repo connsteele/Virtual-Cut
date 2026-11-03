@@ -151,6 +151,8 @@ export function TranscriptCue({
             value={start}
             playhead={playhead}
             onChange={(time) => setDraft({ ...draft, time })}
+            onSeek={onSeek}
+            seekTitle={range ? 'Go to the start' : 'Go to this time'}
           />
           {range && (
             <>
@@ -160,6 +162,8 @@ export function TranscriptCue({
                 value={end}
                 playhead={playhead}
                 onChange={(time) => setDraft({ ...draft, end: time })}
+                onSeek={onSeek}
+                seekTitle="Go to the end"
               />
             </>
           )}

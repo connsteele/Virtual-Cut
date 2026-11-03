@@ -768,8 +768,25 @@
 .timeField {
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
+}
+/* The field and its jump button, centered together over the nudge row (VC-174). */
+.timeTop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.timeJump {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+}
+.timeJump:hover {
+  color: var(--text);
 }
 /* The full ruler time, hh:mm:ss.mmm, never cut off. */
 .inlineTime {

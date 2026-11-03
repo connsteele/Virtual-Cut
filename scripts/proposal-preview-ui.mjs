@@ -311,8 +311,9 @@ try {
   await field.focus();
   await view.keyboard.press('Escape');
   await expect.poll(async () => Math.abs((await markerAt()) - markerWas)).toBeLessThan(0.3);
-  await view.mouse.move(2, 2);
-  await view.locator('body').click({ position: { x: 2, y: 2 } });
+  // Let go: the pointer off every card and keyboard focus out of this one.
+  await view.getByLabel('Select transcript', { exact: true }).hover();
+  await view.evaluate(() => document.activeElement?.blur());
   await expect(marker).toHaveAttribute('data-focused', 'false');
 
   // Deciding a proposal takes its preview off; accepted ones are real markers or clips.

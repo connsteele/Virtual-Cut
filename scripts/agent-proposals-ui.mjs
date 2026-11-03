@@ -390,6 +390,22 @@ try {
     nudgeRow.every((b) => b.height >= 18),
     'the nudges are normal-size buttons',
   );
+  // The field and its jump button sit centered over the row, on Playhead; the jump goes to the
+  // time as edited, before anything is accepted.
+  const jump = view.getByLabel(`Proposal position ${ids[0]} go to`, { exact: true });
+  const jumpBox = await jump.boundingBox();
+  const centre = (field.x + jumpBox.x + jumpBox.width) / 2;
+  assert(
+    Math.abs(centre - (nudgeRow[2].x + nudgeRow[2].width / 2)) < 4,
+    `field and jump centered over Playhead: ${centre}`,
+  );
+  await expect(jump).toHaveAttribute('title', 'Go to this time');
+  await jump.click();
+  await expect
+    .poll(async () =>
+      Math.abs((await main.locator('video').evaluate((v) => v.currentTime)) - moved),
+    )
+    .toBeLessThan(0.05);
   // The field fits the full ruler time at any length, in the compact window too.
   await resize(true);
   await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);

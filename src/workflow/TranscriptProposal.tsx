@@ -161,6 +161,8 @@ export function TranscriptProposal({
             value={start}
             playhead={playhead}
             onChange={(time) => setDraft({ ...draft, time })}
+            onSeek={onSeek}
+            seekTitle={end != null ? 'Go to the start' : 'Go to this time'}
           />
           {end != null && (
             <>
@@ -170,6 +172,8 @@ export function TranscriptProposal({
                 value={end}
                 playhead={playhead}
                 onChange={(time) => setDraft({ ...draft, end: time })}
+                onSeek={onSeek}
+                seekTitle="Go to the end"
               />
             </>
           )}
