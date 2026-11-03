@@ -216,6 +216,24 @@ assert.deepEqual(
     ['p5', 'pending', false, undefined],
   ],
 );
+// VC-184: what the card changed from the proposal itself (moved, retitled) is kept as a change;
+// a split accepted at its proposed time with its names chosen has none.
+assert.deepEqual(
+  exported.final.proposals.map((p) => [p.id, p.changed]),
+  [
+    [
+      'p1',
+      {
+        start: { from: 16, to: 16.5 },
+        name: { from: 'Bertrand', to: 'Bertrand at the gate' },
+      },
+    ],
+    ['p2', undefined],
+    ['p3', undefined],
+    ['p4', undefined],
+    ['p5', undefined],
+  ],
+);
 assert.deepEqual(exported.final.exports, [
   { exportId: 'e1', clipId: 'c1', name: 'Fort', start: 0, end: 100, state: 'verified' },
 ]);

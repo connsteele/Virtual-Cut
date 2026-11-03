@@ -27,7 +27,9 @@ renames, moved edges) and what was cut away were not kept anywhere an agent coul
   holds the state that went out: clips with in and out points, markers and ranges, notes, each
   linked to the proposal it came from, marked as there before the first pass, or as the user's
   own. Items carry what changed after accepting (start, end, name, note); removed items and the
-  spans outside every included clip are listed; each proposal's status and chosen values are kept.
+  spans outside every included clip are listed; each proposal's status and chosen values are kept,
+  with `changed` for how the chosen values differ from the proposal itself (a time nudged or
+  dragged on the timeline preview, VC-184, a title or note edited).
   A clip range accepted as a range marker, or a range marker accepted as a clip (VC-186), carries
   `kindChange` (`clip-range` → `range-marker` or the reverse), in this record and in
   `get_proposal_decisions`, so what it made still counts as the agent's suggestion.

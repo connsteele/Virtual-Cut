@@ -120,6 +120,12 @@ export interface FinalProposal {
     note?: string;
     clipNames?: { first: string; second: string };
   };
+  /**
+   * How the chosen values differ from the proposal (VC-184): its time and end moved on the card
+   * (nudged, typed or dragged on the timeline preview), and its title or note edited. Absent when
+   * it was accepted as proposed.
+   */
+  changed?: Changes;
   /** Accepted as the other range kind: clip range ↔ range marker (VC-186). */
   kindChange?: ProposalKindChange;
   firstPass: boolean;
@@ -297,6 +303,18 @@ function chosenOf(d: CueDecision | undefined, p: AgentProposal): FinalProposal['
     ...(d.title != null ? { title: d.title } : {}),
     ...(d.text != null ? { note: d.text } : {}),
   };
+}
+/** What accepting changed from the proposal itself; a split's names are in `chosen`. */
+function proposalChanges(p: AgentProposal, chosen: NonNullable<FinalProposal['chosen']>) {
+  const cut = p.kind === 'cut';
+  return changes(
+    {
+      start: round(p.time),
+      end: p.end === undefined || cut ? undefined : round(p.end),
+      ...(cut ? {} : { name: p.title, note: p.text }),
+    },
+    { start: chosen.time, end: chosen.end, name: chosen.title, note: chosen.note },
+  );
 }
 /** An item's position, end, name and note, whatever its kind. */
 interface Comparable {
@@ -519,11 +537,13 @@ export function finalState(
     proposals: proposals.map((p) => {
       const d = proposalDecision(decisions, p.id);
       const chosen = chosenOf(d, p);
+      const changed = chosen && proposalChanges(p, chosen);
       return {
         id: p.id,
         status: d?.status || 'pending',
         ...(d?.decided ? { decided: d.decided } : {}),
         ...(chosen ? { chosen } : {}),
+        ...(changed ? { changed } : {}),
         ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
         firstPass: inFirstPass.has(p.id),
       };

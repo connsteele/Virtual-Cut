@@ -439,6 +439,16 @@ export function registerTranscriptWindow(
     });
   });
   handle(
+    'adjust',
+    async (id, sourceId, card, at: unknown) => {
+      if (typeof card !== 'string' || !card || card.length > 300 || !previewTimes(at))
+        throw new Error('Invalid proposal adjustment.');
+      if (projects.store?.data.project.id !== id) return;
+      window?.webContents.send('transcript:adjust-event', { projectId: id, sourceId, card, at });
+    },
+    true,
+  );
+  handle(
     'command',
     (command) =>
       new Promise<void>((resolve, reject) => {

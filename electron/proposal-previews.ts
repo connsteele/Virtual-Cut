@@ -149,6 +149,26 @@ export function previewTimes(value: unknown): value is PreviewTimes {
 }
 
 /**
+ * Where a dragged preview edge lands (VC-184): `edge` of a range, or the point itself, set to
+ * `value` inside the recording, in milliseconds like the card's fields. A range keeps at least
+ * `min` seconds between its edges, so an edge can't be dragged past the other one.
+ */
+export function adjustPreview(
+  from: PreviewTimes,
+  edge: 'start' | 'end',
+  value: number,
+  duration: number,
+  min: number,
+): PreviewTimes {
+  const ms = (t: number) => Math.round(t * 1000) / 1000;
+  const clamp = (t: number, lo: number, hi: number) => ms(Math.max(lo, Math.min(hi, t)));
+  if (from.end === undefined) return { start: clamp(value, 0, duration) };
+  return edge === 'start'
+    ? { start: clamp(value, 0, Math.max(0, from.end - min)), end: from.end }
+    : { start: from.start, end: clamp(value, Math.min(duration, from.start + min), duration) };
+}
+
+/**
  * The previews with the focused card's edited times in place of its saved ones, so the timeline
  * shows where a nudge lands before the proposal is accepted (VC-174).
  */

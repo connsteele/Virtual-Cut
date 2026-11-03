@@ -316,6 +316,95 @@ try {
   await view.evaluate(() => document.activeElement?.blur());
   await expect(marker).toHaveAttribute('data-focused', 'false');
 
+  // VC-184: only the picked card's preview can be dragged. Hovering a card lights its preview
+  // but gives it no handles.
+  const grabs = (p) => p.locator('[data-proposal-grab]');
+  const timeOf = (px) => ((px - compact.x) / compact.width) * recording.duration;
+  await card('Siege scene').hover({ position: { x: 40, y: 10 } });
+  await expect(range).toHaveAttribute('data-focused', 'true');
+  await expect(grabs(range)).toHaveCount(0);
+  await pick('Siege scene');
+  await view.mouse.move(2, 2);
+  await expect(grabs(range)).toHaveCount(2);
+  const proposedSpan = await card('Siege scene').locator('[class*="pcTimes"]').innerText();
+  await main.bringToFront();
+  const bandWas = await range.boundingBox();
+  const endGrab = await range.locator('[data-proposal-grab="end"]').boundingBox();
+  const grabY = endGrab.y + endGrab.height / 2;
+  // Esc during a drag puts the edge back, and the card never hears of it.
+  await main.mouse.move(endGrab.x + endGrab.width / 2, grabY);
+  await main.mouse.down();
+  await main.mouse.move(endGrab.x + endGrab.width / 2 + 70, grabY, { steps: 6 });
+  await expect(range).toHaveAttribute('data-dragging', 'true');
+  await expect
+    .poll(async () => (await range.boundingBox()).width - bandWas.width)
+    .toBeGreaterThan(60);
+  await timeline.screenshot({ path: path.join(dir, 'preview-dragging.png') });
+  await main.keyboard.press('Escape');
+  await expect
+    .poll(async () => Math.abs((await range.boundingBox()).width - bandWas.width))
+    .toBeLessThan(2);
+  await main.mouse.up();
+  await main.waitForTimeout(200);
+  await expect(card('Siege scene').locator('[data-proposal-was]')).toHaveCount(0);
+  assert.equal(await card('Siege scene').locator('[class*="pcTimes"]').innerText(), proposedSpan);
+  // Dropped, the card takes the new end and shows the proposed span beside it.
+  await main.mouse.move(endGrab.x + endGrab.width / 2, grabY);
+  await main.mouse.down();
+  await main.mouse.move(endGrab.x + endGrab.width / 2 + 70, grabY, { steps: 6 });
+  await main.mouse.up();
+  const droppedEnd = timeOf(endGrab.x + endGrab.width / 2 + 70);
+  await expect(card('Siege scene').locator('[data-proposal-was]')).toHaveText(
+    `was ${proposedSpan.replace(/\s+/g, ' ').trim()}`,
+  );
+  await expect
+    .poll(async () => (await range.boundingBox()).width - bandWas.width)
+    .toBeGreaterThan(60);
+  await expect(range).toHaveAttribute('data-dragging', 'false');
+  await expect(range).toHaveAttribute('data-focused', 'true');
+  await timeline.screenshot({ path: path.join(dir, 'preview-dragged.png') });
+  await view.bringToFront();
+  await card('Siege scene').screenshot({ path: path.join(dir, 'card-dragged.png') });
+  // The start edge snaps to the playhead like any edge in Cut.
+  await main.bringToFront();
+  const playheadNow = await main.locator('video').evaluate((v) => v.currentTime);
+  const startGrab = await range.locator('[data-proposal-grab="start"]').boundingBox();
+  await main.mouse.move(startGrab.x + startGrab.width / 2, grabY);
+  await main.mouse.down();
+  const towards = compact.x + (compact.width * playheadNow) / recording.duration;
+  await main.mouse.move(towards + 4, grabY, { steps: 8 });
+  await expect(timeline.locator('[data-snap-guide]')).toHaveCount(1);
+  await main.mouse.up();
+  await expect(timeline.locator('[data-snap-guide]')).toHaveCount(0);
+  await expect
+    .poll(async () => Math.abs(timeOf((await range.boundingBox()).x) - playheadNow))
+    .toBeLessThan(0.2);
+  // A Split moves by its line.
+  await view.bringToFront();
+  await pick('Fort split');
+  await view.mouse.move(2, 2);
+  const split = preview('Fort split');
+  await expect(grabs(split)).toHaveCount(1);
+  await main.bringToFront();
+  const line = await split.locator('[data-proposal-grab]').boundingBox();
+  const splitWas = await split.boundingBox();
+  const lineY = line.y + line.height * 0.75;
+  await main.mouse.move(line.x + line.width / 2, lineY);
+  await main.mouse.down();
+  await main.mouse.move(line.x + line.width / 2 - 50, lineY, { steps: 6 });
+  await main.mouse.up();
+  await expect(card('Fort split').locator('[data-proposal-was]')).toBeVisible();
+  await expect.poll(async () => splitWas.x - (await split.boundingBox()).x).toBeGreaterThan(40);
+  // Ctrl+Z on the card puts a drop back.
+  await view.bringToFront();
+  await card('Fort split').focus();
+  await view.keyboard.press('Control+z');
+  await expect(card('Fort split').locator('[data-proposal-was]')).toHaveCount(0);
+  await expect
+    .poll(async () => Math.abs(splitWas.x - (await split.boundingBox()).x))
+    .toBeLessThan(3);
+  await view.keyboard.press('Escape');
+
   // Deciding a proposal takes its preview off; accepted ones are real markers or clips.
   await view.bringToFront();
   await card('Siege scene')
@@ -324,6 +413,13 @@ try {
   await expect(card('Siege scene')).toHaveAttribute('data-status', 'accepted');
   await expect(range).toHaveCount(0);
   await expect(timeline.locator('[data-marker-range]')).toHaveCount(1);
+  // Accepting used the dragged times (VC-184).
+  const made = await timeline.locator('[data-marker-range]').boundingBox();
+  assert(
+    Math.abs(timeOf(made.x + made.width) - droppedEnd) < 0.6,
+    `the range marker ends where the edge was dropped: ${timeOf(made.x + made.width)} vs ${droppedEnd}`,
+  );
+  assert(Math.abs(timeOf(made.x) - playheadNow) < 0.6, 'and starts where it snapped');
   await card('Music note').getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(preview('Music note')).toHaveCount(0);
   await card('cue:preview-mic:1').getByRole('button', { name: 'Reject', exact: true }).click();

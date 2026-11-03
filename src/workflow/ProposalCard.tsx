@@ -44,6 +44,7 @@ export function ProposalCard({
   onSeek,
   onPreview,
   at,
+  was,
   children,
 }: {
   id: string;
@@ -91,6 +92,11 @@ export function ProposalCard({
   onPreview?: (active: boolean, picked: boolean, at?: PreviewAt) => void;
   /** While editing: the times as drafted, so the preview follows each nudge (VC-174). */
   at?: PreviewAt;
+  /**
+   * The times as proposed. Once the drafted times differ (a nudge, or a drag on the timeline
+   * preview), line 2 shows the new times with these beside them (VC-184).
+   */
+  was?: PreviewAt;
   children?: ReactNode;
 }) {
   // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
@@ -122,6 +128,18 @@ export function ProposalCard({
     </>
   );
   const timecode = `${formatTimecode(time)}${end != null ? ` – ${formatTimecode(end)}` : ''}`;
+  const span = (t: PreviewAt) =>
+    `${formatTimecode(t.start)}${t.end != null ? ` – ${formatTimecode(t.end)}` : ''}`;
+  const adjusted = at != null && was != null && span(at) !== span(was);
+  const wasLine = adjusted && (
+    <span
+      className={s.pcWas}
+      data-proposal-was={span(was)}
+      title="As proposed. Ctrl+Z on the card undoes the change; Esc while editing puts it back."
+    >
+      was {span(was)}
+    </span>
+  );
   const tone = who === 'both' ? s.pcBoth : who === 'spoken' ? s.pcSpoken : '';
   if (status !== 'pending')
     return (
@@ -164,7 +182,11 @@ export function ProposalCard({
   // Keys on a focused proposal, outside its fields: A accept, R reject, D details, E edit,
   // N/P the next or previous proposal waiting for review. J K L stay playback.
   const keys = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (editing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    if (
+      (editing || adjusted) &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLowerCase() === 'z'
+    ) {
       onUndo();
       event.preventDefault();
       event.stopPropagation();
@@ -307,7 +329,7 @@ export function ProposalCard({
             {name}
           </button>
           {/* A range has two times to jump to: its start and its end. */}
-          <span className={s.pcTimes}>
+          <span className={s.pcTimes} data-adjusted={adjusted}>
             <button
               className={s.pcTime}
               title="Go to the start"
@@ -333,11 +355,13 @@ export function ProposalCard({
                 </button>
               </>
             )}
+            {wasLine}
           </span>
         </div>
       )}
-      {meta.length > 0 && (
+      {(meta.length > 0 || (editing && wasLine)) && (
         <div className={s.pcLine3}>
+          {editing && wasLine}
           {meta.map((m, i) => (
             <span key={i}>{m}</span>
           ))}

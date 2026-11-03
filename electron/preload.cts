@@ -46,6 +46,13 @@ const api: VirtualCutApi = {
       ipcRenderer.on('transcript:focus-event', f);
       return () => ipcRenderer.removeListener('transcript:focus-event', f);
     },
+    adjust: (id, source, card, at) => ipcRenderer.invoke('transcript:adjust', id, source, card, at),
+    onAdjust: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) =>
+        callback(value);
+      ipcRenderer.on('transcript:adjust-event', f);
+      return () => ipcRenderer.removeListener('transcript:adjust-event', f);
+    },
     splitSnap: (id, source, time) => ipcRenderer.invoke('transcript:splitSnap', id, source, time),
     command: (command) => ipcRenderer.invoke('transcript:command', command),
     apply: (token) => ipcRenderer.invoke('transcript:apply', token),

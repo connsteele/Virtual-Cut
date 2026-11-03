@@ -71,6 +71,7 @@ export function Player({
   proposals,
   proposalFocus,
   proposalReveal,
+  onProposalAdjust,
   ref,
 }: {
   recording: Recording;
@@ -105,6 +106,7 @@ export function Player({
   proposals?: import('../../electron/proposal-previews').ProposalPreview[];
   proposalFocus?: string | null;
   proposalReveal?: boolean;
+  onProposalAdjust?: (card: string, at: { start: number; end?: number }) => void;
   ref?: Ref<Transport>;
 }) {
   const video = useRef<HTMLVideoElement>(null),
@@ -879,6 +881,7 @@ export function Player({
         proposals={proposals}
         proposalFocus={proposalFocus}
         proposalReveal={proposalReveal}
+        onProposalAdjust={onProposalAdjust}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>

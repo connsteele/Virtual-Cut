@@ -4,7 +4,7 @@ import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { TimeField } from './TimeField';
-import { useCardDraft } from './useCardDraft';
+import { useCardAdjust, useCardDraft, type CardAdjust } from './useCardDraft';
 import { formatTimecode } from './transcriptTime';
 import s from './TranscriptWindow.module.css';
 
@@ -28,6 +28,7 @@ export function TranscriptProposal({
   onCommand,
   onSeek,
   onPreview,
+  adjust,
 }: {
   proposal: AgentProposal;
   session: TranscriptSession;
@@ -40,6 +41,8 @@ export function TranscriptProposal({
   onSeek: (time: number) => void;
   /** The card came into or left focus; its timeline preview follows (VC-170). */
   onPreview?: (card: string, active: boolean, picked: boolean, at?: PreviewAt) => void;
+  /** The latest drop on a timeline preview; this card takes it if it is the card's (VC-184). */
+  adjust?: CardAdjust;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -53,6 +56,9 @@ export function TranscriptProposal({
     second?: string;
   }>();
   const decision = proposalDecision(session.decisions, proposal.id);
+  useCardAdjust(proposal.id, adjust, (at) =>
+    setDraft({ ...draft, time: at.start, ...(at.end !== undefined ? { end: at.end } : {}) }),
+  );
   // A range accepted as the other range kind says so once decided (VC-186).
   const kind =
     decision?.kindChange?.to === 'range-marker'
@@ -261,6 +267,7 @@ export function TranscriptProposal({
       onSeek={onSeek}
       onPreview={(active, picked, at) => onPreview?.(proposal.id, active, picked, at)}
       at={draft.time != null || draft.end != null ? { start, end } : undefined}
+      was={{ start: proposal.time, end: proposal.end }}
     >
       <div className={s.pcDetails} data-proposal={proposal.id}>
         {!split && editing && (

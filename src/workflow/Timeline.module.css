@@ -636,6 +636,49 @@
   left: auto;
   right: 6px;
 }
+/* VC-184: the picked proposal's edges (or its line) can be dragged; hover never grabs. */
+.proposalGrab {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 12px;
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.proposalGrab[data-at='end'] {
+  left: auto;
+  right: -6px;
+}
+.proposalMark .proposalGrab {
+  left: -8px;
+  width: 16px;
+  height: 22px;
+  bottom: auto;
+}
+.proposalGrab::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 14px;
+  max-height: 80%;
+  border-radius: 2px;
+  background: #f4f1ff;
+  box-shadow: 0 0 0 1px rgba(20, 21, 22, 0.7);
+  transform: translate(-50%, -50%);
+  opacity: 0.65;
+  transition: opacity 0.12s;
+}
+.proposalGrab:hover::after,
+[data-dragging='true'] > .proposalGrab::after {
+  opacity: 1;
+}
+.proposalMark .proposalGrab::after {
+  display: none;
+}
 .proposalCount {
   padding: 1px 7px;
   border: 1px solid #4a4466;

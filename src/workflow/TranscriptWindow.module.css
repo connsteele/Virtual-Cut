@@ -726,6 +726,19 @@
   color: var(--muted);
   text-decoration: line-through;
 }
+/* Times moved from the proposal (VC-184): the new ones lit, the proposed ones beside them. */
+.pcTimes[data-adjusted='true'] .pcTime {
+  color: var(--teal-light);
+}
+.pcWas {
+  flex: none;
+  color: var(--muted);
+  font:
+    12px ui-monospace,
+    'Cascadia Mono',
+    Consolas,
+    monospace;
+}
 /* One row under the time field, at the card's button size (VC-174). */
 .nudge {
   display: flex;
