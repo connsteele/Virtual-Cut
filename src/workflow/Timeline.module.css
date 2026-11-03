@@ -637,11 +637,13 @@
   right: 6px;
 }
 /* VC-184: the picked proposal's edges (or its line) can be dragged; hover never grabs. */
+/* Centred on the lit edge: the focused band's and line's 3px border sits just outside the box the
+   grip is placed in, so it reaches back by half the border as well as half its own width. */
 .proposalGrab {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -6px;
+  left: -7.5px;
   width: 12px;
   pointer-events: auto;
   cursor: ew-resize;
@@ -649,7 +651,7 @@
 }
 .proposalGrab[data-at='end'] {
   left: auto;
-  right: -6px;
+  right: -7.5px;
 }
 .proposalMark .proposalGrab {
   left: -8px;

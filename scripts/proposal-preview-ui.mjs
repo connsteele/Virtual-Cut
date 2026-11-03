@@ -331,7 +331,10 @@ try {
   const bandWas = await range.boundingBox();
   const endGrab = await range.locator('[data-proposal-grab="end"]').boundingBox();
   const grabY = endGrab.y + endGrab.height / 2;
-  // Esc during a drag puts the edge back, and the card never hears of it.
+  // Esc during a drag puts the edge and the playhead back, and the card never hears of it. While
+  // dragging, the viewer shows the frame under the edge, as when scrubbing.
+  const video = () => main.locator('video').evaluate((v) => v.currentTime);
+  const playheadBefore = await video();
   await main.mouse.move(endGrab.x + endGrab.width / 2, grabY);
   await main.mouse.down();
   await main.mouse.move(endGrab.x + endGrab.width / 2 + 70, grabY, { steps: 6 });
@@ -339,8 +342,12 @@ try {
   await expect
     .poll(async () => (await range.boundingBox()).width - bandWas.width)
     .toBeGreaterThan(60);
+  await expect
+    .poll(async () => Math.abs((await video()) - timeOf(endGrab.x + endGrab.width / 2 + 70)))
+    .toBeLessThan(0.3);
   await timeline.screenshot({ path: path.join(dir, 'preview-dragging.png') });
   await main.keyboard.press('Escape');
+  await expect.poll(async () => Math.abs((await video()) - playheadBefore)).toBeLessThan(0.05);
   await expect
     .poll(async () => Math.abs((await range.boundingBox()).width - bandWas.width))
     .toBeLessThan(2);
@@ -362,12 +369,17 @@ try {
     .toBeGreaterThan(60);
   await expect(range).toHaveAttribute('data-dragging', 'false');
   await expect(range).toHaveAttribute('data-focused', 'true');
+  // The playhead stays on the dropped edge.
+  assert(Math.abs((await video()) - droppedEnd) < 0.3, 'the viewer shows the dropped edge');
   await timeline.screenshot({ path: path.join(dir, 'preview-dragged.png') });
   await view.bringToFront();
   await card('Siege scene').screenshot({ path: path.join(dir, 'card-dragged.png') });
   // The start edge snaps to the playhead like any edge in Cut.
   await main.bringToFront();
-  const playheadNow = await main.locator('video').evaluate((v) => v.currentTime);
+  const film = await timeline.locator('[data-seek-surface="filmstrip"]').boundingBox();
+  await main.mouse.click(compact.x + compact.width * 0.3, film.y + film.height / 2);
+  await expect.poll(async () => Math.abs((await video()) - at(0.3))).toBeLessThan(0.3);
+  const playheadNow = await video();
   const startGrab = await range.locator('[data-proposal-grab="start"]').boundingBox();
   await main.mouse.move(startGrab.x + startGrab.width / 2, grabY);
   await main.mouse.down();

@@ -130,7 +130,7 @@ export function Timeline({
     recording: string;
     targets: number[];
   } | null>(null);
-  const callbacks = useRef({ onTrimActive, onScrubActive });
+  const callbacks = useRef({ onTrimActive, onScrubActive, onSeek });
   const [preview, setPreview] = useState<{
     id: string;
     edge: 'start' | 'end';
@@ -146,6 +146,8 @@ export function Timeline({
     recording: string;
     moved: boolean;
     targets: number[];
+    /** Where the playhead was; the viewer follows the edge and goes back on Esc. */
+    playhead: number;
   } | null>(null);
   const [proposalDraft, setProposalDraft] = useState<({ card: string } & PreviewTimes) | null>(
     null,
@@ -162,8 +164,8 @@ export function Timeline({
         )
       : [];
   useEffect(() => {
-    callbacks.current = { onTrimActive, onScrubActive };
-  }, [onTrimActive, onScrubActive]);
+    callbacks.current = { onTrimActive, onScrubActive, onSeek };
+  }, [onTrimActive, onScrubActive, onSeek]);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || (!drag.current && !markerDrag.current && !proposalDrag.current))
@@ -174,7 +176,9 @@ export function Timeline({
       setPreview(null);
       markerDrag.current = null;
       setMarkerPreview(null);
-      // VC-184: Esc during a proposal drag puts its preview back; the card never heard of it.
+      // VC-184: Esc during a proposal drag puts its preview and the playhead back; the card never
+      // heard of it.
+      if (proposalDrag.current?.moved) callbacks.current.onSeek(proposalDrag.current.playhead);
       proposalDrag.current = null;
       setProposalDraft(null);
       setSnapGuide(null);
@@ -404,6 +408,8 @@ export function Timeline({
     d.value = at(snap?.value ?? raw);
     setSnapGuide(snap?.target ?? null);
     setProposalDraft({ card: d.card, ...d.value });
+    // The viewer shows the frame under the dragged edge, as when scrubbing.
+    onSeek(d.edge === 'end' ? d.value.end! : d.value.start);
   }
   function finishProposal(commit: boolean) {
     const d = proposalDrag.current;
@@ -411,6 +417,7 @@ export function Timeline({
     proposalDrag.current = null;
     setSnapGuide(null);
     setProposalDraft(null);
+    if (!commit && d.moved) onSeek(d.playhead);
     if (
       commit &&
       d.moved &&
@@ -1136,6 +1143,7 @@ export function Timeline({
                           recording: recording.id,
                           moved: false,
                           targets: snapTargets({}),
+                          playhead: current,
                         };
                         track.current!.setPointerCapture(e.pointerId);
                       }}
