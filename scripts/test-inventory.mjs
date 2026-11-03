@@ -17,6 +17,7 @@ export const fast = [
   'intent-score.test.mjs',
   'split-snap.test.mjs',
   'proposal-previews.test.mjs',
+  'job-lanes.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -37,6 +38,7 @@ export const native = [
   'filmstrip-checks.mjs',
   'review-planning-native.mjs',
   'project-capacity-checks.mjs',
+  'job-lanes-native.mjs',
 ];
 export const desktop = [
   'speech-setup-ui.mjs',

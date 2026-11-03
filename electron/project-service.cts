@@ -59,6 +59,7 @@ import {
   snapWindow,
   type SplitSnap,
 } from './split-snap.js';
+import { jobLanes, laneOf, nextJob, type JobLane } from './job-lanes.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -162,6 +163,7 @@ export class ProjectService {
     sourceId: string,
     batchId: string,
     options: TranscriptionOptions,
+    origin: 'user' | 'background' = 'user',
   ) {
     const s = this.require(id);
     validateTranscriptionOptions(options);
@@ -210,6 +212,7 @@ export class ProjectService {
         id: randomUUID(),
         sourceId,
         kind: 'transcribe',
+        origin,
         role,
         runtimeSignature,
         track,
@@ -465,8 +468,19 @@ export class ProjectService {
   /** Native changes the renderer did not request directly, such as job progress. */
   onChange?: () => void;
   private grants = new Map<string, { access: VideoAccess; url: string }>();
-  private active: { id: string; controller: AbortController; finished: Promise<void> } | null =
-    null;
+  // One running job per lane (VC-145): transcription never holds up media work.
+  private active: Record<
+    JobLane,
+    { job: MediaJob; controller: AbortController; finished: Promise<void> } | null
+  > = { speech: null, media: null };
+  /** Stops the running jobs that match, in every lane, and waits for them to settle. */
+  private async stopJobs(match: (job: MediaJob) => boolean = () => true) {
+    const stopping = jobLanes
+      .map((lane) => this.active[lane])
+      .filter((a) => a !== null && match(a.job));
+    for (const a of stopping) a!.controller.abort();
+    await Promise.all(stopping.map((a) => a!.finished));
+  }
   private switching = false;
   constructor(
     private profile: string,
@@ -586,8 +600,7 @@ export class ProjectService {
       this.filmstripSettled.clear();
       this.filmstripFailed.clear();
       await this.filmstripCache.close();
-      this.active?.controller.abort();
-      await this.active?.finished;
+      await this.stopJobs();
       await this.store?.checkpoint('auto', true);
       this.store?.close();
       this.store = null;
@@ -875,8 +888,7 @@ export class ProjectService {
     const store = this.require(id);
     this.switching = true;
     try {
-      this.active?.controller.abort();
-      await this.active?.finished;
+      await this.stopJobs();
       await store.restore(saveId);
       this.reconcileExports();
       await this.refreshAvailability();
@@ -942,14 +954,7 @@ export class ProjectService {
     this.switching = true;
     try {
       // Shared sources remain registered, so their ongoing work can continue.
-      if (
-        !otherBatches.length &&
-        this.active &&
-        s.jobs().some((j) => j.id === this.active!.id && j.sourceId === sourceId)
-      ) {
-        this.active.controller.abort();
-        await this.active.finished;
-      }
+      if (!otherBatches.length) await this.stopJobs((j) => j.sourceId === sourceId);
       await s.checkpoint('manual');
       s.transaction(() => {
         if (otherBatches.length) recording.batchIds = otherBatches;
@@ -1038,13 +1043,7 @@ export class ProjectService {
       | { cacheFilesRemoved: number; cacheFilesRetained: number; cacheCleanupIncomplete?: boolean }
       | undefined;
     try {
-      if (
-        this.active &&
-        s.jobs().some((j) => j.id === this.active!.id && removed.has(j.sourceId))
-      ) {
-        this.active.controller.abort();
-        await this.active.finished;
-      }
+      await this.stopJobs((j) => removed.has(j.sourceId));
       await s.checkpoint('manual');
       s.transaction(() => {
         const target = remaining.find((b) => b.id === targetId) ||
@@ -1193,7 +1192,7 @@ export class ProjectService {
           }
           s.write();
           if (defaults.transcription && r.availability === 'ready')
-            this.requestTranscription(id, r.id, batchId, defaults.transcription);
+            this.requestTranscription(id, r.id, batchId, defaults.transcription, 'background');
           continue;
         }
         s.transaction(() => {
@@ -1217,7 +1216,7 @@ export class ProjectService {
           });
           s.data.model.markers[sourceId] = [];
           s.data.revision++;
-          this.enqueue(sourceId, 'inspect');
+          this.enqueue(sourceId, 'inspect', undefined, 'user');
         });
       } catch (e) {
         s.putJob({
@@ -1234,7 +1233,12 @@ export class ProjectService {
     this.pump();
     return this.snapshot();
   }
-  private enqueue(sourceId: string, kind: 'inspect' | 'audio', track?: number) {
+  private enqueue(
+    sourceId: string,
+    kind: 'inspect' | 'audio',
+    track?: number,
+    origin: 'user' | 'background' = 'background',
+  ) {
     const s = this.require();
     if (
       s
@@ -1252,6 +1256,7 @@ export class ProjectService {
       id: randomUUID(),
       sourceId,
       kind,
+      origin,
       track,
       state: 'queued',
       progress: 0,
@@ -1259,7 +1264,7 @@ export class ProjectService {
       updated: new Date().toISOString(),
     });
   }
-  private queueAudio(sourceId: string) {
+  private queueAudio(sourceId: string, origin: 'user' | 'background' = 'background') {
     const s = this.require(),
       r = s.data.model.recordings.find((r) => r.id === sourceId);
     if (!r || r.availability !== 'ready')
@@ -1271,12 +1276,12 @@ export class ProjectService {
         (!r.audioTracks?.find((t) => t.index === index)?.waveform ||
           !existsSync(this.audioFile(native, index)))
       )
-        this.enqueue(sourceId, 'audio', index);
+        this.enqueue(sourceId, 'audio', index, origin);
     this.pump();
   }
   async prepareAudio(id: string, sourceId: string) {
     this.require(id);
-    this.queueAudio(sourceId);
+    this.queueAudio(sourceId, 'user');
     return this.snapshot();
   }
   private exportInput(clipId: string, requireAvailable = true) {
@@ -1521,6 +1526,7 @@ export class ProjectService {
       id: planId,
       sourceId: record.plan.sourceId,
       kind: 'export',
+      origin: 'user',
       state: 'queued',
       progress: 0,
       message: next.message,
@@ -1719,6 +1725,7 @@ export class ProjectService {
           id: record.plan.id,
           sourceId: record.plan.sourceId,
           kind: 'export',
+          origin: 'user',
           state: 'queued',
           progress: 0,
           message: record.message,
@@ -1751,10 +1758,7 @@ export class ProjectService {
         });
       }
     });
-    if (this.active && records.some((e) => e.plan.id === this.active!.id)) {
-      this.active.controller.abort();
-      await this.active.finished;
-    }
+    await this.stopJobs((j) => records.some((e) => e.plan.id === j.id));
     return this.snapshot();
   }
   private async retainedClips(): Promise<RetainedClip[]> {
@@ -1865,9 +1869,10 @@ export class ProjectService {
       job = s.jobs().find((j) => j.id === jobId);
     if (!job) throw new Error('Job not found.');
     if (action === 'cancel') {
-      if (this.active?.id === jobId) {
-        this.active.controller.abort();
-        await this.active.finished;
+      const running = this.active[laneOf(job.kind)];
+      if (running?.job.id === jobId) {
+        running.controller.abort();
+        await running.finished;
       } else if (job.state === 'queued')
         s.putJob({
           ...job,
@@ -1902,6 +1907,7 @@ export class ProjectService {
       }
       s.putJob({
         ...job,
+        origin: 'user',
         state: 'queued',
         progress: 0,
         message: 'Waiting to retry',
@@ -1943,25 +1949,30 @@ export class ProjectService {
     });
     this.grants.delete(old.file);
     if (!s.data.model.recordings.find((r) => r.id === sourceId)?.duration) {
-      this.enqueue(sourceId, 'inspect');
+      this.enqueue(sourceId, 'inspect', undefined, 'user');
       this.pump();
     }
     return this.snapshot();
   }
   private pump() {
-    if (this.active || this.switching || !this.store) return;
-    const job = [...this.store.jobs()].reverse().find((j) => j.state === 'queued');
-    if (!job) {
-      this.makeFilmstrips();
-      return;
+    if (this.switching || !this.store) return;
+    for (const lane of jobLanes) {
+      const job = this.nextJob(lane);
+      if (!job) continue;
+      // Filmstrips share the media lane and give way to any media job.
+      if (lane === 'media') this.filmstripBuild?.controller.abort();
+      const controller = new AbortController();
+      const finished = this.run(job, controller.signal).finally(() => {
+        this.active[lane] = null;
+        this.pump();
+      });
+      this.active[lane] = { job, controller, finished };
     }
-    this.filmstripBuild?.controller.abort();
-    const controller = new AbortController();
-    const finished = this.run(job, controller.signal).finally(() => {
-      this.active = null;
-      this.pump();
-    });
-    this.active = { id: job.id, controller, finished };
+    this.makeFilmstrips();
+  }
+  private nextJob(lane: JobLane) {
+    const running = jobLanes.flatMap((l) => this.active[l]?.job ?? []);
+    return nextJob(lane, [...this.store!.jobs()].reverse(), running);
   }
   private wantFilmstrip(sourceId: string) {
     const source = this.store?.sources().find((x) => x.id === sourceId);
@@ -1977,13 +1988,7 @@ export class ProjectService {
   }
   private makeFilmstrips() {
     const s = this.store;
-    if (
-      !s ||
-      this.active ||
-      this.switching ||
-      this.filmstripBuild ||
-      s.jobs().some((j) => j.state === 'queued')
-    )
+    if (!s || this.active.media || this.switching || this.filmstripBuild || this.nextJob('media'))
       return;
     const sources = s.sources();
     const ready = new Set(
@@ -2411,6 +2416,7 @@ export class ProjectService {
               source.id,
               s.data.model.recordings.find((r) => r.id === source.id)!.batchIds![0],
               transcription,
+              'background',
             );
           } catch (e) {
             s.putJob({
