@@ -336,7 +336,8 @@ assert.equal(individualRecords().filter((e) => e.state === 'cancelled').length, 
 assert.equal(individualRecords().filter((e) => e.state === 'queued').length, 2);
 service.switching = false;
 service.pump();
-const activeId = service.active.id;
+// Filing runs in the media lane (VC-145).
+const activeId = service.active.media.job.id;
 await service.job(id, activeId, 'cancel');
 await wait();
 assert.equal(individualRecords().filter((e) => e.state === 'cancelled').length, 2);

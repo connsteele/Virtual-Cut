@@ -106,6 +106,8 @@ export const other = {
     'Scores proposals and decisions against tagged mic notes (VC-128); on demand, reads only the files it is given.',
   'cue-accuracy-study.mjs':
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
+  'job-lanes-study.mjs':
+    'Real recognition beside a real import and exports (VC-145): start delays and slowdown; needs the local speech engine and disposable copies.',
   'transcription-device-study.mjs':
     'Real CPU/GPU and bounded speech-batch comparison on explicitly supplied disposable samples; requires local runtime.',
   'transcription-sample-study.mjs':
