@@ -2,6 +2,20 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.23 — Card edits, reasons and faster builds (November 3, 2026)
+
+Sprint 9. A proposal card's time fields show the full ruler time, with −1 s, −0.1 s, Playhead,
++0.1 s and +1 s in one row under each, arrow-key nudges and a button that jumps to the edited
+time; the timeline preview follows every nudge. A picked card's preview has grips, so a range's
+edges or a marker's or Split's line can be dragged on the Cut timeline, snapping like any edge;
+the card shows the new time beside the proposed one and accepting uses it. After a decision the
+card asks why: one tap for a reject reason, and an accept lists what you kept or changed. Agents
+read the reasons, and later changes to what accepting made, through `get_proposal_decisions` and
+the batch record. The intent guide (version 2) adds continuous scenes as range markers, the 5 s
+Split rule, recordings without commentary and recurring moments. Builds and checks are faster:
+TypeScript 7, type-aware oxlint and a Prettier cache take the fast gate from about 22 s to about
+6 s. See [the 0.4.23 review](docs/review-0.4.23.md).
+
 ## 0.4.22 — Review tools ahead of real batches (October 16, 2026)
 
 Sprint 8. Pending proposals now show dimmed on the Cut timeline in their proposer's colour: a
