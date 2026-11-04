@@ -13,6 +13,7 @@ import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { screenTextClip, stubEngine } from './screen-text-stub.mjs';
+import { agent, initialize, tool as mcpTool } from './mcp-test-client.mjs';
 
 const base = process.env.VIRTUAL_CUT_TEST_ROOT;
 assert(base, 'Run with the test suite so all media is disposable.');
@@ -158,6 +159,40 @@ try {
   await expect(jobs.locator('[data-screen-text-engine]')).toHaveCount(0);
   await shot('5-jobs-both-ready.png');
   await jobs.getByRole('button', { name: 'Close' }).click();
+  // VC-191: an agent app reads the lines over MCP, grouped by default, in detail on request.
+  await main.getByRole('button', { name: 'Agent', exact: true }).click();
+  const panel = main.locator('[data-agent-access]');
+  await panel.getByLabel('Allow agent apps to connect').click();
+  await panel.getByRole('button', { name: 'Pair with Screen text QA' }).click();
+  const client = agent(await panel.locator('[data-config="claude-desktop"]').textContent());
+  await panel.getByRole('button', { name: 'Done', exact: true }).click();
+  await initialize(client);
+  const read = async (name, args) => {
+    const reply = await mcpTool(client, name, args);
+    assert(!reply.error, reply.text);
+    return JSON.parse(reply.text);
+  };
+  const lines = await read('get_screen_text', {
+    recording_id: id,
+    start_seconds: 0,
+    end_seconds: 3,
+  });
+  assert.equal(lines.state, 'ready');
+  assert.deepEqual(lines.lines.slice(0, 1), ['0-19 top left "Score 100"']);
+  assert.ok(
+    lines.lines.every((l) => /^\d+-\d+ [a-z ]+ ".*"$/.test(l)),
+    lines.lines.join(' | '),
+  );
+  const detail = await read('get_screen_text', { recording_id: id, detail: true, min_seconds: 15 });
+  assert.deepEqual(detail.lines, [
+    '0.0-19.0  top left 20,20,160,48  19.0s/20kf  0.98  "Score 100"',
+  ]);
+  const context = await read('get_context', {});
+  assert.equal(context.alreadyMarked[0].screenText, 'ready');
+  await expect(panel.locator('[data-agent-activity] li').first()).toContainText('Screen text');
+  await shot('5b-agent-activity-screen-text.png');
+  client.end();
+  await main.getByRole('button', { name: 'Agent', exact: true }).click();
   // Without thumbnails each pass has its own line.
   await main.getByRole('button', { name: 'Toggle thumbnails' }).click();
   await expect(card.locator('small[data-screen-text-status="ready"]')).toHaveText(

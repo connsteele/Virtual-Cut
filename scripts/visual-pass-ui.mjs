@@ -247,6 +247,10 @@ try {
     'Picture events of First session, 0:05–0:20',
   );
   await shot('5b-agent-activity-picture-events.png');
+  // VC-191: without the engine, get_screen_text says so instead of an empty list.
+  const noText = JSON.parse((await tool(client, 'get_screen_text', { recording_id: first })).text);
+  assert.equal(noText.state, 'engine not installed');
+  assert.match(noText.note, /Screen text engine not installed/);
   client.end();
   await main.getByRole('button', { name: 'Agent', exact: true }).click();
   await expect(panel).toHaveCount(0);

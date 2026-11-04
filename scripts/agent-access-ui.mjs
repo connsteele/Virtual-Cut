@@ -97,6 +97,7 @@ try {
     'get_intent_guide',
     'get_project_summary',
     'get_proposal_decisions',
+    'get_screen_text',
     'get_transcript',
     'get_visual_events',
     'submit_proposals',
