@@ -112,6 +112,8 @@ const words = new Set([
   'setupHelp',
   'configure',
   'speechSetup',
+  'screenTextSetup',
+  'check',
   'install',
   'activate',
   'remove',

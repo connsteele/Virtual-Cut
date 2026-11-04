@@ -6,6 +6,7 @@ import type { VirtualCutApi } from './contracts.js' with { 'resolution-mode': 'i
 const api: VirtualCutApi = {
   transcript: {
     speechSetup: (action, gpu) => ipcRenderer.invoke('transcript:speechSetup', action, gpu),
+    screenTextSetup: (action) => ipcRenderer.invoke('transcript:screenTextSetup', action),
     setupHelp: (topic) => ipcRenderer.invoke('transcript:setupHelp', topic),
     transport: (id, source, key) => ipcRenderer.invoke('transcript:transport', id, source, key),
     onTransport: (callback) => {

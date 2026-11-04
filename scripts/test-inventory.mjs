@@ -24,6 +24,7 @@ export const fast = [
 ];
 export const native = [
   'speech-setup-checks.mjs',
+  'screen-text-setup-checks.mjs',
   'transcript-storage-checks.mjs',
   'project-deletion-checks.mjs',
   'range-markers-native.mjs',

@@ -20,6 +20,7 @@ import {
   validateTranscriptionOptions,
   TRANSCRIPTION_PIPELINE,
 } from './transcription-runtime.cjs';
+import { ScreenTextRuntime } from './screen-text-runtime.cjs';
 import { effectiveContext } from './project-context.js';
 import type {
   TranscriptionOptions,
@@ -127,6 +128,7 @@ async function waveform(file: string, sampleRate: number) {
 
 export class ProjectService {
   readonly transcription: TranscriptionRuntime;
+  readonly screenText: ScreenTextRuntime;
   /** The agent's first pass beside the exported state, per batch (VC-182). */
   readonly batchRecords: BatchRecords;
   transcriptSession(sourceId?: string): TranscriptSession | null {
@@ -523,6 +525,7 @@ export class ProjectService {
     private diagnostics?: Diagnostics,
   ) {
     this.transcription = new TranscriptionRuntime(profile, toolsDirectory);
+    this.screenText = new ScreenTextRuntime(profile, toolsDirectory);
     this.batchRecords = new BatchRecords(profile);
     this.batchRecords.log = (event, details) => diagnostics?.record(event, details);
   }

@@ -203,6 +203,10 @@ export interface TranscriptApi {
     action: import('./speech-setup-contracts.js').SpeechSetupAction,
     includeGpu?: boolean,
   ): Promise<import('./speech-setup-contracts.js').SpeechSetupState>;
+  /** The screen text engine (VC-192): download, check, switch back, delete. */
+  screenTextSetup(
+    action: import('./screen-text-setup-contracts.js').ScreenTextSetupAction,
+  ): Promise<import('./screen-text-setup-contracts.js').ScreenTextSetupState>;
   setupHelp(topic: 'engine' | 'gpu' | 'python' | 'model'): Promise<void>;
   transport(projectId: string, sourceId: string, key: 'j' | 'k' | 'l'): Promise<void>;
   onTransport(

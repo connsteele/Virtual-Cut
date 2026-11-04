@@ -64,7 +64,7 @@ export function describeRuntime(settings: AsrRuntime): SpeechSetupLocation {
 const label = (location: SpeechSetupLocation | undefined) =>
   location?.kind === 'downloaded' ? 'the downloaded engine' : 'your own installation';
 const capital = (text: string) => text[0].toUpperCase() + text.slice(1);
-async function folderBytes(folder: string): Promise<number> {
+export async function folderBytes(folder: string): Promise<number> {
   let total = 0;
   for (const entry of await readdir(folder, { withFileTypes: true })) {
     const full = path.join(folder, entry.name);
@@ -85,6 +85,98 @@ export async function verifyArtifact(file: string, artifact: Pick<Artifact, 'sha
     throw new Error(
       'Download verification failed. Retry the download; the engine in use is unchanged.',
     );
+}
+/**
+ * Download one pinned file to `destination`, checking size and SHA-256 while it streams. The
+ * file appears under its final name only once it matches. Shared by every engine setup.
+ */
+export async function downloadArtifact(
+  artifact: Pick<Artifact, 'url' | 'sha256' | 'bytes'>,
+  destination: string,
+  signal: AbortSignal,
+  progress: (bytes: number) => void,
+) {
+  const response = await fetch(artifact.url, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(30 * 60 * 1000)]),
+  });
+  if (!response.ok || !response.body)
+    throw new Error(`Download failed (${response.status}). Retry the download.`);
+  const file = await open(destination + '.part', 'wx');
+  const reader = response.body.getReader();
+  const hash = createHash('sha256');
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { value: chunk, done } = await reader.read();
+      if (done) break;
+      signal.throwIfAborted();
+      bytes += chunk.length;
+      if (bytes > artifact.bytes) throw new Error('Download exceeded its expected size.');
+      hash.update(chunk);
+      let offset = 0;
+      while (offset < chunk.length) {
+        const result = await file.write(chunk, offset, chunk.length - offset);
+        if (!result.bytesWritten) throw new Error('Could not write the downloaded files.');
+        offset += result.bytesWritten;
+      }
+      progress(chunk.length);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    await file.close();
+  }
+  if (bytes !== artifact.bytes || hash.digest('hex') !== artifact.sha256)
+    throw new Error('Download verification failed. Retry the download.');
+  await rename(destination + '.part', destination);
+}
+/**
+ * Run one setup step (unpack, install, validate) with its temporary files inside the install
+ * folder. Resolves with its output; rejects with the end of its error output.
+ */
+export function runSetupProcess(
+  executable: string,
+  args: string[],
+  signal: AbortSignal,
+  folder: string,
+  request?: unknown,
+) {
+  signal.throwIfAborted();
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        TEMP: folder,
+        TMP: folder,
+        PYTHONDONTWRITEBYTECODE: '1',
+        PYTHONUTF8: '1',
+      },
+    });
+    let output = '',
+      error = '';
+    const abort = () => child.kill();
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    child.on('error', (e) => {
+      signal.removeEventListener('abort', abort);
+      reject(e);
+    });
+    child.stdout.on('data', (data) => {
+      output = (output + String(data)).slice(-8000);
+    });
+    child.stderr.on('data', (data) => {
+      error = (error + String(data)).slice(-3000);
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(request ? JSON.stringify(request) + '\n' : undefined);
+    child.on('close', (code) => {
+      signal.removeEventListener('abort', abort);
+      if (signal.aborted) reject(new Error('Setup cancelled.'));
+      else if (code) reject(new Error(error));
+      else resolve(output);
+    });
+  });
 }
 // In-memory state and polling are independent of project saves and transcript sessions.
 export class SpeechSetup {
@@ -323,82 +415,15 @@ export class SpeechSetup {
   }
   private async download(artifact: Artifact, destination: string, signal: AbortSignal) {
     this.state.message = `Downloading ${artifact.kind === 'model' ? 'speech model' : 'speech software'}: ${artifact.name}`;
-    const response = await fetch(artifact.url, {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(30 * 60 * 1000)]),
+    await downloadArtifact(artifact, destination, signal, (bytes) => {
+      this.state.downloadedBytes += bytes;
     });
-    if (!response.ok || !response.body)
-      throw new Error(`Download failed (${response.status}). Retry the download.`);
-    const file = await open(destination + '.part', 'wx');
-    const reader = response.body.getReader();
-    const hash = createHash('sha256');
-    let bytes = 0;
-    try {
-      for (;;) {
-        const { value: chunk, done } = await reader.read();
-        if (done) break;
-        signal.throwIfAborted();
-        bytes += chunk.length;
-        if (bytes > artifact.bytes) throw new Error('Download exceeded its expected size.');
-        hash.update(chunk);
-        let offset = 0;
-        while (offset < chunk.length) {
-          const result = await file.write(chunk, offset, chunk.length - offset);
-          if (!result.bytesWritten) throw new Error('Could not write downloaded speech files.');
-          offset += result.bytesWritten;
-        }
-        this.state.downloadedBytes += chunk.length;
-      }
-    } finally {
-      await reader.cancel().catch(() => {});
-      await file.close();
-    }
-    if (bytes !== artifact.bytes || hash.digest('hex') !== artifact.sha256)
-      throw new Error('Download verification failed. Retry the download.');
-    await rename(destination + '.part', destination);
   }
-  private async process(
-    executable: string,
-    args: string[],
-    signal: AbortSignal,
-    request?: unknown,
-  ) {
-    signal.throwIfAborted();
-    return new Promise<string>((resolve, reject) => {
-      const child = spawn(executable, args, {
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          TEMP: this.state.folder,
-          TMP: this.state.folder,
-          PYTHONDONTWRITEBYTECODE: '1',
-          PYTHONUTF8: '1',
-        },
-      });
-      let output = '',
-        error = '';
-      const abort = () => child.kill();
-      signal.addEventListener('abort', abort, { once: true });
-      if (signal.aborted) abort();
-      child.on('error', (e) => {
-        signal.removeEventListener('abort', abort);
-        reject(e);
-      });
-      child.stdout.on('data', (data) => {
-        output = (output + String(data)).slice(-8000);
-      });
-      child.stderr.on('data', (data) => {
-        error = (error + String(data)).slice(-3000);
-      });
-      child.stdin.on('error', () => {});
-      child.stdin.end(request ? JSON.stringify(request) + '\n' : undefined);
-      child.on('close', (code) => {
-        signal.removeEventListener('abort', abort);
-        if (signal.aborted) reject(new Error('Setup cancelled.'));
-        else if (code)
-          reject(new Error(`Speech software could not be installed or loaded. ${error}`));
-        else resolve(output);
-      });
+  private process(executable: string, args: string[], signal: AbortSignal, request?: unknown) {
+    return runSetupProcess(executable, args, signal, this.state.folder, request).catch((error) => {
+      throw signal.aborted
+        ? error
+        : new Error(`Speech software could not be installed or loaded. ${error.message}`);
     });
   }
   private candidate(): AsrRuntime {

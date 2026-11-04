@@ -17,12 +17,21 @@ An install folder holds `python\python.exe` (Python 3.12 embeddable) and `librar
 packages below). The models ship inside RapidOCR's wheel, in `libraries\rapidocr\models`
 (`PP-OCRv6_det_small.onnx`, `PP-OCRv6_rec_small.onnx`); their presence marks a complete install.
 
-## Pinned packages (Sprint 11)
+## Pinned packages and setup
 
-Python 3.12.10 embeddable (the speech engine's archive) and 23 wheels, 126.7 MB to download,
-about 0.4 GB installed: rapidocr 3.9.2, onnxruntime-directml 1.24.4, opencv-python 5.0.0.93,
-numpy 2.5.4, pillow 13.0.0, sympy 1.14.0, shapely 2.2.0 and small pure-Python dependencies. The
-hash-checked manifest is VC-192's.
+`runtime-manifest.json` pins Python 3.12.10 embeddable (the speech engine's archive) and 23
+wheels by URL, size and SHA-256: 137.9 MB to download, about 0.34 GB unpacked. Among them are
+rapidocr 3.9.2, onnxruntime-directml 1.24.4, opencv-python 5.0.0.93, numpy 2.5.4, pillow 13.0.0,
+sympy 1.14.0, shapely 2.2.0 and small pure-Python dependencies. Python comes from python.org, the
+wheels from PyPI.
+
+`electron/screen-text-setup.cts` installs them the way the speech engine is installed (it shares
+`speech-setup.cts`'s download and process helpers and `integrations/transcription`'s unpackers):
+you choose a folder, it creates `Virtual Cut screen text\install-<id>` there, checks every file,
+unpacks Python and the wheels, confirms the installed versions and reads `check.png`. Only then
+is the engine saved in the profile and used. The previous engine is kept until it is deleted, and
+you can switch back to it. `VIRTUAL_CUT_OCR_DOWNLOADS` (checks and development) names a folder of
+the same pinned files to copy instead of downloading; they are checked all the same.
 
 ## Worker
 

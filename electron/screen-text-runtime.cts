@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -39,6 +39,8 @@ export class ScreenTextRuntime {
   private file: string;
   /** A setup was chosen at some point, so missing files mean it was moved or deleted. */
   private chosen: boolean;
+  /** VIRTUAL_CUT_OCR_RUNTIME points somewhere, so setup's choice is saved but not used. */
+  readonly overridden: boolean;
   constructor(profile: string, toolsDirectory = '') {
     this.file = path.join(profile, 'screen-text-runtime.json');
     let saved = '';
@@ -53,6 +55,7 @@ export class ScreenTextRuntime {
       path.resolve(override || saved || path.join(toolsDirectory, 'ocr')),
     );
     this.chosen = !!(override || saved);
+    this.overridden = !!override;
   }
   /** The first required file that is absent right now, checked on every call. */
   get missing() {
@@ -77,5 +80,25 @@ export class ScreenTextRuntime {
     return this.removed
       ? `${this.removed} It may have been moved or deleted. Open Screen text engine to download it again.`
       : 'Screen text engine not installed.';
+  }
+  /**
+   * Use the engine in `folder` from now on (setup, VC-192). It is saved in the profile, so the
+   * next start finds it too; a development override still wins until it is cleared.
+   */
+  use(folder: string) {
+    mkdirSync(path.dirname(this.file), { recursive: true });
+    writeFileSync(this.file + '.next', JSON.stringify({ folder }));
+    renameSync(this.file + '.next', this.file);
+    this.chosen = true;
+    if (!this.overridden) this.settings = screenTextLayout(folder);
+  }
+  /** The folder setup saved, whether or not an override is in force. */
+  get savedFolder() {
+    try {
+      const value = JSON.parse(readFileSync(this.file, 'utf8')) as { folder?: unknown };
+      return typeof value.folder === 'string' && path.isAbsolute(value.folder) ? value.folder : '';
+    } catch {
+      return '';
+    }
   }
 }
