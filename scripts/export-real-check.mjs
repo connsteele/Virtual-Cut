@@ -3,14 +3,18 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { requiredSetting, scratchPath } from './shared.mjs';
 const require = createRequire(import.meta.url),
   { identify, inspectMedia } = require('../dist-electron/media-inspection.cjs'),
   { exportClip, fileHash } = require('../dist-electron/clip-export.cjs');
-const root = 'G:/GPT/Work/virtual-cut/m2';
+const root = scratchPath('real-export');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'av1-flac-'));
-// This is the disposable full-resolution demo copy, never the I: original.
-const file = 'G:/GPT/Work/virtual-cut/full-resolution-demo/videos/r4.mp4',
+// A disposable copy of a real AV1/FLAC recording, never the original.
+const file = requiredSetting(
+    'VIRTUAL_CUT_REAL_EXPORT_SOURCE',
+    'a disposable copy of a real AV1/FLAC recording',
+  ),
   signal = new AbortController().signal;
 const id = randomUUID(),
   source = await identify(file, id),

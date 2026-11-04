@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, copyFile } from 'node:fs/promises';
+import { writeFile, mkdir, mkdtemp, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { root, require, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
-const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));
-const dir = await mkdtemp(
-  path.join(process.env.VIRTUAL_CUT_TRANSPORT_OUTPUT || scratch, 'regression-'),
-);
-const temp = process.env.VIRTUAL_CUT_TRANSPORT_TEMP || 'G:/GPT/Temp';
+import { root, require, electronEnvironment, scratchPath, transportFixture } from './shared.mjs';
+const fixture = await transportFixture();
+const output = process.env.VIRTUAL_CUT_TRANSPORT_OUTPUT || scratchPath('transport');
+await mkdir(output, { recursive: true });
+const dir = await mkdtemp(path.join(output, 'regression-'));
 const file = path.join(dir, 'transport.vcut');
 await copyFile(fixture.file, file);
 const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -21,7 +19,7 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: temp, TMP: temp }),
+  env: electronEnvironment(),
 });
 const page = await app.firstWindow(),
   errors = [],

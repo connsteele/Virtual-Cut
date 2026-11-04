@@ -2,11 +2,10 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { require } from './shared.mjs';
+import { require, scratchPath } from './shared.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const dir = path.resolve(
-  process.env.VIRTUAL_CUT_RESOLVE_FIXTURE ||
-    'G:/GPT/Work/virtual-cut/m2-completion/resolve-validation',
+  process.env.VIRTUAL_CUT_RESOLVE_FIXTURE || scratchPath('resolve-validation'),
 );
 await mkdir(dir, { recursive: true });
 const source = path.join(dir, 'source-60.mp4');

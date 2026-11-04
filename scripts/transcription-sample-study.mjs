@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, copyFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { scratchPath } from './shared.mjs';
 const { TranscriptionRuntime } = createRequire(import.meta.url)(
   '../dist-electron/transcription-runtime.cjs',
 );
-const root = process.env.VIRTUAL_CUT_ASR_STUDY_OUTPUT || 'G:/GPT/Work/virtual-cut/m3-sample-study';
+const root = process.env.VIRTUAL_CUT_ASR_STUDY_OUTPUT || scratchPath('asr-sample-study');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'run-'));
 const runtime = new TranscriptionRuntime(path.join(dir, 'profile'), '');

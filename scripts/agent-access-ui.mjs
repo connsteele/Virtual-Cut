@@ -23,10 +23,7 @@ async function launch() {
     executablePath: executable || require('electron'),
     args: [...(executable ? [] : [root]), `--user-data-dir=${profile}`, '--background-test'],
     cwd: root,
-    env: electronEnvironment({
-      TEMP: process.env.TEMP || 'G:/GPT/Temp',
-      TMP: process.env.TEMP || 'G:/GPT/Temp',
-    }),
+    env: electronEnvironment({}),
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(20000);

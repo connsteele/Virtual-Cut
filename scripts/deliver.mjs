@@ -5,20 +5,29 @@
 //
 // --version updates package.json and package-lock.json first. Stops at the first failed step
 // and names it. Everything it writes stays under VIRTUAL_CUT_DELIVERY_ROOT
-// (default W:/AI/Claude/Virtual Cut): test-runs, builds, evidence/<version> and temp.
+// (else VIRTUAL_CUT_SCRATCH): test-runs, builds, evidence/<version> and temp.
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { root, stopChild } from './shared.mjs';
+import { root, requiredSetting, stopChild } from './shared.mjs';
 
 const args = process.argv.slice(2);
 const option = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const base = path.resolve(process.env.VIRTUAL_CUT_DELIVERY_ROOT || 'W:/AI/Claude/Virtual Cut');
+const base = path.resolve(
+  process.env.VIRTUAL_CUT_DELIVERY_ROOT ||
+    requiredSetting('VIRTUAL_CUT_SCRATCH', 'the folder that keeps builds and evidence'),
+);
 const transport = !args.includes('--no-transport');
+// The transport check runs last; name a missing fixture before the long steps start.
+if (transport)
+  requiredSetting(
+    'VIRTUAL_CUT_TRANSPORT_FIXTURE',
+    'the transport fixture folder (or pass --no-transport)',
+  );
 
 const requested = option('--version');
 if (requested) {
@@ -55,7 +64,6 @@ const env = {
   VIRTUAL_CUT_SUITE_OUTPUT: path.join(base, 'test-runs'),
   VIRTUAL_CUT_PACKAGE_DIR: path.join(base, 'builds'),
   VIRTUAL_CUT_TRANSPORT_OUTPUT: path.join(evidence, 'transport'),
-  VIRTUAL_CUT_TRANSPORT_TEMP: temp,
 };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.VIRTUAL_CUT_COVERAGE_DIR;

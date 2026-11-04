@@ -1,9 +1,10 @@
-import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { writeFile, mkdtemp, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
-import { root, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
-const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));
+import { root, electronEnvironment, scratchPath, transportFixture } from './shared.mjs';
+const scratch = scratchPath('transport');
+await mkdir(scratch, { recursive: true });
+const fixture = await transportFixture();
 const dir = await mkdtemp(path.join(scratch, 'benchmark-'));
 // Reproduce the original synchronizer measurements. The current app must be
 // exercised through its transport controls; see transport-regression-checks.mjs.
@@ -14,7 +15,7 @@ const app = await electron.launch({
   executablePath: baselineExecutable,
   args: [`--user-data-dir=${path.join(dir, 'profile')}`, '--background-test'],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment(),
 });
 const page = await app.firstWindow();
 page.setDefaultTimeout(30000);

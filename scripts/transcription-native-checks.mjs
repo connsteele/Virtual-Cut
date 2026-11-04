@@ -9,18 +9,20 @@ import {
   cueCandidate,
   correctedText,
 } from '../dist-electron/transcript-edits.js';
+import { requiredSetting, scratchPath } from './shared.mjs';
 const require = createRequire(import.meta.url);
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
 const { PROJECT_VERSION } = require('../dist-electron/project-recovery.cjs');
-const root =
-  process.env.VIRTUAL_CUT_ASR_TEST_OUTPUT || 'G:/GPT/Work/virtual-cut/m3-native-validation';
+const root = process.env.VIRTUAL_CUT_ASR_TEST_OUTPUT || scratchPath('asr-native');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'run-'));
 const mic = path.join(dir, 'mic.wav');
 await copyFile(
-  process.env.VIRTUAL_CUT_ASR_TEST_AUDIO ||
-    'G:/GPT/Work/virtual-cut/dji-mic-20260929/microphone.wav',
+  requiredSetting(
+    'VIRTUAL_CUT_ASR_TEST_AUDIO',
+    'a disposable copy of a microphone recording (WAV)',
+  ),
   mic,
 );
 const source = path.join(dir, 'dji-two-tracks.mp4');

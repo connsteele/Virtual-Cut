@@ -92,8 +92,6 @@ if (process.argv.includes('--reopen')) {
         env: {
           ...process.env,
           ELECTRON_RUN_AS_NODE: '1',
-          TEMP: process.env.TEMP || 'G:/GPT/Temp',
-          TMP: process.env.TEMP || 'G:/GPT/Temp',
         },
       },
     );
@@ -115,10 +113,7 @@ if (process.argv.includes('--reopen')) {
       '--background-test',
     ],
     cwd: root,
-    env: electronEnvironment({
-      TEMP: process.env.TEMP || 'G:/GPT/Temp',
-      TMP: process.env.TEMP || 'G:/GPT/Temp',
-    }),
+    env: electronEnvironment({}),
   });
   const page = await app.firstWindow(),
     errors = [],

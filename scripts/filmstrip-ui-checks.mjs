@@ -17,10 +17,7 @@ const app = await electron.launch({
     '--background-test',
   ],
   cwd: root,
-  env: electronEnvironment({
-    TEMP: process.env.TEMP || 'G:/GPT/Temp',
-    TMP: process.env.TEMP || 'G:/GPT/Temp',
-  }),
+  env: electronEnvironment({}),
 });
 const page = await app.firstWindow(),
   errors = [];

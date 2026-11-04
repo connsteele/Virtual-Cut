@@ -7,8 +7,9 @@ import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment, stopChild } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
+import { testPath } from './test-paths.mjs';
 
-const base = process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/review-0.4.3/checks';
+const base = testPath();
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'crash-diagnostics-'));
 const profile = path.join(dir, 'profile');
@@ -36,7 +37,7 @@ const launch = () =>
       '--disable-gpu',
     ],
     cwd: root,
-    env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+    env: electronEnvironment(),
   });
 let app, ownedChild;
 try {

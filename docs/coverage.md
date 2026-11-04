@@ -1,6 +1,6 @@
 # Application coverage
 
-Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's owned G: run directory; override `VIRTUAL_CUT_SUITE_OUTPUT` elsewhere. Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
+Run `npm run test:coverage` on Windows with Node 22.15+ (for synchronous module hooks), the repository dependencies, Python 3, FFmpeg and FFprobe. Outputs go into the suite's own run folder (`VIRTUAL_CUT_SUITE_OUTPUT`; see [testing](testing.md)). Coverage is opt-in and packaging refuses an instrumented build. A normal build removes instrumentation from emitted application modules.
 
 ## M3 review iteration — 0.4.7, October 3, 2026
 
@@ -15,7 +15,9 @@ and `gatesApplied: true`.
 | Native   |     91.63% (3548/3872) |       90.82% (881/970) |     82.25% (2759/3354) |
 | Combined | **85.69% (6631/7738)** | **78.44% (2005/2556)** | **78.62% (5923/7533)** |
 
-Final report: `G:\GPT\Work\virtual-cut\review-0.4.7\final-coverage\combined\index.html`.
+Final report: `review-0.4.7\final-coverage\combined\index.html` in the old scratch folder.
+Reports named in this history lived in a scratch folder removed in the October 2026 drive move;
+the paths are kept relative to it as a record and no longer open.
 The adjacent `summary.json` and `reconciled-tests.json` preserve gate results and
 attempt provenance. Full source evidence is `final-regression/run-MRPgvD`; the
 corrected feedback retry is `feedback-correction/run-Bdz0P1`. Reconciliation verifies
@@ -49,7 +51,7 @@ transcript-wide cue filters, adjusted paired boundaries, overlap target selectio
 | Native   |     90.10% (3133/3477) |       90.55% (805/889) |     80.76% (2406/2979) |
 | Combined | **84.88% (6138/7231)** | **78.49% (1909/2432)** | **78.16% (5445/6966)** |
 
-Report: `G:\GPT\Work\virtual-cut\review-0.4.1\final-checks\run-2MCdFa\coverage\combined\index.html`.
+Report: `review-0.4.1\final-checks\run-2MCdFa\coverage\combined\index.html`.
 The adjacent `summary.json` records complete collection, unchanged gates and two intentionally
 terminated filing/recovery workers with conservative partial counters. The earlier `run-vut47E`
 used the wrong runner profile without a package, skipped desktop prerequisites and is retained as
@@ -71,7 +73,7 @@ All **43 maintained scripts passed** in the full current-source run. A measured 
 | Native   |     90.31% (3067/3396) |       90.73% (793/874) |     80.40% (2273/2827) |
 | Combined | **84.80% (5979/7050)** | **78.26% (1865/2383)** | **77.65% (5162/6647)** |
 
-Final report: `G:\GPT\Work\virtual-cut\review-0.4.0\final-coverage\combined\index.html`, with `summary.json` and `reconciled-tests.json` beside the area reports. Inputs are `coverage\run-MoOdTr`, `context-coverage\run-tjOUaR` and `window-coverage\run-SA2t36` beneath the same review root. Source fingerprints and instrumentation maps match. Explicit later attempts replace earlier counters for the same check, with superseded attempts retained.
+Final report: `review-0.4.0\final-coverage\combined\index.html`, with `summary.json` and `reconciled-tests.json` beside the area reports. Inputs are `coverage\run-MoOdTr`, `context-coverage\run-tjOUaR` and `window-coverage\run-SA2t36` beneath the same review root. Source fingerprints and instrumentation maps match. Explicit later attempts replace earlier counters for the same check, with superseded attempts retained.
 
 | New critical module          |  Lines | Functions | Branches | Floor (L/F/B) |
 | ---------------------------- | -----: | --------: | -------: | ------------- |
@@ -82,7 +84,7 @@ Final report: `G:\GPT\Work\virtual-cut\review-0.4.0\final-coverage\combined\inde
 
 The lower combined percentage than M2 reflects added code in the denominator, including speech-process integration and the floating window. The measured native runtime adapter is only 21.87% line-covered in the maintained suite, which uses a synthetic worker boundary. Separate real-model checks exercise actual extraction/recognition and process exit after success, cancellation, failure and a killed parent; the packaged application also completes a real recognition job. These executions are reported separately, not added to the measured percentage. Python-worker coverage is **not measured by Istanbul**.
 
-The first attempt caught the v3-save cleanup compatibility regression, compact-toolbar/viewer regression, and outdated shell API whitelist; those were corrected and rerun. A hidden-window CSS transition needed reduced motion in the test while keeping the original color assertions. The original failed run remains at `G:\GPT\Work\virtual-cut\test-runs\run-aBQ19i` and is excluded because its application source differs. A later context-form test corrected an exact label selector. Floating renderer counters initially disappeared after close/reopen; collection now runs before each close and uses stable per-window identities, preserving prior windows. No coverage floors were lowered.
+The first attempt caught the v3-save cleanup compatibility regression, compact-toolbar/viewer regression, and outdated shell API whitelist; those were corrected and rerun. A hidden-window CSS transition needed reduced motion in the test while keeping the original color assertions. The original failed run was kept as `test-runs\run-aBQ19i` and is excluded because its application source differs. A later context-form test corrected an exact label selector. Floating renderer counters initially disappeared after close/reopen; collection now runs before each close and uses stable per-window identities, preserving prior windows. No coverage floors were lowered.
 
 Intentional filing/recovery worker termination retains conservative partial counters. Acoustic transcription accuracy, speaker identification, GPU behavior, portable runtime installation and manual multi-monitor UX remain separate from coverage. See [M3 review](m3-review.md) for actual timings, known missed cues and the human review checklist. The normal packaged build contains no coverage instrumentation.
 
@@ -96,7 +98,7 @@ All **39 maintained scripts passed** in the full current-source run. The expande
 | Native   |     92.25% (2643/2865) |       92.35% (664/719) |     81.84% (1781/2176) |
 | Combined | **85.49% (5371/6282)** | **78.50% (1658/2112)** | **78.09% (4459/5710)** |
 
-Reports: `G:\GPT\Work\virtual-cut\m2-closeout\coverage-baseline\combined\index.html`, with renderer/native drill-down, `summary.json` and `reconciled-tests.json` alongside. Input runs are `coverage\run-LyXaCX` and `safety-coverage\run-Xl5kYw` beneath the closeout folder. Application source fingerprints and counter maps are identical. The latest deletion check replaces its earlier passing attempt; other full-run counters remain. Both attempts are recorded. This pass had no failed scripts, prerequisite skips or missing collectors.
+Reports: `m2-closeout\coverage-baseline\combined\index.html`, with renderer/native drill-down, `summary.json` and `reconciled-tests.json` alongside. Input runs are `coverage\run-LyXaCX` and `safety-coverage\run-Xl5kYw` beneath the closeout folder. Application source fingerprints and counter maps are identical. The latest deletion check replaces its earlier passing attempt; other full-run counters remain. Both attempts are recorded. This pass had no failed scripts, prerequisite skips or missing collectors.
 
 The two intentionally terminated filing/recovery workers retain conservative partial counters; their parent recovery scenarios passed. The range interaction script completed in 464 seconds under instrumentation. It was slow, not deadlocked; coverage timing is not an app-performance measurement.
 
@@ -128,7 +130,7 @@ All 37 maintained scripts have passing evidence across the full run and explicit
 | Native   | 91.74% (2423/2641) |   91.75% (612/667) | 81.43% (1658/2036) |
 | Combined | 84.53% (5057/5982) | 77.00% (1547/2009) | 77.69% (4270/5496) |
 
-Local report: `G:\GPT\Work\virtual-cut\review-0.3.21\coverage-baseline\combined\index.html`; corresponding `renderer` and `native` directories provide separate drill-down. `summary.json` and `reconciled-tests.json` record the exact runs and correction history. The first full pass caught compact Library/four-overlap Cut layout regressions and missing snapshots before native window close. These were fixed and rerun without weakening assertions. Original failed reports remain. Application TS fingerprints/counter maps match across the reconciled attempts; only layout CSS and test collection changed.
+Local report: `review-0.3.21\coverage-baseline\combined\index.html`; corresponding `renderer` and `native` directories provide separate drill-down. `summary.json` and `reconciled-tests.json` record the exact runs and correction history. The first full pass caught compact Library/four-overlap Cut layout regressions and missing snapshots before native window close. These were fixed and rerun without weakening assertions. Original failed reports remain. Application TS fingerprints/counter maps match across the reconciled attempts; only layout CSS and test collection changed.
 
 The forced filing-writer and transaction-crash processes retain conservative partial snapshots; the parent recovery scenarios completed and passed. These partial tails are listed explicitly. Renderer unload-only execution is not claimed as covered.
 

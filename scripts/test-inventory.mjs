@@ -19,6 +19,7 @@ export const fast = [
   'proposal-previews.test.mjs',
   'job-lanes.test.mjs',
   'visual-events.test.mjs',
+  'script-paths.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',

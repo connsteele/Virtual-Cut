@@ -338,7 +338,12 @@ service.switching = false;
 service.pump();
 // Filing runs in the media lane (VC-145).
 const activeId = service.active.media.job.id;
+// Cancelling another filing queue while this one writes leaves the live job running.
+// The match runs before cancelFiling's first await, so check it without waiting.
+const otherCancel = service.cancelFiling(id, cancelled.id);
+assert.equal(service.active.media?.job.id, activeId);
 await service.job(id, activeId, 'cancel');
+await otherCancel;
 await wait();
 assert.equal(individualRecords().filter((e) => e.state === 'cancelled').length, 2);
 const survivor = individualRecords().find((e) => e.state === 'verified');

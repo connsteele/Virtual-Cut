@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, writeFile, realpath, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { root, require, stopChild } from './shared.mjs';
+import { root, require, scratchPath, stopChild } from './shared.mjs';
 import {
   fast,
   native,
@@ -27,9 +27,7 @@ if (only?.some((s) => !known.includes(s)))
   throw new Error('Unknown --only test. Use names from test-inventory.mjs.');
 const jobs = Number(process.argv.find((a) => a.startsWith('--jobs='))?.slice(7) || 4);
 if (!Number.isInteger(jobs) || jobs < 1) throw new Error('--jobs takes a whole number from 1.');
-const base = path.resolve(
-  process.env.VIRTUAL_CUT_SUITE_OUTPUT || 'G:/GPT/Work/virtual-cut/test-runs',
-);
+const base = path.resolve(process.env.VIRTUAL_CUT_SUITE_OUTPUT || scratchPath('test-runs'));
 await mkdir(base, { recursive: true });
 const directory = await mkdtemp(path.join(base, 'run-'));
 if (process.argv.includes('--coverage'))
