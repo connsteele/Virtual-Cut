@@ -24,6 +24,7 @@ import { proposalStatus } from '../../electron/proposal-edits';
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { TranscriptInlineEdit } from './TranscriptInlineEdit';
 import { SpeechSetup } from './SpeechSetup';
+import { ScreenTextSetup } from './ScreenTextSetup';
 import { background } from './background';
 import { useWindowFocus } from './useWindowFocus';
 
@@ -717,7 +718,7 @@ export function TranscriptWindow() {
               </div>
             )}
             <Button
-              title="Speech engine"
+              title="Speech and screen text engines"
               aria-label="Speech engine"
               aria-expanded={setup}
               onClick={() => setSetup(!setup)}
@@ -819,6 +820,7 @@ export function TranscriptWindow() {
           <SpeechSetup api={api} runtime={runtime} onRuntimeChanged={refreshRuntime} />
         </section>
       )}
+      {setup && <ScreenTextSetup api={api} />}
       {error && (
         <p className={s.error} role="alert">
           {error}

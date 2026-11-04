@@ -47,6 +47,7 @@ export const native = [
 ];
 export const desktop = [
   'speech-setup-ui.mjs',
+  'screen-text-setup-ui.mjs',
   'crash-diagnostics-checks.mjs',
   'transcription-review-ui.mjs',
   'transcription-ui-checks.mjs',
@@ -75,6 +76,7 @@ export const desktop = [
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
+  'screen-text-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
