@@ -65,16 +65,15 @@ await service.close();
 let app;
 const errors = [];
 const shots = [];
+// A hidden window paints lazily: the first capture can show the frame before the last change,
+// so capture once to paint, then again (as agent-access-ui does).
 const shot = async (name) => {
-  const image = await app.evaluate(async ({ BrowserWindow }) =>
-    (
-      await BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, {
-        stayHidden: true,
-      })
-    )
-      .toPNG()
-      .toString('base64'),
-  );
+  const image = await app.evaluate(async ({ BrowserWindow }) => {
+    const wc = BrowserWindow.getAllWindows()[0].webContents;
+    await wc.capturePage(undefined, { stayHidden: true });
+    await new Promise((r) => setTimeout(r, 150));
+    return (await wc.capturePage(undefined, { stayHidden: true })).toPNG().toString('base64');
+  });
   await writeFile(path.join(dir, name), Buffer.from(image, 'base64'));
   shots.push(name);
 };
