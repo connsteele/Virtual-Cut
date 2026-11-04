@@ -1,6 +1,6 @@
 # Agent apps
 
-How agent apps such as Claude Code or Claude Desktop connect to Virtual Cut, what they read and propose, and how you review their proposals. Split out of the [user guide](user-guide.md) in Sprint 10 so each topic is its own paragraph. See decisions [0014](decisions/0014-agent-access-boundary.md), [0015](decisions/0015-agent-proposals.md), [0016](decisions/0016-mic-intents-and-proposal-card.md) and [0018](decisions/0018-batch-records.md).
+How agent apps such as Claude Code or Claude Desktop connect to Virtual Cut, what they read and propose, and how you review their proposals. Split out of the [user guide](user-guide.md) in Sprint 10 so each topic is its own paragraph. See decisions [0014](decisions/0014-agent-access-boundary.md), [0015](decisions/0015-agent-proposals.md), [0016](decisions/0016-mic-intents-and-proposal-card.md), [0018](decisions/0018-batch-records.md) and [0020](decisions/0020-picture-events.md).
 
 ## Connecting
 
@@ -9,6 +9,8 @@ How agent apps such as Claude Code or Claude Desktop connect to Virtual Cut, wha
 ## What an agent reads and proposes
 
 A paired app reads the open project: the screen, batches with their game and brief, transcripts, and existing markers, clips and notes. It can also propose markers, timed notes, splits and clip ranges.
+
+It can also ask where a recording's picture changes (`get_visual_events`): black screens, still pictures, hard cuts and fades between two times, as short text lines in recording seconds, read from the events the picture pass stored ([decision 0020](decisions/0020-picture-events.md)). Bursts of cuts under half a second apart come as one line, and a whole hour costs an agent a few thousand tokens at most. The agent never runs video tools itself. Until a recording's picture has been read, the answer says so (waiting, reading with its percent, failed, or not read yet: press **Analyse picture now**, the scan icon on its card), so an agent never mistakes an unread recording for one without scene changes.
 
 Before proposing, an agent reads the intent guide (`get_intent_guide`): Split and Clip start/end are commands, and everything else you say is read as a marker, general context, a note for your video notes, or an edit instruction. A recording with no commentary is proposed from the game alone, recurring moments such as an MVP screen get clips only for the first few, and a part of one continuous scene becomes a range marker rather than a clip. Tagged notes (a `.txt` beside a recording, see [the intent guide](intent-guide.md)) give it your own examples.
 

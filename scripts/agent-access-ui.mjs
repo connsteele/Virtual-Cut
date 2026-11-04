@@ -1,12 +1,12 @@
 import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
+import { agent, initialize, tool } from './mcp-test-client.mjs';
 
 // VC-159/VC-160: an agent app pairs, launches `--mcp`, reads over MCP, and loses access on
 // revoke or when access is off. The launcher never opens a window or a second app.
@@ -41,65 +41,6 @@ async function capture(name) {
   });
   await writeFile(path.join(dir, `${name}.png`), Buffer.from(data, 'base64'));
 }
-/** Starts the configured launcher and speaks newline-delimited JSON-RPC to it. */
-function agent(config) {
-  const { command, args, env = {} } = JSON.parse(config).mcpServers['virtual-cut'];
-  const child = spawn(command, args, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...electronEnvironment(), ...env },
-  });
-  let first;
-  let out = '',
-    stderr = '',
-    id = 0;
-  const waiting = new Map();
-  child.stdout.on('data', (d) => {
-    first ??= String(d);
-    out += d;
-    let end;
-    while ((end = out.indexOf('\n')) >= 0) {
-      const line = out.slice(0, end).trim();
-      out = out.slice(end + 1);
-      if (!line) continue;
-      const message = JSON.parse(line);
-      waiting.get(message.id)?.(message);
-    }
-  });
-  child.stderr.on('data', (d) => (stderr += d));
-  const exited = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
-  const call = (method, params) =>
-    new Promise((resolve, reject) => {
-      const n = ++id;
-      const timer = setTimeout(() => reject(new Error(`${method} timed out: ${stderr}`)), 20000);
-      waiting.set(n, (m) => {
-        clearTimeout(timer);
-        resolve(m);
-      });
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
-    });
-  return {
-    call,
-    notify: (method) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n'),
-    exited,
-    stderr: () => stderr,
-    first: () => first,
-    end: () => child.stdin.end(),
-    kill: () => child.kill(),
-  };
-}
-async function initialize(client) {
-  const init = await client.call('initialize', {
-    protocolVersion: '2025-11-25',
-    capabilities: {},
-    clientInfo: { name: 'agent-access-check', version: '1' },
-  });
-  assert.equal(init.result.serverInfo.name, 'virtual-cut');
-  client.notify('notifications/initialized');
-}
-const tool = async (client, name, args = {}) => {
-  const reply = await client.call('tools/call', { name, arguments: args });
-  return { error: !!reply.result.isError, text: reply.result.content[0].text };
-};
 try {
   await launch();
   const windows = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
@@ -157,6 +98,7 @@ try {
     'get_project_summary',
     'get_proposal_decisions',
     'get_transcript',
+    'get_visual_events',
     'submit_proposals',
   ]);
   // Only proposing is not read-only, and it is never destructive (VC-162).

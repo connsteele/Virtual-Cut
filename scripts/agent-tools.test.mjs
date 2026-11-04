@@ -7,6 +7,7 @@ import {
   projectSummary,
   readableName,
   transcriptLines,
+  visualEventLines,
 } from '../dist-electron/agent-tools.js';
 import { defaultContext } from '../dist-electron/project-context.js';
 
@@ -205,6 +206,89 @@ assert.equal(readableName(source, 'r1'), 'Cai session 1');
 assert.equal(readableName(source, 'b1'), 'Cai');
 assert.equal(readableName(undefined, 'made-up'), 'made-up');
 
+// Picture events (VC-171): the stored events of the current file, as text lines for a window.
+const events = [
+  { kind: 'black', start: 15.45, end: 18.583 },
+  { kind: 'cut', start: 240.1, score: 31.2 },
+  { kind: 'cut', start: 240.4, score: 18 },
+  { kind: 'cut', start: 240.75, score: 22.5 },
+  { kind: 'still', start: 250, end: 253.5, brightness: 61 },
+  { kind: 'cut', start: 300, score: 15.4 },
+  { kind: 'fade', start: 359.5, end: 360.3, from: 120, to: 20 },
+  { kind: 'black', start: 590, end: 600, toEnd: true },
+];
+const jobs = [];
+const pictured = {
+  ...source,
+  pictureEvents: (id) => (id === 'r1' ? { events } : null),
+  jobs: () => jobs,
+};
+const scenes = visualEventLines(pictured, { recordingId: 'r1', start: 240, end: 360 });
+assert.equal(scenes.state, 'ready');
+assert.deepEqual(scenes.events, [
+  '240.10-240.75  cuts  3 in 0.7s, top score 31.2  [4:00.1-4:00.8]',
+  '250.00-253.50  still picture  3.5s  brightness 61  [4:10.0-4:13.5]',
+  '300.00  cut  score 15.4  [5:00.0]',
+  '359.50-360.30  darker  brightness 120 -> 20  [5:59.5-6:00.3]',
+]);
+assert.deepEqual(scenes.counts, { black: 0, still: 1, cut: 4, fade: 1 });
+assert.match(scenes.how, /recording/);
+// A span reaching into the window counts; the window ends at the recording's end.
+const tail = visualEventLines(pictured, { recordingId: 'r1', start: 595, end: 900 });
+assert.equal(tail.toSeconds, 600);
+assert.deepEqual(tail.events, ['590.00-600.00  black  10.0s  [9:50.0-10:00.0]']);
+assert.deepEqual(
+  visualEventLines(pictured, { recordingId: 'r1', kinds: ['black'] }).events.length,
+  2,
+);
+// Paging: 200 lines a page, then the rest from next_cursor.
+const many = Array.from({ length: 450 }, (_, i) => ({ kind: 'cut', start: i, score: 20 }));
+const paged = { ...pictured, pictureEvents: () => ({ events: many }) };
+const first = visualEventLines(paged, { recordingId: 'r1' });
+assert.equal(first.events.length, 200);
+assert.equal(first.nextCursor, '200');
+const last = visualEventLines(paged, { recordingId: 'r1', cursor: '400' });
+assert.equal(last.events.length, 50);
+assert.equal(last.nextCursor, undefined);
+assert.throws(() => visualEventLines(paged, { recordingId: 'r1', cursor: 'x' }), AgentReadError);
+assert.throws(
+  () => visualEventLines(pictured, { recordingId: 'r1', start: 700 }),
+  AgentReadError,
+  'a window after the end of the recording is refused',
+);
+assert.throws(() => visualEventLines(pictured, { recordingId: 'sample' }), AgentReadError);
+// No stored events: say where the pass stands, never an empty list that reads as no changes.
+const unread = { ...pictured, pictureEvents: () => null };
+const none = visualEventLines(unread, { recordingId: 'r1' });
+assert.equal(none.state, 'not analysed');
+assert.equal(none.events, undefined);
+assert.match(none.note, /Analyse picture now/);
+jobs.push({
+  id: 'j1',
+  sourceId: 'r1',
+  kind: 'visual',
+  state: 'failed',
+  progress: 0.2,
+  message: 'FFmpeg stopped',
+  updated: '2026-11-04T01:00:00Z',
+});
+assert.equal(visualEventLines(unread, { recordingId: 'r1' }).state, 'failed');
+jobs.unshift({
+  ...jobs[0],
+  id: 'j2',
+  state: 'queued',
+  message: 'Paused: transcription running',
+  updated: '2026-11-04T02:00:00Z',
+});
+assert.match(
+  visualEventLines(unread, { recordingId: 'r1' }).note,
+  /waiting \(Paused: transcription/,
+);
+jobs.unshift({ ...jobs[0], id: 'j3', state: 'running', progress: 0.425 });
+const reading = visualEventLines(unread, { recordingId: 'r1' });
+assert.equal(reading.state, 'reading');
+assert.match(reading.note, /42%/);
+
 // No answer may carry a path, media URL or note link.
 const everything = JSON.stringify([
   view,
@@ -215,7 +299,11 @@ const everything = JSON.stringify([
   next,
   marked,
   annotations(source, 'b1', 'r1'),
+  scenes,
+  none,
 ]);
 for (const secret of ['I:\\\\Recordings', 'media://', 'C:\\\\x', 'sourcePath', 'poster'])
   assert.ok(!everything.includes(secret), `answers leak ${secret}`);
-console.log('Agent read tools: views, summaries, context, paging and no paths passed.');
+console.log(
+  'Agent read tools: views, summaries, context, paging, picture events and no paths passed.',
+);
