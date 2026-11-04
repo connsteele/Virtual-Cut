@@ -56,10 +56,32 @@ import {
   onFrame,
   readBlacks,
   snapArgs,
+  snapFromBlacks,
   snapWindow,
   type SplitSnap,
 } from './split-snap.js';
-import { jobLanes, laneOf, nextJob, type JobLane } from './job-lanes.js';
+import {
+  jobLanes,
+  laneOf,
+  nextJob,
+  pictureHold,
+  pictureUse,
+  pictureYields,
+  rank,
+  type JobLane,
+  type PictureConditions,
+} from './job-lanes.js';
+import {
+  VISUAL_VERSION,
+  buildEvents,
+  gpuDecoder,
+  joinFrames,
+  joinStills,
+  summarize,
+  visualHeight,
+  type VisualUse,
+} from './visual-events.js';
+import { cpuWorkers, gpuReads, runPass, type PassProgress } from './visual-pass.cjs';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -424,6 +446,18 @@ export class ProjectService {
     const key = `${source.fingerprint}:${spoken.toFixed(3)}`;
     const known = this.snaps.get(key);
     if (known) return known;
+    // The picture pass (VC-180) already found every black screen with the same rule.
+    const stored = store.pictureEvents(sourceId, false);
+    if (stored) {
+      const snap = snapFromBlacks(
+        spoken,
+        r.duration,
+        stored.events.flatMap((e) => (e.kind === 'black' ? [e] : [])),
+      );
+      return Promise.resolve(
+        snap && { ...snap, time: onFrame(snap.time, store.frameIndex(sourceId)?.frameTimes) },
+      );
+    }
     const offset = r.sourceStart || 0;
     const decode = async (from: number, to: number) => {
       const lines: string[] = [];
@@ -602,6 +636,9 @@ export class ProjectService {
       this.filmstripFailed.clear();
       await this.filmstripCache.close();
       await this.stopJobs();
+      if (this.pictureTimer) clearInterval(this.pictureTimer);
+      this.pictureTimer = undefined;
+      this.pictureProgress.clear();
       await this.store?.checkpoint('auto', true);
       this.store?.close();
       this.store = null;
@@ -755,6 +792,7 @@ export class ProjectService {
       r.poster = existsSync(poster) ? await this.grant(poster) : '';
     }
     snapshot.filmstrips = this.filmstripStates(store);
+    snapshot.pictures = store.pictureSummaries();
     if (!existsSync(store.data.project.destination))
       snapshot.warning =
         'The destination folder is offline. Your saved project is still available.';
@@ -1958,22 +1996,344 @@ export class ProjectService {
   private pump() {
     if (this.switching || !this.store) return;
     for (const lane of jobLanes) {
+      // A picture pass gives way to anything ranked ahead of it and to its pause rules.
+      const current = this.active[lane];
+      if (current?.job.kind === 'visual') {
+        const why = pictureYields(
+          current.job,
+          [...this.store.jobs()].reverse(),
+          this.running(),
+          this.pictureConditions(),
+        );
+        if (why) current.controller.abort(new PictureYield(why));
+      }
       const job = this.nextJob(lane);
       if (!job) continue;
+      // Filmstrips go before background picture passes; a pass asked for goes first.
+      if (
+        job.kind === 'visual' &&
+        rank(job) === 3 &&
+        (this.filmstripBuild || this.filmstripSource())
+      )
+        continue;
       // Filmstrips share the media lane and give way to any media job.
       if (lane === 'media') this.filmstripBuild?.controller.abort();
       const controller = new AbortController();
-      const finished = this.run(job, controller.signal).finally(() => {
+      const work =
+        job.kind === 'visual'
+          ? this.runPicture(job, controller.signal)
+          : this.run(job, controller.signal);
+      const finished = work.finally(() => {
         this.active[lane] = null;
         this.pump();
       });
       this.active[lane] = { job, controller, finished };
     }
     this.makeFilmstrips();
+    this.notePictureWaits();
+  }
+  private running() {
+    return jobLanes.flatMap((l) => this.active[l]?.job ?? []);
   }
   private nextJob(lane: JobLane) {
-    const running = jobLanes.flatMap((l) => this.active[l]?.job ?? []);
-    return nextJob(lane, [...this.store!.jobs()].reverse(), running);
+    return nextJob(
+      lane,
+      [...this.store!.jobs()].reverse(),
+      this.running(),
+      this.pictureConditions(),
+    );
+  }
+  // ---- Picture pass (VC-180) ----
+  /** Seconds since the last keyboard or mouse input; main reads Electron's system idle time. */
+  idleSeconds: () => number = () => 0;
+  private previewIsPlaying = false;
+  // Whether NVDEC reads a recording, by source id and fingerprint; tried once per session.
+  private pictureGpu = new Map<string, boolean>();
+  // Chunks read so far by pass, kept while it waits.
+  private pictureProgress = new Map<string, PassProgress>();
+  private pictureTimer?: NodeJS.Timeout;
+  previewPlaying(playing: boolean) {
+    if (typeof playing !== 'boolean') throw new Error('Invalid playback state.');
+    if (this.previewIsPlaying === playing) return;
+    this.previewIsPlaying = playing;
+    this.pump();
+  }
+  private pictureKey(sourceId: string) {
+    const source = this.store?.sources().find((s) => s.id === sourceId);
+    return source ? `${source.id}:${source.fingerprint}` : sourceId;
+  }
+  private pictureConditions(): PictureConditions {
+    const idle = !this.previewIsPlaying && this.idleSeconds() >= 300;
+    return {
+      previewPlaying: this.previewIsPlaying,
+      idle,
+      gpu: (job) => {
+        if (process.env.VIRTUAL_CUT_PICTURE_GPU === '0') return false;
+        const codec = this.store?.data.model.recordings.find((r) => r.id === job.sourceId)?.codec;
+        if (!gpuDecoder(codec)) return false;
+        return this.pictureGpu.get(this.pictureKey(job.sourceId));
+      },
+    };
+  }
+  /** Keeps the Jobs line of each waiting pass current, and watches idle time while any wait. */
+  private notePictureWaits() {
+    const s = this.store;
+    if (!s) return;
+    const jobs = [...s.jobs()].reverse();
+    const passes = jobs.filter(
+      (j) => j.kind === 'visual' && ['queued', 'running'].includes(j.state),
+    );
+    const conditions = this.pictureConditions();
+    for (const job of passes) {
+      if (job.state !== 'queued') continue;
+      const message = pictureHold(job, jobs, this.running(), conditions) || 'Waiting';
+      if (job.message !== message)
+        s.putJob({ ...job, message, use: undefined, updated: new Date().toISOString() });
+    }
+    if (passes.length && !this.pictureTimer) {
+      this.pictureTimer = setInterval(() => this.pump(), 2000);
+      this.pictureTimer.unref?.();
+    } else if (!passes.length && this.pictureTimer) {
+      clearInterval(this.pictureTimer);
+      this.pictureTimer = undefined;
+    }
+  }
+  private enqueuePicture(sourceId: string, origin: 'user' | 'background') {
+    const s = this.require();
+    const r = s.data.model.recordings.find((r) => r.id === sourceId);
+    if (!r || r.availability !== 'ready' || r.retained) return false;
+    const queued = s
+      .jobs()
+      .find(
+        (j) =>
+          j.sourceId === sourceId && j.kind === 'visual' && ['queued', 'running'].includes(j.state),
+      );
+    if (queued) {
+      if (origin === 'user' && queued.origin === 'background')
+        s.putJob({ ...queued, origin, updated: new Date().toISOString() });
+      return true;
+    }
+    if (s.pictureEvents(sourceId, false)) return false;
+    s.putJob({
+      id: randomUUID(),
+      sourceId,
+      kind: 'visual',
+      origin,
+      state: 'queued',
+      progress: 0,
+      message: 'Waiting',
+      updated: new Date().toISOString(),
+    });
+    return true;
+  }
+  /** Analyse picture now: on one recording, or on a batch's recordings from Jobs. */
+  async analysePicture(id: string, sourceIds: string[]) {
+    const s = this.require(id);
+    if (
+      !Array.isArray(sourceIds) ||
+      !sourceIds.length ||
+      sourceIds.length > 500 ||
+      sourceIds.some((x) => typeof x !== 'string')
+    )
+      throw new Error('Choose recordings to analyse.');
+    for (const sourceId of new Set(sourceIds))
+      if (!s.data.model.recordings.some((r) => r.id === sourceId))
+        throw new Error('Recording not found.');
+    for (const sourceId of new Set(sourceIds)) this.enqueuePicture(sourceId, 'user');
+    this.pump();
+    return this.snapshot();
+  }
+  private async runPicture(job: MediaJob, signal: AbortSignal) {
+    const s = this.require(),
+      source = s.sources().find((x) => x.id === job.sourceId),
+      record = s.data.model.recordings.find((r) => r.id === job.sourceId);
+    const key = this.pictureKey(job.sourceId);
+    const progress = this.pictureProgress.get(job.id) ?? {
+      chunks: new Map(),
+      elapsedMs: 0,
+      used: new Set(),
+    };
+    this.pictureProgress.set(job.id, progress);
+    const began = performance.now();
+    this.diagnostics?.record('job-start', {
+      jobId: job.id,
+      sourceId: job.sourceId,
+      projectId: s.data.project.id,
+      kind: job.kind,
+    });
+    let use: VisualUse | undefined;
+    let fraction = job.progress || 0,
+      last = 0;
+    const elapsed = () => progress.elapsedMs + Math.round(performance.now() - began);
+    const put = (force = false) => {
+      if (!force && Date.now() - last < 500) return;
+      last = Date.now();
+      s.putJob({
+        ...job,
+        state: 'running',
+        progress: fraction,
+        use,
+        message: `Reading picture · ${useText(use)}`,
+        started: job.started,
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    };
+    job = { ...job, started: new Date().toISOString() };
+    put(true);
+    let failureCode: string | undefined;
+    try {
+      if (!source || !record || record.availability !== 'ready')
+        throw new Error('Source file is not registered. Import it again.');
+      const actual = await identify(source.file, source.id);
+      if (actual.fingerprint !== source.fingerprint || actual.modified !== source.modified)
+        throw new Error(
+          'Source changed since import. Relink an unchanged copy or import it as new.',
+        );
+      const decoder =
+        process.env.VIRTUAL_CUT_PICTURE_GPU === '0' ? undefined : gpuDecoder(record.codec);
+      if (decoder && !this.pictureGpu.has(key))
+        this.pictureGpu.set(
+          key,
+          await gpuReads(
+            this.tool('ffmpeg'),
+            source.file,
+            decoder,
+            record.sourceStart || 0,
+            signal,
+          ),
+        );
+      const allowed = () => {
+        const why = pictureYields(
+          job,
+          [...s.jobs()].reverse(),
+          this.running(),
+          this.pictureConditions(),
+        );
+        if (why) {
+          this.active.media?.controller.abort(new PictureYield(why));
+          return { gpu: false, cpu: 0 };
+        }
+        const now = pictureUse(job, this.pictureConditions());
+        if (now !== use) {
+          use = now;
+          put(true);
+        }
+        return {
+          gpu: now === 'gpu' || now === 'gpu+cpu',
+          cpu: now === 'gpu+cpu' || now === 'cpu' ? cpuWorkers() : 0,
+        };
+      };
+      const chunks = await runPass(
+        {
+          ffmpeg: this.tool('ffmpeg'),
+          file: source.file,
+          offset: record.sourceStart || 0,
+          duration: record.duration,
+          height: visualHeight(record.width, record.height),
+          gpu: this.pictureGpu.get(key) ? decoder : undefined,
+          chunkSeconds: Number(process.env.VIRTUAL_CUT_PICTURE_CHUNK) || undefined,
+          allowance: allowed,
+          progress: (n) => {
+            fraction = Math.max(fraction, n);
+            put();
+          },
+          gpuFailed: (e) => {
+            this.pictureGpu.set(key, false);
+            this.diagnostics?.record('operation-failed', {
+              kind: 'picture-gpu',
+              errorCode: errorCode(e),
+            });
+          },
+          signal,
+        },
+        progress,
+      );
+      const frames = joinFrames(chunks);
+      const events = buildEvents(frames, joinStills(chunks, record.duration), record.duration);
+      const final = await stat(source.file);
+      if (
+        this.store !== s ||
+        final.size !== source.bytes ||
+        final.mtimeMs !== source.modified ||
+        !s.sources().some((x) => x.id === source.id && x.fingerprint === source.fingerprint)
+      )
+        throw new Error('Recording changed while its picture was read.');
+      const stored = {
+        version: VISUAL_VERSION,
+        events,
+        frames: {
+          times: Float32Array.from(frames.times),
+          brightness: Uint8Array.from(frames.brightness, (y) => Math.round(y)),
+          cut: Uint8Array.from(frames.cut, (c) => Math.min(255, Math.round(c))),
+        },
+        use: (progress.used.has('gpu')
+          ? progress.used.has('cpu')
+            ? 'gpu+cpu'
+            : 'gpu'
+          : 'cpu') as VisualUse,
+        elapsedMs: elapsed(),
+        created: new Date().toISOString(),
+      };
+      s.putPictureEvents(source.id, source.fingerprint, stored);
+      const counts = summarize(stored).counts;
+      this.pictureProgress.delete(job.id);
+      s.putJob({
+        ...job,
+        state: 'succeeded',
+        progress: 1,
+        use: stored.use,
+        message: `Picture events ready · ${counts.black} black, ${counts.still} still, ${counts.cut} cuts, ${counts.fade} fades`,
+        elapsedMs: stored.elapsedMs,
+        updated: new Date().toISOString(),
+      });
+    } catch (e) {
+      failureCode = errorCode(e);
+      const reason: unknown = signal.reason;
+      if (signal.aborted && (reason instanceof PictureYield || this.switching)) {
+        // Waits with the chunks it has read and carries on later.
+        progress.elapsedMs = elapsed();
+        s.putJob({
+          ...job,
+          state: 'queued',
+          progress: fraction,
+          use: undefined,
+          message: reason instanceof PictureYield ? reason.message : 'Waiting',
+          elapsedMs: elapsed(),
+          updated: new Date().toISOString(),
+        });
+        if (this.switching) this.pictureProgress.delete(job.id);
+        return;
+      }
+      this.pictureProgress.delete(job.id);
+      s.putJob({
+        ...job,
+        state: signal.aborted ? 'cancelled' : 'failed',
+        progress: 0,
+        use: undefined,
+        message: signal.aborted ? 'Cancelled' : e instanceof Error ? e.message : String(e),
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    } finally {
+      const finalJob = s.jobs().find((j) => j.id === job.id);
+      this.diagnostics?.record(
+        finalJob?.state === 'succeeded'
+          ? 'job-end'
+          : finalJob?.state === 'queued'
+            ? 'job-paused'
+            : signal.aborted
+              ? 'job-cancelled'
+              : 'job-failed',
+        {
+          jobId: job.id,
+          sourceId: job.sourceId,
+          kind: job.kind,
+          elapsedMs: elapsed(),
+          errorCode: finalJob?.state === 'queued' ? undefined : failureCode,
+        },
+      );
+    }
   }
   private wantFilmstrip(sourceId: string) {
     const source = this.store?.sources().find((x) => x.id === sourceId);
@@ -1989,8 +2349,42 @@ export class ProjectService {
   }
   private makeFilmstrips() {
     const s = this.store;
-    if (!s || this.active.media || this.switching || this.filmstripBuild || this.nextJob('media'))
+    const next = s && this.nextJob('media');
+    // Only a background picture pass waits for filmstrips.
+    if (
+      !s ||
+      this.active.media ||
+      this.switching ||
+      this.filmstripBuild ||
+      (next && !(next.kind === 'visual' && rank(next) === 3))
+    )
       return;
+    const source = this.filmstripSource();
+    if (!source) return;
+    this.filmstripNext.delete(source.id);
+    const file = filmstripFile(s.data.project.cache, source),
+      controller = new AbortController();
+    const finished = this.makeFilmstrip(s, source, file, controller.signal)
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        this.filmstripFailed.add(file);
+        this.diagnostics?.record('operation-failed', {
+          kind: 'filmstrip',
+          errorCode: errorCode(e),
+        });
+      })
+      .finally(() => {
+        this.filmstripBuild = null;
+        this.onChange?.();
+        setImmediate(() => this.pump());
+      });
+    this.filmstripBuild = { sourceId: source.id, controller, finished };
+    this.onChange?.();
+  }
+  /** The next recording that needs a filmstrip, if any. */
+  private filmstripSource() {
+    const s = this.store;
+    if (!s) return undefined;
     const sources = s.sources();
     const ready = new Set(
       s.data.model.recordings
@@ -2010,26 +2404,7 @@ export class ProjectService {
       source = candidate;
       break;
     }
-    if (!source) return;
-    this.filmstripNext.delete(source.id);
-    const file = filmstripFile(s.data.project.cache, source),
-      controller = new AbortController();
-    const finished = this.makeFilmstrip(s, source, file, controller.signal)
-      .catch((e) => {
-        if (controller.signal.aborted) return;
-        this.filmstripFailed.add(file);
-        this.diagnostics?.record('operation-failed', {
-          kind: 'filmstrip',
-          errorCode: errorCode(e),
-        });
-      })
-      .finally(() => {
-        this.filmstripBuild = null;
-        this.onChange?.();
-        setImmediate(() => this.makeFilmstrips());
-      });
-    this.filmstripBuild = { sourceId: source.id, controller, finished };
-    this.onChange?.();
+    return source;
   }
   private filmstripStates(store: ProjectStore) {
     const states: Record<string, 'ready' | 'making' | 'waiting'> = {};
@@ -2431,6 +2806,10 @@ export class ProjectService {
             });
           }
         }
+        // The picture pass (VC-180) follows in the background, after the transcript. Checks
+        // run with it manual so imports elsewhere in the suite don't start GPU work.
+        if (process.env.VIRTUAL_CUT_PICTURE_PASS !== 'manual')
+          this.enqueuePicture(source.id, 'background');
       } else {
         // Publish a fresh generation. Windows may lock a preview currently playing;
         // replacing that file breaks waveform upgrades and retry preparation.
@@ -2633,4 +3012,18 @@ export class ProjectService {
       if (pcm) await unlink(pcm).catch(() => {});
     }
   }
+}
+
+/** A picture pass stopping to wait (VC-180), as opposed to being cancelled. */
+class PictureYield extends Error {}
+
+/** What a picture pass decodes with, as Jobs shows it. */
+function useText(use?: VisualUse) {
+  return use === 'gpu+cpu'
+    ? 'GPU decoder + CPU'
+    : use === 'gpu'
+      ? 'GPU decoder'
+      : use === 'cpu'
+        ? 'CPU'
+        : 'starting';
 }

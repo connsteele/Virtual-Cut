@@ -34,6 +34,10 @@ import {
 import { decodeTimes, encodeTimes, extractFrameIndexes } from './frame-index.js';
 import type { FrameIndex } from './frame-index.js' with { 'resolution-mode': 'import' };
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
+import { VISUAL_VERSION, summarize } from './visual-events.js';
+import type { VisualEvents, VisualSummary } from './visual-events.js' with {
+  'resolution-mode': 'import',
+};
 
 export interface NativeSource {
   id: string;
@@ -156,7 +160,10 @@ export class ProjectStore {
         if (!this.data.project.id || !Array.isArray(this.data.model.recordings))
           throw new Error('Project data is invalid.');
         for (const job of this.jobs())
-          if (['running', 'queued'].includes(job.state))
+          if (job.kind === 'visual' && ['running', 'queued'].includes(job.state))
+            // Background picture passes simply carry on; they start again from the first chunk.
+            this.putJob({ ...job, state: 'queued', message: 'Waiting', use: undefined });
+          else if (['running', 'queued'].includes(job.state))
             this.putJob({
               ...job,
               state: 'interrupted',
@@ -167,6 +174,11 @@ export class ProjectStore {
       // Additive native receipts are kept outside the edit journal. Old M1
       // projects open without changing annotation or timing identities.
       this.db.exec('CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+      // Picture events (VC-180) are found again from the recording, so they sit beside the
+      // model like frame indexes, keyed by source fingerprint, and never enter Undo.
+      this.db.exec(
+        'CREATE TABLE IF NOT EXISTS picture_events (source_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, version INTEGER NOT NULL, body TEXT NOT NULL, times BLOB NOT NULL, brightness BLOB NOT NULL, cut BLOB NOT NULL)',
+      );
       this.transcripts = new TranscriptStore(this.db);
       this.proposals = new ProposalStore(this.db);
       this.proposals.infer = (proposals) =>
@@ -519,8 +531,67 @@ export class ProjectStore {
       )
       .run(sourceId, fingerprint, encodeTimes(index.frameTimes), encodeTimes(index.keys));
   }
+  /** A recording's picture events, or null when missing, older or from another file revision. */
+  pictureEvents(sourceId: string, withFrames = true): VisualEvents | null {
+    const source = this.sources().find((s) => s.id === sourceId);
+    const row = this.db
+      .prepare(
+        withFrames
+          ? 'SELECT fingerprint, version, body, times, brightness, cut FROM picture_events WHERE source_id=?'
+          : "SELECT fingerprint, version, body, x'' AS times, x'' AS brightness, x'' AS cut FROM picture_events WHERE source_id=?",
+      )
+      .get(sourceId);
+    if (!source || !row || row.fingerprint !== source.fingerprint) return null;
+    if (row.version !== VISUAL_VERSION) return null;
+    const body = JSON.parse(String(row.body)) as Omit<VisualEvents, 'frames' | 'version'>;
+    const bytes = (blob: unknown) => Uint8Array.from(blob as Uint8Array);
+    return {
+      ...body,
+      version: VISUAL_VERSION,
+      frames: {
+        times: new Float32Array(bytes(row.times).buffer),
+        brightness: bytes(row.brightness),
+        cut: bytes(row.cut),
+      },
+    };
+  }
+  /** Summaries of every current recording's picture events, by recording id. */
+  pictureSummaries() {
+    const sources = new Map(this.sources().map((s) => [s.id, s.fingerprint]));
+    const out: Record<string, VisualSummary> = {};
+    for (const row of this.db
+      .prepare('SELECT source_id, fingerprint, version, body FROM picture_events')
+      .all()) {
+      if (row.version !== VISUAL_VERSION || sources.get(String(row.source_id)) !== row.fingerprint)
+        continue;
+      const body = JSON.parse(String(row.body)) as VisualEvents & { frameCount: number };
+      out[String(row.source_id)] = summarize({
+        ...body,
+        frames: { times: { length: body.frameCount } } as VisualEvents['frames'],
+      });
+    }
+    return out;
+  }
+  putPictureEvents(sourceId: string, fingerprint: string, value: VisualEvents) {
+    const { frames, ...body } = value;
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO picture_events (source_id, fingerprint, version, body, times, brightness, cut) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run(
+        sourceId,
+        fingerprint,
+        value.version,
+        JSON.stringify({ ...body, frameCount: frames.times.length }),
+        new Uint8Array(frames.times.buffer, frames.times.byteOffset, frames.times.byteLength),
+        frames.brightness,
+        frames.cut,
+      );
+    this.changed?.();
+  }
   removeSource(id: string) {
     this.db.prepare('DELETE FROM frame_indexes WHERE source_id=?').run(id);
+    this.db.prepare('DELETE FROM picture_events WHERE source_id=?').run(id);
     this.transcripts.removeSource(id);
     this.proposals.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);

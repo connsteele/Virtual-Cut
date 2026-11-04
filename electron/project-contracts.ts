@@ -46,7 +46,9 @@ export interface MediaJob {
   elapsedMs?: number;
   id: string;
   sourceId: string;
-  kind: 'inspect' | 'audio' | 'export' | 'transcribe';
+  kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual';
+  /** The picture pass (VC-180): what it decodes with right now. */
+  use?: import('./visual-events.js').VisualUse;
   /** Who started the job; user work goes first in its lane (VC-145). Older jobs have none. */
   origin?: 'user' | 'background';
   transcription?: import('./transcript-contracts.js').TranscriptRequest;
@@ -80,6 +82,8 @@ export interface ProjectSnapshot {
   transcriptRoles?: Record<string, SubtitleRole[]>;
   /** Filmstrip tile files by recording id: ready, being made, or waiting their turn. */
   filmstrips?: Record<string, 'ready' | 'making' | 'waiting'>;
+  /** Stored picture events by recording id (VC-180): how they were read and what was found. */
+  pictures?: Record<string, import('./visual-events.js').VisualSummary>;
   cleanup?: {
     cacheFilesRemoved: number;
     cacheFilesRetained: number;
@@ -193,6 +197,10 @@ export interface ProjectApi {
   relink(id: string, sourceId: string): Promise<ProjectSnapshot | null>;
   audio(id: string, sourceId: string): Promise<ProjectSnapshot>;
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;
+  /** Analyse picture now (VC-180): queue the picture pass ahead of other background work. */
+  analysePicture(id: string, sourceIds: string[]): Promise<ProjectSnapshot>;
+  /** The app's preview started or stopped playing; the picture pass leaves it the decoder. */
+  previewPlaying(playing: boolean): Promise<void>;
   exportPlan(id: string, clipId: string, container: ExportContainerChoice): Promise<ExportPlan>;
   exportClip(
     id: string,

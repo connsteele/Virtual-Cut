@@ -112,6 +112,23 @@ export function chooseSnap(
   return { spoken, time: best.end, blackStart: best.start, blackEnd: best.end };
 }
 
+/**
+ * The same suggestion from a recording's stored black screens (VC-180), without decoding:
+ * only what the 5 s window and its follow-up decode would have seen counts.
+ */
+export function snapFromBlacks(
+  spoken: number,
+  duration: number,
+  blacks: readonly { start: number; end: number; toEnd?: boolean }[],
+) {
+  const window = snapWindow(spoken, duration);
+  const horizon = Math.min(duration, window.end + SNAP_FOLLOW);
+  const seen = blacks
+    .filter((b) => b.end > window.start && b.start < window.end)
+    .map((b) => ({ start: b.start, end: b.toEnd || b.end > horizon ? undefined : b.end }));
+  return chooseSnap(spoken, seen, window.start, null);
+}
+
 /** Move a time onto the nearest inspected frame when one is within half a frame at 60 fps. */
 export function onFrame(time: number, frameTimes?: readonly number[]) {
   if (!frameTimes?.length) return time;

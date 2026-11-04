@@ -35,6 +35,7 @@ import {
   ImportPanel,
   SaveHistory,
   RecordingActions,
+  RecordingPicture,
 } from './ProjectPanel';
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import { FilingPanel } from './FilingPanel';
@@ -1823,6 +1824,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </span>
                     <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
                     <RecordingFilmstrip state={project?.filmstrips?.[x.id]} />
+                    <RecordingPicture recording={x} workspace={workspace} />
                     <RecordingActions recording={x} workspace={workspace} />
                   </div>
                 ))}
@@ -2121,6 +2123,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         </span>
                         <RecordingTranscription jobs={project?.jobs || []} sourceId={x.id} />
                         <RecordingFilmstrip state={project?.filmstrips?.[x.id]} />
+                        <RecordingPicture recording={x} workspace={workspace} />
                         <RecordingActions recording={x} workspace={workspace} />
                       </div>
                     ))}

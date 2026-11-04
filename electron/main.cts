@@ -11,6 +11,7 @@ import {
   shell,
   clipboard,
   crashReporter,
+  powerMonitor,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -404,6 +405,12 @@ function registerDesktopApi(): void {
   );
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
+  workspace('analysePicture', (id, sourceIds) => projects.analysePicture(id, sourceIds));
+  // Not queued behind other project calls: the picture pass must hear about playback at once.
+  ipcMain.handle('workspace:previewPlaying', (event, playing) => {
+    assertTrustedSender(event);
+    projects?.previewPlaying(playing === true);
+  });
   workspace('exportPlan', (id, clipId, container) => projects.exportPlan(id, clipId, container));
   const resolveHelperPaths = () => ({
     bundled: path.join(app.getAppPath(), 'integrations', 'resolve', 'Virtual Cut metadata.py'),
@@ -766,6 +773,14 @@ if (!mcpLaunch)
         path.join(process.resourcesPath, 'tools'),
         diagnostics,
       );
+      // The picture pass (VC-180) uses CPU workers only after 5 minutes without input.
+      // Checks may set the idle time (read on every call) to test those rules.
+      projects.idleSeconds = () => {
+        const fixed = process.env.VIRTUAL_CUT_IDLE_SECONDS;
+        return fixed && Number.isFinite(Number(fixed))
+          ? Number(fixed)
+          : powerMonitor.getSystemIdleTime();
+      };
       projects.logToolVersions().catch((e: unknown) => console.error(e));
       // Change notifications replace renderer polling (VC-98): at most one every 250 ms,
       // always followed by a trailing one so the final state is never missed.

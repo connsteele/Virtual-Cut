@@ -62,6 +62,8 @@ const env = {
   VIRTUAL_CUT_TEST_ROOT: directory,
   VIRTUAL_CUT_TEST_OUTPUT: path.join(directory, 'shell'),
   VIRTUAL_CUT_TEST_BACKGROUND: '1',
+  // Imports don't start background picture passes (VC-180) unless a check turns them on.
+  VIRTUAL_CUT_PICTURE_PASS: 'manual',
 };
 delete env.ELECTRON_RUN_AS_NODE;
 if (toolsDirectory) {

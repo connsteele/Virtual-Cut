@@ -794,6 +794,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
             it. Each runs one job at a time, and work you start goes first. Interrupted work can be
             retried after reopening the project.
           </p>
+          <PictureBatch workspace={w} />
           <div className={s.jobList}>
             {[...new Set(p.jobs.map((j) => j.sourceId))].map((sourceId) => (
               <section
@@ -807,6 +808,21 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                     <section key={j.id} className={`${s.clipTile} ${s.jobCard}`}>
                       <div className={s.jobDetails}>
                         <strong>{jobLabel(j)}</strong>
+                        {j.kind === 'visual' && ['queued', 'running'].includes(j.state) && (
+                          <p data-picture-use={j.use || 'waiting'}>
+                            Media lane ·{' '}
+                            {j.state === 'running'
+                              ? j.use === 'gpu+cpu'
+                                ? 'GPU decoder + CPU'
+                                : j.use === 'cpu'
+                                  ? 'CPU'
+                                  : 'GPU decoder'
+                              : j.message}
+                          </p>
+                        )}
+                        {j.kind === 'visual' && j.state === 'succeeded' && j.use && (
+                          <p>Picture events ready · {pictureUseLabel[j.use]}</p>
+                        )}
                         <p>
                           {j.state} ·{' '}
                           <JobTime
@@ -965,6 +981,115 @@ export function RecordingActions({
         <FolderOpen size={15} />
       </Button>
       <RemoveRecordingButton recording={r} workspace={w} icon />
+    </div>
+  );
+}
+
+/** Analyse picture now for the current batch, from Jobs (VC-180). */
+function PictureBatch({ workspace: w }: { workspace: Workspace }) {
+  const p = w.snapshot;
+  if (!p) return null;
+  const waiting = p.model.recordings.filter(
+    (r) =>
+      r.batchIds?.includes(p.activeBatchId) &&
+      r.availability === 'ready' &&
+      !r.retained &&
+      !p.pictures?.[r.id] &&
+      !p.jobs.some(
+        (j) =>
+          j.sourceId === r.id &&
+          j.kind === 'visual' &&
+          j.origin === 'user' &&
+          ['queued', 'running'].includes(j.state),
+      ),
+  );
+  return (
+    <p className={s.tools}>
+      <Button
+        disabled={w.blocking || !waiting.length}
+        onClick={() =>
+          background(
+            w.run(() =>
+              window.virtualCut!.project.analysePicture(
+                p.project.id,
+                waiting.map((r) => r.id),
+              ),
+            ),
+          )
+        }
+      >
+        Analyse picture now
+      </Button>
+      <span className={s.muted}>
+        {waiting.length
+          ? `${waiting.length} recording${waiting.length === 1 ? '' : 's'} in this batch without picture events. Goes ahead of other background work; pauses while a transcription runs or a preview plays.`
+          : 'Every recording in this batch has picture events or is being read.'}
+      </span>
+    </p>
+  );
+}
+
+/** How long the picture pass took, as the card says it. */
+export function pictureTime(ms: number) {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`;
+}
+export const pictureUseLabel = { gpu: 'GPU', 'gpu+cpu': 'GPU + CPU', cpu: 'CPU' } as const;
+
+/**
+ * The picture pass on a recording's card (VC-180): "Reading picture… 42%" while it runs,
+ * "Picture events ready" with its time once stored, otherwise "Analyse picture now".
+ */
+export function RecordingPicture({
+  recording: r,
+  workspace: w,
+}: {
+  recording: Recording;
+  workspace: Workspace;
+}) {
+  const p = w.snapshot;
+  if (!p || r.availability !== 'ready' || r.retained || r.sample) return null;
+  const passes = p.jobs.filter((j) => j.sourceId === r.id && j.kind === 'visual');
+  const active =
+    passes.find((j) => j.state === 'running') || passes.find((j) => j.state === 'queued');
+  const ready = p.pictures?.[r.id];
+  const percent = (n: number) => `${Math.floor(n * 100)}%`;
+  let body;
+  if (active?.state === 'running')
+    body = <small>Reading picture… {percent(active.progress)}</small>;
+  else if (active)
+    body = (
+      <small className={s.muted}>
+        {active.progress > 0
+          ? `Reading picture… ${percent(active.progress)} · paused`
+          : 'Picture events waiting'}
+      </small>
+    );
+  else if (ready)
+    body = (
+      <small>
+        Picture events ready · {pictureTime(ready.elapsedMs)} · {pictureUseLabel[ready.use]}
+      </small>
+    );
+  else
+    body = (
+      <Button
+        disabled={w.blocking}
+        onClick={() =>
+          background(w.run(() => window.virtualCut!.project.analysePicture(p.project.id, [r.id])))
+        }
+      >
+        Analyse picture now
+      </Button>
+    );
+  return (
+    <div
+      className={s.recordingTranscription}
+      data-picture-status={active ? active.state : ready ? 'ready' : 'none'}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      {body}
     </div>
   );
 }

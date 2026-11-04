@@ -161,6 +161,9 @@ const api: VirtualCutApi = {
     relink: (id, sourceId) => ipcRenderer.invoke('workspace:relink', id, sourceId),
     audio: (id, sourceId) => ipcRenderer.invoke('workspace:audio', id, sourceId),
     job: (id, jobId, action) => ipcRenderer.invoke('workspace:job', id, jobId, action),
+    analysePicture: (id, sourceIds) =>
+      ipcRenderer.invoke('workspace:analysePicture', id, sourceIds),
+    previewPlaying: (playing) => ipcRenderer.invoke('workspace:previewPlaying', playing),
     exportPlan: (id, clipId, container) =>
       ipcRenderer.invoke('workspace:exportPlan', id, clipId, container),
     filingPlan: (id, batchId) => ipcRenderer.invoke('workspace:filingPlan', id, batchId),

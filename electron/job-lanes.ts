@@ -2,8 +2,8 @@ import type { MediaJob } from './project-contracts.js';
 
 // VC-145: jobs run in two lanes so a long transcription never holds up media work.
 // The speech lane runs transcription. The media lane runs inspection, audio preparation,
-// export and filing; filmstrips (and later the VC-180 visual pass) fill the media lane
-// when it has nothing else to start.
+// export, filing and the VC-180 picture pass; filmstrips fill the media lane when it has
+// nothing else to start.
 export type JobLane = 'speech' | 'media';
 export const jobLanes: readonly JobLane[] = ['speech', 'media'];
 
@@ -12,7 +12,8 @@ export function laneOf(kind: MediaJob['kind']): JobLane {
 }
 
 // Kinds that write a recording's own files in the preview cache (frames, frame index,
-// audio copies, waveforms, transcripts). Exports read the recording and write elsewhere.
+// audio copies, waveforms, transcripts). Exports and the picture pass read the recording and
+// write elsewhere.
 const writesRecording = new Set<MediaJob['kind']>(['inspect', 'audio', 'transcribe']);
 // Work a transcription of the same recording waits for.
 const preparesRecording = new Set<MediaJob['kind']>(['inspect', 'audio']);
@@ -20,6 +21,56 @@ const preparesRecording = new Set<MediaJob['kind']>(['inspect', 'audio']);
 /** Work the user started (Import, Export, Transcribe, Retry) goes ahead of background work. */
 export function isUserJob(job: MediaJob) {
   return job.origin !== 'background';
+}
+
+/**
+ * Order within a lane, lowest first: work the user started, then a picture pass the user asked
+ * for ("Analyse picture now"), then background work, then background picture passes.
+ */
+export function rank(job: MediaJob) {
+  if (job.kind === 'visual') return isUserJob(job) ? 1 : 3;
+  return isUserJob(job) ? 0 : 2;
+}
+
+/** What the picture pass may use (VC-180). */
+export interface PictureConditions {
+  /** A preview is playing in the app; the GPU decoder stays with playback. */
+  previewPlaying: boolean;
+  /** No keyboard or mouse input for 5 minutes and no preview playing. */
+  idle: boolean;
+  /** An NVIDIA decoder reads this recording; undefined until it has been tried. */
+  gpu?: (job: MediaJob) => boolean | undefined;
+}
+export const workingConditions: PictureConditions = { previewPlaying: false, idle: false };
+
+/** Why a picture pass waits, as Jobs shows it, or undefined when it may run. */
+export function pictureHold(
+  job: MediaJob,
+  jobs: readonly MediaJob[],
+  running: readonly MediaJob[],
+  conditions: PictureConditions,
+) {
+  const same = (j: MediaJob) => j.id !== job.id && j.sourceId === job.sourceId;
+  // It starts after the recording's transcript and its inspection and audio preparation.
+  const before = jobs.find(
+    (j) => same(j) && writesRecording.has(j.kind) && ['queued', 'running'].includes(j.state),
+  );
+  if (before)
+    return before.kind === 'transcribe'
+      ? 'Waiting for this recording’s transcript'
+      : 'Waiting for this recording’s inspection';
+  if (running.some((j) => j.kind === 'transcribe')) return 'Paused: transcription running';
+  if (conditions.previewPlaying) return 'Paused: preview playing';
+  if (conditions.gpu?.(job) === false && !conditions.idle)
+    return 'Waiting for the PC to be idle (no NVIDIA decoder)';
+  return undefined;
+}
+
+/** What a running picture pass uses: the GPU decoder, plus CPU workers when the PC is idle. */
+export function pictureUse(job: MediaJob, conditions: PictureConditions) {
+  const gpu = conditions.gpu?.(job) !== false;
+  if (gpu) return conditions.idle ? ('gpu+cpu' as const) : ('gpu' as const);
+  return conditions.idle ? ('cpu' as const) : undefined;
 }
 
 /** Why a queued job cannot start yet, or undefined when it can. */
@@ -46,10 +97,48 @@ export function nextJob(
   lane: JobLane,
   jobs: readonly MediaJob[],
   running: readonly MediaJob[],
+  conditions: PictureConditions = workingConditions,
 ): MediaJob | undefined {
   if (running.some((j) => laneOf(j.kind) === lane)) return undefined;
+  return readyJobs(lane, jobs, running, conditions)[0];
+}
+
+/** Jobs that could start in a lane, best first (lower rank, then oldest). */
+export function readyJobs(
+  lane: JobLane,
+  jobs: readonly MediaJob[],
+  running: readonly MediaJob[],
+  conditions: PictureConditions = workingConditions,
+) {
   const ready = jobs.filter(
-    (j) => j.state === 'queued' && laneOf(j.kind) === lane && !heldBy(j, jobs, running),
+    (j) =>
+      j.state === 'queued' &&
+      laneOf(j.kind) === lane &&
+      !heldBy(j, jobs, running) &&
+      !(j.kind === 'visual' && pictureHold(j, jobs, running, conditions)),
   );
-  return ready.find(isUserJob) || ready[0];
+  return ready
+    .map((job, order) => ({ job, order }))
+    .sort((a, b) => rank(a.job) - rank(b.job) || a.order - b.order)
+    .map((x) => x.job);
+}
+
+/**
+ * Whether a running picture pass should give way: its hold applies again, or work that ranks
+ * ahead of it is ready in its lane. It keeps the chunks it has read and carries on later.
+ */
+export function pictureYields(
+  pass: MediaJob,
+  jobs: readonly MediaJob[],
+  running: readonly MediaJob[],
+  conditions: PictureConditions,
+) {
+  const others = running.filter((j) => j.id !== pass.id);
+  const hold = pictureHold(pass, jobs, others, conditions);
+  if (hold) return hold;
+  if (!pictureUse(pass, conditions)) return 'Waiting for the PC to be idle (no NVIDIA decoder)';
+  const ahead = readyJobs('media', jobs, others, conditions).find(
+    (j) => j.id !== pass.id && rank(j) < rank(pass),
+  );
+  return ahead ? 'Waiting for other media work' : undefined;
 }
