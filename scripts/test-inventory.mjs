@@ -18,6 +18,7 @@ export const fast = [
   'split-snap.test.mjs',
   'proposal-previews.test.mjs',
   'job-lanes.test.mjs',
+  'visual-events.test.mjs',
   'script-paths.test.mjs',
 ];
 export const native = [
@@ -40,6 +41,7 @@ export const native = [
   'review-planning-native.mjs',
   'project-capacity-checks.mjs',
   'job-lanes-native.mjs',
+  'visual-pass-native.mjs',
 ];
 export const desktop = [
   'speech-setup-ui.mjs',
@@ -67,6 +69,7 @@ export const desktop = [
   'split-snap-ui.mjs',
   'proposal-preview-ui.mjs',
   'combined-transcript-ui.mjs',
+  'visual-pass-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],

@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { heldBy, isUserJob, jobLanes, laneOf, nextJob } from '../dist-electron/job-lanes.js';
+import {
+  heldBy,
+  isUserJob,
+  jobLanes,
+  laneOf,
+  nextJob,
+  pictureHold,
+  pictureUse,
+  pictureYields,
+  rank,
+  readyJobs,
+} from '../dist-electron/job-lanes.js';
 
 // VC-145: a speech lane and a media lane, user work first in each, and a per-recording lock
 // so two jobs never write the same recording's files at once.
@@ -20,7 +31,7 @@ const ids = (jobs) => jobs.map((j) => j?.id);
 test('transcription runs in the speech lane and everything else in the media lane', () => {
   assert.deepEqual(jobLanes, ['speech', 'media']);
   assert.equal(laneOf('transcribe'), 'speech');
-  for (const kind of ['inspect', 'audio', 'export']) assert.equal(laneOf(kind), 'media');
+  for (const kind of ['inspect', 'audio', 'export', 'visual']) assert.equal(laneOf(kind), 'media');
 });
 
 test('a running transcription does not hold up an import, an inspection or an export', () => {
@@ -108,4 +119,92 @@ test('no deadlock between a queued transcription and its queued preparation', ()
   const jobs = [transcribe, audio];
   assert.equal(nextJob('speech', jobs, []), undefined);
   assert.equal(nextJob('media', jobs, []), audio);
+});
+
+// VC-180: the picture pass is background work in the media lane with its own pause rules.
+const working = { previewPlaying: false, idle: false, gpu: () => true };
+const idlePc = { previewPlaying: false, idle: true, gpu: () => true };
+
+test('a picture pass you ask for goes ahead of background work, behind work you started', () => {
+  const asked = job('visual', 'a', { origin: 'user' });
+  const auto = job('visual', 'b', { origin: 'background' });
+  const audio = job('audio', 'c', { origin: 'background', track: 1 });
+  const exporting = job('export', 'd', { origin: 'user' });
+  assert.deepEqual([exporting, asked, audio, auto].map(rank), [0, 1, 2, 3]);
+  assert.deepEqual(ids(readyJobs('media', [auto, audio, asked, exporting], [], working)), [
+    exporting.id,
+    asked.id,
+    audio.id,
+    auto.id,
+  ]);
+  assert.equal(nextJob('media', [auto, audio], [], working), audio);
+  assert.equal(nextJob('speech', [auto], [], working), undefined);
+});
+
+test('a picture pass waits for its recording, transcriptions and preview playback', () => {
+  const pass = job('visual', 'a', { origin: 'background' });
+  const transcript = job('transcribe', 'a', { origin: 'background' });
+  const inspect = job('inspect', 'a', { state: 'running' });
+  assert.equal(
+    pictureHold(pass, [pass, transcript], [], working),
+    'Waiting for this recording’s transcript',
+  );
+  assert.equal(
+    pictureHold(pass, [pass, inspect], [inspect], working),
+    'Waiting for this recording’s inspection',
+  );
+  assert.equal(nextJob('media', [pass, transcript], [], working), undefined);
+  const other = job('transcribe', 'b', { state: 'running' });
+  assert.equal(pictureHold(pass, [pass, other], [other], working), 'Paused: transcription running');
+  assert.equal(
+    pictureHold(pass, [pass], [], { ...working, previewPlaying: true }),
+    'Paused: preview playing',
+  );
+  // With no NVIDIA decoder it only runs when the PC is idle.
+  const noGpu = { ...working, gpu: () => false };
+  assert.match(pictureHold(pass, [pass], [], noGpu), /idle/);
+  assert.equal(pictureHold(pass, [pass], [], { ...noGpu, idle: true }), undefined);
+  // A decoder not tried yet counts as there, so the pass can start and try it.
+  assert.equal(pictureHold(pass, [pass], [], { ...working, gpu: () => undefined }), undefined);
+  assert.equal(pictureHold(pass, [pass], [], working), undefined);
+  // An export of the same recording doesn't hold it up.
+  const exporting = job('export', 'a', { state: 'succeeded' });
+  assert.equal(pictureHold(pass, [pass, exporting], [], working), undefined);
+});
+
+test('NVDEC alone while you work, NVDEC and CPU when idle, CPU alone only when idle', () => {
+  const pass = job('visual', 'a');
+  assert.equal(pictureUse(pass, working), 'gpu');
+  assert.equal(pictureUse(pass, idlePc), 'gpu+cpu');
+  assert.equal(pictureUse(pass, { ...idlePc, gpu: () => false }), 'cpu');
+  assert.equal(pictureUse(pass, { ...working, gpu: () => false }), undefined);
+  assert.equal(pictureUse(pass, { previewPlaying: false, idle: false }), 'gpu');
+});
+
+test('a running picture pass gives way to its holds and to work ranked ahead of it', () => {
+  const pass = job('visual', 'a', { state: 'running', origin: 'background' });
+  assert.equal(pictureYields(pass, [pass], [pass], working), undefined);
+  const speaking = job('transcribe', 'b', { state: 'running' });
+  assert.equal(
+    pictureYields(pass, [pass, speaking], [pass, speaking], working),
+    'Paused: transcription running',
+  );
+  assert.equal(
+    pictureYields(pass, [pass], [pass], { ...working, previewPlaying: true }),
+    'Paused: preview playing',
+  );
+  assert.match(pictureYields(pass, [pass], [pass], { ...working, gpu: () => false }), /idle/);
+  const audio = job('audio', 'c', { origin: 'background', track: 1 });
+  assert.equal(pictureYields(pass, [pass, audio], [pass], working), 'Waiting for other media work');
+  // A pass you asked for keeps going past background work, not past work you started.
+  const asked = { ...pass, origin: 'user' };
+  assert.equal(pictureYields(asked, [asked, audio], [asked], working), undefined);
+  const exporting = job('export', 'd', { origin: 'user' });
+  assert.equal(
+    pictureYields(asked, [asked, exporting], [asked], working),
+    'Waiting for other media work',
+  );
+  // Another queued pass never displaces the running one.
+  const next = job('visual', 'e', { origin: 'background' });
+  assert.equal(pictureYields(pass, [pass, next], [pass], working), undefined);
 });

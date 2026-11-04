@@ -23,11 +23,13 @@ import type { PlaybackBookmark } from './components/VideoPlayer';
 import type { OpenedVideo } from '../electron/contracts';
 import { layouts, pages, preferenceKey, readPreferences, type LayoutId } from './workspace';
 import { background } from './workflow/background';
+import { usePreviewPlaying } from './workflow/usePreviewPlaying';
 
 const notesKey = 'virtual-cut.scratchpad.v1';
 type Drawer = 'notes' | 'agent' | null;
 
 export function App() {
+  usePreviewPlaying();
   const [foundation, setFoundation] = useState(() => {
     try {
       return localStorage.getItem('virtual-cut.surface.v1') === 'foundation';

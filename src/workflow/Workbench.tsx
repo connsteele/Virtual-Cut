@@ -35,6 +35,7 @@ import {
   ImportPanel,
   SaveHistory,
   RecordingActions,
+  RecordingPicture,
 } from './ProjectPanel';
 import { ExportPanel, ExportHistory } from './ExportPanel';
 import { FilingPanel } from './FilingPanel';
@@ -1816,6 +1817,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     onClick={() => selectRecord(x.id)}
                   >
                     {thumbs && <Thumbnail src={x.pinned || x.poster} alt={x.title} />}
+                    <RecordingPicture recording={x} workspace={workspace} thumbnail={thumbs} />
                     <strong>{x.title}</strong>
                     <span>
                       {short(x.duration)} · {model.clips.filter((c) => c.rid === x.id).length} clips
@@ -2091,6 +2093,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         onClick={() => selectRecord(x.id)}
                       >
                         <Thumbnail src={x.pinned || x.poster} alt={x.title} />
+                        <RecordingPicture recording={x} workspace={workspace} />
                         <strong title={x.title}>{x.title}</strong>
                         <time
                           className={s.sourceDate}
