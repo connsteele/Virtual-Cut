@@ -11,6 +11,7 @@ The [M2 closeout](m2-closeout.md) records final acceptance and follow-ups. Curre
 | `npm run test:desktop`                                        | Fast, native prerequisites and twenty actual Electron interaction scripts, including shell security, playback, trim, autosave, filmstrip, export and transcripts |
 | `npm run test:packaged`                                       | Same maintained checks; UI launches `VIRTUAL_CUT_TEST_EXECUTABLE` and media prerequisites use its bundled tools                                                  |
 | `npm run test:suite -- desktop --only=review-planning-ui.mjs` | A focused check plus its fresh native fixture prerequisite                                                                                                       |
+| `npm run test:desktop -- --jobs=1`                            | The same checks one at a time (default four at a time; see [Checks side by side](#checks-side-by-side))                                                          |
 
 The Windows GitHub workflow runs build/lint/fast checks followed by measured native/desktop coverage with synthetic media. Packaged and human hardware/Resolve checks are separate. The workflow uses the official [checkout](https://github.com/actions/checkout), [Node setup](https://github.com/actions/setup-node), and [artifact upload](https://github.com/actions/upload-artifact) actions. A first hosted run is still required after publishing the branch.
 
@@ -60,7 +61,46 @@ FFmpeg through the app's launcher and requires FFmpeg to stop.
 Fixed waits remain only where the wait is the assertion: proving that nothing saves during
 continuous seeking, a held scrub, playback or reverse scanning takes longer than the two-second
 settle delay. To find where a check spends its time, run it with `DEBUG=pw:api`, which logs
-every Playwright action with a timestamp.
+every Playwright action with a timestamp. `review-fixes-checks.mjs` proves that seeking past the
+10-minute interval save never saves by moving the page clock instead of waiting (VC-189), and
+waits for the playhead to be saved instead of sleeping 2.4 s.
+
+### Checks side by side
+
+The suite runs up to four checks at once (VC-189). `--jobs=N` changes that; `--jobs=1` runs
+them one after another in inventory order, which helps when debugging. The CI workflow uses
+`--jobs=2` because the hosted runner has four cores.
+
+- A check starts once its prerequisites (`dependencies`) have finished.
+- `exclusive` checks run with nothing beside them, because they measure real decoding and
+  timers while seeking or playing: `timing-checks`, `playback-ui-checks` and
+  `review-fixes-checks`.
+- `sharedFixtures` groups open or copy the same fixture project, so each group runs in order:
+  save-policy-ui, feedback-ui, playback-ui; and filmstrip-ui, filmstrip-reuse. A new check that
+  opens a native check's project in place must join a group.
+- Each check gets its own TEMP folder under the run's `temp`.
+- The first failure stops the checks running beside it and skips the rest, so the report shows
+  one real failure and "Stopped because … failed" for the others. Report rows come in finish
+  order.
+
+### Timeouts
+
+A check that runs longer than three minutes is stopped. Before it is stopped, a desktop check
+saves a screenshot of every open window (`<check>-timeout-1.png` next to its log, through
+`scripts/hang-capture.mjs`), and the report lists the screenshots and the check's last 40 log
+lines. Delivery evidence and the CI artifact keep the screenshots.
+
+### Known flakes
+
+- **range-markers-ui hung once in CI (2026-10-18, run 39120187680, attempt 1).** It printed
+  nothing for 600 s until the old ten-minute timeout, so every other check passed and the rerun
+  passed. Coverage found no main, renderer or preload data for its process, so the app never
+  reached `app.close()`'s collection, or hung inside it. Playwright actions in that check time out
+  after 20 s and would have printed an error, so the hang was in a call without a timeout:
+  `app.evaluate` (the `capturePage` screenshots and window resizes) or `app.close()` itself. The
+  run's artifact expired after seven days. It did not repeat in eight runs with coverage on
+  Connor's PC (19-21 s each, 2026-11-03) or in the full suites since. If it comes back, the
+  timeout screenshot will show where the window was.
 
 ## Prerequisites and evidence
 
@@ -105,7 +145,7 @@ Use the repository's Node/npm dependencies. Native and desktop gates need FFmpeg
 
 Each invocation creates an isolated `run-*` under `G:\GPT\Work\virtual-cut\test-runs`. Override `VIRTUAL_CUT_SUITE_OUTPUT` on other machines (CI uses its temporary workspace). `VIRTUAL_CUT_TEST_ROOT` is set by the runner for all fixture-producing/consuming scripts. TEMP/TMP are scoped to that run. Direct legacy wrappers continue to use their original G: scratch defaults.
 
-`report.json` and `report.md` record app/commit/dirty state, runtime/tool versions, each script's status and duration, and explicit prerequisite skips. Logs are capped at 2 MiB per script. Exit 0 means all selected checks passed; 1 is a failure; 2 is incomplete because a prerequisite was missing. Dependencies are generated within the same run and cannot silently reuse yesterday's fixture. A ten-minute per-script timeout stops the runner's own child process tree. Five completed, explicitly marked run directories are retained; other folders and unfinished runs are untouched. Preserve needed evidence outside these disposable run folders.
+`report.json` and `report.md` record app/commit/dirty state, runtime/tool versions, each script's status and duration, and explicit prerequisite skips. Logs are capped at 2 MiB per script. Exit 0 means all selected checks passed; 1 is a failure; 2 is incomplete because a prerequisite was missing. Dependencies are generated within the same run and cannot silently reuse yesterday's fixture. Each script stops after three minutes (`checkTimeout` in `scripts/test-inventory.mjs`; a check that needs longer is named in `longerTimeouts`); see [Timeouts](#timeouts). Five completed, explicitly marked run directories are retained; other folders and unfinished runs are untouched. Preserve needed evidence outside these disposable run folders.
 
 The fast gate uses no personal media. Native gates generate synthetic sources, including a small 140-second filmstrip fixture. Set `VIRTUAL_CUT_FILMSTRIP_REAL_FIXTURE` to a disposable copy of longer footage for an additional real-codec filmstrip run; the default does not depend on a developer's old local footage. Desktop tests use disposable profiles. Long real-footage and Resolve acceptance still require the review guide. Ordinary runs are scenario checks. The opt-in measured run is documented in [application coverage](coverage.md); VC-51 owns the remaining fault/recovery/production gates.
 

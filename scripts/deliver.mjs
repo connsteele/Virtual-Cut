@@ -99,7 +99,10 @@ async function step(name, script, scriptArgs = [], extra = {}) {
   return output;
 }
 
-/** Copy a suite run's reports and logs (not its profiles or media) into the evidence folder. */
+/**
+ * Copy a suite run's reports, logs and timeout screenshots (not its profiles or media) into the
+ * evidence folder.
+ */
 async function keepRun(output, folder) {
   const report = /Report: (.+report\.json)/.exec(output)?.[1]?.trim();
   if (!report) throw new Error(`No suite report in the ${folder} output.`);
@@ -107,7 +110,7 @@ async function keepRun(output, folder) {
   const destination = path.join(evidence, folder, path.basename(run));
   await mkdir(destination, { recursive: true });
   for (const entry of await readdir(run, { withFileTypes: true }))
-    if (entry.isFile() && /\.(json|md|log)$/.test(entry.name))
+    if (entry.isFile() && /\.(json|md|log|png)$/.test(entry.name))
       await copyFile(path.join(run, entry.name), path.join(destination, entry.name));
   const summary = path.join(run, 'coverage', 'summary.json');
   if (existsSync(summary)) await copyFile(summary, path.join(destination, 'coverage-summary.json'));

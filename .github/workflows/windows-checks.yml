@@ -33,7 +33,8 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "VIRTUAL_CUT_FFMPEG=$bin\ffmpeg.exe"
           Add-Content -Path $env:GITHUB_ENV -Value "VIRTUAL_CUT_FFPROBE=$bin\ffprobe.exe"
       - name: Measure native and desktop coverage with regression gates
-        run: npm run test:coverage
+        # The hosted runner has 4 cores; two checks at a time leaves room for the app windows.
+        run: npm run test:coverage -- --jobs=2
       - name: Keep reports and bounded logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -43,6 +44,7 @@ jobs:
             ${{ runner.temp }}/virtual-cut-test-runs/**/report.json
             ${{ runner.temp }}/virtual-cut-test-runs/**/report.md
             ${{ runner.temp }}/virtual-cut-test-runs/run-*/*.log
+            ${{ runner.temp }}/virtual-cut-test-runs/run-*/*-timeout-*.png
             ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/summary.json
             ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/sources.json
             ${{ runner.temp }}/virtual-cut-test-runs/**/coverage/renderer/**
