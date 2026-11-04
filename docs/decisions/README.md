@@ -26,6 +26,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed |
 | [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed |
 | [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed |
+| [0019](0019-job-lanes.md)                      | Transcription and media work run in separate lanes                          | Proposed |
 
 ## Adding a record
 

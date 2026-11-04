@@ -790,8 +790,9 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
       {jobs && (
         <Modal title="Media jobs" onClose={() => setJobs(false)}>
           <p className={s.muted}>
-            Inspection, audio previews, transcription and exports run one at a time. Interrupted
-            work can be retried after reopening the project.
+            Transcription runs beside inspection, audio previews and exports, so they never wait for
+            it. Each runs one job at a time, and work you start goes first. Interrupted work can be
+            retried after reopening the project.
           </p>
           <div className={s.jobList}>
             {[...new Set(p.jobs.map((j) => j.sourceId))].map((sourceId) => (

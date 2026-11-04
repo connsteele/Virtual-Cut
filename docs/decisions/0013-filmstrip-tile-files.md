@@ -10,7 +10,7 @@ Each filmstrip tile used to be its own FFmpeg process, about 98 ms per tile on 4
 ## Decision
 
 - One keyframe pass per recording makes every tile (240×136 JPEG, keyframes only), CPU decoding on 4 threads at below-normal priority so the GPU decoder stays with playback.
-- Passes run in the background while no job is queued, one recording at a time. Any job that starts stops the current pass, which is retried later. A recording opened without a tile file goes first.
+- Passes run in the background while no job is queued, one recording at a time. Any job that starts stops the current pass, which is retried later. Since VC-145 (0019) this applies to the media lane only; a transcription does not hold passes back. A recording opened without a tile file goes first.
 - Tiles are written to the project's preview cache, one file per recording (`<source>-<fingerprint>-filmstrip.bin`), atomically through a partial file. The file records the source path, size, modified time, clock offset and tile shape; a file that no longer matches is deleted and made again.
 - Opening a recording loads its whole tile file into memory (within a 96 MB budget across recordings), so zooming and panning need no decoding down to one tile per keyframe. Closer than that, neighbouring tiles show the same nearest keyframe.
 - Until a file exists, tiles are decoded on demand as before.

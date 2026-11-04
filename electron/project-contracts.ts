@@ -47,6 +47,8 @@ export interface MediaJob {
   id: string;
   sourceId: string;
   kind: 'inspect' | 'audio' | 'export' | 'transcribe';
+  /** Who started the job; user work goes first in its lane (VC-145). Older jobs have none. */
+  origin?: 'user' | 'background';
   transcription?: import('./transcript-contracts.js').TranscriptRequest;
   role?: 'game' | 'mic';
   runtimeSignature?: string;
