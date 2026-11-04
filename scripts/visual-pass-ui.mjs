@@ -113,9 +113,12 @@ try {
     .click();
   const card = (id) => main.locator(`[data-recording="${id}"]`);
   const status = (id) => card(id).locator('[data-picture-status]');
+  const badge = (id) => status(id).getByRole('status');
   await main.locator(`[data-recording="${first}"]`).click();
-  await expect(status(first)).toHaveAttribute('data-picture-status', 'none');
-  const analyse = card(first).getByRole('button', { name: 'Analyse picture now', exact: true });
+  // Option B: a scan icon beside Show in Explorer and Remove; nothing on the thumbnail yet.
+  await expect(status(first)).toHaveCount(0);
+  const analyse = card(first).getByRole('button', { name: /^Analyse picture now/ });
+  await expect(analyse).toHaveAttribute('data-picture-action', 'start');
   await expect(analyse).toBeVisible();
   // Keyboard reaches the button and it does not select the card behind it.
   await analyse.focus();
@@ -126,7 +129,12 @@ try {
   await analyse.press('Enter');
   // With no NVIDIA decoder it waits for idle; with one it starts reading at once.
   await expect(status(first)).toHaveAttribute('data-picture-status', gpu ? 'running' : 'queued');
-  if (!gpu) await expect(status(first)).toContainText('Picture events waiting');
+  if (!gpu) await expect(status(first)).toContainText('Waiting');
+  // Once started, the icon only tells where it stands.
+  await expect(card(first).locator('[data-picture-action]')).not.toHaveAttribute(
+    'data-picture-action',
+    'start',
+  );
   // Playing the preview pauses the pass: the GPU decoder stays with playback.
   // (With NVDEC it stops part way and keeps what it has read.)
   await main.getByRole('button', { name: 'Play · K / Space', exact: true }).click();
@@ -147,7 +155,7 @@ try {
     await expect(status(first)).toHaveAttribute('data-picture-status', 'running');
     await main.getByRole('button', { name: /^Jobs/ }).click();
     await expect(lane).toHaveText('Media lane · GPU decoder');
-    await expect(status(first)).toContainText(/Reading picture… \d+%/);
+    await expect(badge(first)).toHaveAttribute('title', /^Reading picture… \d+%$/);
     await shot('3-reading-gpu-decoder.png');
     await setIdle(600);
     await expect(lane).toHaveText('Media lane · GPU decoder + CPU');
@@ -158,7 +166,7 @@ try {
     await shot('3-waiting-for-idle-no-nvidia.png');
     await setIdle(600);
     await expect(lane).toHaveText('Media lane · CPU');
-    await expect(status(first)).toContainText(/Reading picture… \d+%/);
+    await expect(badge(first)).toHaveAttribute('title', /^Reading picture… \d+%$/);
     await shot('4-reading-cpu.png');
   }
   await jobs.getByRole('button', { name: 'Close' }).click();
@@ -175,7 +183,8 @@ try {
   if ((await status(first).getAttribute('data-picture-status')) === 'running')
     await shot('4b-card-reading-picture.png');
   await expect(status(first)).toHaveAttribute('data-picture-status', 'ready', { timeout: 60000 });
-  await expect(status(first)).toHaveText(
+  await expect(badge(first)).toHaveAttribute(
+    'title',
     gpu
       ? /^Picture events ready · (\d+ min )?\d+ s · GPU( \+ CPU)?$/
       : /^Picture events ready · (\d+ min )?\d+ s · CPU$/,
@@ -192,6 +201,20 @@ try {
     jobs.getByRole('button', { name: 'Analyse picture now', exact: true }),
   ).toBeDisabled();
   await shot('6-jobs-batch-done.png');
+  await jobs.getByRole('button', { name: 'Close' }).click();
+  // The Media page's thumbnails and list carry the same badge.
+  await main
+    .getByRole('navigation', { name: 'Workspace pages' })
+    .getByRole('button', { name: 'Media', exact: true })
+    .click();
+  await expect(card(first).locator('[data-picture-status]')).toHaveAttribute(
+    'data-picture-status',
+    'ready',
+  );
+  await shot('7-media-thumbnails.png');
+  await main.getByRole('button', { name: 'List', exact: true }).click();
+  await expect(card(first).locator('[data-picture-status]')).toBeVisible();
+  await shot('8-media-list.png');
   const current = await main.evaluate(() => window.virtualCut.project.current());
   for (const id of [first, second]) {
     assert(current.pictures[id], 'Picture events stored');

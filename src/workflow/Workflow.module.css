@@ -2079,3 +2079,89 @@
   padding-top: 6px;
   border-top: 1px solid #2f3f3c;
 }
+
+/* Picture pass on the recording thumbnail (VC-180, option B). The overlay covers the
+   thumbnail: the card's 10px padding in grids, the first column in the media list. */
+.source {
+  position: relative;
+}
+.pictureOverlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  aspect-ratio: 16 / 9;
+  border-radius: 4px;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Grid placement would make a grid cell the overlay's frame; keep it the whole card. */
+.mediaGrid .source > span.pictureOverlay,
+.mediaList .source > span.pictureOverlay {
+  grid-row: auto;
+  grid-column: auto;
+}
+.mediaList .source > span.pictureOverlay {
+  top: 50%;
+  right: auto;
+  width: 74px;
+  transform: translateY(-50%);
+}
+.pictureBadge {
+  position: absolute;
+  right: 5px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 10px);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgb(20 21 22 / 86%);
+  color: var(--text);
+  font-size: 10.5px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.mediaList .pictureBadge {
+  right: 3px;
+  bottom: 5px;
+  padding: 0 4px;
+  font-size: 9.5px;
+}
+.pictureReady {
+  color: var(--teal-light);
+  border-color: var(--accent-border);
+}
+.picturePaused {
+  color: #d9b26a;
+}
+.pictureFailed {
+  color: #e06a66;
+}
+.pictureBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgb(0 0 0 / 45%);
+}
+.pictureBar i {
+  display: block;
+  height: 100%;
+  background: var(--teal-light);
+}
+.pictureBarPaused i {
+  background: #d9b26a;
+}
+.sourceActions .pictureStart {
+  color: var(--teal-light);
+}
+.sourceActions [aria-disabled='true'] {
+  color: var(--faint);
+  cursor: default;
+}
