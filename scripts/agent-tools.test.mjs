@@ -311,10 +311,13 @@ const readText = {
   elapsedMs: 60000,
   created: '2026-11-04T00:00:00Z',
   lines: [
-    text('Orchel', 10, 14, [588, 714, 700, 750], 5, 0.98),
+    text('Orchel', 10, 13, [588, 714, 700, 750], 4, 0.98),
     text("Got it. I'll do my very best.", 10, 13, [495, 760, 1700, 800], 4),
+    text('Only...', 10, 13, [700, 805, 1100, 840], 4, 0.9),
     text('128', 12, 12, [1500, 100, 1560, 130], 1, 0.7),
     text('Objective: Reach the bridge', 0, 300, [40, 40, 400, 70], 300),
+    text('42', 20, 25, [150, 903, 190, 933], 6),
+    text('HP', 20, 25, [100, 900, 140, 930], 6),
     text('Save', 400, 401, [1800, 1000, 1880, 1040]),
   ],
 };
@@ -332,25 +335,46 @@ assert.ok(
   numbersOnly('128') && numbersOnly('-1,250') && numbersOnly('12:05') && numbersOnly('50%'),
 );
 assert.ok(!numbersOnly('HP 42') && !numbersOnly('...') && !numbersOnly('x2'));
+// By default (M391): pieces on screen over the same keyframes in one area are one compact line,
+// in reading order; nothing says what they are.
 const window = screenTextLines(shown, { recordingId: 'r1', start: 9, end: 15 });
 assert.equal(window.state, 'ready');
-assert.equal(window.frame, '1920x1080');
-assert.equal(window.totalLines, 4);
+assert.equal(window.frame, undefined);
+assert.equal(window.totalLines, 3);
 assert.deepEqual(window.lines, [
-  '10.0-14.0  bottom centre 588,714,700,750  4.0s/5kf  0.98  "Orchel"',
-  '10.0-13.0  bottom centre 495,760,1700,800  3.0s/4kf  0.95  "Got it. I\'ll do my very best."',
-  '12.0-12.0  top right 1500,100,1560,130  0.0s/1kf  0.70  "128"',
-  '0.0-300.0  top left 40,40,400,70  300.0s/300kf  0.95  "Objective: Reach the bridge"',
+  '10-13 bottom centre "Orchel / Got it. I\'ll do my very best. / Only..."',
+  '12-12 top right "128"',
+  '0-300 top left "Objective: Reach the bridge"',
 ]);
-assert.deepEqual(window.areas, { 'bottom centre': 2, 'top right': 1, 'top left': 1 });
+assert.deepEqual(window.areas, { 'bottom centre': 1, 'top right': 1, 'top left': 1 });
 assert.match(window.how, /nothing is labelled/);
+// A row reads left to right even when its pieces sit a few pixels apart.
+assert.deepEqual(screenTextLines(shown, { recordingId: 'r1', start: 20, end: 25 }).lines, [
+  '0-300 top left "Objective: Reach the bridge"',
+  '20-25 bottom left "HP / 42"',
+]);
+// detail: every piece on its own line with its box, keyframes and confidence.
+const detailed = screenTextLines(shown, { recordingId: 'r1', start: 9, end: 15, detail: true });
+assert.equal(detailed.frame, '1920x1080');
+assert.equal(detailed.totalLines, 5);
+assert.deepEqual(detailed.lines.slice(0, 2), [
+  '10.0-13.0  bottom centre 588,714,700,750  3.0s/4kf  0.98  "Orchel"',
+  '10.0-13.0  bottom centre 495,760,1700,800  3.0s/4kf  0.95  "Got it. I\'ll do my very best."',
+]);
+assert.match(detailed.how, /confidence/);
 // Filters the agent chooses: screen areas, time on screen, and lines that are only numbers.
-assert.equal(screenTextLines(shown, { recordingId: 'r1', areas: ['bottom centre'] }).totalLines, 2);
+assert.equal(
+  screenTextLines(shown, { recordingId: 'r1', areas: ['bottom centre'], detail: true }).totalLines,
+  3,
+);
 assert.deepEqual(
   screenTextLines(shown, { recordingId: 'r1', minSeconds: 3.5 }).lines.map((l) => l.split('"')[1]),
-  ['Orchel', 'Objective: Reach the bridge'],
+  ['Objective: Reach the bridge', 'HP / 42'],
 );
-assert.equal(screenTextLines(shown, { recordingId: 'r1', numbers: false }).totalLines, 4);
+assert.deepEqual(
+  screenTextLines(shown, { recordingId: 'r1', start: 20, end: 25, numbers: false }).lines,
+  ['0-300 top left "Objective: Reach the bridge"', '20-25 bottom left "HP"'],
+);
 assert.equal(screenTextLines(shown, { recordingId: 'r1' }).totalLines, 5, 'Defaults return all');
 assert.throws(() => screenTextLines(shown, { recordingId: 'r1', minSeconds: -1 }), AgentReadError);
 assert.throws(() => screenTextLines(shown, { recordingId: 'r1', cursor: 'x' }), AgentReadError);

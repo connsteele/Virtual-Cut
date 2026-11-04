@@ -506,12 +506,18 @@ export function numbersOnly(text: string) {
   return /\d/.test(text) && /^[\d\s.,:;%/+\-−×()#]*$/.test(text);
 }
 const textHow =
+  'Every piece of text the screen showed, read by OCR from one frame a second (keyframes); ' +
+  'nothing is labelled. Each line: first-last whole seconds it was on screen, where (a third ' +
+  'of the frame across and down), then the text exactly as read. Pieces that appeared and ' +
+  'went together in the same area are one line, top to bottom and left to right, joined by ' +
+  '" / " (a name plate with its dialogue, a HUD panel, a menu). Text that moves or changes is ' +
+  'a new line.';
+const textDetailHow =
   'Every piece of text the screen showed, read by OCR from one frame a second (keyframes) at ' +
-  'the frame size given; nothing is labelled. Each line: first-last seconds the text was on ' +
+  'the frame size given; nothing is labelled. Each line is one piece: first-last seconds on ' +
   'screen, where (a third of the frame across and down, then the box x0,y0,x1,y1 in pixels), ' +
   'how long it stayed up and on how many keyframes, the engine confidence 0-1, then the text ' +
-  'exactly as read. The same text in the same place is one line; a line that moves or changes ' +
-  'is a new line. OCR can misread a letter, so treat low confidence as unsure.';
+  'exactly as read. OCR can misread a letter, so treat low confidence as unsure.';
 /** Where a recording's screen text pass stands when it has no lines yet. */
 function screenTextWait(source: AgentReadSource, recordingId: string) {
   const passes = (source.jobs?.() || []).filter(
@@ -560,6 +566,8 @@ export function screenTextLines(
     areas?: readonly ScreenArea[];
     minSeconds?: number;
     numbers?: boolean;
+    /** Every piece on its own line with its box, keyframes and confidence (M391). */
+    detail?: boolean;
     cursor?: string;
   },
 ) {
@@ -597,22 +605,57 @@ export function screenTextLines(
         l.last - l.first >= minSeconds &&
         (input.numbers !== false || !numbersOnly(l.text)),
     );
-  const page = lines.slice(offset, offset + textPage);
+  // By default, pieces on screen over the same keyframes in the same area are one compact line
+  // (M391); detail lists every piece with its box, keyframes and confidence.
+  const out: { area: ScreenArea; text: string }[] = [];
+  if (input.detail)
+    for (const l of lines)
+      out.push({
+        area: l.area,
+        text:
+          `${l.first.toFixed(1)}-${l.last.toFixed(1)}  ${l.area} ${l.box.join(',')}  ` +
+          `${(l.last - l.first).toFixed(1)}s/${l.seen}kf  ${l.score.toFixed(2)}  ${JSON.stringify(l.text)}`,
+      });
+  else {
+    const groups = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const key = `${l.first}|${l.last}|${l.area}`;
+      const group = groups.get(key);
+      if (group) group.push(l);
+      else groups.set(key, [l]);
+    }
+    for (const group of groups.values()) {
+      // Reading order: rows top to bottom (a piece starting within half a line of the row's
+      // top is on that row), each row left to right.
+      group.sort((a, b) => a.box[1] - b.box[1]);
+      const rows: (typeof lines)[] = [];
+      for (const l of group) {
+        const row = rows.at(-1);
+        if (row && l.box[1] - row[0].box[1] < (row[0].box[3] - row[0].box[1]) / 2) row.push(l);
+        else rows.push([l]);
+      }
+      const text = rows
+        .flatMap((row) => row.sort((a, b) => a.box[0] - b.box[0]))
+        .map((l) => l.text);
+      const { first, last, area } = group[0];
+      out.push({
+        area,
+        text: `${first.toFixed(0)}-${last.toFixed(0)} ${area} ${JSON.stringify(text.join(' / '))}`,
+      });
+    }
+  }
+  const page = out.slice(offset, offset + textPage);
   const counts: Partial<Record<ScreenArea, number>> = {};
   for (const l of page) counts[l.area] = (counts[l.area] || 0) + 1;
   return {
     ...head,
     state: 'ready',
-    how: textHow,
-    frame: `${stored.width}x${stored.height}`,
-    totalLines: lines.length,
+    how: input.detail ? textDetailHow : textHow,
+    ...(input.detail ? { frame: `${stored.width}x${stored.height}` } : {}),
+    totalLines: out.length,
     areas: counts,
-    lines: page.map(
-      (l) =>
-        `${l.first.toFixed(1)}-${l.last.toFixed(1)}  ${l.area} ${l.box.join(',')}  ` +
-        `${(l.last - l.first).toFixed(1)}s/${l.seen}kf  ${l.score.toFixed(2)}  ${JSON.stringify(l.text)}`,
-    ),
-    nextCursor: lines.length > offset + textPage ? String(offset + textPage) : undefined,
+    lines: page.map((l) => l.text),
+    nextCursor: out.length > offset + textPage ? String(offset + textPage) : undefined,
     projectRevision: source.revision,
   };
 }
