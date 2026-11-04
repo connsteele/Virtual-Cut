@@ -18,6 +18,7 @@ export const fast = [
   'split-snap.test.mjs',
   'proposal-previews.test.mjs',
   'job-lanes.test.mjs',
+  'script-paths.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',

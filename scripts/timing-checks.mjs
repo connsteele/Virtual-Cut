@@ -34,10 +34,7 @@ const app = await electron.launch({
   executablePath: require('electron'),
   args: [root, `--user-data-dir=${dir}/profile`, '--background-test'],
   cwd: root,
-  env: electronEnvironment({
-    TEMP: process.env.TEMP || 'G:/GPT/Temp',
-    TMP: process.env.TEMP || 'G:/GPT/Temp',
-  }),
+  env: electronEnvironment({}),
 });
 try {
   const page = await app.firstWindow();

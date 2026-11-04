@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { assertBuilt, electronEnvironment, require, root } from './shared.mjs';
+import { assertBuilt, electronEnvironment, require, root, scratchPath } from './shared.mjs';
 
 assertBuilt();
-const directory = process.env.VIRTUAL_CUT_TEST_OUTPUT || 'G:/GPT/Work/virtual-cut/overlaps/qa';
+const directory = process.env.VIRTUAL_CUT_TEST_OUTPUT || scratchPath('overlaps');
 await mkdir(directory, { recursive: true });
 const profile = await mkdtemp(path.join(directory, 'profile-'));
 const packaged = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -16,8 +16,6 @@ const app = await electron.launch({
   cwd: root,
   env: electronEnvironment({
     VIRTUAL_CUT_TEST_BACKGROUND: '1',
-    TEMP: 'G:/GPT/Temp',
-    TMP: 'G:/GPT/Temp',
   }),
 });
 const stateKey = 'virtual-cut.workflow-preview.full-resolution.v1';

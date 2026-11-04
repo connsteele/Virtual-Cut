@@ -17,8 +17,6 @@ async function ffmpeg(args) {
       windowsHide: true,
       env: {
         ...process.env,
-        TEMP: process.env.TEMP || 'G:/GPT/Temp',
-        TMP: process.env.TEMP || 'G:/GPT/Temp',
       },
     });
     let stderr = '';

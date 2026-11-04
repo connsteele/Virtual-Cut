@@ -1,11 +1,30 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const require = createRequire(import.meta.url);
+
+// Local settings live in an uncommitted .env at the repository root (see .env.example and
+// the README). A value already set for this run wins over the file.
+const settings = path.join(root, '.env');
+if (existsSync(settings)) process.loadEnvFile(settings);
+
+/** A folder for check and study output: VIRTUAL_CUT_SCRATCH, else the OS temp folder. */
+export const scratchPath = (...parts) =>
+  path.resolve(process.env.VIRTUAL_CUT_SCRATCH || path.join(os.tmpdir(), 'virtual-cut'), ...parts);
+
+/** A setting a script cannot run without, such as real footage; stops with what to set. */
+export function requiredSetting(name, purpose) {
+  const value = process.env[name];
+  if (!value)
+    throw new Error(`Set ${name} to ${purpose}, in .env or for this run (see .env.example).`);
+  return value;
+}
 
 if (process.env.VIRTUAL_CUT_COVERAGE_DIR && process.env.VIRTUAL_CUT_COVERAGE_CHECK)
   (await import('./coverage-desktop.mjs')).installCoverageCollector();
@@ -14,6 +33,15 @@ if (process.env.VIRTUAL_CUT_HANG_REQUEST)
     process.env.VIRTUAL_CUT_HANG_REQUEST,
     process.env.VIRTUAL_CUT_HANG_OUTPUT,
   );
+
+/** The fixture transport-fixture.mjs builds in VIRTUAL_CUT_TRANSPORT_FIXTURE. */
+export async function transportFixture() {
+  const folder = requiredSetting(
+    'VIRTUAL_CUT_TRANSPORT_FIXTURE',
+    'the folder holding the transport fixture (build it with scripts/transport-fixture.mjs)',
+  );
+  return JSON.parse(await readFile(path.join(folder, 'latest-fixture.json'), 'utf8'));
+}
 
 export function electronEnvironment(extra = {}) {
   const env = { ...process.env, ...extra };

@@ -1,10 +1,11 @@
-import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { writeFile, mkdtemp, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { _electron as electron } from 'playwright/test';
-import { root, require, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
-const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));
+import { root, require, electronEnvironment, scratchPath, transportFixture } from './shared.mjs';
+const scratch = scratchPath('transport');
+await mkdir(scratch, { recursive: true });
+const fixture = await transportFixture();
 const dir = await mkdtemp(path.join(scratch, 'delivery-'));
 const html = path.join(dir, 'player.html');
 await writeFile(
@@ -20,7 +21,7 @@ const app = await electron.launch({
     '--enable-blink-features=AudioVideoTracks',
   ],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment(),
 });
 const page = await app.firstWindow();
 const results = [];

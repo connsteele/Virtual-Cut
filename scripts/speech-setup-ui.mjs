@@ -5,20 +5,14 @@ import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
+import { testPath } from './test-paths.mjs';
 const fixture = JSON.parse(
   await readFile(
-    process.env.VIRTUAL_CUT_TRANSCRIPT_FIXTURE ||
-      path.join(
-        process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/m3-storage-validation',
-        'transcripts/latest.json',
-      ),
+    process.env.VIRTUAL_CUT_TRANSCRIPT_FIXTURE || testPath('transcripts', 'latest.json'),
     'utf8',
   ),
 );
-const base = path.join(
-  process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/runtime-setup/ui',
-  'speech-setup-ui',
-);
+const base = testPath('speech-setup-ui');
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'run-'));
 const project = path.join(dir, 'setup-review.vcut');
@@ -91,8 +85,6 @@ try {
     ],
     cwd: root,
     env: electronEnvironment({
-      TEMP: process.env.TEMP || 'G:/GPT/Temp',
-      TMP: process.env.TMP || 'G:/GPT/Temp',
       LOCALAPPDATA: localAppData,
     }),
   });

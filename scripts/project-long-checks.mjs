@@ -3,11 +3,12 @@ import { mkdir, mkdtemp, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { root, require, electronEnvironment } from './shared.mjs';
-const source =
-  process.env.VIRTUAL_CUT_LONG_FIXTURE ||
-  'G:/GPT/Work/virtual-cut/spoken-cues-20260929/recording.mp4';
-const base = 'G:/GPT/Work/virtual-cut/milestone-1';
+import { root, require, electronEnvironment, requiredSetting, scratchPath } from './shared.mjs';
+const source = requiredSetting(
+  'VIRTUAL_CUT_LONG_FIXTURE',
+  'a disposable copy of a long recording (never the original)',
+);
+const base = scratchPath('long-recording');
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'long-')),
   before = await stat(source);
@@ -15,7 +16,7 @@ const app = await electron.launch({
   executablePath: require('electron'),
   args: [root, `--user-data-dir=${path.join(dir, 'profile')}`, '--background-test'],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment(),
 });
 let page;
 try {

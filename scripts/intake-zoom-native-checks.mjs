@@ -56,8 +56,6 @@ await new Promise((resolve, reject) => {
       windowsHide: true,
       env: {
         ...process.env,
-        TEMP: process.env.TEMP || 'G:/GPT/Temp',
-        TMP: process.env.TEMP || 'G:/GPT/Temp',
       },
     },
   );

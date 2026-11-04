@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { assertBuilt, electronEnvironment, require, root } from './shared.mjs';
+import { assertBuilt, electronEnvironment, require, root, scratchPath } from './shared.mjs';
 import { verifyIteration03 } from './iteration-03-checks.mjs';
 
 assertBuilt();
@@ -12,7 +12,7 @@ const catalog = JSON.parse(
   await readFile(path.join(root, 'src/workflow/demo-recordings.json'), 'utf8'),
 );
 const stateKey = 'virtual-cut.workflow-preview.full-resolution.v1';
-const directory = process.env.VIRTUAL_CUT_TEST_OUTPUT || 'G:/GPT/Work/virtual-cut/desktop-ui/qa';
+const directory = process.env.VIRTUAL_CUT_TEST_OUTPUT || scratchPath('desktop-ui');
 await mkdir(directory, { recursive: true });
 const profile = await mkdtemp(path.join(directory, 'profile-'));
 const packaged = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
@@ -22,8 +22,6 @@ const app = await electron.launch({
   cwd: root,
   env: electronEnvironment({
     VIRTUAL_CUT_TEST_BACKGROUND: '1',
-    TEMP: 'G:/GPT/Temp',
-    TMP: 'G:/GPT/Temp',
   }),
 });
 const errors = [];
