@@ -214,8 +214,11 @@ export function ScreenTextSetup({ api }: { api: TranscriptApi }) {
             )}
           </>
         )}
-        {state?.state === 'ready' && (
+        {/* A checked download that could not be switched to; once it is the previous engine,
+            "Use the previous engine again" below does the same. */}
+        {state?.state === 'ready' && state.folder !== other?.folder && (
           <>
+            <p className={s.path}>{state.folder}</p>
             <p role="status">{state.message}</p>
             <Button primary disabled={!!busy} onClick={() => act('activate')}>
               Use this engine
