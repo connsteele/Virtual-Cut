@@ -19,6 +19,8 @@ import {
   contextPacket,
   currentView,
   projectSummary,
+  screenAreas,
+  screenTextLines,
   transcriptLines,
   visualEventLines,
   visualKinds,
@@ -40,7 +42,8 @@ const instructions =
   'Virtual Cut prepares game footage for YouTube. These tools read the project that is open in ' +
   'Virtual Cut right now: what is on screen, batches with their game and brief, the context ' +
   'packet, transcript lines between two times, where the picture goes black, freezes, cuts or ' +
-  'fades between two times, and existing markers, clips, notes and cue decisions. Times are ' +
+  'fades between two times, the text the screen showed between two times, and existing ' +
+  'markers, clips, notes and cue decisions. Times are ' +
   'seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
@@ -94,6 +97,8 @@ export function registerAgentAccess(options: {
       view: access.view,
       pictureEvents: (recordingId) => store.pictureEvents(recordingId, false),
       jobs: () => store.jobs(),
+      screenText: (recordingId) => store.screenText(recordingId),
+      screenTextEngine: () => options.projects()?.screenText.problem || '',
       taggedNotes: (recordingId) => {
         const file = store.sources().find((s) => s.id === recordingId)?.file;
         if (!file) return undefined;
@@ -241,6 +246,59 @@ export function registerAgentAccess(options: {
         `Picture events of ${n(a.recording_id)}, ` +
         `${clock(a.start_seconds ?? 0)}–${a.end_seconds === undefined ? 'end' : clock(a.end_seconds)}` +
         (a.kinds?.length ? ` (${a.kinds.join(', ')})` : '') +
+        (a.cursor ? ' (next page)' : ''),
+    );
+    read<{
+      recording_id: string;
+      start_seconds?: number;
+      end_seconds?: number;
+      areas?: (typeof screenAreas)[number][];
+      min_seconds?: number;
+      numbers?: boolean;
+      cursor?: string;
+    }>(
+      'get_screen_text',
+      "Every piece of text one recording's screen showed between two times (dialogue, names, " +
+        'menus, tooltips, notices, numbers), as text lines: when it was on screen, where, for ' +
+        'how long and how sure the reading is. Read by Virtual Cut once per recording file, one ' +
+        'frame a second, so no video tools are needed. Nothing is labelled: judge what a line is ' +
+        "from where and how long it stayed up, and the game's layout. 200 lines per page with " +
+        'counts per screen area; when more remain, pass next_cursor as cursor. If the screen ' +
+        'text has not been read yet, state says so: that means unknown, not none.',
+      z.object({
+        recording_id: z.string().max(200),
+        start_seconds: z.number().min(0).optional(),
+        end_seconds: z.number().positive().optional(),
+        areas: z
+          .array(z.enum(screenAreas))
+          .max(9)
+          .optional()
+          .describe('Only text whose centre is in these thirds of the frame. All when omitted.'),
+        min_seconds: z
+          .number()
+          .min(0)
+          .optional()
+          .describe('Only text that stayed on screen at least this many seconds.'),
+        numbers: z
+          .boolean()
+          .optional()
+          .describe('false leaves out lines that are only numbers (damage, counters, timers).'),
+        cursor: z.string().max(40).optional(),
+      }),
+      (s, a) =>
+        screenTextLines(s, {
+          recordingId: a.recording_id,
+          start: a.start_seconds,
+          end: a.end_seconds,
+          areas: a.areas,
+          minSeconds: a.min_seconds,
+          numbers: a.numbers,
+          cursor: a.cursor,
+        }),
+      (a, n) =>
+        `Screen text of ${n(a.recording_id)}, ` +
+        `${clock(a.start_seconds ?? 0)}–${a.end_seconds === undefined ? 'end' : clock(a.end_seconds)}` +
+        (a.areas?.length ? ` (${a.areas.join(', ')})` : '') +
         (a.cursor ? ' (next page)' : ''),
     );
     read<{ batch_id?: string; recording_id?: string }>(

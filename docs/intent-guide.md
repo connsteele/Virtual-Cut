@@ -1,4 +1,4 @@
-# Intent guide (version 2)
+# Intent guide (version 3)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -59,10 +59,6 @@ A line can carry several intents.
   rejected, why when they said, and what they changed after accepting. A reject for the wrong
   moment means the idea was right but the time was not.
 
-Held for a later version: "Propose a spelling only when it was seen written on screen" (decision
-D6) waits for screen text through MCP (VC-141, VC-171). Without it, agents mark names unsure rather
-than fixing them.
-
 ## Games
 
 Lessons that hold for one game stay under that game's header so they don't leak into others. The
@@ -70,9 +66,14 @@ agent uses the section whose game matches `get_context`; the general section app
 game. A lesson moves to general only when it holds in a second game or the creator says so. A game
 gets its own section when its footage comes through and it has lessons of its own.
 
-| Section | Recurring moments clipped | Lessons  |
-| ------- | ------------------------- | -------- |
-| General | first 3                   | none yet |
+| Section | Recurring moments clipped | Lessons                                         |
+| ------- | ------------------------- | ----------------------------------------------- |
+| General | first 3                   | the two screen text sentences below (version 3) |
+
+General lessons, for every game (version 3, VC-191):
+
+- Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.
+- Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure. (decision D6, held until screen text reached agents)
 
 ## The user's layer
 

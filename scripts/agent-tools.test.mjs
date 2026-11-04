@@ -6,6 +6,9 @@ import {
   currentView,
   projectSummary,
   readableName,
+  numbersOnly,
+  screenArea,
+  screenTextLines,
   transcriptLines,
   visualEventLines,
 } from '../dist-electron/agent-tools.js';
@@ -289,6 +292,125 @@ const reading = visualEventLines(unread, { recordingId: 'r1' });
 assert.equal(reading.state, 'reading');
 assert.match(reading.note, /42%/);
 
+// Screen text (VC-191): every line the screen showed, as facts, filtered and paged; no labels.
+const text = (t, first, last, box, seen = 2, score = 0.95) => ({
+  text: t,
+  box,
+  first,
+  last,
+  seen,
+  score,
+});
+const readText = {
+  version: 1,
+  width: 1920,
+  height: 1080,
+  keyframes: 600,
+  read: 580,
+  gpu: true,
+  elapsedMs: 60000,
+  created: '2026-11-04T00:00:00Z',
+  lines: [
+    text('Orchel', 10, 14, [588, 714, 700, 750], 5, 0.98),
+    text("Got it. I'll do my very best.", 10, 13, [495, 760, 1700, 800], 4),
+    text('128', 12, 12, [1500, 100, 1560, 130], 1, 0.7),
+    text('Objective: Reach the bridge', 0, 300, [40, 40, 400, 70], 300),
+    text('Save', 400, 401, [1800, 1000, 1880, 1040]),
+  ],
+};
+const shown = {
+  ...source,
+  screenText: (id) => (id === 'r1' ? readText : null),
+  screenTextEngine: () => '',
+  jobs: () => [],
+};
+assert.equal(screenArea([588, 714, 700, 750], 1920, 1080), 'bottom centre');
+assert.equal(screenArea([40, 40, 400, 70], 1920, 1080), 'top left');
+assert.equal(screenArea([0, 0, 1920, 1080], 1920, 1080), 'centre');
+assert.equal(screenArea([1900, 1070, 1920, 1080], 1920, 1080), 'bottom right');
+assert.ok(
+  numbersOnly('128') && numbersOnly('-1,250') && numbersOnly('12:05') && numbersOnly('50%'),
+);
+assert.ok(!numbersOnly('HP 42') && !numbersOnly('...') && !numbersOnly('x2'));
+const window = screenTextLines(shown, { recordingId: 'r1', start: 9, end: 15 });
+assert.equal(window.state, 'ready');
+assert.equal(window.frame, '1920x1080');
+assert.equal(window.totalLines, 4);
+assert.deepEqual(window.lines, [
+  '10.0-14.0  bottom centre 588,714,700,750  4.0s/5kf  0.98  "Orchel"',
+  '10.0-13.0  bottom centre 495,760,1700,800  3.0s/4kf  0.95  "Got it. I\'ll do my very best."',
+  '12.0-12.0  top right 1500,100,1560,130  0.0s/1kf  0.70  "128"',
+  '0.0-300.0  top left 40,40,400,70  300.0s/300kf  0.95  "Objective: Reach the bridge"',
+]);
+assert.deepEqual(window.areas, { 'bottom centre': 2, 'top right': 1, 'top left': 1 });
+assert.match(window.how, /nothing is labelled/);
+// Filters the agent chooses: screen areas, time on screen, and lines that are only numbers.
+assert.equal(screenTextLines(shown, { recordingId: 'r1', areas: ['bottom centre'] }).totalLines, 2);
+assert.deepEqual(
+  screenTextLines(shown, { recordingId: 'r1', minSeconds: 3.5 }).lines.map((l) => l.split('"')[1]),
+  ['Orchel', 'Objective: Reach the bridge'],
+);
+assert.equal(screenTextLines(shown, { recordingId: 'r1', numbers: false }).totalLines, 4);
+assert.equal(screenTextLines(shown, { recordingId: 'r1' }).totalLines, 5, 'Defaults return all');
+assert.throws(() => screenTextLines(shown, { recordingId: 'r1', minSeconds: -1 }), AgentReadError);
+assert.throws(() => screenTextLines(shown, { recordingId: 'r1', cursor: 'x' }), AgentReadError);
+assert.throws(() => screenTextLines(shown, { recordingId: 'r1', start: 700 }), AgentReadError);
+// 200 lines a page with next_cursor; each page counts its own areas.
+const crowded = {
+  ...shown,
+  screenText: () => ({
+    ...readText,
+    lines: Array.from({ length: 450 }, (_, i) => text(`${i}`, i, i + 1, [10, 10, 40, 30])),
+  }),
+};
+const p1 = screenTextLines(crowded, { recordingId: 'r1' });
+assert.equal(p1.lines.length, 200);
+assert.equal(p1.nextCursor, '200');
+assert.deepEqual(p1.areas, { 'top left': 200 });
+const p3 = screenTextLines(crowded, { recordingId: 'r1', cursor: '400' });
+assert.equal(p3.lines.length, 50);
+assert.equal(p3.nextCursor, undefined);
+// Not ready: where the pass stands, never an empty list; get_context says it per recording.
+const textJobs = [];
+const unreadText = { ...shown, screenText: () => null, jobs: () => textJobs };
+const notRead = screenTextLines(unreadText, { recordingId: 'r1' });
+assert.equal(notRead.state, 'not analysed');
+assert.equal(notRead.lines, undefined);
+assert.match(notRead.note, /Analyse picture now/);
+assert.equal(
+  screenTextLines(
+    { ...unreadText, screenTextEngine: () => 'Screen text engine not installed.' },
+    {
+      recordingId: 'r1',
+    },
+  ).state,
+  'engine not installed',
+);
+textJobs.push({
+  id: 't1',
+  sourceId: 'r1',
+  kind: 'text',
+  state: 'queued',
+  progress: 0,
+  message: 'Waiting for this recording’s picture events',
+  updated: '2026-11-04T01:00:00Z',
+});
+const waitingText = screenTextLines(unreadText, { recordingId: 'r1' });
+assert.equal(waitingText.state, 'waiting');
+assert.match(waitingText.note, /picture events/);
+textJobs[0] = { ...textJobs[0], state: 'running', progress: 0.37 };
+assert.equal(screenTextLines(unreadText, { recordingId: 'r1' }).state, 'reading');
+textJobs[0] = { ...textJobs[0], state: 'failed', message: 'The screen text engine stopped.' };
+assert.equal(screenTextLines(unreadText, { recordingId: 'r1' }).state, 'failed');
+assert.deepEqual(
+  contextPacket(shown).alreadyMarked.map((r) => [r.recordingId, r.screenText]),
+  contextPacket(source).alreadyMarked.map((r) => [
+    r.recordingId,
+    r.recordingId === 'r1' ? 'ready' : 'not analysed',
+  ]),
+);
+assert.equal(contextPacket(unreadText).alreadyMarked[0].screenText, 'failed');
+
 // No answer may carry a path, media URL or note link.
 const everything = JSON.stringify([
   view,
@@ -301,9 +423,11 @@ const everything = JSON.stringify([
   annotations(source, 'b1', 'r1'),
   scenes,
   none,
+  window,
+  notRead,
 ]);
 for (const secret of ['I:\\\\Recordings', 'media://', 'C:\\\\x', 'sourcePath', 'poster'])
   assert.ok(!everything.includes(secret), `answers leak ${secret}`);
 console.log(
-  'Agent read tools: views, summaries, context, paging, picture events and no paths passed.',
+  'Agent read tools: views, summaries, context, paging, picture events, screen text and no paths passed.',
 );

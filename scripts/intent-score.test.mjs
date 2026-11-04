@@ -290,7 +290,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '2');
+  assert.equal(all.guide.version, '3');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -364,6 +364,7 @@ Note I like the crowd
 }
 // Guide v2 (VC-187): the accepted sentences ship word for word, the rules for recordings with no
 // mic and for recurring moments, per-game sections, and a readable copy that stays in step.
+// Guide v3 (VC-191): the two screen text sentences, accepted as S11-GUIDE, in the general section.
 {
   const strings = (v) =>
     typeof v === 'string'
@@ -377,7 +378,13 @@ Note I like the crowd
     'Keep a Split where it was said unless a black screen ends within 5 s before it. Propose a ' +
       "cut up to 12 s back only when what's said shows the call came late, and say why.",
   );
-  assert.ok(!/spelling/.test(text), 'the spelling sentence waits for screen text (VC-171)');
+  assert.deepEqual(intentGuide.games.general.lessons, [
+    'Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips ' +
+      'and damage numbers. Use where and how long it stayed up to judge what it is, and learn ' +
+      "each game's layout in its own section.",
+    'Spell a name only as it was seen written on screen (get_screen_text) or as it appears in ' +
+      'the game vocabulary. Otherwise mark it unsure.',
+  ]);
   has('A part of one continuous scene is a range marker (end_seconds), not a clip range.');
   has('mic speech is optional evidence, never a requirement');
   has('"No commentary on this recording; proposals come from the game alone"');
@@ -395,7 +402,8 @@ Note I like the crowd
   assert.ok(doc.startsWith(`# Intent guide (version ${intentGuide.version})`));
   for (const words of [
     'unless a black screen ends within 5 s before it',
-    'Held for a later version: "Propose a spelling only when it was seen written on screen"',
+    'Screen text is raw: every piece of text the screen showed',
+    'Spell a name only as it was seen written on screen (get_screen_text)',
     'marker, not a clip range',
     'No mic, or a silent mic',
     'Recurring moments',
