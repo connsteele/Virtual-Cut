@@ -20,6 +20,7 @@ export const fast = [
   'job-lanes.test.mjs',
   'visual-events.test.mjs',
   'script-paths.test.mjs',
+  'screen-text-runtime.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
