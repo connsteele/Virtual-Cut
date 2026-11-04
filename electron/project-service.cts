@@ -2204,7 +2204,8 @@ export class ProjectService {
       kind: job.kind,
     });
     let fraction = job.progress || 0,
-      last = 0;
+      last = 0,
+      use: 'gpu' | 'cpu' | undefined;
     const elapsed = () => progress.elapsedMs + Math.round(performance.now() - began);
     const put = (force = false) => {
       if (!force && Date.now() - last < 500) return;
@@ -2213,6 +2214,7 @@ export class ProjectService {
         ...job,
         state: 'running',
         progress: fraction,
+        use,
         message: 'Reading screen text',
         elapsedMs: elapsed(),
         updated: new Date().toISOString(),
@@ -2274,6 +2276,11 @@ export class ProjectService {
             put();
           },
           signal,
+          undefined,
+          (gpu) => {
+            use = gpu ? 'gpu' : 'cpu';
+            put(true);
+          },
         );
       } finally {
         clearInterval(watch);
@@ -2306,6 +2313,7 @@ export class ProjectService {
         ...job,
         state: 'succeeded',
         progress: 1,
+        use: stored.gpu ? 'gpu' : 'cpu',
         message: `Screen text ready · ${count} from ${stored.keyframes} keyframes (${stored.keyframes - stored.read} unchanged)${stored.gpu ? '' : ' · read on the CPU'}`,
         elapsedMs: stored.elapsedMs,
         updated: new Date().toISOString(),

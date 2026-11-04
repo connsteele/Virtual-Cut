@@ -73,6 +73,7 @@ export const desktop = [
   'proposal-preview-ui.mjs',
   'combined-transcript-ui.mjs',
   'visual-pass-ui.mjs',
+  'screen-text-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],

@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
 import { require, root } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
+import { screenTextClip, stubEngine } from './screen-text-stub.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { readKeyframes } = require('../dist-electron/screen-text-pass.cjs');
-const {
-  screenTextLayout,
-  SCREEN_TEXT_MODELS,
-} = require('../dist-electron/screen-text-runtime.cjs');
 const { keyframeArgs, readSize } = await import('../dist-electron/screen-text.js');
 
 // VC-141: the background screen text pass. It waits for the recording's picture pass, reads one
@@ -36,41 +33,10 @@ const tool = (args) =>
     p.on('close', (code) => (code ? reject(Error(error)) : resolve()));
   });
 
-// A stand-in engine: this PC's Python (linked as the engine's python folder) and the stub OCR.
-const system =
-  process.env.VIRTUAL_CUT_STUB_PYTHON ||
-  spawnSync('python', ['-c', 'import sys; print(sys.executable)'], {
-    encoding: 'utf8',
-  }).stdout?.trim();
-assert(system, 'Python 3 is needed on PATH (or VIRTUAL_CUT_STUB_PYTHON) for this check.');
-const engine = path.join(dir, 'engine'),
-  layout = screenTextLayout(engine);
-await mkdir(engine, { recursive: true });
-await symlink(path.dirname(system), path.join(engine, 'python'), 'junction');
-await cp(path.join(root, 'scripts', 'screen-text-stub'), layout.libraries, { recursive: true });
-await mkdir(path.join(layout.libraries, 'rapidocr', 'models'), { recursive: true });
-for (const name of SCREEN_TEXT_MODELS)
-  await writeFile(path.join(layout.libraries, 'rapidocr', 'models', name), 'stub');
+const { folder: engine, layout } = await stubEngine(dir);
 process.env.VIRTUAL_CUT_OCR_RUNTIME = engine;
-
-// 20 s at 30 fps, a keyframe every second: moving picture, a 6 s frozen frame, black, moving.
 const clip = path.join(dir, 'screen-text.mp4');
-await tool([
-  ...['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30'],
-  ...['-f', 'lavfi', '-i', 'color=c=black:size=1280x720:rate=30'],
-  ...['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000'],
-  '-filter_complex',
-  [
-    '[0:v]trim=duration=6[a]',
-    '[0:v]trim=start=6:duration=0.0334,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=6[b]',
-    '[1:v]trim=duration=2[c]',
-    '[0:v]trim=start=14:duration=6,setpts=PTS-STARTPTS[d]',
-    '[a][b][c][d]concat=n=4:v=1:a=0,format=yuv420p[v]',
-  ].join(';'),
-  ...['-map', '[v]', '-map', '2:a', '-map', '2:a', '-t', '20'],
-  ...['-c:v', 'libx264', '-preset', 'ultrafast', '-g', '30', '-keyint_min', '30'],
-  ...['-sc_threshold', '0', '-c:a', 'aac', '-y', clip],
-]);
+await screenTextClip(tool, clip);
 const results = {};
 
 // The worker and its guard: frames in time order, unchanged spans skipped, and a parent that

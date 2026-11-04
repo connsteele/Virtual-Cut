@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { JobTime } from './JobTime';
 import { jobLabel } from './RecordingJobs';
-import { FolderOpen, ScanEye, Trash2 } from 'lucide-react';
+import { FolderOpen, ScanEye, ScanText, Trash2 } from 'lucide-react';
 import type { useProjectWorkspace } from './useProjectWorkspace';
 import type { Recording } from './model';
 import type {
@@ -821,6 +821,18 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                               : j.message}
                           </p>
                         )}
+                        {j.kind === 'text' && ['queued', 'running'].includes(j.state) && (
+                          <p data-screen-text-use={j.use || 'waiting'}>
+                            Media lane ·{' '}
+                            {j.state === 'running'
+                              ? j.use === 'cpu'
+                                ? 'CPU'
+                                : j.use === 'gpu'
+                                  ? 'GPU (DirectML)'
+                                  : 'starting'
+                              : j.message}
+                          </p>
+                        )}
                         <p>
                           {j.state} ·{' '}
                           <JobTime
@@ -830,9 +842,10 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                           />
                         </p>
                         {j.state === 'running' && <progress value={j.progress} max={1} />}
-                        {!(j.kind === 'visual' && ['queued', 'running'].includes(j.state)) && (
-                          <p className={s.muted}>{j.message}</p>
-                        )}
+                        {!(
+                          (j.kind === 'visual' || j.kind === 'text') &&
+                          ['queued', 'running'].includes(j.state)
+                        ) && <p className={s.muted}>{j.message}</p>}
                         {j.device && (
                           <p>
                             {j.device === 'cuda' ? 'NVIDIA GPU' : 'CPU'} transcription
@@ -990,19 +1003,22 @@ export function RecordingActions({
 function PictureBatch({ workspace: w }: { workspace: Workspace }) {
   const p = w.snapshot;
   if (!p) return null;
+  const asked = (r: Recording, kind: 'visual' | 'text') =>
+    p.jobs.some(
+      (j) =>
+        j.sourceId === r.id &&
+        j.kind === kind &&
+        j.origin === 'user' &&
+        ['queued', 'running'].includes(j.state),
+    );
+  // Screen text counts only where it can be read (VC-141): with its engine in place.
   const waiting = p.model.recordings.filter(
     (r) =>
       r.batchIds?.includes(p.activeBatchId) &&
       r.availability === 'ready' &&
       !r.retained &&
-      !p.pictures?.[r.id] &&
-      !p.jobs.some(
-        (j) =>
-          j.sourceId === r.id &&
-          j.kind === 'visual' &&
-          j.origin === 'user' &&
-          ['queued', 'running'].includes(j.state),
-      ),
+      ((!p.pictures?.[r.id] && !asked(r, 'visual')) ||
+        (!p.screenTextEngine && !p.screenText?.[r.id] && !asked(r, 'text'))),
   );
   return (
     <p className={s.tools}>
@@ -1023,9 +1039,14 @@ function PictureBatch({ workspace: w }: { workspace: Workspace }) {
       </Button>
       <span className={s.muted}>
         {waiting.length
-          ? `${waiting.length} recording${waiting.length === 1 ? '' : 's'} in this batch without picture events. Goes ahead of other background work; pauses while a transcription runs or a preview plays.`
-          : 'Every recording in this batch has picture events or is being read.'}
+          ? `${waiting.length} recording${waiting.length === 1 ? '' : 's'} in this batch without picture events${p.screenTextEngine ? '' : ' or screen text'}. Goes ahead of other background work; pauses while a transcription runs or a preview plays.`
+          : `Every recording in this batch has picture events${p.screenTextEngine ? '' : ' and screen text'}, or is being read.`}
       </span>
+      {p.screenTextEngine && (
+        <span className={s.muted} data-screen-text-engine="missing">
+          {p.screenTextEngine.replace(/\.$/, '')}. Picture events still run. <ScreenTextSetupLink />
+        </span>
+      )}
     </p>
   );
 }
@@ -1078,10 +1099,63 @@ export function pictureStatus(p: ProjectSnapshot, r: Recording) {
     : { state: 'none', text: 'Picture events not read' };
 }
 
+/** Where a recording's screen text pass stands (VC-141), for its card. */
+export function screenTextStatus(p: ProjectSnapshot, r: Recording) {
+  if (r.availability !== 'ready' || r.retained || r.sample) return null;
+  const passes = p.jobs.filter((j) => j.sourceId === r.id && j.kind === 'text');
+  const active =
+    passes.find((j) => j.state === 'running') || passes.find((j) => j.state === 'queued');
+  const ready = p.screenText?.[r.id];
+  const percent = `${Math.floor((active?.progress || 0) * 100)}%`;
+  if (active?.state === 'running')
+    return {
+      state: 'running',
+      text: `Reading screen text… ${percent}`,
+      badge: percent,
+      progress: active.progress,
+    };
+  if (active && active.progress > 0)
+    return {
+      state: 'queued',
+      text: `Reading screen text… ${percent} · ${active.message.replace(/^Paused: /, 'paused for ')}`,
+      badge: `${percent} · paused`,
+      progress: active.progress,
+      paused: true,
+    };
+  if (active)
+    return { state: 'queued', text: `Screen text waiting · ${active.message}`, badge: 'Waiting' };
+  if (ready)
+    return {
+      state: 'ready',
+      text: `Screen text ready · ${ready.lines.toLocaleString('en-US')} line${ready.lines === 1 ? '' : 's'} · ${pictureTime(ready.elapsedMs)}`,
+      badge: '✓',
+    };
+  if (p.screenTextEngine) return { state: 'missing', text: 'Screen text engine not installed' };
+  const failed = passes.find((j) => j.state === 'failed');
+  return failed && passes.every((j) => j.updated <= failed.updated)
+    ? { state: 'failed', text: `Screen text pass failed: ${failed.message}`, badge: 'Failed' }
+    : { state: 'none', text: 'Screen text not read' };
+}
+
+/** Opens the Transcript window's engine settings at the screen text engine (VC-192's card). */
+function ScreenTextSetupLink() {
+  return (
+    <button
+      type="button"
+      className={s.linkButton}
+      onClick={() => background(window.virtualCut!.transcript.openEngineSetup('screen-text'))}
+    >
+      Set up screen text engine
+    </button>
+  );
+}
+
 /**
  * The picture pass on a recording's thumbnail (VC-180, option B): a badge with the progress or a
  * tick once events are ready, and a thin bar along the bottom while it reads. Without a
- * thumbnail the same status is a short line.
+ * thumbnail the same status is a short line. Screen text (VC-141) follows on the same badge once
+ * the picture is read: its icon and percent while it reads, and both icons with the tick when
+ * both are ready.
  */
 export function RecordingPicture({
   recording: r,
@@ -1093,16 +1167,37 @@ export function RecordingPicture({
   thumbnail?: boolean;
 }) {
   const p = w.snapshot;
-  const status = p && pictureStatus(p, r);
-  if (!status || (status.state === 'none' && thumbnail)) return null;
+  const picture = p && pictureStatus(p, r);
+  const text = p && screenTextStatus(p, r);
+  if (!picture || !text || (picture.state === 'none' && thumbnail)) return null;
   if (!thumbnail)
-    return status.state === 'none' ? null : (
-      <small className={s.muted} data-picture-status={status.state}>
-        {status.text}
-      </small>
+    return picture.state === 'none' ? null : (
+      <>
+        <small className={s.muted} data-picture-status={picture.state}>
+          {picture.text}
+        </small>
+        <small className={s.muted} data-screen-text-status={text.state}>
+          {text.text}
+          {text.state === 'missing' && (
+            <>
+              {' · '}
+              <ScreenTextSetupLink />
+            </>
+          )}
+        </small>
+      </>
     );
+  // The badge follows the picture pass until it is done, then screen text.
+  const reading = picture.state === 'ready' && ['running', 'queued', 'failed'].includes(text.state);
+  const status = reading ? { ...text, state: text.state } : picture;
+  const both = picture.state === 'ready' && text.state === 'ready';
+  const label = `${picture.text} · ${text.text}`;
   return (
-    <span className={s.pictureOverlay} data-picture-status={status.state}>
+    <span
+      className={s.pictureOverlay}
+      data-picture-status={picture.state}
+      data-screen-text-status={text.state}
+    >
       {status.progress != null && (
         <span className={`${s.pictureBar} ${status.paused ? s.pictureBarPaused : ''}`}>
           <i style={{ width: `${status.progress * 100}%` }} />
@@ -1110,11 +1205,18 @@ export function RecordingPicture({
       )}
       <span
         className={`${s.pictureBadge} ${status.state === 'ready' ? s.pictureReady : status.paused ? s.picturePaused : status.state === 'failed' ? s.pictureFailed : ''}`}
-        title={status.text}
-        aria-label={status.text}
+        title={label}
+        aria-label={label}
         role="status"
       >
-        {status.state !== 'queued' || status.paused ? <ScanEye size={11} aria-hidden /> : null}
+        {reading ? (
+          status.state !== 'queued' || status.paused ? (
+            <ScanText size={11} aria-hidden />
+          ) : null
+        ) : status.state !== 'queued' || status.paused ? (
+          <ScanEye size={11} aria-hidden />
+        ) : null}
+        {both && <ScanText size={11} aria-hidden />}
         {status.badge}
       </span>
     </span>
@@ -1131,17 +1233,38 @@ function PictureButton({
 }) {
   const p = w.snapshot;
   const status = p && pictureStatus(p, r);
-  if (!p || !status) return null;
-  const startable = status.state === 'none' || status.state === 'failed';
+  const text = p && screenTextStatus(p, r);
+  if (!p || !status || !text) return null;
+  const startable =
+    status.state === 'none' ||
+    status.state === 'failed' ||
+    (status.state === 'ready' && ['none', 'failed'].includes(text.state));
+  // Picture events read, no screen text engine: the icon opens its setup (VC-141).
+  const setup = status.state === 'ready' && text.state === 'missing';
+  const label = `${status.text} · ${text.text}`;
   return (
     <Button
-      className={startable ? s.pictureStart : ''}
-      aria-label={startable ? `Analyse picture now: ${r.title}` : status.text}
-      title={startable ? 'Analyse picture now' : status.text}
-      aria-disabled={!startable || w.blocking}
-      data-picture-action={startable ? 'start' : status.state}
+      className={startable ? s.pictureStart : setup ? s.pictureSetup : ''}
+      aria-label={
+        startable
+          ? `Analyse picture now: ${r.title}`
+          : setup
+            ? `Screen text engine not installed · Set up: ${r.title}`
+            : label
+      }
+      title={
+        startable
+          ? 'Analyse picture now'
+          : setup
+            ? 'Screen text engine not installed · Set up'
+            : label
+      }
+      aria-disabled={(!startable && !setup) || w.blocking}
+      data-picture-action={startable ? 'start' : setup ? 'setup' : status.state}
       onClick={() => {
-        if (!startable || w.blocking) return;
+        if (w.blocking) return;
+        if (setup) return background(window.virtualCut!.transcript.openEngineSetup('screen-text'));
+        if (!startable) return;
         background(w.run(() => window.virtualCut!.project.analysePicture(p.project.id, [r.id])));
       }}
     >

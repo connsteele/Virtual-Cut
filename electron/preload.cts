@@ -22,6 +22,13 @@ const api: VirtualCutApi = {
       ipcRenderer.on('transcript:source-event', f);
       return () => ipcRenderer.removeListener('transcript:source-event', f);
     },
+    openEngineSetup: (engine) => ipcRenderer.invoke('transcript:openEngineSetup', engine),
+    takeEngineSetup: () => ipcRenderer.invoke('transcript:takeEngineSetup'),
+    onEngineSetup: (callback) => {
+      const f = (_event: Electron.IpcRendererEvent, engine: string) => callback(engine);
+      ipcRenderer.on('transcript:engine-setup-event', f);
+      return () => ipcRenderer.removeListener('transcript:engine-setup-event', f);
+    },
     session: (source) => ipcRenderer.invoke('transcript:session', source),
     page: (id, transcriptId, page, search, filter, also) =>
       ipcRenderer.invoke('transcript:page', id, transcriptId, page, search, filter, also),

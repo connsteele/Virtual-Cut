@@ -5,6 +5,7 @@ export function jobLabel(job: MediaJob) {
   if (job.kind === 'inspect') return 'Inspect media and prepare timeline';
   if (job.kind === 'export') return 'Export clip';
   if (job.kind === 'visual') return 'Read picture events';
+  if (job.kind === 'text') return 'Read screen text';
   if (job.kind === 'transcribe') return `${job.role === 'mic' ? 'Mic' : 'Game'} transcription`;
   return `Prepare audio preview · track ${job.track}`;
 }

@@ -31,6 +31,8 @@ export function readKeyframes(
   frame: (reading: KeyframeReading) => void,
   signal: AbortSignal,
   started?: (pids: { worker: number; guard: number }) => void,
+  /** Whether DirectML runs the engine, once it has loaded. */
+  engineReady?: (gpu: boolean) => void,
 ) {
   signal.throwIfAborted();
   return new Promise<PassResult>((resolve, reject) => {
@@ -71,8 +73,10 @@ export function readKeyframes(
             frame?: KeyframeReading;
             worker?: number;
             guard?: number;
+            engine?: { gpu: boolean };
           } & Partial<PassResult>;
           if (reply.worker && reply.guard) started?.({ worker: reply.worker, guard: reply.guard });
+          else if (reply.engine) engineReady?.(!!reply.engine.gpu);
           else if (reply.frame) frame(reply.frame);
           else if (reply.ok === false) {
             failure ??= new Error(reply.error || 'The screen text engine stopped.');

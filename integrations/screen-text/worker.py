@@ -99,7 +99,7 @@ def read_video(ocr, providers, request):
     "args" make FFmpeg write raw bgr24 frames of width x height to stdout and log each frame with
     showinfo, whose pts_time is the frame's time. Frames at or before "after" are skipped. A frame
     inside a "same" span ([start, end] seconds where the picture does not change) together with
-    the last frame read is not read again. One line per frame:
+    the last frame read is not read again. First {"id", "engine": {"gpu"}}, then one line per frame:
         {"id", "frame": {"time", "lines", "ms"}}    read
         {"id", "frame": {"time", "same": true}}      unchanged since the last frame read
     then {"id", "ok", "frames", "read", "ms", "gpu", "peakMemoryBytes"}.
@@ -136,6 +136,7 @@ def read_video(ocr, providers, request):
 
     logger = threading.Thread(target=log, daemon=True)
     logger.start()
+    emit({"id": request.get("id"), "engine": {"gpu": all(p == "DmlExecutionProvider" for p in providers)}})
     frames = read = 0
     last = None
     try:

@@ -47,7 +47,8 @@ export interface MediaJob {
   id: string;
   sourceId: string;
   kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual' | 'text';
-  /** The picture pass (VC-180): what it decodes with right now. */
+  /** The picture pass (VC-180): what it decodes with right now. The screen text pass (VC-141):
+   * whether the engine reads on the GPU (DirectML) or the CPU. */
   use?: import('./visual-events.js').VisualUse;
   /** Who started the job; user work goes first in its lane (VC-145). Older jobs have none. */
   origin?: 'user' | 'background';
