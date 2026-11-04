@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.24 — Job lanes and picture events (November 4, 2026)
+
+Sprint 10. Media jobs run in their own lane, so an import, an inspection or an export starts
+while a transcription runs, and work you start goes ahead of work the app queued by itself. After
+its transcript, each recording gets one background picture pass that finds every black screen,
+still picture, hard cut and fade, pausing for transcriptions and preview playback and using the
+CPU as well only when the PC is idle; a scan icon starts it by hand and the thumbnail shows its
+progress. Agents read those events as text through `get_visual_events` instead of running FFmpeg
+themselves. Behind the scenes, desktop checks run four at a time (the suite with coverage went
+from 542 s to 276 s in this delivery), scripts read local settings from `.env`, and no script falls back to
+`G:\GPT` any more. See [the 0.4.24 review](docs/review-0.4.24.md).
+
 ## 0.4.23 — Card edits, reasons and faster builds (November 3, 2026)
 
 Sprint 9. A proposal card's time fields show the full ruler time, with −1 s, −0.1 s, Playhead,
