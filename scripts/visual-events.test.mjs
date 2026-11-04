@@ -260,6 +260,17 @@ test('fades: brightness moving 40 or more within 1 s, not at a cut or a black sc
   assert.equal(eventLine(fades[0]).includes('darker  brightness 200 ->'), true);
 });
 
+test('a brightness step at a weaker cut (score 8 to 15) is neither a fade nor a strong cut', () => {
+  const f = frames(4, (t) => (t < 2 ? [60, 0, 0] : [200, 0, Math.abs(t - 2) < 1e-9 ? 10 : 0]));
+  assert.deepEqual(
+    buildEvents(f, [], 4).filter((e) => e.kind === 'fade' || e.kind === 'cut'),
+    [],
+  );
+  // The same step with no cut at all reads as a change of brightness.
+  const g = frames(4, (t) => (t < 2 ? [60, 0, 0] : [200, 0, 0]));
+  assert.equal(buildEvents(g, [], 4).filter((e) => e.kind === 'fade').length, 1);
+});
+
 test('events read as text lines and summarize by kind', () => {
   const events = [
     { kind: 'black', start: 1, end: 2.5 },

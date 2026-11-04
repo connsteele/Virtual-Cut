@@ -25,6 +25,9 @@ export const BLACK_MIN = 0.1;
 export const STILL_MIN = 0.5;
 /** scdet scores from 15 up matched on every decoder path in the spike (D2); lower ones did not. */
 export const STRONG_CUT = 15;
+/** A brightness step at any picture change scoring 8 or more (the spike's cut level) is a cut,
+ * not a fade, even when it is too weak to list as a strong cut. */
+export const FADE_CUT = 8;
 export const FADE_DELTA = 40;
 export const FADE_WINDOW = 1;
 
@@ -343,13 +346,13 @@ export function buildEvents(
     });
   }
   // Strong cut: scdet score 15 or more, except where a black screen starts or ends.
-  const cuts: number[] = [];
-  for (let i = 0; i < n; i++)
-    if (cut[i] >= STRONG_CUT && !nearBlack(times[i], times[i], 0.1)) {
-      cuts.push(times[i]);
+  const changes: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (cut[i] >= FADE_CUT) changes.push(times[i]);
+    if (cut[i] >= STRONG_CUT && !nearBlack(times[i], times[i], 0.1))
       events.push({ kind: 'cut', start: round(times[i]), score: round(cut[i], 1) });
-    }
-  // Fade: brightness moving by 40 or more within 1 s with no hard cut (fades, flashes, pop-ups),
+  }
+  // Fade: brightness moving by 40 or more within 1 s with no cut of 8 or more (fades, flashes, pop-ups),
   // away from black screens, which already say the picture went dark.
   for (let i = 0; i < n;) {
     const t0 = times[i],
@@ -367,7 +370,7 @@ export function buildEvents(
     while (a < k && Math.abs(brightness[a + 1] - y0) < 1) a++;
     const s = times[a],
       e = times[k];
-    const nearCut = cuts.some((c) => s - 0.1 <= c && c <= e + 0.1);
+    const nearCut = changes.some((c) => s - 0.1 <= c && c <= e + 0.1);
     if (!nearCut && !nearBlack(s, e, 0.3))
       events.push({
         kind: 'fade',

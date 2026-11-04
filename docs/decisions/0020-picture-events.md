@@ -18,7 +18,7 @@ with playback, transcription and other GPU work on the PC, and must not slow wha
 - **What it reads:** per frame, on a 480 px picture, the mean brightness (`signalstats`), the share
   of dark pixels (`blackframe`, the snap's 10% / 92% rule) and the cut score (`scdet`), plus
   FFmpeg's still pictures (`freezedetect`, 0.5 s). The app builds black, still, strong-cut (score
-  15 or more) and fade events from those values, so where chunks fall never changes them.
+  15 or more) and fade events (no cut scoring 8 or more within it) from those values, so where chunks fall never changes them.
 - **How it decodes:** 30 s chunks with 0.5 s of pre-roll and 1 s of post-roll. One NVDEC worker
   while Connor works; NVDEC plus up to three CPU workers when the PC is idle (5 minutes without
   input by Electron's system idle time, and no preview playing). With no NVIDIA decoder for the
