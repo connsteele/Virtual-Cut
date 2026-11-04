@@ -46,6 +46,8 @@ def engine():
         "Det.model_type": size, "Rec.model_type": size,
         "Global.log_level": "error", "Global.use_cls": False, "Det.limit_type": "max",
         "EngineConfig.onnxruntime.use_dml": True,
+        # Whole frames hold many lines; 16 at a time reads the same text about 5% faster (VC-141).
+        "Rec.rec_batch_num": 16,
     })
 
 

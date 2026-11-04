@@ -255,6 +255,7 @@ export function registerAgentAccess(options: {
       areas?: (typeof screenAreas)[number][];
       min_seconds?: number;
       numbers?: boolean;
+      min_confidence?: number;
       detail?: boolean;
       cursor?: string;
     }>(
@@ -286,6 +287,14 @@ export function registerAgentAccess(options: {
           .boolean()
           .optional()
           .describe('false leaves out lines that are only numbers (damage, counters, timers).'),
+        min_confidence: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe(
+            'Only text the engine read at least this sure of, 0 to 1 (0.85 skips most HUD icons and half-visible text).',
+          ),
         detail: z
           .boolean()
           .optional()
@@ -302,6 +311,7 @@ export function registerAgentAccess(options: {
           areas: a.areas,
           minSeconds: a.min_seconds,
           numbers: a.numbers,
+          minConfidence: a.min_confidence,
           detail: a.detail,
           cursor: a.cursor,
         }),

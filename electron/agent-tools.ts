@@ -566,6 +566,8 @@ export function screenTextLines(
     areas?: readonly ScreenArea[];
     minSeconds?: number;
     numbers?: boolean;
+    /** Only pieces the engine read at least this sure of, 0 to 1. */
+    minConfidence?: number;
     /** Every piece on its own line with its box, keyframes and confidence (M391). */
     detail?: boolean;
     cursor?: string;
@@ -581,6 +583,9 @@ export function screenTextLines(
   const minSeconds = input.minSeconds ?? 0;
   if (!Number.isFinite(minSeconds) || minSeconds < 0)
     throw new AgentReadError('min_seconds must be 0 or more.');
+  const minConfidence = input.minConfidence ?? 0;
+  if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1)
+    throw new AgentReadError('min_confidence must be between 0 and 1.');
   let offset = 0;
   if (input.cursor !== undefined) {
     offset = Number(input.cursor);
@@ -603,6 +608,7 @@ export function screenTextLines(
         l.first <= end &&
         areas.has(l.area) &&
         l.last - l.first >= minSeconds &&
+        l.score >= minConfidence &&
         (input.numbers !== false || !numbersOnly(l.text)),
     );
   // By default, pieces on screen over the same keyframes in the same area are one compact line

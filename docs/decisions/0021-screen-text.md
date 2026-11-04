@@ -23,11 +23,7 @@ between scenes).
   after the import and after the recording's picture pass (it starts when the picture pass has
   finished or failed). "Analyse picture now" queues it too. Without the screen text engine nothing
   is queued and the app says "Screen text engine not installed" with a link to setup.
-- **What it reads:** each keyframe (about one a second in OBS recordings), decoded on the CPU with
-  FFmpeg's keyframe-only decode and scaled to 1080p (smaller recordings at their own size), read
-  whole by RapidOCR with the PP-OCRv6 small models on DirectML and the spike's settings
-  (`limit_type` max, side 736, no angle classifier). A keyframe inside a still picture from the
-  picture pass, together with the last keyframe read, is not read again.
+- **What it reads:** keyframes, at most one per 0.9 s (recorders differ: OBS writes one a second, NVIDIA capture two, some recordings one every 2 s), decoded on the CPU with FFmpeg's keyframe-only decode and scaled to 1080p (smaller recordings at their own size), read whole by RapidOCR with the PP-OCRv6 small models on DirectML and the spike's settings (`limit_type` max, side 736, no angle classifier), recognizing 16 lines at a time. A keyframe inside a still picture from the picture pass, together with the last keyframe read, is not read again.
 - **What it keeps:** a line per piece of text that stayed in one place: the text (whitespace
   collapsed, nothing else changed), its box on the read frame (the union of its readings), first
   and last keyframe time, how many keyframes showed it, and the mean confidence. The same text
@@ -55,6 +51,12 @@ between scenes).
 - Skipping keyframes by the picture pass's cut scores: they are stored rounded, and a changed
   dialogue line scores well under one, so only still pictures (FFmpeg's `freezedetect` at -60 dB)
   are safe to skip.
+
+- Tuning across games (Connor's go, 2026-11-04): on the 40 checked lines and 61 hand-checked
+  lines from six more recordings, a detector side of 1280 changed nothing; recognizing 16 lines at
+  a time read the same text about 5% faster (adopted); the medium PP-OCRv6 recognizer read 2 more
+  samples right (spaces, "I'll", a decorative capital) but got others wrong (button icons as
+  symbols, a lost space) and was about 18% slower, so the small one stays.
 
 ## Consequences
 

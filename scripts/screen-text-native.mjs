@@ -71,6 +71,27 @@ const results = {};
   assert.deepEqual(frames[0].lines[0], { text: 'Score 100', box: [20, 20, 160, 48], score: 0.98 });
   results.worker = { frames: result.frames, read: result.read };
 
+  // A recorder writing two keyframes a second (NVIDIA capture) is still read once a second.
+  const dense = path.join(dir, 'dense-keyframes.mp4');
+  await tool([
+    ...['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30', '-t', '6'],
+    ...['-c:v', 'libx264', '-preset', 'ultrafast', '-g', '15', '-keyint_min', '15'],
+    ...['-sc_threshold', '0', '-y', dense],
+  ]);
+  const taken = [];
+  await readKeyframes(
+    layout,
+    {
+      ffmpeg,
+      args: keyframeArgs({ file: dense, offset: 0, from: 0, size, sourceHeight: 720 }),
+      ...size,
+      same: [],
+    },
+    (f) => taken.push(f.time),
+    new AbortController().signal,
+  );
+  assert.deepEqual(taken, [0, 1, 2, 3, 4, 5]);
+
   // Resuming after a keyframe starts there.
   const later = [];
   await readKeyframes(

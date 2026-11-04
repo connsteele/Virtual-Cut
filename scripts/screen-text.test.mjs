@@ -35,7 +35,10 @@ test('keyframes only, in file time, raw frames on stdout, resumed with a seek', 
   });
   const s = args.join(' ');
   assert.match(s, /-skip_frame nokey -copyts -i in\.mp4/);
-  assert.match(s, /-vf showinfo,scale=1920:1080:flags=area -f rawvideo -pix_fmt bgr24 -$/);
+  assert.match(
+    s,
+    /-vf select='isnan\(prev_selected_t\)\+gte\(t-prev_selected_t,0\.9\)',showinfo,scale=1920:1080:flags=area -f rawvideo -pix_fmt bgr24 -$/,
+  );
   assert.match(s, /-fps_mode passthrough/);
   assert.ok(!args.includes('-ss'));
   const resumed = keyframeArgs({
@@ -47,7 +50,7 @@ test('keyframes only, in file time, raw frames on stdout, resumed with a seek', 
   });
   assert.equal(resumed[resumed.indexOf('-ss') + 1], '61.500000');
   // A recording already at the read size is not scaled.
-  assert.equal(resumed[resumed.indexOf('-vf') + 1], 'showinfo');
+  assert.match(resumed[resumed.indexOf('-vf') + 1], /,showinfo$/);
 });
 
 test('still pictures from the picture pass are the spans where nothing changes', () => {

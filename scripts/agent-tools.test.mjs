@@ -376,6 +376,18 @@ assert.deepEqual(
   ['0-300 top left "Objective: Reach the bridge"', '20-25 bottom left "HP"'],
 );
 assert.equal(screenTextLines(shown, { recordingId: 'r1' }).totalLines, 5, 'Defaults return all');
+// min_confidence leaves out pieces read with less certainty (the 0.7 "128").
+assert.deepEqual(
+  screenTextLines(shown, { recordingId: 'r1', start: 9, end: 15, minConfidence: 0.85 }).lines,
+  [
+    '10-13 bottom centre "Orchel / Got it. I' + "'" + 'll do my very best. / Only..."',
+    '0-300 top left "Objective: Reach the bridge"',
+  ],
+);
+assert.throws(
+  () => screenTextLines(shown, { recordingId: 'r1', minConfidence: 2 }),
+  AgentReadError,
+);
 assert.throws(() => screenTextLines(shown, { recordingId: 'r1', minSeconds: -1 }), AgentReadError);
 assert.throws(() => screenTextLines(shown, { recordingId: 'r1', cursor: 'x' }), AgentReadError);
 assert.throws(() => screenTextLines(shown, { recordingId: 'r1', start: 700 }), AgentReadError);

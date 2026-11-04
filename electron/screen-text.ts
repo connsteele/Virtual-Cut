@@ -87,9 +87,14 @@ export function readSize(width?: number, height?: number) {
   return { width: even((w * SCREEN_TEXT_HEIGHT) / h), height: SCREEN_TEXT_HEIGHT };
 }
 
+/** Keyframes closer than this to the last one taken are skipped: recorders differ (OBS writes one
+ * a second, NVIDIA capture two), and one a second is enough for text people can read. */
+export const KEYFRAME_GAP = 0.9;
+const KEYFRAME_CAP = `select='isnan(prev_selected_t)+gte(t-prev_selected_t,${KEYFRAME_GAP})'`;
 /**
  * FFmpeg arguments for the keyframes from `from` recording seconds on (`offset` is the first
- * video timestamp): keyframes only, file timestamps kept, each logged by showinfo, raw bgr24
+ * video timestamp): keyframes only, at most one per KEYFRAME_GAP, file timestamps kept, each
+ * logged by showinfo, raw bgr24
  * frames of `size` on stdout. Decoding only keyframes is cheap on the CPU (about 90 a second
  * for 4K AV1), so the pass never takes the GPU decoder from playback.
  */
@@ -124,7 +129,7 @@ export function keyframeArgs(options: {
     '-fps_mode',
     'passthrough',
     '-vf',
-    `showinfo${scale}`,
+    `${KEYFRAME_CAP},showinfo${scale}`,
     '-f',
     'rawvideo',
     '-pix_fmt',
