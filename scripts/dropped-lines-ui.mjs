@@ -129,6 +129,15 @@ try {
   await original.focus();
   await view.keyboard.press('Space');
   await expect(phrases.locator('article')).toHaveCount(4);
+  // VC-164: Transcribe starts with the game's names and terms as hints.
+  await view.setViewportSize({ width: 1000, height: 640 });
+  await view.getByRole('button', { name: 'Transcribe', exact: true }).click();
+  const start = view.getByLabel('Start transcription');
+  await expect(
+    start.getByLabel('Use this batch’s names and game terms as recognition hints'),
+  ).toBeChecked();
+  await start.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'transcribe-hints-on.png') });
   assert.deepEqual(errors, []);
   console.log(`Dropped lines, Original label and hint notes passed: ${dir}`);
 } catch (error) {
