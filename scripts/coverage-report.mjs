@@ -24,6 +24,9 @@ export function validateCollectors(records, checks) {
         )
       )
         errors.push(`Missing ${kind}: ${expectation.check}, process ${expectation.pid}`);
+  // These test the scripts themselves and load no application module, so they record no
+  // application coverage.
+  const testsOfScriptsOnly = ['coverage-pipeline.test.mjs', 'script-paths.test.mjs'];
   for (const check of checks) {
     if (check.status !== 'passed') {
       errors.push(`Test did not pass: ${check.name}`);
@@ -32,7 +35,7 @@ export function validateCollectors(records, checks) {
     if (desktop.includes(check.name) && !records.some((r) => r.check === check.name && r.expected))
       errors.push(`Missing launch manifest: ${check.name}`);
     if (
-      check.name !== 'coverage-pipeline.test.mjs' &&
+      !testsOfScriptsOnly.includes(check.name) &&
       (native.includes(check.name) || fast.includes(check.name)) &&
       !records.some(
         (r) =>
