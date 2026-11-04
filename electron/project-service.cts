@@ -2283,7 +2283,7 @@ export class ProjectService {
         state: 'succeeded',
         progress: 1,
         use: stored.use,
-        message: `Picture events ready · ${counts.black} black, ${counts.still} still, ${counts.cut} cuts, ${counts.fade} fades`,
+        message: `Picture events ready · ${useLabel(stored.use)} · ${counts.black} black, ${counts.still} still, ${counts.cut} cuts, ${counts.fade} fades`,
         elapsedMs: stored.elapsedMs,
         updated: new Date().toISOString(),
       });
@@ -3026,4 +3026,9 @@ function useText(use?: VisualUse) {
       : use === 'cpu'
         ? 'CPU'
         : 'starting';
+}
+
+/** How a finished picture pass read the recording. */
+function useLabel(use: VisualUse) {
+  return use === 'gpu+cpu' ? 'GPU + CPU' : use === 'gpu' ? 'GPU' : 'CPU';
 }

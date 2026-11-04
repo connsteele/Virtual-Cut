@@ -13,7 +13,8 @@ more long jobs.
 
 - **Two lanes:** the speech lane runs transcription; the media lane runs inspection, audio
   preparation, export and filing. Filmstrips fill the media lane when it has nothing to start,
-  and the VC-180 visual pass joins the media lane. Each lane runs one job at a time.
+  and the VC-180 picture pass joins the media lane as background work with its own pause rules
+  ([0020](0020-picture-events.md)). Each lane runs one job at a time.
 - **User work first:** within a lane, work the user started (Import, Relink, Export, filing,
   Transcribe, Prepare audio, Retry, Resume) goes ahead of work the app queued by itself (audio
   preparation after inspection or on opening, transcription chosen at import). Oldest first

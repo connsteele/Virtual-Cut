@@ -820,9 +820,6 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                               : j.message}
                           </p>
                         )}
-                        {j.kind === 'visual' && j.state === 'succeeded' && j.use && (
-                          <p>Picture events ready · {pictureUseLabel[j.use]}</p>
-                        )}
                         <p>
                           {j.state} ·{' '}
                           <JobTime
@@ -832,7 +829,9 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                           />
                         </p>
                         {j.state === 'running' && <progress value={j.progress} max={1} />}
-                        <p className={s.muted}>{j.message}</p>
+                        {!(j.kind === 'visual' && ['queued', 'running'].includes(j.state)) && (
+                          <p className={s.muted}>{j.message}</p>
+                        )}
                         {j.device && (
                           <p>
                             {j.device === 'cuda' ? 'NVIDIA GPU' : 'CPU'} transcription

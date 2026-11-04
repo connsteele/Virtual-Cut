@@ -104,6 +104,14 @@ lines. Delivery evidence and the CI artifact keep the screenshots.
 
 ## Prerequisites and evidence
 
+Picture pass (VC-180): the suite runs every check with `VIRTUAL_CUT_PICTURE_PASS=manual`, so an
+import does not start a background picture pass (and no GPU work) unless the check asks for one.
+`visual-pass-native.mjs` turns it back on and compares every decoder path and chunk size on a
+synthetic copy; its NVDEC paths run only when `h264_cuvid` reads the copy, and
+`VIRTUAL_CUT_PICTURE_GPU=0` skips them. `visual-pass-ui.mjs` reads on the CPU (no NVIDIA decoder)
+by default; `VIRTUAL_CUT_PICTURE_UI_GPU=1` runs it on the GPU decoder instead, on a PC that has
+one. Both fix the idle time through `VIRTUAL_CUT_IDLE_SECONDS`.
+
 The 0.4.7 setup checks cover download hash/size rejection, no-download folder planning,
 partial cancellation, archive traversal, unrelated-file preservation, activation refusal,
 compact/keyboard controls and app exit during a pending download. By default these use

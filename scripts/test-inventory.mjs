@@ -69,6 +69,7 @@ export const desktop = [
   'split-snap-ui.mjs',
   'proposal-preview-ui.mjs',
   'combined-transcript-ui.mjs',
+  'visual-pass-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],

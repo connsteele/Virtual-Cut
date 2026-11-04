@@ -27,6 +27,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed |
 | [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed |
 | [0019](0019-job-lanes.md)                      | Transcription and media work run in separate lanes                          | Proposed |
+| [0020](0020-picture-events.md)                 | One background picture pass per recording, events kept beside the model     | Proposed |
 
 ## Adding a record
 
