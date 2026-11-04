@@ -2185,7 +2185,9 @@ export class ProjectService {
     try {
       if (!source || !record || record.availability !== 'ready')
         throw new Error('Source file is not registered. Import it again.');
-      const actual = await identify(source.file, source.id);
+      const actual = await identify(source.file, source.id).catch(() => {
+        throw new Error('The recording could not be read. Relink it, then retry.');
+      });
       if (actual.fingerprint !== source.fingerprint || actual.modified !== source.modified)
         throw new Error(
           'Source changed since import. Relink an unchanged copy or import it as new.',

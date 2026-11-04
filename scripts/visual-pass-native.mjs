@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
@@ -63,6 +63,8 @@ await tool([
 ]);
 // Three times as long, for pausing a pass part way.
 await tool(['-stream_loop', '2', '-i', short, '-map', '0', '-c', 'copy', '-y', long]);
+const third = path.join(dir, 'picture-events-twice.mp4');
+await tool(['-stream_loop', '1', '-i', short, '-map', '0', '-c', 'copy', '-y', third]);
 const probe = async (file) =>
   Number(
     await new Promise((resolve, reject) => {
@@ -338,6 +340,45 @@ try {
     assert.deepEqual(await service.splitSnap(project, b, word), decoded[i], `Snap at ${word}`);
   assert.equal(decoded[0]?.time, 4, 'The snap after the 1 s black ends at 4 s');
   results.snaps = decoded.map((d) => d?.time ?? null);
+  // Bad requests, and a playback state that didn't change.
+  assert.throws(() => service.previewPlaying('yes'), /Invalid playback state/);
+  service.previewPlaying(false);
+  await assert.rejects(service.analysePicture(project, []), /Choose recordings/);
+  await assert.rejects(service.analysePicture(project, ['missing']), /Recording not found/);
+  // Cancel and retry a running pass (NVDEC tried first where there is one), then close the
+  // project while it runs: it waits again when the project reopens, and a moved file fails it.
+  delete process.env.VIRTUAL_CUT_PICTURE_GPU;
+  standIn(service);
+  service.idleSeconds = () => 600;
+  await service.importFiles(project, batch, [third], { game: 1, mic: 2 });
+  const c = service.store.data.model.recordings.find((r) => ![a, b].includes(r.id)).id;
+  await until(() => pass(c)?.state === 'running', 'the third pass');
+  await service.job(project, pass(c).id, 'cancel');
+  assert.equal(pass(c).state, 'cancelled');
+  await service.job(project, pass(c).id, 'retry');
+  await until(() => pass(c)?.state === 'running', 'the retried pass');
+  await service.close();
+  process.env.VIRTUAL_CUT_PICTURE_GPU = '0';
+  service = new ProjectService(path.join(dir, 'profile'), '');
+  standIn(service);
+  snap = await service.open(file);
+  assert.equal(pass(c).state, 'queued', 'A pass running at close waits again');
+  assert.equal(pass(c).message, 'Waiting for the PC to be idle (no NVIDIA decoder)');
+  const away = third + '.away';
+  for (let wait = 100; ; wait *= 2)
+    try {
+      await rename(third, away);
+      break;
+    } catch (error) {
+      if (!['EBUSY', 'EPERM'].includes(error.code) || wait > 6400) throw error;
+      await sleep(wait);
+    }
+  service.idleSeconds = () => 600;
+  service.previewPlaying(true);
+  service.previewPlaying(false);
+  await until(() => pass(c).state === 'failed', 'the pass on a moved file');
+  assert.equal(pass(c).message, 'The recording could not be read. Relink it, then retry.');
+  await rename(away, third);
   // Removing the recording removes its events.
   await service.removeRecording(project, batch, b);
   assert.equal(service.store.pictureEvents(b), null);
