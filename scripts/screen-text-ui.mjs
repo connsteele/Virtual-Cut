@@ -189,7 +189,9 @@ try {
   ]);
   const context = await read('get_context', {});
   assert.equal(context.alreadyMarked[0].screenText, 'ready');
-  await expect(panel.locator('[data-agent-activity] li').first()).toContainText('Screen text');
+  await expect(
+    panel.locator('[data-agent-activity] li', { hasText: 'Screen text of Screen session' }),
+  ).toHaveCount(2);
   await shot('5b-agent-activity-screen-text.png');
   client.end();
   await main.getByRole('button', { name: 'Agent', exact: true }).click();
