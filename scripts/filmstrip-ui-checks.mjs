@@ -159,7 +159,13 @@ try {
     .toBe(true);
   await go('Media');
   await expect(page.locator('[data-filmstrip-status]')).toHaveCount(0);
-  const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  // The label shows the running build's own version: a labelled test build (0.4.25-11)
+  // differs from package.json, so ask the app rather than reading the checkout.
+  const version = await app.evaluate(({ app: electronApp }) => electronApp.getVersion());
+  if (!executable) {
+    const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+    assert.equal(version, pkg.version);
+  }
   await expect(page.locator('[data-app-version]')).toHaveText(`Virtual Cut ${version}`);
   await go('Cut');
   await expect(page.locator('[data-filmstrip-loading]')).toHaveCount(0, { timeout: 15000 });
