@@ -32,6 +32,16 @@ Development needs FFmpeg and FFprobe on PATH (or `VIRTUAL_CUT_FFMPEG` / `VIRTUAL
 
 The app launches maximized; see the [user guide](docs/user-guide.md) for projects, Cut controls, playback and saving.
 
+## Local settings
+
+Scripts (tests, studies, delivery) read machine paths from a `.env` file at the repository root,
+which is never committed. Copy [`.env.example`](.env.example) to `.env` and fill in what you use:
+it lists every setting with a one-line comment. A value set for a single run, such as
+`$env:VIRTUAL_CUT_SUITE_OUTPUT = 'D:\runs'`, wins over the file. With nothing set, scripts write
+under the OS temp folder, and those that need real files (footage, cue recordings, the transport
+fixture) stop and name the setting. Each git worktree reads its own `.env`. The app does not read
+`.env`, so builds behave the same on any PC.
+
 ## Documentation
 
 - [User guide: projects, Cut controls, playback and saving](docs/user-guide.md)

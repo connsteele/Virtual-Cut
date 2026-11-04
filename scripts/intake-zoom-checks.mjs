@@ -21,7 +21,7 @@ await new Promise((resolve, reject) => {
       cwd: root,
       windowsHide: true,
       stdio: 'inherit',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     },
   );
   child.on('error', reject);

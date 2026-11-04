@@ -1,11 +1,12 @@
 // Isolated decoder/audio-sync experiment. This does not add a product speed step
 // or assert that pitch-preserved speech at 6x is comfortable to listen to.
-import { readFile, writeFile, mkdtemp, copyFile } from 'node:fs/promises';
+import { writeFile, mkdtemp, copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
-import { root, require, electronEnvironment } from './shared.mjs';
-const scratch = 'G:/GPT/Work/virtual-cut/transport-investigation';
-const fixture = JSON.parse(await readFile(path.join(scratch, 'latest-fixture.json'), 'utf8'));
+import { root, require, electronEnvironment, scratchPath, transportFixture } from './shared.mjs';
+const scratch = scratchPath('transport');
+await mkdir(scratch, { recursive: true });
+const fixture = await transportFixture();
 const dir = await mkdtemp(path.join(scratch, 'six-speed-'));
 const file = path.join(dir, 'study.vcut');
 await copyFile(fixture.file, file);
@@ -18,7 +19,7 @@ const app = await electron.launch({
   executablePath: require('electron'),
   args: [root, `--user-data-dir=${path.join(dir, 'profile')}`, '--background-test'],
   cwd: root,
-  env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+  env: electronEnvironment(),
 });
 const results = [];
 try {

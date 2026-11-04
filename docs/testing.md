@@ -109,7 +109,7 @@ partial cancellation, archive traversal, unrelated-file preservation, activation
 compact/keyboard controls and app exit during a pending download. By default these use
 bounded synthetic files. `VIRTUAL_CUT_VERIFY_SPEECH_INSTALL=1` explicitly adds the full pinned
 download, library validation, actual CUDA model dispatch, activation/rollback and persisted
-candidate checks in a disposable G: folder. It is not enabled on ordinary CI runs.
+candidate checks in the run's disposable folder. It is not enabled on ordinary CI runs.
 
 The existing transcript review gate now sends continuous positions with delayed native
 page lookups in both directions, plays real synthetic source media across a page boundary,
@@ -126,7 +126,8 @@ floors pass. Seven selected final-package scripts plus build also pass. See
 exact reports and measurement boundaries.
 
 `scripts/cue-accuracy-study.mjs` scores spoken-cue recognition against labelled recordings
-(`F:\VC Audio Cues` by default: each recording with a `.txt` of what was said and when). It copies
+(the folder in `VIRTUAL_CUT_CUE_SAMPLES` or the first argument: each recording with a `.txt` of
+what was said and when). It copies
 each recording, runs the app's own import, local recognition and cue logic, and reports cues found,
 timing error, Note wording, false triggers and per-phrase word error rate. It needs a local speech
 engine (`VIRTUAL_CUT_ASR_RUNTIME` pointing at a `transcription-runtime.json`, read only) and is not
@@ -143,7 +144,7 @@ M3 adds context inheritance, immutable transcript storage, corrections, cue acti
 
 Use the repository's Node/npm dependencies. Native and desktop gates need FFmpeg and FFprobe on PATH (or the documented tool overrides); packaged checks require both binaries in `resources/tools` beside the executable. Fixture preparation runs under the repository Electron runtime; application checks run the packaged executable. Packaged tests do not silently substitute the installed application for a missing executable.
 
-Each invocation creates an isolated `run-*` under `G:\GPT\Work\virtual-cut\test-runs`. Override `VIRTUAL_CUT_SUITE_OUTPUT` on other machines (CI uses its temporary workspace). `VIRTUAL_CUT_TEST_ROOT` is set by the runner for all fixture-producing/consuming scripts. TEMP/TMP are scoped to that run. Direct legacy wrappers continue to use their original G: scratch defaults.
+Each invocation creates an isolated `run-*` under `VIRTUAL_CUT_SUITE_OUTPUT`, else `test-runs` in the scratch folder (`VIRTUAL_CUT_SCRATCH`, else the OS temp folder); set them in `.env` (see [Local settings](../README.md#local-settings)). CI uses its temporary workspace. `VIRTUAL_CUT_TEST_ROOT` is set by the runner for all fixture-producing/consuming scripts. TEMP/TMP are scoped to that run. Scripts run on their own write under the scratch folder, and those that need real files (footage, cue recordings, the transport fixture) stop and name the setting they need. No script names a drive: `script-paths.test.mjs` in the fast gate fails if a drive-letter path appears in `scripts/`.
 
 `report.json` and `report.md` record app/commit/dirty state, runtime/tool versions, each script's status and duration, and explicit prerequisite skips. Logs are capped at 2 MiB per script. Exit 0 means all selected checks passed; 1 is a failure; 2 is incomplete because a prerequisite was missing. Dependencies are generated within the same run and cannot silently reuse yesterday's fixture. Each script stops after three minutes (`checkTimeout` in `scripts/test-inventory.mjs`; a check that needs longer is named in `longerTimeouts`); see [Timeouts](#timeouts). Five completed, explicitly marked run directories are retained; other folders and unfinished runs are untouched. Preserve needed evidence outside these disposable run folders.
 
@@ -171,7 +172,7 @@ Two maintained scripts cover range marker native persistence/export and real Ele
 
 Native Library checks inspect verified outputs with originals offline, exercise keyframe extraction, nonzero/silent/no-audio waveforms and cancellation, and compare output/companion hashes and dates. No additional script is added to the inventory. Library Electron checks cover first-load filmstrip, game waveform, embedded audio, zoom/reset, immediate J/K/L, relink, compact layout and full-page Handoff helper controls. Marker tests check that the retimed selected card remains inside the inspector. Six Python helper cases include explicit generated-anchor removal, genuine/edited/legacy preservation, idempotency and full rollback after anchor deletion. Export gates validate version 3 companions and retain legacy annotation compatibility.
 
-The generated MP4 experiment under `G:\GPT\Work\virtual-cut\review-0.3.17\chapter-check` confirms a delayed chapter at 1 second becomes zero without an anchor. Actual Resolve import/Check/Apply acceptance for the new cleanup is a manual review item; synthetic helper tests do not replace it. Code coverage remains unmeasured under VC-50.
+The generated MP4 experiment in the 0.3.17 review's `chapter-check` folder (since removed) confirms a delayed chapter at 1 second becomes zero without an anchor. Actual Resolve import/Check/Apply acceptance for the new cleanup is a manual review item; synthetic helper tests do not replace it. Code coverage remains unmeasured under VC-50.
 
 ## Version 0.3.19 additions
 

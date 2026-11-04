@@ -21,14 +21,14 @@ import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { requiredSetting, scratchPath } from './shared.mjs';
 
 const require = createRequire(import.meta.url);
 const samples = path.resolve(
-  process.argv[2] || process.env.VIRTUAL_CUT_CUE_SAMPLES || 'F:/VC Audio Cues',
+  process.argv[2] ||
+    requiredSetting('VIRTUAL_CUT_CUE_SAMPLES', 'the folder of labelled cue recordings'),
 );
-const output = path.resolve(
-  process.env.VIRTUAL_CUT_CUE_OUTPUT || 'W:/AI/Claude/Virtual Cut/cue-accuracy',
-);
+const output = path.resolve(process.env.VIRTUAL_CUT_CUE_OUTPUT || scratchPath('cue-accuracy'));
 const tolerance = Number(process.env.VIRTUAL_CUT_CUE_TOLERANCE || 1);
 
 if (process.env.VIRTUAL_CUT_ASR_RUNTIME) {

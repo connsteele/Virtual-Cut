@@ -8,7 +8,7 @@ for (const script of ['feedback-native-checks.mjs', 'recording-removal-checks.mj
       cwd: root,
       windowsHide: true,
       stdio: 'inherit',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
     child.on('error', reject);
     child.on('exit', (code) =>

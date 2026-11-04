@@ -4,15 +4,13 @@ import { mkdir, mkdtemp, writeFile, readFile, access, rm } from 'node:fs/promise
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { require, root } from './shared.mjs';
+import { testPath } from './test-paths.mjs';
 const modules = process.env.VIRTUAL_CUT_TEST_EXECUTABLE
   ? path.join(path.dirname(process.env.VIRTUAL_CUT_TEST_EXECUTABLE), 'resources/app/dist-electron')
   : path.join(root, 'dist-electron');
 const { SpeechSetup, verifyArtifact } = require(path.join(modules, 'speech-setup.cjs'));
 const { TranscriptionRuntime } = require(path.join(modules, 'transcription-runtime.cjs'));
-const base = path.join(
-  process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/runtime-setup/checks',
-  'speech-setup',
-);
+const base = testPath('speech-setup');
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'run-'));
 const profile = path.join(dir, 'profile');

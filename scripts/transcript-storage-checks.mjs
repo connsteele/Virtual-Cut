@@ -3,11 +3,9 @@ import { mkdir, mkdtemp, writeFile, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { require } from './shared.mjs';
+import { testPath } from './test-paths.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
-const base = path.join(
-  process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/m3-storage-validation',
-  'transcripts',
-);
+const base = testPath('transcripts');
 await mkdir(base, { recursive: true });
 const dir = await mkdtemp(path.join(base, 'run-'));
 const source = path.join(dir, 'synthetic-speech-container.mp4'),

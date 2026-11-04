@@ -5,21 +5,14 @@ import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
+import { testPath } from './test-paths.mjs';
 const fixture = JSON.parse(
   await readFile(
-    process.env.VIRTUAL_CUT_TRANSCRIPT_FIXTURE ||
-      path.join(
-        process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/m3-storage-validation',
-        'transcripts',
-        'latest.json',
-      ),
+    process.env.VIRTUAL_CUT_TRANSCRIPT_FIXTURE || testPath('transcripts', 'latest.json'),
     'utf8',
   ),
 );
-const output = path.join(
-  process.env.VIRTUAL_CUT_TEST_ROOT || 'G:/GPT/Work/virtual-cut/m3-ui-validation',
-  'transcript-ui',
-);
+const output = testPath('transcript-ui');
 await mkdir(output, { recursive: true });
 const dir = await mkdtemp(path.join(output, 'run-'));
 const file = path.join(dir, 'speech-review.vcut');
@@ -35,7 +28,7 @@ try {
       '--background-test',
     ],
     cwd: root,
-    env: electronEnvironment({ TEMP: 'G:/GPT/Temp', TMP: 'G:/GPT/Temp' }),
+    env: electronEnvironment(),
   });
   const page = await app.firstWindow();
   page.setDefaultTimeout(20000);

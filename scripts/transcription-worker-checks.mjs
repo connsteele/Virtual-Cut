@@ -5,10 +5,10 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { scratchPath } from './shared.mjs';
 const require = createRequire(import.meta.url);
 const { TranscriptionRuntime } = require('../dist-electron/transcription-runtime.cjs');
-const root =
-  process.env.VIRTUAL_CUT_ASR_TEST_OUTPUT || 'G:/GPT/Work/virtual-cut/m3-worker-validation';
+const root = process.env.VIRTUAL_CUT_ASR_TEST_OUTPUT || scratchPath('asr-worker');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'run-'));
 const runtime = new TranscriptionRuntime(dir, '');
