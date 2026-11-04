@@ -208,3 +208,41 @@ test('a running picture pass gives way to its holds and to work ranked ahead of 
   const next = job('visual', 'e', { origin: 'background' });
   assert.equal(pictureYields(pass, [pass, next], [pass], working), undefined);
 });
+
+test('screen text follows its recording’s picture pass and its pause rules, never the decoder', () => {
+  const busy = { previewPlaying: false, idle: false, gpu: () => false };
+  const text = job('text', 'a', { origin: 'background' });
+  const picture = job('visual', 'a', { origin: 'background' });
+  assert.equal(laneOf('text'), 'media');
+  assert.equal(rank(text), 3);
+  assert.equal(rank(job('text', 'a', { origin: 'user' })), 1);
+  assert.equal(
+    pictureHold(text, [picture, text], [], busy),
+    'Waiting for this recording’s picture events',
+  );
+  assert.deepEqual(ids(readyJobs('media', [picture, text], [], { ...busy, idle: true })), [
+    picture.id,
+  ]);
+  // A finished or failed picture pass no longer holds it; another recording's never did.
+  for (const state of ['succeeded', 'failed'])
+    assert.equal(pictureHold(text, [{ ...picture, state }, text], [], busy), undefined);
+  assert.equal(pictureHold(text, [job('visual', 'b'), text], [], busy), undefined);
+  // No NVIDIA decoder and a busy PC still read screen text (keyframes decode on the CPU).
+  assert.equal(pictureHold(text, [text], [], busy), undefined);
+  const speaking = job('transcribe', 'b', { state: 'running' });
+  assert.equal(
+    pictureHold(text, [text, speaking], [speaking], busy),
+    'Paused: transcription running',
+  );
+  assert.equal(
+    pictureHold(text, [text], [], { ...busy, previewPlaying: true }),
+    'Paused: preview playing',
+  );
+  const reading = { ...text, state: 'running' };
+  assert.equal(pictureYields(reading, [reading], [reading], busy), undefined);
+  const exporting = job('export', 'b', { origin: 'user' });
+  assert.equal(
+    pictureYields(reading, [reading, exporting], [reading], busy),
+    'Waiting for other media work',
+  );
+});

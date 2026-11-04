@@ -95,6 +95,7 @@ const words = new Set([
   'visual',
   'picture-gpu',
   'analysePicture',
+  'text',
   'completed',
   'cancelled',
   'interrupted',

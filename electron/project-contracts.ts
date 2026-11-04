@@ -46,7 +46,7 @@ export interface MediaJob {
   elapsedMs?: number;
   id: string;
   sourceId: string;
-  kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual';
+  kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual' | 'text';
   /** The picture pass (VC-180): what it decodes with right now. */
   use?: import('./visual-events.js').VisualUse;
   /** Who started the job; user work goes first in its lane (VC-145). Older jobs have none. */
@@ -84,6 +84,10 @@ export interface ProjectSnapshot {
   filmstrips?: Record<string, 'ready' | 'making' | 'waiting'>;
   /** Stored picture events by recording id (VC-180): how they were read and what was found. */
   pictures?: Record<string, import('./visual-events.js').VisualSummary>;
+  /** Stored screen text by recording id (VC-141): how many lines, and how it was read. */
+  screenText?: Record<string, import('./screen-text.js').ScreenTextSummary>;
+  /** Why screen text cannot be read right now ("Screen text engine not installed."), or ''. */
+  screenTextEngine?: string;
   cleanup?: {
     cacheFilesRemoved: number;
     cacheFilesRetained: number;

@@ -19,6 +19,7 @@ export const fast = [
   'proposal-previews.test.mjs',
   'job-lanes.test.mjs',
   'visual-events.test.mjs',
+  'screen-text.test.mjs',
   'script-paths.test.mjs',
   'screen-text-runtime.test.mjs',
 ];
@@ -43,6 +44,7 @@ export const native = [
   'project-capacity-checks.mjs',
   'job-lanes-native.mjs',
   'visual-pass-native.mjs',
+  'screen-text-native.mjs',
 ];
 export const desktop = [
   'speech-setup-ui.mjs',
