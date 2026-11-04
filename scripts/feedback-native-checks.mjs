@@ -286,6 +286,8 @@ try {
     topic: '',
   });
   p = await service.save(id, p.model, edited);
+  // Swapping tracks queues new audio previews; count the cache only once they are written.
+  p = await settled();
   const protectedCache = path.join(dir, 'cache', 'user-kept.txt');
   await writeFile(protectedCache, 'Do not remove unrelated cache-folder files');
   const cacheBefore = await readdir(path.join(dir, 'cache'));
