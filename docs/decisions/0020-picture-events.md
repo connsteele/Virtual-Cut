@@ -32,7 +32,7 @@ with playback, transcription and other GPU work on the PC, and must not slow wha
   recording. Per-frame values are stored compactly (time, brightness and cut score, about 6 bytes a
   frame).
 - **Readers:** the Split snap uses stored black screens instead of decoding its window, with the
-  same answer. VC-171 reads the same events.
+  same answer. agents read the same events as text through `get_visual_events` (VC-171), from the stored table and nothing else: a recording whose pass has not finished answers with where its pass stands, never with an empty list.
 
 ## Alternatives considered
 

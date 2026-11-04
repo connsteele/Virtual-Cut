@@ -5,6 +5,8 @@ import type { Model, Recording } from './workflow-types.js';
 import type { Batch } from './project-contracts.js';
 import type { TranscriptSegment, TranscriptSummary } from './transcript-contracts.js';
 import type { AgentView } from './agent-contracts.js';
+import type { MediaJob } from './project-contracts.js';
+import { eventLine, type VisualEvent, type VisualEvents } from './visual-events.js';
 
 /**
  * Read-only answers for agent apps (VC-160). Every function takes a live project
@@ -28,6 +30,10 @@ export interface AgentReadSource {
   proposals?: { list(sourceId?: string): import('./proposal-contracts.js').AgentProposal[] };
   /** The batch's saved record of the agent's first pass and the exported state (VC-182). */
   batchRecord?: (batchId: string) => import('./batch-record.js').BatchRecord | undefined;
+  /** A recording's stored picture events for its current file (VC-180), or null. */
+  pictureEvents?: (recordingId: string) => Pick<VisualEvents, 'events'> | null;
+  /** Jobs, newest first, to say where a picture pass that has not finished stands. */
+  jobs?: () => MediaJob[];
 }
 export class AgentReadError extends Error {}
 /** A recording or batch named for the activity list; ids an agent made up stay as given. */
@@ -336,4 +342,133 @@ export function batchRecordAnswer(source: AgentReadSource, batchId?: string) {
       `"${batch.name}" has no batch record yet. One starts when proposals land on its recordings and is completed at export.`,
     );
   return { ...record, projectRevision: source.revision };
+}
+
+const eventPage = 200;
+export const visualKinds = ['black', 'still', 'cut', 'fade'] as const;
+const visualHow =
+  'Times are seconds in the recording, read from its frames; clock in brackets. ' +
+  'black: at least 92% of the picture dark, 0.1 s or longer. ' +
+  'still picture: nothing moves for 0.5 s or longer, with its mean brightness 0-255. ' +
+  'cut: hard picture change, score 15 to 100 (higher is a bigger change), not counting the ' +
+  "edges of black screens; cuts less than 0.5 s apart are merged into one 'cuts' line. " +
+  'darker/brighter: mean brightness moving by 40 or more within 1 s with no cut, away from ' +
+  'black screens (fades, flashes, pop-ups).';
+
+function clockText(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  return `${m}:${(seconds - 60 * m).toFixed(1).padStart(4, '0')}`;
+}
+function visualLine(e: VisualEvent) {
+  const when = 'end' in e ? `${clockText(e.start)}-${clockText(e.end)}` : clockText(e.start);
+  return `${eventLine(e)}  [${when}]`;
+}
+/** Text lines for events in time order, with each burst of cuts under 0.5 s apart as one line. */
+function visualLines(events: VisualEvent[]) {
+  const lines: string[] = [];
+  let burst: Extract<VisualEvent, { kind: 'cut' }>[] = [];
+  const flush = () => {
+    if (burst.length === 1) lines.push(visualLine(burst[0]));
+    else if (burst.length > 1) {
+      const s = burst[0].start,
+        e = burst.at(-1)!.start,
+        top = Math.max(...burst.map((c) => c.score));
+      lines.push(
+        `${s.toFixed(2)}-${e.toFixed(2)}  cuts  ${burst.length} in ${(e - s).toFixed(1)}s, ` +
+          `top score ${top.toFixed(1)}  [${clockText(s)}-${clockText(e)}]`,
+      );
+    }
+    burst = [];
+  };
+  for (const e of events) {
+    if (e.kind === 'cut') {
+      if (burst.length && e.start - burst.at(-1)!.start > 0.5) flush();
+      burst.push(e);
+      continue;
+    }
+    flush();
+    lines.push(visualLine(e));
+  }
+  flush();
+  return lines;
+}
+/** Where a recording's picture pass stands when it has no events yet, as the card says it. */
+function pictureWait(source: AgentReadSource, recordingId: string) {
+  const passes = (source.jobs?.() || []).filter(
+    (j) => j.sourceId === recordingId && j.kind === 'visual',
+  );
+  const active =
+    passes.find((j) => j.state === 'running') || passes.find((j) => j.state === 'queued');
+  const unknown = 'Until then nothing is known about its scene changes; do not read that as none.';
+  if (active?.state === 'running')
+    return {
+      state: 'reading',
+      progress: round(active.progress),
+      note: `Virtual Cut is reading this recording's picture (${Math.floor(active.progress * 100)}%). Ask again later. ${unknown}`,
+    };
+  if (active)
+    return {
+      state: 'waiting',
+      progress: round(active.progress),
+      note: `This recording's picture pass is waiting (${active.message}). Ask again later. ${unknown}`,
+    };
+  const failed = passes.find((j) => j.state === 'failed');
+  if (failed && passes.every((j) => j.updated <= failed.updated))
+    return {
+      state: 'failed',
+      note: `The picture pass failed (${failed.message}). The user can start it again with Analyse picture now on the recording's card. ${unknown}`,
+    };
+  return {
+    state: 'not analysed',
+    note: `Virtual Cut has not read this recording's picture yet. Ask the user to press Analyse picture now (the scan icon) on its card. ${unknown}`,
+  };
+}
+
+/** Picture events of one recording between two times, as text lines (VC-171). */
+export function visualEventLines(
+  source: AgentReadSource,
+  input: {
+    recordingId: string;
+    start?: number;
+    end?: number;
+    kinds?: readonly VisualEvent['kind'][];
+    cursor?: string;
+  },
+) {
+  const recording = findRecording(source, input.recordingId);
+  const start = input.start ?? 0,
+    end = Math.min(input.end ?? Number.POSITIVE_INFINITY, recording.duration);
+  if (!Number.isFinite(start) || start < 0 || !(end > start))
+    throw new AgentReadError(
+      'Give start and end in seconds inside the recording, with end after start.',
+    );
+  let offset = 0;
+  if (input.cursor !== undefined) {
+    offset = Number(input.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new AgentReadError('Invalid cursor.');
+  }
+  const head = {
+    recording: { id: recording.id, title: recording.title },
+    fromSeconds: round(start),
+    toSeconds: round(end),
+  };
+  const stored = source.pictureEvents?.(recording.id);
+  if (!stored)
+    return { ...head, ...pictureWait(source, recording.id), projectRevision: source.revision };
+  const kinds = new Set(input.kinds?.length ? input.kinds : visualKinds);
+  const events = stored.events.filter(
+    (e) => kinds.has(e.kind) && ('end' in e ? e.end : e.start) >= start && e.start <= end,
+  );
+  const counts = { black: 0, still: 0, cut: 0, fade: 0 };
+  for (const e of events) counts[e.kind]++;
+  const lines = visualLines(events);
+  return {
+    ...head,
+    state: 'ready',
+    how: visualHow,
+    counts,
+    events: lines.slice(offset, offset + eventPage),
+    nextCursor: lines.length > offset + eventPage ? String(offset + eventPage) : undefined,
+    projectRevision: source.revision,
+  };
 }

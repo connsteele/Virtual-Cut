@@ -4,6 +4,7 @@
 // NVIDIA decoder the pass waits for the PC to be idle and reads on the CPU. With
 // VIRTUAL_CUT_PICTURE_UI_GPU=1 (only on a PC with NVDEC) it reads on the GPU decoder while you
 // work and adds CPU workers once idle. Screenshots of each state are saved beside the project.
+// An agent app paired over MCP then reads the stored events with get_visual_events (VC-171).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -11,6 +12,7 @@ import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
+import { agent, initialize, tool } from './mcp-test-client.mjs';
 
 const base = process.env.VIRTUAL_CUT_TEST_ROOT;
 assert(base, 'Run with the test suite so all media is disposable.');
@@ -190,6 +192,45 @@ try {
       : /^Picture events ready · (\d+ min )?\d+ s · CPU$/,
   );
   await shot('5-card-picture-events-ready.png');
+
+  // VC-171: an agent app reads the stored events as text; the unread recording says so.
+  await main.getByRole('button', { name: 'Agent', exact: true }).click();
+  const panel = main.locator('[data-agent-access]');
+  await panel.getByLabel('Allow agent apps to connect').click();
+  await panel.getByRole('button', { name: 'Pair with Picture pass QA' }).click();
+  const client = agent(await panel.locator('[data-config="claude-desktop"]').textContent());
+  await panel.getByRole('button', { name: 'Done', exact: true }).click();
+  await initialize(client);
+  const read = async (args) => {
+    const reply = await tool(client, 'get_visual_events', args);
+    assert(!reply.error, reply.text);
+    return JSON.parse(reply.text);
+  };
+  const unread = await read({ recording_id: second });
+  assert.equal(unread.state, 'not analysed');
+  assert.equal(unread.events, undefined, 'no empty list that reads as no scene changes');
+  const span = await read({ recording_id: first, start_seconds: 5, end_seconds: 20 });
+  assert.equal(span.state, 'ready');
+  assert.equal(span.counts.black, 2, 'the black screens at 8 and 17 s');
+  const blacks = span.events.filter((l) => / {2}black {2}/.test(l));
+  assert.equal(blacks.length, 2);
+  for (const [line, at] of blacks.map((l, i) => [l, 8 + 9 * i])) {
+    const [from, to] = line.split(' ')[0].split('-').map(Number);
+    assert(Math.abs(from - at) < 0.05 && Math.abs(to - at - 1) < 0.05, line);
+  }
+  const blackOnly = await read({ recording_id: first, kinds: ['black'] });
+  assert.equal(blackOnly.events.length, 5);
+  assert(!/[A-Z]:\\|media:\/\//.test(JSON.stringify([unread, span, blackOnly])), 'no paths');
+  await expect(panel.locator('[data-agent-activity] li').first()).toContainText(
+    'Picture events of First session, 0:00–end (black)',
+  );
+  await expect(panel.locator('[data-agent-activity] li').nth(1)).toContainText(
+    'Picture events of First session, 0:05–0:20',
+  );
+  await shot('5b-agent-activity-picture-events.png');
+  client.end();
+  await main.getByRole('button', { name: 'Agent', exact: true }).click();
+  await expect(panel).toHaveCount(0);
 
   // Jobs: the batch's remaining recording, in one click.
   await main.getByRole('button', { name: /^Jobs/ }).click();

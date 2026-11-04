@@ -20,6 +20,8 @@ import {
   currentView,
   projectSummary,
   transcriptLines,
+  visualEventLines,
+  visualKinds,
   type AgentReadSource,
 } from './agent-tools.js';
 import {
@@ -37,8 +39,9 @@ import { readFileSync, statSync } from 'node:fs';
 const instructions =
   'Virtual Cut prepares game footage for YouTube. These tools read the project that is open in ' +
   'Virtual Cut right now: what is on screen, batches with their game and brief, the context ' +
-  'packet, transcript lines between two times, and existing markers, clips, notes and cue ' +
-  'decisions. Times are seconds in the recording. You can also propose markers, notes, splits ' +
+  'packet, transcript lines between two times, where the picture goes black, freezes, cuts or ' +
+  'fades between two times, and existing markers, clips, notes and cue decisions. Times are ' +
+  'seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
   "get_batch_record keeps a batch's first pass beside what the user exported, for learning " +
@@ -89,6 +92,8 @@ export function registerAgentAccess(options: {
       batchRecord: (batchId) =>
         options.projects()?.batchRecords.read(store.data.project.id, batchId),
       view: access.view,
+      pictureEvents: (recordingId) => store.pictureEvents(recordingId, false),
+      jobs: () => store.jobs(),
       taggedNotes: (recordingId) => {
         const file = store.sources().find((s) => s.id === recordingId)?.file;
         if (!file) return undefined;
@@ -198,6 +203,44 @@ export function registerAgentAccess(options: {
       (a, n) =>
         `${a.role === 'mic' ? 'Mic' : 'Game'} transcript of ${n(a.recording_id)}, ` +
         `${clock(a.start_seconds ?? 0)}–${a.end_seconds === undefined ? 'end' : clock(a.end_seconds)}` +
+        (a.cursor ? ' (next page)' : ''),
+    );
+    read<{
+      recording_id: string;
+      start_seconds?: number;
+      end_seconds?: number;
+      kinds?: (typeof visualKinds)[number][];
+      cursor?: string;
+    }>(
+      'get_visual_events',
+      "Where one recording's picture goes black, freezes, cuts hard or fades between two times, " +
+        'as text lines with times in recording seconds: scene changes, menus, loading and ' +
+        'chapter screens. Read from the picture once per recording file by Virtual Cut, so no ' +
+        'video tools are needed. 200 lines per page; when more remain, pass next_cursor as ' +
+        'cursor. If the picture has not been read yet, state says so: that means unknown, not none.',
+      z.object({
+        recording_id: z.string().max(200),
+        start_seconds: z.number().min(0).optional(),
+        end_seconds: z.number().positive().optional(),
+        kinds: z
+          .array(z.enum(visualKinds))
+          .max(4)
+          .optional()
+          .describe('Only these kinds: black, still, cut, fade. All when omitted.'),
+        cursor: z.string().max(40).optional(),
+      }),
+      (s, a) =>
+        visualEventLines(s, {
+          recordingId: a.recording_id,
+          start: a.start_seconds,
+          end: a.end_seconds,
+          kinds: a.kinds,
+          cursor: a.cursor,
+        }),
+      (a, n) =>
+        `Picture events of ${n(a.recording_id)}, ` +
+        `${clock(a.start_seconds ?? 0)}–${a.end_seconds === undefined ? 'end' : clock(a.end_seconds)}` +
+        (a.kinds?.length ? ` (${a.kinds.join(', ')})` : '') +
         (a.cursor ? ' (next page)' : ''),
     );
     read<{ batch_id?: string; recording_id?: string }>(
