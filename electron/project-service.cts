@@ -100,6 +100,7 @@ import type {
 import { transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
 import { BatchRecords } from './batch-records.cjs';
 import { batchOf } from './batch-record.js';
+import { dropLines } from './dropped-lines.js';
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -2647,6 +2648,12 @@ export class ProjectService {
             if (event.engine) transcript.engineVersion = event.engine;
             if (event.runtime) transcript.runtimeVersion = event.runtime;
             if (event.peakMemoryBytes) transcript.peakMemoryBytes = event.peakMemoryBytes;
+            if (
+              event.type === 'complete' &&
+              transcript.context.vocabulary &&
+              Number.isSafeInteger(event.guardRedos)
+            )
+              transcript.guardRedos = event.guardRedos;
             if (event.type === 'info') {
               transcript = {
                 ...transcript,
@@ -2677,7 +2684,13 @@ export class ProjectService {
                     w.end < w.start ||
                     w.end > record.duration + 1 ||
                     typeof w.text !== 'string',
-                )
+                ) ||
+                (segment.voiceScore != null &&
+                  (!Number.isFinite(segment.voiceScore) ||
+                    segment.voiceScore < 0 ||
+                    segment.voiceScore > 1)) ||
+                (segment.hintGuard != null &&
+                  !['stock-phrase', 'sparse'].includes(segment.hintGuard))
               )
                 throw new Error(
                   'The speech model returned invalid timing. Original recording is unchanged.',
@@ -2696,12 +2709,20 @@ export class ProjectService {
         const final = await stat(source.file);
         if (final.size !== source.bytes || final.mtimeMs !== source.modified)
           throw new Error('Recording changed during transcription.');
-        s.transcripts.put({
+        const finished: TranscriptSummary = {
           ...transcript,
           state: 'complete',
           completed: new Date().toISOString(),
           elapsedMs: elapsedMs(),
-        });
+        };
+        // VC-166: short microphone lines with no voice under them, or stock phrases, are dropped
+        // as one edit, so Undo brings them back. The recognition itself stays as it was heard.
+        const dropped = dropLines(finished, s.transcripts.segments(job.id, -1, false, true));
+        s.transcripts.put(finished);
+        if (dropped.length) {
+          const model = s.data.model;
+          s.save(model, { ...model, droppedLines: [...(model.droppedLines || []), ...dropped] });
+        }
       } else if (job.kind === 'inspect') {
         const info = await inspectMedia(source.file, source.id, this.tool('ffprobe'), signal, (n) =>
           progress(n),

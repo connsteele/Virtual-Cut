@@ -255,7 +255,16 @@ export function TranscriptWindow() {
     previewOwner.current = { projectId, sourceId: previewSource };
   }, [projectId, previewSource]);
   const editRevision = JSON.stringify(session?.edits);
-  const pageKey = JSON.stringify([identity.current, viewId, gameId, pageIndex, search, filter]);
+  // Original also reads the dropped lines (VC-166), so it is a different page.
+  const pageKey = JSON.stringify([
+    identity.current,
+    viewId,
+    gameId,
+    pageIndex,
+    search,
+    filter,
+    original,
+  ]);
   reading.current =
     session?.viewSessionId && currentId
       ? {
@@ -329,7 +338,7 @@ export function TranscriptWindow() {
     !selection &&
     position.projectId === projectId &&
     position.sourceId === session?.sourceId
-      ? JSON.stringify([identity.current, projectId, viewId, gameId, session?.sourceId])
+      ? JSON.stringify([identity.current, projectId, viewId, gameId, session?.sourceId, original])
       : '';
   useEffect(() => {
     const pending = restore.current;
@@ -348,7 +357,7 @@ export function TranscriptWindow() {
     const timer = setTimeout(
       () => {
         void api
-          .page(projectId, currentId, pageIndex, search, filter, gameId)
+          .page(projectId, currentId, pageIndex, search, filter, gameId, original)
           .then((value) => {
             if (alive) {
               setPage(value);
@@ -373,6 +382,7 @@ export function TranscriptWindow() {
     pageIndex,
     search,
     filter,
+    original,
     selected?.state,
     combined?.game.state,
     editRevision,
@@ -441,7 +451,7 @@ export function TranscriptWindow() {
     const request = { owner };
     followLookup.current = request;
     void api
-      .pageAt(projectId, currentId, position.time, gameId)
+      .pageAt(projectId, currentId, position.time, gameId, original)
       .then((index) => {
         if (followOwner.current === owner && followLookup.current === request) setPageIndex(index);
       })
@@ -461,6 +471,7 @@ export function TranscriptWindow() {
     follow,
     search,
     filter,
+    original,
     selection,
     usablePage,
   ]);
@@ -877,7 +888,12 @@ export function TranscriptWindow() {
               {selected.wordCount + (combined?.game.wordCount || 0)} words ·{' '}
               {selected.device === 'cuda' ? 'NVIDIA GPU' : selected.device.toUpperCase()} ·{' '}
               {selected.context.gameName || 'No game specified'}
-              {selected.context.vocabulary ? ' · vocabulary hints used' : ''}
+              {selected.context.vocabulary
+                ? ` · vocabulary hints used, from ${selected.context.gameName ? `${selected.context.gameName}’s` : 'the game’s'} names and terms`
+                : ''}
+              {selected.guardRedos
+                ? ` · ${selected.guardRedos} ${selected.guardRedos === 1 ? 'span' : 'spans'} redone without hints`
+                : ''}
               {' · Help'}
             </summary>
             <p>Speech model: {selected.model}</p>
@@ -886,6 +902,12 @@ export function TranscriptWindow() {
               Escape cancels, and the original recognition is kept. Edit phrase (on hover) changes a
               whole line. J/K/L controls playback when you are not typing. Dotted words have low
               recognition confidence.
+            </p>
+            <p>
+              Short microphone lines with no voice under them, or stock phrases such as “Thank
+              you.”, are left out. Original shows them as “Dropped: no speech”; Undo in the main
+              window brings them back. With vocabulary hints, a hinted line that comes back as a
+              stock phrase or with far too few words is recognized again without hints.
             </p>
             <p>
               Spoken microphone cues: Marker, Note, Split, Clip start and Clip end. Marker is
@@ -942,6 +964,7 @@ export function TranscriptWindow() {
                     className={s.segment}
                     data-cue={cue?.kind}
                     data-source={combined ? owner.role : undefined}
+                    data-dropped={segment.dropped}
                   >
                     <button
                       className={s.rowTime}
@@ -959,6 +982,19 @@ export function TranscriptWindow() {
                       </span>
                     )}
                     <div className={s.words}>
+                      {/* Only Original reads dropped lines (VC-166); Undo brings them back. */}
+                      {segment.dropped && (
+                        <small
+                          className={s.dropped}
+                          title={
+                            segment.dropped === 'stock-phrase'
+                              ? 'A short stock phrase the speech model writes where nobody spoke. Undo restores it.'
+                              : 'No voice under these words. Undo restores the line.'
+                          }
+                        >
+                          Dropped: no speech
+                        </small>
+                      )}
                       {editing && editing.wordIndex == null ? (
                         editor(editing.text, true)
                       ) : phraseEdit && !original ? (
@@ -999,7 +1035,9 @@ export function TranscriptWindow() {
                               title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
                               onClick={() => seek(segment, index, false, owner)}
                               onDoubleClick={() =>
-                                owner.state === 'complete' && seek(segment, index, true, owner)
+                                owner.state === 'complete' &&
+                                !segment.dropped &&
+                                seek(segment, index, true, owner)
                               }
                             >
                               {!original && correction ? correction.text : word.text}
@@ -1014,7 +1052,7 @@ export function TranscriptWindow() {
                     </div>
                     <div className={s.rowTools}>
                       <Button
-                        disabled={busy || owner.state !== 'complete'}
+                        disabled={busy || owner.state !== 'complete' || !!segment.dropped}
                         onClick={() => (
                           setFollow(false),
                           setFocusedWord({ segment: segment.id, transcript: owner.id }),

@@ -48,6 +48,7 @@ export const desktop = [
   'speech-setup-ui.mjs',
   'crash-diagnostics-checks.mjs',
   'transcription-review-ui.mjs',
+  'dropped-lines-ui.mjs',
   'transcription-ui-checks.mjs',
   'project-deletion-ui.mjs',
   'range-markers-ui.mjs',
@@ -75,6 +76,7 @@ export const desktop = [
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
+  'dropped-lines-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
   'proposal-preview-ui.mjs': ['transcript-storage-checks.mjs'],
@@ -125,6 +127,10 @@ export const other = {
     'Scores proposals and decisions against tagged mic notes (VC-128); on demand, reads only the files it is given.',
   'cue-accuracy-study.mjs':
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
+  'hint-guard-study.mjs':
+    'Checks vocabulary hints and their guard against tagged notes (VC-164); copies the recording, needs a local speech engine and the GPU.',
+  'dropped-lines-study.mjs':
+    'Checks dropped microphone lines against tagged notes (VC-166); copies the recording, needs a local speech engine and the GPU.',
   'job-lanes-ui.mjs':
     'Desktop check with the real speech engine (VC-145): import and exports beside a transcription, pause and cancel, screenshots; needs disposable copies.',
   'job-lanes-study.mjs':

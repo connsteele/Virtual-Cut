@@ -154,9 +154,24 @@ try {
         ],
         noSpeechProbability: 0,
         averageLogProbability: -0.1,
+        voiceScore: 0.82,
       },
     });
-    receive({ type: 'complete', peakMemoryBytes: 0 });
+    // An invented line over a cough (VC-166): short, with no voice under it.
+    receive({
+      type: 'segment',
+      segment: {
+        id: 2,
+        start: 12,
+        end: 12.6,
+        text: ' Thank you.',
+        words: [{ text: ' Thank you.', start: 12, end: 12.6, probability: 0.4 }],
+        noSpeechProbability: 0.3,
+        averageLogProbability: -0.6,
+        voiceScore: 0.04,
+      },
+    });
+    receive({ type: 'complete', peakMemoryBytes: 0, guardRedos: 3 });
   };
   const opts = { roles: ['mic'], language: 'en', vocabulary: false };
   service.requestTranscription(id, rid, batch, opts);
@@ -172,7 +187,30 @@ try {
   await wait();
   const transcript = service.store.transcripts.get(job.id);
   assert.equal(transcript.state, 'complete');
-  assert.equal(transcript.wordCount, 11);
+  assert.equal(transcript.wordCount, 12);
+  assert.equal(transcript.guardRedos, undefined, 'Without hints there is no hint guard (VC-164).');
+  // VC-166: the invented line is dropped as one edit; the recognition keeps it, Undo restores it.
+  const store = service.store;
+  assert.deepEqual(store.data.model.droppedLines, [
+    { id: `${job.id}:2:dropped`, transcriptId: job.id, segmentId: 2, reason: 'stock-phrase' },
+  ]);
+  assert.equal(store.transcripts.segment(job.id, 2).text, ' Thank you.');
+  assert.deepEqual(
+    store.transcripts.page(job.id, 0, '').segments.map((s) => s.id),
+    [0, 1],
+  );
+  assert.deepEqual(
+    store.transcripts
+      .page(job.id, 0, '', [], store.data.model, 'all', undefined, true)
+      .segments.map((s) => s.dropped ?? null),
+    [null, null, 'stock-phrase'],
+  );
+  assert.equal((await service.snapshot()).canUndo, true);
+  await service.history(id, 'undo');
+  assert.equal(store.data.model.droppedLines, undefined);
+  assert.equal(store.transcripts.page(job.id, 0, '').segments.length, 3);
+  await service.history(id, 'redo');
+  assert.equal(store.transcripts.page(job.id, 0, '').segments.length, 2);
   assert.equal(transcript.device, 'cpu');
   const finishedJob = service.store.jobs().find((j) => j.id === job.id);
   assert.equal(finishedJob.device, 'cpu');
@@ -205,15 +243,21 @@ try {
   assert.equal(checks, 2);
   release();
   assert.equal((await recheck).available, true);
-  const batches = [];
+  const batches = [],
+    guards = [];
   readiness.execute = async (config) => {
     batches.push(config.batchSize);
+    guards.push(config.hintGuard);
   };
   const plain = { source: 'a.mp4', track: 1, offset: 0, language: 'en', vocabulary: '' };
   await readiness.run(plain, new AbortController().signal, () => {});
   await readiness.run({ ...plain, vocabulary: 'Cai' }, new AbortController().signal, () => {});
   await readiness.run({ ...plain, batchSize: 4 }, new AbortController().signal, () => {});
-  assert.deepEqual(batches, [8, 1, 4], 'Batch 8 by default; hints stay at batch 1 (VC-181).');
+  assert.deepEqual(batches, [8, 8, 4], 'Batch 8 by default, hints too, with their guard (VC-164).');
+  assert.equal(guards[0], undefined);
+  assert.equal(guards[1].secondsPerWord, 2);
+  assert.equal(guards[1].minSeconds, 8);
+  assert(guards[1].stockPhrases.includes('thank you for watching'));
   assert.equal(frozenVocabulary, '');
   assert.equal(
     service.store.transcripts.segment(job.id, 1).start,
@@ -233,7 +277,7 @@ try {
   service.store.transcripts.removeSource(rid);
   assert.equal(service.store.transcripts.list().length, 0);
   await service.store.restore(save.id);
-  assert.equal(service.store.transcripts.get(job.id).wordCount, 11);
+  assert.equal(service.store.transcripts.get(job.id).wordCount, 12);
   assert.equal(service.store.transcripts.segment(job.id, 1).text, 'Note remember this.');
   await service.store.restore(save.id);
   assert.equal(
@@ -278,6 +322,11 @@ try {
   });
   await wait();
   assert.equal(service.store.transcripts.get(frozenJob.id).context.gameId, 'game-one');
+  assert.equal(
+    service.store.transcripts.get(frozenJob.id).guardRedos,
+    3,
+    'Hinted runs note redos.',
+  );
   assert.equal(frozenVocabulary, 'Cai', 'Queued jobs retain the context approved when requested');
   assert.throws(() => service.requestTranscription(id, rid, 'other-batch', opts), /batch/);
   const currentRecord = service.store.data.model.recordings[0];
@@ -316,7 +365,7 @@ try {
   assert.equal(service.store.transcripts.get(interruptedId).state, 'interrupted');
   await assert.rejects(stat(owned), { code: 'ENOENT' });
   assert.equal(await readFile(unrelated, 'utf8'), 'user data');
-  assert.equal(service.store.transcripts.get(job.id).wordCount, 11);
+  assert.equal(service.store.transcripts.get(job.id).wordCount, 12);
   assert.equal(snap.canUndo, false);
   await service.close();
   assert.equal(service.transcriptSession(), null);

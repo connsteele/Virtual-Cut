@@ -1,12 +1,17 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
-export const TRANSCRIPTION_PIPELINE = 'utterance-v2';
+import { stockPhrases } from './stock-phrases.js';
+export const TRANSCRIPTION_PIPELINE = 'utterance-v3';
 // utterance-v2 recognizes up to eight speech spans together in one worker (VC-181).
-// Vocabulary hints stay at batch 1 until they ship with their guard (VC-164).
+// utterance-v3 scores the voice under each line's words, so invented lines are dropped (VC-166),
+// and runs vocabulary hints at batch 8 with their guard (VC-164): a hinted line that is a stock
+// phrase, or has far too few words for its length, is recognized again without hints.
 export const TRANSCRIPTION_BATCH_SIZE = 8;
-export const transcriptionBatchSize = (vocabulary: string) =>
-  vocabulary ? 1 : TRANSCRIPTION_BATCH_SIZE;
+/** The hint guard's "too few words": under one word per this many seconds… */
+export const HINT_GUARD_SECONDS_PER_WORD = 2;
+/** …across a line at least this long. */
+export const HINT_GUARD_MIN_SECONDS = 8;
 import type {
   AsrRuntime,
   TranscriptSegment,
@@ -183,7 +188,17 @@ export class TranscriptionRuntime {
       {
         ...this.settings,
         ...request,
-        batchSize: request.batchSize ?? transcriptionBatchSize(request.vocabulary),
+        batchSize: request.batchSize ?? TRANSCRIPTION_BATCH_SIZE,
+        // The hint guard (VC-164) shares VC-166's stock phrases; the worker matches them.
+        ...(request.vocabulary
+          ? {
+              hintGuard: {
+                stockPhrases,
+                secondsPerWord: HINT_GUARD_SECONDS_PER_WORD,
+                minSeconds: HINT_GUARD_MIN_SECONDS,
+              },
+            }
+          : {}),
       },
       signal,
       receive,
@@ -273,4 +288,6 @@ export interface WorkerEvent {
   languageProbability?: number;
   duration?: number;
   segment?: TranscriptSegment;
+  /** Hinted spans the guard recognized again without hints (VC-164), on `complete`. */
+  guardRedos?: number;
 }

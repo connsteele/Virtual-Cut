@@ -188,8 +188,14 @@ export function registerTranscriptWindow(
     const session = projects.transcriptSession(sourceId || preferredSource);
     return session ? { ...session, viewSessionId } : null;
   });
-  handle('pageAt', async (id, transcriptId, time, also) =>
-    projects.require(id).transcripts.pageAt(transcriptId, time, readTogether(also)),
+  const readOriginal = (original: unknown) => {
+    if (original != null && typeof original !== 'boolean') throw new Error('Invalid reading.');
+    return !!original;
+  };
+  handle('pageAt', async (id, transcriptId, time, also, original) =>
+    projects
+      .require(id)
+      .transcripts.pageAt(transcriptId, time, readTogether(also), readOriginal(original)),
   );
   handle('transport', async (id, sourceId, key) => {
     if (
@@ -199,7 +205,7 @@ export function registerTranscriptWindow(
       throw new Error('This transcript recording is unavailable.');
     main()?.webContents.send('transcript:transport-event', { projectId: id, sourceId, key });
   });
-  handle('page', async (id, transcriptId, page, search, filter = 'all', also) => {
+  handle('page', async (id, transcriptId, page, search, filter = 'all', also, original) => {
     const s = projects.require(id);
     if (typeof search !== 'string' || search.length > 300)
       throw new Error('Invalid transcript search.');
@@ -220,6 +226,7 @@ export function registerTranscriptWindow(
       s.data.model,
       filter,
       game ? { id: game, matches: matches(game) } : undefined,
+      readOriginal(original),
     );
     // Agent proposals belong to the recording and count with its cues (VC-162).
     const decisions = s.data.model.cueDecisions || [];

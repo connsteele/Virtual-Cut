@@ -148,10 +148,14 @@ def worker():
         # align a cue to the preceding utterance, tens of seconds before it was spoken.
         # Scan bounded PCM windows; only a <=30-second recognition span is held at once.
         import wave
-        from faster_whisper.vad import get_speech_timestamps, VadOptions
+        from faster_whisper.vad import get_speech_timestamps, get_vad_model, VadOptions
         options = VadOptions(threshold=0.35, min_speech_duration_ms=100,
                              min_silence_duration_ms=700, speech_pad_ms=450,
                              max_speech_duration_s=25)
+        # Voice probability per 32 ms window of the whole track, for each line's voice score
+        # (VC-166). The same detector finds the speech intervals; this keeps its raw answer.
+        detector = get_vad_model()
+        voice = []
         with wave.open(wav, "rb") as audio:
             frames = audio.getnframes()
             duration = frames / 16000
@@ -160,6 +164,8 @@ def worker():
             while position < frames:
                 raw = audio.readframes(60 * 16000)
                 block = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+                windows = -(-len(block) // 512)
+                voice.append(np.asarray(detector(np.pad(block, (0, windows * 512 - len(block))))).reshape(-1)[:windows])
                 for span in get_speech_timestamps(block, options):
                     start, end = position + span["start"], position + span["end"]
                     if ranges and start - ranges[-1][1] <= 12800 and end - ranges[-1][0] <= 480000:
@@ -168,12 +174,42 @@ def worker():
                         ranges.append([start, end])
                 position += len(block)
                 emit({"type": "stage", "message": "Finding speech intervals", "progress": 0.05 + 0.05 * position / max(frames, 1)})
+            voice = np.concatenate(voice) if voice else np.zeros(0, dtype=np.float32)
+            def voice_score(spans):
+                # Mean voice probability over the windows a line's own words cover (VC-166).
+                windows = set()
+                for a, b in spans:
+                    first = max(0, int(a * 16000) // 512)
+                    last = min(len(voice), -(-int(b * 16000) // 512))
+                    windows.update(range(first, max(first + 1, last)))
+                picked = [voice[i] for i in windows if i < len(voice)]
+                return round(float(np.mean(picked)), 3) if picked else 0.0
             ordinal = 0
             language = request["language"] or None
             emit({"type": "info", "language": language or "", "duration": duration})
-            # The app sends batch 8 (batch 1 with vocabulary hints); the harness may choose.
+            # The app sends batch 8, with or without vocabulary hints; the harness may choose.
             # Preserve each utterance's real source offset; never concatenate gaps.
             batch_size = int(request.get("batchSize", 1))
+            hints = request.get("vocabulary") or None
+            guard = request.get("hintGuard") if hints else None
+            redos = 0
+            def plain(text):
+                # The same normalisation as electron/stock-phrases.ts.
+                import re
+                text = re.sub(r"[^a-z0-9' ]+", " ", text.lower().replace("‘", "'").replace("’", "'"))
+                return " ".join(text.split())
+            stock = set(guard["stockPhrases"]) if guard else set()
+            def guard_reason(segment):
+                # VC-164: hints at batch 8 can swap real speech for a stock phrase ("Thank you
+                # for watching!" over 28 s of dialogue). Such a line is recognized again without
+                # hints, and the transcript keeps that text.
+                if plain(segment.text) in stock:
+                    return "stock-phrase"
+                length = segment.end - segment.start
+                words = len(segment.words or []) or len(segment.text.split())
+                if length >= guard["minSeconds"] and words < length / guard["secondsPerWord"]:
+                    return "sparse"
+                return None
             if batch_size not in [1, 2, 4, 8]:
                 raise RuntimeError("Unsupported speech batch size.")
             groups = []
@@ -195,18 +231,38 @@ def worker():
                         {"start": (a - start) / 16000, "end": (b - start) / 16000} for a, b in group]}
                 segments, info = transcriber.transcribe(chunk, language=language, beam_size=5,
                     word_timestamps=True, vad_filter=False,
-                    temperature=0, hotwords=request.get("vocabulary") or None, **extra)
+                    temperature=0, hotwords=hints, **extra)
                 if language is None:
                     language = info.language
                     emit({"type": "info", "language": language, "languageProbability": info.language_probability, "duration": duration})
-                offset = request["offset"] + start / 16000
+                found = []
                 for segment in segments:
-                    emit({"type": "segment", "segment": {
-                        "id": ordinal, "start": max(0, segment.start + offset), "end": max(0, segment.end + offset),
+                    reason = guard_reason(segment) if guard else None
+                    if not reason:
+                        found.append((segment, 0.0, None))
+                        continue
+                    # Recognize this span again without hints; its times are from the span start.
+                    first = max(0, int(segment.start * 16000))
+                    last = min(len(chunk), int(segment.end * 16000) + 1)
+                    again, _ = model.transcribe(chunk[first:last], language=language, beam_size=5,
+                        word_timestamps=True, vad_filter=False, temperature=0, hotwords=None,
+                        condition_on_previous_text=False, hallucination_silence_threshold=2)
+                    found.extend((line, first / 16000, reason) for line in again)
+                    redos += 1
+                for segment, shift, reason in found:
+                    local = start / 16000 + shift
+                    at = request["offset"] + local
+                    spoken = [(w.start + local, w.end + local) for w in segment.words or []]
+                    line = {
+                        "id": ordinal, "start": max(0, segment.start + at), "end": max(0, segment.end + at),
                         "text": segment.text, "noSpeechProbability": segment.no_speech_prob,
                         "averageLogProbability": segment.avg_logprob,
-                        "words": [{"start": max(0, w.start + offset), "end": max(0, w.end + offset),
-                                   "text": w.word, "probability": w.probability} for w in segment.words or []]},
+                        "voiceScore": voice_score(spoken or [(segment.start + local, segment.end + local)]),
+                        "words": [{"start": max(0, w.start + at), "end": max(0, w.end + at),
+                                   "text": w.word, "probability": w.probability} for w in segment.words or []]}
+                    if reason:
+                        line["hintGuard"] = reason
+                    emit({"type": "segment", "segment": line,
                           "progress": min(0.99, 0.10 + 0.89 * end / max(frames, 1))})
                     ordinal += 1
         from ctypes import wintypes as w
@@ -217,7 +273,8 @@ def worker():
         kernel = ctypes.WinDLL("kernel32"); kernel.GetCurrentProcess.restype = w.HANDLE
         psapi = ctypes.WinDLL("psapi"); psapi.GetProcessMemoryInfo.argtypes = [w.HANDLE, ctypes.c_void_p, w.DWORD]
         measured = psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(memory), memory.cb)
-        emit({"type": "complete", "elapsedMs": round((time.monotonic() - began) * 1000), "peakMemoryBytes": memory.peak if measured else None})
+        emit({"type": "complete", "elapsedMs": round((time.monotonic() - began) * 1000), "peakMemoryBytes": memory.peak if measured else None,
+              **({"guardRedos": redos} if guard else {})})
     finally:
         if os.path.isfile(wav):
             os.unlink(wav)

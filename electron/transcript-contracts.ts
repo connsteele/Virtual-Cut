@@ -32,6 +32,30 @@ export interface TranscriptSegment {
   words: TranscriptWord[];
   noSpeechProbability: number;
   averageLogProbability: number;
+  /**
+   * How much voice the voice detector heard under this line's own words, 0 to 1 (VC-166). Only
+   * transcriptions made since VC-166 carry it.
+   */
+  voiceScore?: number;
+  /**
+   * Recognized again without vocabulary hints (VC-164): with hints this span came back as a
+   * stock phrase, or with far too few words for its length.
+   */
+  hintGuard?: 'stock-phrase' | 'sparse';
+  /** Derived for the Original view only: why this line was dropped from the transcript. */
+  dropped?: DropReason;
+}
+/** Why a short microphone line was left out (VC-166): no voice under it, or a stock phrase. */
+export type DropReason = 'no-voice' | 'stock-phrase';
+/**
+ * A recognized line left out of the transcript, proposals and agent reads (VC-166). It is an
+ * edit like a correction, so Undo restores the line; the recognition itself is never changed.
+ */
+export interface DroppedLine {
+  id: string;
+  transcriptId: string;
+  segmentId: number;
+  reason: DropReason;
 }
 export interface TranscriptSummary {
   deviceMessage?: string;
@@ -58,6 +82,8 @@ export interface TranscriptSummary {
   segmentCount: number;
   wordCount: number;
   elapsedMs?: number;
+  /** Hinted spans the guard recognized again without hints (VC-164); only with hints. */
+  guardRedos?: number;
 }
 export interface TranscriptEdit {
   id: string;
@@ -208,8 +234,17 @@ export interface TranscriptApi {
   onTransport(
     callback: (event: { projectId: string; sourceId: string; key: 'j' | 'k' | 'l' }) => void,
   ): () => void;
-  /** `also` names a game transcript read together with this microphone one (VC-185). */
-  pageAt(projectId: string, transcriptId: string, time: number, also?: string): Promise<number>;
+  /**
+   * `also` names a game transcript read together with this microphone one (VC-185); `original`
+   * reads dropped lines too (VC-166).
+   */
+  pageAt(
+    projectId: string,
+    transcriptId: string,
+    time: number,
+    also?: string,
+    original?: boolean,
+  ): Promise<number>;
   apply(token: string): Promise<import('./project-contracts.js').ProjectSnapshot>;
   open(sourceId?: string): Promise<void>;
   onSource(callback: (sourceId: string) => void): () => void;
@@ -221,6 +256,7 @@ export interface TranscriptApi {
     search: string,
     filter?: 'all' | 'cues' | 'pending' | 'accepted' | 'rejected',
     also?: string,
+    original?: boolean,
   ): Promise<TranscriptPage>;
   start(
     projectId: string,
