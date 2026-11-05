@@ -521,9 +521,9 @@ export function registerAgentAccess(options: {
     return access.revoke(String(clientId));
   });
   // Only the user changes Allow pictures, in the Agent panel (VC-195): no tool can.
-  ipcMain.handle('agent:setPictures', (event, clientId: unknown, allowed: unknown) => {
+  ipcMain.handle('agent:setPictures', (event, allowed: unknown) => {
     options.trusted(event);
-    return access.setPictures(String(clientId), allowed === true);
+    return access.setPictures(allowed === true);
   });
   ipcMain.handle('agent:copy', async (event, text: unknown) => {
     options.trusted(event);
