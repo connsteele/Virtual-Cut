@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.25 — Screen text and cleaner microphone transcripts (November 5, 2026)
+
+Sprint 11. After its picture pass, each recording gets a background screen text pass that reads
+the text on its keyframes with a local engine on the graphics card and stores each line as facts
+only: its text, where it sat, when it was up and how sure the engine was, for any game and with
+no per-game setup. The thumbnail badge and Jobs show it, and a Screen text engine card in the
+Transcript window downloads, checks and switches the engine. Agents read the lines through
+`get_screen_text`, grouped by default, and intent guide version 3 tells them how to use them.
+Microphone transcripts drop short invented lines such as "Thank you." over a cough, and game
+names now reach recognition by default with a guard against invented phrases. See [the 0.4.25
+review](docs/review-0.4.25.md).
+
 ## 0.4.24 — Job lanes and picture events (November 4, 2026)
 
 Sprint 10. Media jobs run in their own lane, so an import, an inspection or an export starts
