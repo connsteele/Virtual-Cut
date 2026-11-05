@@ -69,6 +69,7 @@ try {
     'pair',
     'revoke',
     'setEnabled',
+    'setPictures',
     'state',
     'view',
   ]);
