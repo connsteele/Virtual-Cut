@@ -75,6 +75,12 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
     current.transcriptEdits || [],
     byId,
   );
+  result.droppedLines = mergeItems(
+    before.droppedLines || [],
+    after.droppedLines || [],
+    current.droppedLines || [],
+    byId,
+  );
   result.cueDecisions = mergeItems(
     before.cueDecisions || [],
     after.cueDecisions || [],
@@ -88,7 +94,7 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
     byId,
   );
   // Merely opening or seeking an older project must not create editorial changes.
-  for (const field of ['contexts', 'transcriptEdits', 'cueDecisions'] as const)
+  for (const field of ['contexts', 'transcriptEdits', 'droppedLines', 'cueDecisions'] as const)
     if (!result[field]?.length) delete result[field];
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
     // Each collection is homogeneous; the shared identity operation preserves its type.
@@ -142,6 +148,7 @@ export function editorial(model: Model): string {
     ...model,
     contexts: model.contexts?.length ? model.contexts : undefined,
     transcriptEdits: model.transcriptEdits?.length ? model.transcriptEdits : undefined,
+    droppedLines: model.droppedLines?.length ? model.droppedLines : undefined,
     cueDecisions: model.cueDecisions?.length ? model.cueDecisions : undefined,
     clips: model.clips.map((c) => ({ ...c, filed: false })),
     selectedRecordingId: undefined,
@@ -169,6 +176,16 @@ export function validateEdits(model: Model): Model {
       !text(edit.text, 10000)
     )
       throw new Error('Invalid transcript correction.');
+  if ((model.droppedLines?.length || 0) > 100000) throw new Error('Too many dropped lines.');
+  for (const line of model.droppedLines || [])
+    if (
+      !text(line.id, 300) ||
+      !text(line.transcriptId, 200) ||
+      !Number.isSafeInteger(line.segmentId) ||
+      line.segmentId < 0 ||
+      !['no-voice', 'stock-phrase'].includes(line.reason)
+    )
+      throw new Error('Invalid dropped line.');
   for (const decision of model.cueDecisions || [])
     if (
       !text(decision.id, 300) ||

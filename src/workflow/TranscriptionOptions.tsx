@@ -8,7 +8,9 @@ export const initialTranscriptionOptions: Options = {
   roles: ['game', 'mic'],
   device: 'auto',
   language: 'en',
-  vocabulary: false,
+  // On by default (VC-164): it only takes effect when the batch's game has names or terms, and
+  // recognition redoes without hints any span the hints may have invented.
+  vocabulary: true,
 };
 export function TranscriptionOptions({
   value,

@@ -326,6 +326,8 @@ try {
   await view.getByRole('button', { name: 'word80', exact: true }).dblclick();
   await view.getByLabel('Correct word').fill('Unsaved');
   await view.getByLabel('Original', { exact: true }).check();
+  // Original reads the page again, with any dropped lines (VC-166).
+  await expect(phrases.locator('article')).toHaveCount(60);
   const owner = await view.evaluate(
     async () => (await window.virtualCut.transcript.session()).viewSessionId,
   );

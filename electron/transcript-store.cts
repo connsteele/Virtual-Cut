@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { cueCandidate, correctedText, reviewedCue } from './transcript-edits.js';
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
 import type {
+  DropReason,
   TranscriptSummary,
   TranscriptSegment,
   TranscriptPage,
@@ -15,6 +16,11 @@ export function createTranscriptSchema(db: DatabaseSync) {
 }
 /** Immutable recognition is stored once, outside the editorial snapshot and Undo journal. */
 export class TranscriptStore {
+  /**
+   * Lines dropped from a transcript (VC-166), from the project's edits. Every reader skips them
+   * (pages, cues, proposals, agents, exports); only the Original view asks for them.
+   */
+  dropped: (transcriptId: string) => ReadonlyMap<number, DropReason> = () => new Map();
   constructor(private db: DatabaseSync) {
     createTranscriptSchema(db);
   }
@@ -112,12 +118,14 @@ export class TranscriptStore {
     const cueContext = [{ id: first.id, start: first.start, end: first.end, text: cue.text }];
     let textLength = cue.text.length,
       cueContextLimited = false;
+    const dropped = this.dropped(id);
     for (const row of this.db
       .prepare(
         'SELECT body FROM transcript_segments WHERE transcript_id=? AND ordinal>? ORDER BY ordinal LIMIT 200',
       )
       .all(id, ordinal)) {
       const next = JSON.parse(String(row.body)) as TranscriptSegment;
+      if (dropped.has(next.id)) continue;
       const text = correctedText(model, id, next);
       if (cueCandidate(transcript, { ...next, text })) break;
       if (textLength + text.length + 1 > 9000) {
@@ -155,6 +163,8 @@ export class TranscriptStore {
     model: Pick<Model, 'transcriptEdits' | 'cueDecisions'> = {},
     mode: 'all' | 'cues' | 'pending' | 'accepted' | 'rejected' = 'all',
     also?: { id: string; matches: number[] },
+    /** The Original view: dropped lines come back too, each saying why it was dropped. */
+    original = false,
   ): TranscriptPage {
     if (
       !Number.isInteger(page) ||
@@ -169,14 +179,18 @@ export class TranscriptStore {
       throw new Error('Invalid cue filter.');
     const partner = also && this.pair(transcript, also.id);
     const cueIds: number[] = [];
-    const counted = (transcriptId: string) =>
+    const dropped = this.dropped(id),
+      partnerDropped = partner ? this.dropped(partner.id) : new Map<number, DropReason>();
+    const hidden = (lines: ReadonlyMap<number, DropReason>) =>
+      JSON.stringify(original ? [] : [...lines.keys()]);
+    const counted = (transcriptId: string, lines: ReadonlyMap<number, DropReason>) =>
       Number(
         this.db
           .prepare('SELECT count(*) AS n FROM transcript_segments WHERE transcript_id=?')
           .get(transcriptId)?.n || 0,
-      );
+      ) - (original ? 0 : lines.size);
     const counts = {
-      all: counted(id) + (partner ? counted(partner.id) : 0),
+      all: counted(id, dropped) + (partner ? counted(partner.id, partnerDropped) : 0),
       cues: 0,
       pending: 0,
       accepted: 0,
@@ -194,17 +208,26 @@ export class TranscriptStore {
         if (mode === 'cues' || mode === status) cueIds.push(segment.id);
       }
     // Bound each IPC response. Literal substring matching also treats % and _ literally.
-    const filter = `transcript_id=? AND (instr(lower(json_extract(body,'$.text')),lower(?))>0 OR ordinal IN (SELECT value FROM json_each(?))) AND (?='all' OR ordinal IN (SELECT value FROM json_each(?)))`;
+    const filter = `transcript_id=? AND (instr(lower(json_extract(body,'$.text')),lower(?))>0 OR ordinal IN (SELECT value FROM json_each(?))) AND (?='all' OR ordinal IN (SELECT value FROM json_each(?))) AND ordinal NOT IN (SELECT value FROM json_each(?))`;
     const args: (string | number)[] = [
       id,
       search,
       JSON.stringify(editedMatches),
       mode,
       JSON.stringify(cueIds),
+      hidden(dropped),
     ];
     // Game phrases hold no cues, so a cue filter leaves only the microphone's.
     const where = partner ? `(${filter}) OR (${filter})` : filter;
-    if (partner) args.push(partner.id, search, JSON.stringify(also.matches), mode, '[]');
+    if (partner)
+      args.push(
+        partner.id,
+        search,
+        JSON.stringify(also.matches),
+        mode,
+        '[]',
+        hidden(partnerDropped),
+      );
     // Time order across both; at the same start the microphone comes first.
     const order = partner ? `json_extract(body,'$.start'), transcript_id<>?, ordinal` : 'ordinal';
     const orderArgs = partner ? [id] : [];
@@ -219,18 +242,28 @@ export class TranscriptStore {
       .all(...args, ...orderArgs, page * 60);
     const segments = rows.map((r) => {
       const segment = JSON.parse(String(r.body));
-      return String(r.transcript_id) === id &&
+      const owner = String(r.transcript_id);
+      const reason = (owner === id ? dropped : partnerDropped).get(segment.id);
+      if (reason) return { ...segment, dropped: reason };
+      return owner === id &&
         cueCandidate(transcript, { ...segment, text: correctedText(model, id, segment) })
         ? this.cueSegment(id, segment.id, model)
         : segment;
     });
+    // Where the next page starts, in the same reading (dropped lines left out unless Original).
+    const shown = `NOT (transcript_id=? AND ordinal IN (SELECT value FROM json_each(?)))`;
     const next = this.db
       .prepare(
         partner
-          ? `SELECT body FROM transcript_segments WHERE transcript_id IN (?,?) ORDER BY ${order} LIMIT 1 OFFSET ?`
-          : 'SELECT body FROM transcript_segments WHERE transcript_id=? ORDER BY ordinal LIMIT 1 OFFSET ?',
+          ? `SELECT body FROM transcript_segments WHERE transcript_id IN (?,?) AND ${shown} AND ${shown} ORDER BY ${order} LIMIT 1 OFFSET ?`
+          : `SELECT body FROM transcript_segments WHERE transcript_id=? AND ${shown} ORDER BY ordinal LIMIT 1 OFFSET ?`,
       )
-      .get(...(partner ? [id, partner.id, id] : [id]), (page + 1) * 60);
+      .get(
+        ...(partner
+          ? [id, partner.id, id, hidden(dropped), partner.id, hidden(partnerDropped), id]
+          : [id, id, hidden(dropped)]),
+        (page + 1) * 60,
+      );
     return {
       transcript,
       segments,
@@ -248,19 +281,22 @@ export class TranscriptStore {
       throw new Error('These transcripts cannot be read together.');
     return game;
   }
-  pageAt(id: string, time: number, also?: string) {
+  pageAt(id: string, time: number, also?: string, original = false) {
     const transcript = this.get(id);
     if (!Number.isFinite(time) || time < 0 || time > transcript.duration + 1)
       throw new Error('Invalid transcript time.');
+    const hidden = (transcriptId: string) =>
+      JSON.stringify(original ? [] : [...this.dropped(transcriptId).keys()]);
+    const shown = `NOT (transcript_id=? AND ordinal IN (SELECT value FROM json_each(?)))`;
     if (also) {
       // The combined page holding the last phrase, of either transcript, started by `time`.
       const partner = this.pair(transcript, also);
       const before = Number(
         this.db
           .prepare(
-            "SELECT count(*) AS n FROM transcript_segments WHERE transcript_id IN (?,?) AND json_extract(body,'$.start')<=?",
+            `SELECT count(*) AS n FROM transcript_segments WHERE transcript_id IN (?,?) AND ${shown} AND ${shown} AND json_extract(body,'$.start')<=?`,
           )
-          .get(id, partner.id, time)?.n || 0,
+          .get(id, partner.id, id, hidden(id), partner.id, hidden(partner.id), time)?.n || 0,
       );
       return Math.floor(Math.max(0, before - 1) / 60);
     }
@@ -269,9 +305,14 @@ export class TranscriptStore {
         "SELECT ordinal FROM transcript_segments WHERE transcript_id=? AND json_extract(body,'$.start')<=? ORDER BY ordinal DESC LIMIT 1",
       )
       .get(id, time);
-    return Math.floor(Number(row?.ordinal || 0) / 60);
+    const ordinal = Number(row?.ordinal || 0);
+    // Pages hold 60 shown lines, so dropped lines before this one move it to an earlier page.
+    const dropped = original ? 0 : [...this.dropped(id).keys()].filter((n) => n < ordinal).length;
+    return Math.floor((ordinal - dropped) / 60);
   }
-  *segments(id: string, after = -1, backwards = false): Generator<TranscriptSegment> {
+  /** Lines in order, without dropped ones unless `all` (VC-166). */
+  *segments(id: string, after = -1, backwards = false, all = false): Generator<TranscriptSegment> {
+    const dropped = all ? new Map<number, DropReason>() : this.dropped(id);
     // Keep bounded pages, rather than a live SQLite statement across generator yields.
     const statement = this.db.prepare(
       `SELECT ordinal, body FROM transcript_segments WHERE transcript_id=? AND ordinal${backwards ? '<' : '>'}? ORDER BY ordinal ${backwards ? 'DESC' : 'ASC'} LIMIT 200`,
@@ -280,7 +321,8 @@ export class TranscriptStore {
     while (true) {
       const rows = statement.all(id, cursor);
       if (!rows.length) return;
-      for (const row of rows) yield JSON.parse(String(row.body));
+      for (const row of rows)
+        if (!dropped.has(Number(row.ordinal))) yield JSON.parse(String(row.body));
       cursor = Number(rows.at(-1)!.ordinal);
     }
   }

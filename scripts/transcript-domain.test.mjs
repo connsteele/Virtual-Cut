@@ -947,3 +947,111 @@ test('reading state remembers Both and which transcript a focused word belongs t
   });
   assert.equal(readTranscriptView(storage, 'session', 'project', 'next', ['both']), undefined);
 });
+
+test('VC-166: short microphone lines with no voice or a stock phrase are dropped, Original and Undo bring them back', async () => {
+  const { dropLines, dropReason, droppedIn, dropRule } =
+    await import('../dist-electron/dropped-lines.js');
+  const { isStockPhrase, normalisePhrase } = await import('../dist-electron/stock-phrases.js');
+  assert.equal(normalisePhrase(' Thank you for watching! '), 'thank you for watching');
+  assert(
+    isStockPhrase('Thank you.') && isStockPhrase('Bye-bye.') && !isStockPhrase('Thank you, Kai.'),
+  );
+  const short = (id, text, voiceScore, noSpeechProbability, length = 0.8) => ({
+    ...phrase(id, text),
+    start: 20 + id * 5,
+    end: 20 + id * 5 + length,
+    words: [{ text: ` ${text}`, start: 20 + id * 5, end: 20 + id * 5 + length, probability: 0.6 }],
+    voiceScore,
+    noSpeechProbability,
+  });
+  const lines = [
+    short(0, 'Hmm.', 0.02, 0.9), // over a breath: neither detector heard speech
+    short(1, 'Thank you.', 0.9, 0.1), // a stock phrase, even with voice
+    short(2, 'Yes.', 0.05, 0.8), // no voice under a short line
+    short(3, 'Okay.', 0.05, 0.2), // the speech model heard speech: a quiet real word stays
+    short(4, 'Split.', 0.02, 0.9), // a heard cue always stays for review
+    short(5, 'Thank you for watching!', 0.05, 0.9, dropRule.shortSeconds + 0.5), // too long
+    { ...short(6, 'Thank you.', 0.05, 0.9), voiceScore: undefined }, // older transcriptions
+  ];
+  assert.deepEqual(
+    lines.map((l) => dropReason(transcript, l) ?? null),
+    ['no-voice', 'stock-phrase', 'no-voice', null, null, null, null],
+  );
+  assert.equal(dropReason({ ...transcript, role: 'game' }, lines[0]), undefined);
+  const dropped = dropLines(transcript, lines);
+  assert.deepEqual(
+    dropped.map((d) => [d.id, d.segmentId, d.reason]),
+    [
+      ['speech:0:dropped', 0, 'no-voice'],
+      ['speech:1:dropped', 1, 'stock-phrase'],
+      ['speech:2:dropped', 2, 'no-voice'],
+    ],
+  );
+  // Drops are edits: validated, merged with concurrent work, journaled and undone like corrections.
+  const before = emptyModel(),
+    after = validateEdits({ ...before, droppedLines: dropped });
+  assert.notEqual(editorial(before), editorial(after));
+  assert.deepEqual(mergeEdits(before, after, before).droppedLines, dropped);
+  assert.equal(mergeEdits(after, before, after).droppedLines, undefined);
+  for (const bad of [{ reason: 'loud' }, { segmentId: -1 }, { transcriptId: 3 }])
+    assert.throws(
+      () => validateEdits({ ...before, droppedLines: [{ ...dropped[0], ...bad }] }),
+      /Invalid dropped line/,
+    );
+  assert.deepEqual(
+    [...droppedIn(after, 'speech')],
+    [
+      [0, 'no-voice'],
+      [1, 'stock-phrase'],
+      [2, 'no-voice'],
+    ],
+  );
+  const db = new DatabaseSync(':memory:');
+  try {
+    const store = new TranscriptStore(db);
+    let current = after;
+    store.dropped = (id) => droppedIn(current, id);
+    store.put({ ...transcript, duration: 1000 });
+    for (const line of lines) store.append('speech', line);
+    store.append('speech', { ...phrase(7, 'Note a real thought'), start: 60, end: 63 });
+    for (let i = 8; i < 70; i++)
+      store.append('speech', { ...phrase(i), start: 60 + i, end: 61 + i });
+    // Readers skip dropped lines: pages, counts, search, cue context and every segment reader.
+    const page = store.page('speech', 0, '');
+    assert.equal(page.counts.all, 67);
+    assert.deepEqual(
+      page.segments.slice(0, 4).map((s) => s.id),
+      [3, 4, 5, 6],
+    );
+    assert.equal(store.page('speech', 0, 'thank').total, 2);
+    assert.equal(store.page('speech', 1, '').segments.length, 7);
+    assert.deepEqual(
+      [...store.segments('speech')].slice(0, 2).map((s) => s.id),
+      [3, 4],
+    );
+    assert.equal([...store.segments('speech', -1, false, true)].length, 70);
+    assert.deepEqual(
+      [...store.segments('speech', 3, true)].map((s) => s.id),
+      [],
+    );
+    assert.equal(store.pageAt('speech', 125), 1);
+    assert.equal(store.pageAt('speech', 125, undefined, true), 1);
+    assert.equal(store.pageAt('speech', 60.5), 0);
+    // Original reads them too, each saying why; the recognition itself never changed.
+    const original = store.page('speech', 0, '', [], current, 'all', undefined, true);
+    assert.equal(original.counts.all, 70);
+    assert.deepEqual(
+      original.segments.slice(0, 3).map((s) => s.dropped),
+      ['no-voice', 'stock-phrase', 'no-voice'],
+    );
+    assert.equal(original.segments[3].dropped, undefined);
+    assert.equal(store.segment('speech', 0).text, 'Hmm.');
+    assert.equal(store.segment('speech', 0).dropped, undefined);
+    // Undo removes the drop edit, and every line reads again.
+    current = before;
+    assert.equal(store.page('speech', 0, '').counts.all, 70);
+    assert.equal(store.page('speech', 0, '').segments[0].dropped, undefined);
+  } finally {
+    db.close();
+  }
+});

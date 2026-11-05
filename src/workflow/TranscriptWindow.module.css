@@ -336,6 +336,17 @@
 .segment[data-source] .editHint {
   grid-column: 3 / 5;
 }
+/* A dropped line, shown only under Original (VC-166). */
+.dropped {
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.segment[data-dropped] .words button {
+  color: var(--muted);
+  text-decoration: line-through;
+}
 .source {
   justify-self: start;
   padding: 0 5px;

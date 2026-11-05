@@ -19,6 +19,7 @@ import { emptyModel, mergeEdits, editorial, validateEdits } from './project-edit
 import { reconcileReview } from './review-state.cjs';
 import { inferReworks } from './proposal-edits.js';
 import { correctedText, cueCandidate } from './transcript-edits.js';
+import { droppedIn } from './dropped-lines.js';
 import { changes, applyChange, type Change } from './project-changes.js';
 import {
   PROJECT_APP_ID,
@@ -189,6 +190,7 @@ export class ProjectStore {
         'CREATE TABLE IF NOT EXISTS screen_text (source_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, version INTEGER NOT NULL, summary TEXT NOT NULL, body TEXT NOT NULL)',
       );
       this.transcripts = new TranscriptStore(this.db);
+      this.transcripts.dropped = (id) => droppedIn(this.data.model, id);
       this.proposals = new ProposalStore(this.db);
       this.proposals.infer = (proposals) =>
         inferReworks(proposals, (transcriptId, lineId) => {
