@@ -65,8 +65,7 @@ try {
   const client = agent(await panel.locator('[data-config="claude-desktop"]').textContent());
   await panel.getByRole('button', { name: 'Done', exact: true }).click();
   await initialize(client);
-  const clientId = (await main.evaluate(() => window.virtualCut.agent.state())).clients[0].id;
-  await main.evaluate((c) => window.virtualCut.agent.setPictures(c, true), clientId);
+  await main.evaluate(() => window.virtualCut.agent.setPictures(true));
   for (const call of calls) {
     const started = Date.now();
     const reply = await client.call('tools/call', {

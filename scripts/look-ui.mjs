@@ -120,9 +120,7 @@ try {
     (await client.call('tools/call', { name: 'look', arguments: args })).result;
   const guide = async () => JSON.parse((await mcpTool(client, 'get_intent_guide', {})).text).guide;
   const agentState = () => main.evaluate(() => window.virtualCut.agent.state());
-  const clientId = (await agentState()).clients[0].id;
-  const setPictures = (on) =>
-    main.evaluate(([c, on]) => window.virtualCut.agent.setPictures(c, on), [clientId, on]);
+  const setPictures = (on) => main.evaluate((on) => window.virtualCut.agent.setPictures(on), on);
 
   // Off (the default): refused before anything is read, listed as refused, guide without looks.
   const ask = {
@@ -131,7 +129,7 @@ try {
   };
   const off = await look(ask);
   assert.equal(off.isError, true);
-  assert.match(off.content[0].text, /^Pictures are off for this agent app\. .*Agent panel/);
+  assert.match(off.content[0].text, /^Pictures are off for agent apps\. .*Agent panel/);
   assert.equal(off.content.length, 1);
   let activity = (await agentState()).activity[0];
   assert.deepEqual(

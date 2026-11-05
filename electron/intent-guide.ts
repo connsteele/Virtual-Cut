@@ -16,8 +16,8 @@ export const intentGuideVersion = '4';
 export const defaultRecurringClips = 3;
 
 /**
- * v4 (VC-172): the general section's sentences about the look tool. Only an app whose pictures
- * the user allows reads them; an app with pictures off reads v4 without them.
+ * v4 (VC-172): the general section's sentences about the look tool. Agents read them only while
+ * Allow pictures is on (one switch for every paired app); with it off they read v4 without them.
  */
 export const lookLessons = [
   // Accepted as S12-GUIDE with "Connor"; the guide says "the creator" everywhere else.
@@ -142,7 +142,7 @@ export const intentGuide = {
   ],
 };
 
-/** The guide as an app with pictures allowed reads it: the general section adds lookLessons. */
+/** The guide while Allow pictures is on: the general section adds lookLessons. */
 const withPictures = {
   ...intentGuide,
   games: {

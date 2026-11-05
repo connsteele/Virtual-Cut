@@ -359,8 +359,8 @@ Note I like the crowd
   assert.deepEqual(quiet.profile.notes, [
     'Rarely uses cue words: read free speech for intent rather than waiting for one.',
   ]);
-  // v4 (VC-172): an app with pictures allowed reads the look sentences in the general section;
-  // one with pictures off reads v4 without them. Nothing else differs.
+  // v4 (VC-172): while Allow pictures is on, the general section adds the look sentences; with it
+  // off agents read v4 without them. Nothing else differs.
   const seeing = intentGuideAnswer(source, { pictures: true });
   assert.equal(seeing.guide.version, '4');
   assert.deepEqual(seeing.guide.games.general.lessons, [
@@ -380,7 +380,7 @@ Note I like the crowd
 // Guide v2 (VC-187): the accepted sentences ship word for word, the rules for recordings with no
 // mic and for recurring moments, per-game sections, and a readable copy that stays in step.
 // Guide v3 (VC-191): the two screen text sentences, accepted as S11-GUIDE, in the general section.
-// Guide v4 (VC-172): the three look sentences, accepted as S12-GUIDE, for apps with pictures on.
+// Guide v4 (VC-172): the three look sentences, accepted as S12-GUIDE, while Allow pictures is on.
 {
   const strings = (v) =>
     typeof v === 'string'
@@ -436,7 +436,7 @@ Note I like the crowd
     // VC-173: decisions carry the creator's reason and later changes.
     'rejected, why when they said, and what they changed after accepting',
     'A reject for the wrong moment means the idea was right but the time was not.',
-    // VC-172: the look sentences, for apps with pictures allowed.
+    // VC-172: the look sentences, while Allow pictures is on.
     'Look whenever seeing the picture would make your work better',
     'look at them together in one call. Start with a strip',
     'When a picture decided a proposal, say so in its reason.',

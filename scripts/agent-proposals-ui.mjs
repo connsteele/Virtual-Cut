@@ -169,7 +169,7 @@ try {
 
   // The intent guide: the shipped guide plus the tagged notes beside other recordings only.
   const guide = (await tool(client, 'get_intent_guide')).json();
-  assert.equal(guide.guide.version, '3');
+  assert.equal(guide.guide.version, '4');
   assert.deepEqual(
     guide.examples.map((e) => [e.from, e.time, e.intents.join('+'), e.context]),
     [['tagged notes', 1, 'marker+general', 'Peter']],

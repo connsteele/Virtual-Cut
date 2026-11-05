@@ -1,4 +1,4 @@
-# 0022. Agents may look at pictures Virtual Cut renders, per app, off until allowed
+# 0022. Agents may look at pictures Virtual Cut renders, off until the user allows them
 
 - Status: Proposed
 - Amends: [0014](0014-agent-access-boundary.md) ("never media bytes") for pictures only
@@ -6,17 +6,17 @@
 
 ## Context
 
-Text answers (transcripts, picture events, screen text) settle most questions, but some need eyes: what happened in a scene, a name the screen text misread, whether a Split sits on the right frame, a pattern across scenes. Agent apps have no video input, so pictures are the only way, and their cost follows pixels: about one token per started 28 px cell across and down. In the spike, pictures caught a Split heard as "Spoiler" in 10 of 12 runs against 3 of 19 with text alone, at 3 to 8 times the agent input. Decision 0014 kept every media byte out of MCP; pictures leave Connor's PC and are kept by the agent app under its own data settings, so the choice must be his, per app.
+Text answers (transcripts, picture events, screen text) settle most questions, but some need eyes: what happened in a scene, a name the screen text misread, whether a Split sits on the right frame, a pattern across scenes. Agent apps have no video input, so pictures are the only way, and their cost follows pixels: about one token per started 28 px cell across and down. In the spike, pictures caught a Split heard as "Spoiler" in 10 of 12 runs against 3 of 19 with text alone, at 3 to 8 times the agent input. Decision 0014 kept every media byte out of MCP; pictures leave Connor's PC and are kept by the agent app under its own data settings, so the choice must be his. On the VC-195 prototype (2026-11-05) he asked for one switch for every paired app rather than one per app.
 
 ## Decision
 
-- **One tool, `look`, and only while allowed.** Every call first goes through `AgentAccess.checkPictures` for the calling pairing, which reads its Allow pictures setting (off for new and older pairings, changed only by the user in the Agent panel, VC-195). When off, the call is refused with a message saying who turns pictures on, and Activity lists it as refused.
+- **One tool, `look`, and only while allowed.** Every call first goes through `AgentAccess.checkPictures` for the calling pairing, which allows it only while Allow pictures is on and the app is still paired. Allow pictures is one switch for every paired app, off until the user turns it on in the Agent panel (VC-195); no tool can change it, and a change applies from the next call. When off, the call is refused with a message saying who turns pictures on, and Activity lists it as refused.
 - **Rendered images, never files.** Virtual Cut decodes the pictures into memory and sends them as MCP image blocks (JPEG). No file path, media URL or video ever goes out, and nothing is written: no picture files, no picture cache. Strip tiles come from the recording's existing filmstrip tile file ([0013](0013-filmstrip-tile-files.md)) when it holds the keyframe; otherwise FFmpeg decodes on the CPU at normal priority, never with the picture pass's NVIDIA decoder.
 - **Three kinds of moment, up to 8 a call:** a strip (a range as up to 16 tiles of 252x140 with the time burned into each, from the nearest keyframe when it lies within half the tile spacing and 2 s, else the exact frame), frames (720p by default, up to 6 a call; 1080p, up to 2 a call; Lanczos scaling; recordings that are not 16:9 fit inside the same box) and crops (a `get_screen_text` box padded by half its text height, or a box in fractions of the frame, at full source detail). No named regions for any game.
 - **Caps per call:** at most 16 pictures, about 8,000 image tokens, 1988 px on any side (clear of the 2000 px rule for conversations over 20 images), text under 100,000 characters. A request over a cap is fitted and the answer says how: frames over a size's count step down a size, strips give up tiles (down to 2) before the last pictures are left out, and the largest frame or crop steps down until the tokens fit. Sizes fill whole 28 px cells (a 4K frame at 720p is 1288x724, 1,196 tokens), crops grow to whole cells where the frame allows, and nothing is enlarged.
 - **Each picture follows a text line** naming the recording, its time (clock and seconds) and its size. A picture nearly the same as one already in the call (same kind and size, a 64x36 grey hash within 1.5 levels on average and 12 in any cell) is left out and named in the answer.
 - **Activity:** one line per call with the recording and the times asked, plus the picture count and estimated image tokens. Never the pictures.
-- **Intent guide v4:** an app with pictures allowed reads three sentences about looking in the guide's general section; an app with pictures off reads v4 without them.
+- **Intent guide v4:** while Allow pictures is on, agents read three sentences about looking in the guide's general section; while it is off they read v4 without them.
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ Text answers (transcripts, picture events, screen text) settle most questions, b
 
 ## Consequences
 
-- MCP answers can now carry image blocks, from this one tool only, and only for pairings the user allowed. Every later picture tool must call `checkPictures` first and record `{ images, imageTokens }`.
+- MCP answers can now carry image blocks, from this one tool only, and only while the user allows pictures. Every later picture tool must call `checkPictures` first and record `{ images, imageTokens }`.
 - Pictures leave the PC under the agent app's own retention (Claude Code also saves a copy on disk); [agent apps](../agent-apps.md) says so.
-- Exact frames decode from the previous keyframe on the CPU, so a 4K AV1 frame costs up to a few seconds; strips mostly reuse filmstrip tiles. Timings are in VC-172's evidence.
+- Exact frames decode from the previous keyframe on the CPU. With keyframes about a second apart (OBS), a 4K60 AV1 frame took 0.1 to 0.3 s and a 16-tile strip with no filmstrip tile file about 1 s (VC-172 evidence); recordings with keyframes far apart cost more per exact frame.
 - Whether pictures improve agent results, and at what cost, is measured separately on Connor's go (VC-172 measure runs).

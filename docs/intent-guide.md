@@ -75,8 +75,8 @@ General lessons, for every game (version 3, VC-191):
 - Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.
 - Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure. (decision D6, held until screen text reached agents)
 
-With pictures allowed for the reading app (version 4, VC-172), the general section adds these;
-an app with pictures off reads version 4 without them:
+While Allow pictures is on (version 4, VC-172), the general section adds these; while it is off,
+agents read version 4 without them:
 
 - Look whenever seeing the picture would make your work better: a more accurate trim or Split, a marker on the right moment, a name or detail the text can't settle, a pattern across scenes, or something the creator asked you to find. Picture events, screen text and transcripts are the quick way to find where to look.
 - When you have several moments to check, look at them together in one call. Start with a strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.

@@ -55,7 +55,7 @@ const instructions =
   'propose when there is none, and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
   'never return file paths or media files. look shows pictures of moments in a recording, ' +
-  'rendered by Virtual Cut, when the user has allowed pictures for this app.';
+  'rendered by Virtual Cut, while the user has Allow pictures on.';
 
 /**
  * Agent access (VC-159/VC-160): pairing and activity IPC for the main window, and a read-only
@@ -416,7 +416,7 @@ export function registerAgentAccess(options: {
       (s, a) => batchRecordAnswer(s, a.batch_id),
       (a, n) => `Batch record: ${a.batch_id ? n(a.batch_id) : 'active batch'}`,
     );
-    // VC-172: pictures on request, only while the user allows pictures for this app.
+    // VC-172: pictures on request, only while Allow pictures is on (one switch for every app).
     server.registerTool(
       'look',
       {
@@ -554,7 +554,7 @@ export function registerAgentAccess(options: {
 
 const lookDescription =
   'Pictures of moments in one recording, rendered by Virtual Cut, for when seeing the picture ' +
-  'would make your work better. Only while the user allows pictures for this app; otherwise it ' +
+  'would make your work better. Only while the user has Allow pictures on; otherwise it ' +
   'says pictures are off. Check several moments in one call (up to 8), each one of: strip ' +
   '(start_seconds to end_seconds as up to 16 small 252x140 tiles, each with its time burned ' +
   'in), frames (times, at size 720p by default, about 1,200 image tokens each and up to 6 a ' +
