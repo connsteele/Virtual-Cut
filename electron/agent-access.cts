@@ -16,6 +16,7 @@ interface StoredClient extends AgentClient {
 }
 interface Stored {
   enabled: boolean;
+  pictures?: boolean;
   clients: StoredClient[];
   activity: AgentActivity[];
 }
@@ -28,14 +29,13 @@ const visible = (c: StoredClient): AgentClient => ({
   projectName: c.projectName,
   paired: c.paired,
   lastUsed: c.lastUsed,
-  pictures: c.pictures === true,
 });
 
 /** Refusal for a picture call while the app's pictures are off (VC-195). */
 export class PicturesOff extends Error {
   constructor() {
     super(
-      'Pictures are off for this agent app. The user can turn on Allow pictures for it in ' +
+      'Pictures are off for agent apps. The user can turn on Allow pictures in ' +
         "Virtual Cut's Agent panel; until then, work from transcripts, picture events and " +
         'screen text.',
     );
@@ -50,7 +50,7 @@ export type AgentServe = (socket: Socket, client: AgentClient) => () => void;
  * record of every read. Pairing tokens are stored only as hashes in the user profile.
  */
 export class AgentAccess {
-  private data: Stored = { enabled: false, clients: [], activity: [] };
+  private data: Stored = { enabled: false, pictures: false, clients: [], activity: [] };
   private server?: Server;
   private listening = false;
   private message?: string;
@@ -71,6 +71,7 @@ export class AgentAccess {
       if (value && Array.isArray(value.clients) && Array.isArray(value.activity))
         this.data = {
           enabled: value.enabled === true,
+          pictures: value.pictures === true,
           clients: value.clients,
           activity: value.activity.slice(-activityLimit),
         };
@@ -82,6 +83,7 @@ export class AgentAccess {
     const live = new Set([...this.connections.values()].map((c) => c.clientId));
     return {
       enabled: this.data.enabled,
+      pictures: this.data.pictures === true,
       listening: this.listening,
       message: this.message,
       clients: this.data.clients.map((c) => ({ ...visible(c), connected: live.has(c.id) })),
@@ -110,7 +112,6 @@ export class AgentAccess {
       projectId: project.id,
       projectName: project.name,
       paired: new Date().toISOString(),
-      pictures: false,
       tokenHash: hash(token).toString('hex'),
     };
     this.data.clients.push(client);
@@ -127,20 +128,19 @@ export class AgentAccess {
     return this.state();
   }
   /**
-   * Allow pictures (VC-195). Stored per pairing and read on every picture call, so a change
-   * applies to live connections from their next call. Pairings start with pictures off.
+   * Allow pictures (VC-195): one switch for every paired app, off until the user turns it on.
+   * Read on every picture call, so a change applies to live connections from their next call.
    */
-  async setPictures(clientId: string, allowed: boolean) {
-    const client = this.data.clients.find((c) => c.id === clientId);
-    if (!client) throw new Error('That agent app is no longer paired.');
-    client.pictures = allowed;
-    this.log?.('agent-pictures', { clientId, allowed });
+  async setPictures(allowed: boolean) {
+    this.data.pictures = allowed;
+    this.log?.('agent-pictures', { allowed });
     await this.persist();
     this.changed();
     return this.state();
   }
+  /** Pictures are allowed and this app is still paired. */
   picturesAllowed(clientId: string) {
-    return this.data.clients.find((c) => c.id === clientId)?.pictures === true;
+    return this.data.pictures === true && this.isPaired(clientId);
   }
   /** The one check every picture call goes through: throws PicturesOff unless allowed. */
   checkPictures(clientId: string) {
@@ -250,7 +250,6 @@ export class AgentAccess {
             projectId: '',
             projectName: '',
             paired: '',
-            pictures: false,
           },
           'connect',
           'Connection refused: not paired, or its pairing was revoked',
