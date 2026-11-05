@@ -28,6 +28,8 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed |
 | [0019](0019-job-lanes.md)                      | Transcription and media work run in separate lanes                          | Proposed |
 | [0020](0020-picture-events.md)                 | One background picture pass per recording, events kept beside the model     | Proposed |
+| [0021](0021-screen-text.md)                    | Screen text read once per recording, recorded as facts beside the model     | Proposed |
+| [0022](0022-look-pictures.md)                  | Agents may look at pictures Virtual Cut renders, off until allowed          | Proposed |
 
 ## Adding a record
 

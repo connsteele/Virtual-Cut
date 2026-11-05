@@ -662,7 +662,8 @@ export class ProjectService {
       this.switching = false;
     }
   }
-  private tool(name: 'ffmpeg' | 'ffprobe') {
+  /** The FFmpeg or FFprobe this app runs; the look tool (VC-172) decodes with the same one. */
+  tool(name: 'ffmpeg' | 'ffprobe') {
     const bundled = path.join(this.toolsDirectory, name + '.exe');
     return (
       process.env[name === 'ffmpeg' ? 'VIRTUAL_CUT_FFMPEG' : 'VIRTUAL_CUT_FFPROBE'] ||

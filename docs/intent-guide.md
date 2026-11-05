@@ -1,4 +1,4 @@
-# Intent guide (version 3)
+# Intent guide (version 4)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -66,14 +66,21 @@ agent uses the section whose game matches `get_context`; the general section app
 game. A lesson moves to general only when it holds in a second game or the creator says so. A game
 gets its own section when its footage comes through and it has lessons of its own.
 
-| Section | Recurring moments clipped | Lessons                                         |
-| ------- | ------------------------- | ----------------------------------------------- |
-| General | first 3                   | the two screen text sentences below (version 3) |
+| Section | Recurring moments clipped | Lessons                                                                                           |
+| ------- | ------------------------- | ------------------------------------------------------------------------------------------------- |
+| General | first 3                   | the two screen text sentences (version 3) and, with pictures on, three look sentences (version 4) |
 
 General lessons, for every game (version 3, VC-191):
 
 - Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.
 - Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure. (decision D6, held until screen text reached agents)
+
+While Allow pictures is on (version 4, VC-172), the general section adds these; while it is off,
+agents read version 4 without them:
+
+- Look whenever seeing the picture would make your work better: a more accurate trim or Split, a marker on the right moment, a name or detail the text can't settle, a pattern across scenes, or something the creator asked you to find. Picture events, screen text and transcripts are the quick way to find where to look.
+- When you have several moments to check, look at them together in one call. Start with a strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.
+- When a picture decided a proposal, say so in its reason.
 
 ## The user's layer
 

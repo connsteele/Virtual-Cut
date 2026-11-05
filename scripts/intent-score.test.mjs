@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { parseTaggedNotes, splitTarget } from '../dist-electron/intent-notes.js';
 import { scoreRecording } from '../dist-electron/intent-score.js';
-import { intentGuide, intentGuideAnswer } from '../dist-electron/intent-guide.js';
+import { intentGuide, intentGuideAnswer, lookLessons } from '../dist-electron/intent-guide.js';
 import { emptyModel } from '../dist-electron/project-edits.js';
 
 // Tagged mic notes (VC-128, VC-155): the notes read as written, and the scorer credits each
@@ -290,7 +290,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '3');
+  assert.equal(all.guide.version, '4');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -359,12 +359,28 @@ Note I like the crowd
   assert.deepEqual(quiet.profile.notes, [
     'Rarely uses cue words: read free speech for intent rather than waiting for one.',
   ]);
+  // v4 (VC-172): while Allow pictures is on, the general section adds the look sentences; with it
+  // off agents read v4 without them. Nothing else differs.
+  const seeing = intentGuideAnswer(source, { pictures: true });
+  assert.equal(seeing.guide.version, '4');
+  assert.deepEqual(seeing.guide.games.general.lessons, [
+    ...intentGuide.games.general.lessons,
+    ...lookLessons,
+  ]);
+  assert.deepEqual(
+    { ...seeing.guide, games: { ...seeing.guide.games, general: intentGuide.games.general } },
+    intentGuide,
+  );
+  assert.deepEqual(seeing.examples, all.examples);
+  assert.equal(intentGuideAnswer(source, { pictures: false }).guide, intentGuide);
+  assert.ok(!JSON.stringify(intentGuide).includes('look at them together'));
   assert.throws(() => intentGuideAnswer(source, { max_examples: 500 }), /max_examples/);
   assert.throws(() => intentGuideAnswer(source, { recording_id: 'nope' }), /No recording/);
 }
 // Guide v2 (VC-187): the accepted sentences ship word for word, the rules for recordings with no
 // mic and for recurring moments, per-game sections, and a readable copy that stays in step.
 // Guide v3 (VC-191): the two screen text sentences, accepted as S11-GUIDE, in the general section.
+// Guide v4 (VC-172): the three look sentences, accepted as S12-GUIDE, while Allow pictures is on.
 {
   const strings = (v) =>
     typeof v === 'string'
@@ -392,6 +408,15 @@ Note I like the crowd
   has(`"First few" is 3 unless the game's section below says otherwise`);
   has('such as "clip this one", overrides the count');
   has('A reject for the wrong moment means the idea was right but the time was not.');
+  assert.deepEqual(lookLessons, [
+    'Look whenever seeing the picture would make your work better: a more accurate trim or ' +
+      "Split, a marker on the right moment, a name or detail the text can't settle, a pattern " +
+      'across scenes, or something the creator asked you to find. Picture events, screen text ' +
+      'and transcripts are the quick way to find where to look.',
+    'When you have several moments to check, look at them together in one call. Start with a ' +
+      'strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.',
+    'When a picture decided a proposal, say so in its reason.',
+  ]);
   assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
   assert.equal(intentGuide.games.general.recurringClips, 3);
   assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
@@ -411,6 +436,10 @@ Note I like the crowd
     // VC-173: decisions carry the creator's reason and later changes.
     'rejected, why when they said, and what they changed after accepting',
     'A reject for the wrong moment means the idea was right but the time was not.',
+    // VC-172: the look sentences, while Allow pictures is on.
+    'Look whenever seeing the picture would make your work better',
+    'look at them together in one call. Start with a strip',
+    'When a picture decided a proposal, say so in its reason.',
   ])
     assert.ok(doc.includes(words), `docs/intent-guide.md says: ${words}`);
 }

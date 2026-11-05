@@ -5,15 +5,26 @@ import { rejectReasons, type RejectReason } from './transcript-contracts.js';
 import { AgentReadError, findRecording, type AgentReadSource } from './agent-tools.js';
 
 /**
- * The intent guide (VC-155, v2 VC-187, v3 VC-191): what a creator means by free mic speech, what to propose
+ * The intent guide (VC-155, v2 VC-187, v3 VC-191, v4 VC-172): what a creator means by free mic speech, what to propose
  * when there is none, and how an agent turns it into proposals. It ships with Virtual Cut and is
  * versioned, so every agent reads the same instructions; the user's own labelled examples and
  * habits come with it from their data. docs/intent-guide.md is the readable copy and must match.
  */
-export const intentGuideVersion = '3';
+export const intentGuideVersion = '4';
 
 /** How many instances of a recurring moment get a clip before it drops to a marker or nothing. */
 export const defaultRecurringClips = 3;
+
+/**
+ * v4 (VC-172): the general section's sentences about the look tool. Agents read them only while
+ * Allow pictures is on (one switch for every paired app); with it off they read v4 without them.
+ */
+export const lookLessons = [
+  // Accepted as S12-GUIDE with "Connor"; the guide says "the creator" everywhere else.
+  "Look whenever seeing the picture would make your work better: a more accurate trim or Split, a marker on the right moment, a name or detail the text can't settle, a pattern across scenes, or something the creator asked you to find. Picture events, screen text and transcripts are the quick way to find where to look.",
+  'When you have several moments to check, look at them together in one call. Start with a strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.',
+  'When a picture decided a proposal, say so in its reason.',
+] as const;
 
 export const intentGuide = {
   version: intentGuideVersion,
@@ -131,6 +142,18 @@ export const intentGuide = {
   ],
 };
 
+/** The guide while Allow pictures is on: the general section adds lookLessons. */
+const withPictures = {
+  ...intentGuide,
+  games: {
+    ...intentGuide.games,
+    general: {
+      ...intentGuide.games.general,
+      lessons: [...intentGuide.games.general.lessons, ...lookLessons],
+    },
+  },
+};
+
 export interface IntentExample {
   from: 'tagged notes' | 'decision';
   recording: string;
@@ -172,7 +195,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
  */
 export function intentGuideAnswer(
   source: AgentReadSource,
-  input: { recording_id?: string; max_examples?: number } = {},
+  input: { recording_id?: string; max_examples?: number; pictures?: boolean } = {},
 ) {
   const current = input.recording_id ? findRecording(source, input.recording_id) : undefined;
   const max = input.max_examples ?? 40;
@@ -240,7 +263,7 @@ export function intentGuideAnswer(
   examples.sort((a, b) => Number(b.from === 'decision') - Number(a.from === 'decision'));
   const decided = examples.filter((e) => e.from === 'decision');
   return {
-    guide: intentGuide,
+    guide: input.pictures ? withPictures : intentGuide,
     profile: {
       taggedLines: lines,
       intents: counts,

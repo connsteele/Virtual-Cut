@@ -100,6 +100,7 @@ try {
     'get_screen_text',
     'get_transcript',
     'get_visual_events',
+    'look',
     'submit_proposals',
   ]);
   // Only proposing is not read-only, and it is never destructive (VC-162).

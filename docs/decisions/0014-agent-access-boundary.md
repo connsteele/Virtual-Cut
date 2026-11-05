@@ -28,4 +28,5 @@ Agent work (intent proposals, transcript corrections, scoring) needs an agent to
 - Packaged builds now carry Electron main's runtime dependencies (`node_modules` for the SDK and Zod) inside `resources/app`.
 - Proposals (VC-161/162) add tools that submit for review and keep this boundary; see [0015](0015-agent-proposals.md). Full agent mode (VC-32) is granted in Virtual Cut's UI per run, never by an agent or by transcript text.
 - Later read tools keep this boundary unchanged: `get_intent_guide`, `get_batch_record` ([0018](0018-batch-records.md)) and `get_visual_events` (VC-171), which returns the picture events of [0020](0020-picture-events.md) as text lines, never pictures, and `get_screen_text` (VC-191), which returns the screen text of [0021](0021-screen-text.md) as text lines.
+- Pictures are the one exception to "never media bytes", amended by [0022](0022-look-pictures.md): `look` (VC-172) sends images Virtual Cut renders in memory, only while the user allows pictures, capped and listed in Activity. Paths, media URLs and files stay out.
 - A test-only development endpoint, if ever added, is separate and never shipped.
