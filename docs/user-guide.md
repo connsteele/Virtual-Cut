@@ -34,4 +34,4 @@ The separate sample workspace still offers **Open video** for a session-only dra
 
 ## Agent apps
 
-**Agent** in the header opens Agent access, where agent apps such as Claude Code or Claude Desktop pair with the open project through MCP. What they read and propose, and how you review their proposals in the transcript window and on the Cut timeline, is in [Agent apps](agent-apps.md).
+**Agent** in the header opens Agent access, where agent apps such as Claude Code or Claude Desktop pair with the open project through MCP. **Allow pictures** there (off by default) decides whether they may receive pictures of your recordings. What they read and propose, and how you review their proposals in the transcript window and on the Cut timeline, is in [Agent apps](agent-apps.md).

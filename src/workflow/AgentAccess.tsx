@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentAccessState, AgentPairing } from '../../electron/agent-contracts';
+import type { AgentAccessState, AgentActivity, AgentPairing } from '../../electron/agent-contracts';
 import { Button, Field } from './ui';
 import { background } from './background';
 import s from './AgentAccess.module.css';
@@ -11,6 +11,28 @@ const time = (iso: string) =>
     hour: '2-digit',
     minute: '2-digit',
   });
+const tokens = (n: number) =>
+  n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n);
+const pictures = (n: number) => `${n} picture${n === 1 ? '' : 's'}`;
+/** A picture call that was refused because Allow pictures is off (VC-195). */
+const picturesRefused = (a: AgentActivity) => a.outcome === 'refused' && a.tool === 'look';
+
+/**
+ * Pictures each app received since local midnight (VC-195), from the activity record. The
+ * record keeps the newest 300 calls, so a day with more calls than that counts only those.
+ */
+function picturesToday(activity: AgentActivity[], now = new Date()) {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const totals = new Map<string, { images: number; imageTokens: number }>();
+  for (const a of activity) {
+    if (a.outcome === 'refused' || !a.images || Date.parse(a.at) < midnight) continue;
+    const t = totals.get(a.clientId) || { images: 0, imageTokens: 0 };
+    t.images += a.images;
+    t.imageTokens += a.imageTokens || 0;
+    totals.set(a.clientId, t);
+  }
+  return totals;
+}
 
 /** Agent access (VC-160): the switch, paired agent apps and what each one read or proposed. */
 export function AgentAccess({ project }: { project?: { id: string; name: string } }) {
@@ -19,6 +41,7 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
   const [name, setName] = useState('Claude Code');
   const [pairing, setPairing] = useState<AgentPairing | null>(null);
   const [message, setMessage] = useState('');
+  const [picturesNote, setPicturesNote] = useState('');
   useEffect(() => {
     if (!api) return;
     let alive = true;
@@ -49,6 +72,8 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
   }
   const clients = state?.clients.filter((c) => !project || c.projectId === project.id) || [];
   const others = (state?.clients.length || 0) - clients.length;
+  const today = picturesToday(state?.activity || []);
+  const picturesOn = !!state?.pictures;
   return (
     <div className={s.panel} data-agent-access>
       <p>
@@ -73,6 +98,44 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
           {state.listening ? 'Waiting for paired agent apps.' : state.message}
         </p>
       )}
+      <div className={picturesOn ? `${s.pictures} ${s.on}` : s.pictures} data-agent-pictures>
+        <button
+          type="button"
+          role="switch"
+          className={s.toggle}
+          aria-checked={picturesOn}
+          aria-describedby="agent-pictures-where"
+          disabled={!state}
+          onClick={() => {
+            const allowed = !picturesOn;
+            background(
+              act(async () => {
+                setState(await api.setPictures(allowed));
+                setPicturesNote(
+                  allowed
+                    ? 'On. The next look from any paired app can send pictures.'
+                    : 'Off. The next look from any app is refused.',
+                );
+              }),
+            );
+          }}
+        >
+          <span className={s.track} aria-hidden="true" />
+          Allow pictures
+          <span className={s.state} aria-hidden="true">
+            {picturesOn ? 'On' : 'Off'}
+          </span>
+        </button>
+        <span className={s.where} id="agent-pictures-where">
+          For every paired app. Pictures from your recordings go to each app’s AI provider and are
+          kept under that provider’s data settings.
+        </span>
+        {picturesNote && (
+          <span className={s.note} role="status">
+            {picturesNote}
+          </span>
+        )}
+      </div>
       <h3>Pair an agent app</h3>
       {project ? (
         <>
@@ -127,6 +190,12 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
                   Paired {time(c.paired)}
                   {c.lastUsed ? ` · last read ${time(c.lastUsed)}` : ''}
                 </span>
+                {today.get(c.id) && (
+                  <span className={s.today} data-pictures-today>
+                    <br />
+                    {`Pictures today: ${today.get(c.id)?.images} · ~${tokens(today.get(c.id)?.imageTokens || 0)} tokens`}
+                  </span>
+                )}
               </span>
               <Button
                 aria-label={`Revoke ${c.name}`}
@@ -155,12 +224,19 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
               </span>
               <span>
                 {a.summary}
-                {a.outcome === 'refused'
-                  ? ' (refused)'
-                  : a.outcome === 'proposed'
-                    ? ' · waiting in the transcript window'
-                    : ''}
+                {picturesRefused(a)
+                  ? ' (refused: pictures are off)'
+                  : a.outcome === 'refused'
+                    ? ' (refused)'
+                    : a.outcome === 'proposed'
+                      ? ' · waiting in the transcript window'
+                      : ''}
               </span>
+              {!!a.images && a.outcome !== 'refused' && (
+                <span className={s.picmeta}>
+                  {pictures(a.images)} · ~{tokens(a.imageTokens || 0)} tokens
+                </span>
+              )}
             </li>
           ))}
         </ol>

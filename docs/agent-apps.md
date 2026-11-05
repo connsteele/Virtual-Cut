@@ -6,6 +6,8 @@ How agent apps such as Claude Code or Claude Desktop connect to Virtual Cut, wha
 
 **Agent** in the header opens Agent access. The switch (off by default) lets agent apps such as Claude Code or Claude Desktop connect through MCP; **Pair with <project>** shows the command or settings block for each app, and **Revoke** cuts one off. Every read and proposal is listed under Activity.
 
+**Allow pictures** (off by default, one switch for every paired app, including apps you pair later) decides whether agent apps may receive pictures of your recordings through `look`. Pictures go to each app's AI provider and are kept under that provider's data settings. The switch takes effect at once: the next look from any app is refused while it is off, and a look already running finishes. Only you change it here; no agent or tool call can. Each paired app shows the pictures it received today and their estimated tokens, and Activity lists every look with its picture count and tokens, or "refused: pictures are off". Virtual Cut stores no pictures, only these counts.
+
 ## What an agent reads and proposes
 
 A paired app reads the open project: the screen, batches with their game and brief, transcripts, and existing markers, clips and notes. It can also propose markers, timed notes, splits and clip ranges.

@@ -56,6 +56,7 @@ const events = new Set([
   'agent-refused',
   'agent-disconnected',
   'agent-revoked',
+  'agent-pictures',
 ]);
 const words = new Set([
   'inspect',
