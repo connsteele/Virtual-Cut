@@ -128,7 +128,12 @@ for (const role of ['game', 'mic']) {
     role,
     segmentCount: lines.length,
     wordCount: lines.reduce((n, l) => n + l.words.length, 0),
-    context: { gameId: game.id, gameName: game.name, vocabulary: game.vocabulary, brief: '' },
+    // The mic one was transcribed before any game was set (Connor's 4.2X project, 2026-11-05):
+    // it still belongs to the game through its recording's batch.
+    context:
+      role === 'game'
+        ? { gameId: game.id, gameName: game.name, vocabulary: game.vocabulary, brief: '' }
+        : { vocabulary: '', brief: '' },
   };
   store.transcripts.begin(transcript);
   for (const l of lines) store.transcripts.append(transcriptId, l);

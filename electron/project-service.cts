@@ -934,6 +934,17 @@ export class ProjectService {
     if (typeof gameId !== 'string' || !gameId || gameId.length > 200 || !validHeardAs(rows))
       throw new Error('Choose a game with valid heard-as spellings.');
     const rules = heardAsRules(cleanHeardAs(rows)).rules;
+    // A transcript is the game's when it was made for the game, or made with no game set while
+    // its recording is now in a batch whose game is this one (transcribed before the game was set).
+    const ofGame = new Set(
+      s.data.model.recordings
+        .filter((r) =>
+          (r.batchIds || []).some(
+            (b) => effectiveContext(s.data.model.contexts, b).game?.id === gameId,
+          ),
+        )
+        .map((r) => r.id),
+    );
     const recordings = new Set(s.data.model.recordings.map((r) => r.id));
     const edits: import('./transcript-contracts.js').TranscriptEdit[] = [];
     const heard = new Set<string>();
@@ -942,8 +953,9 @@ export class ProjectService {
     for (const transcript of s.transcripts.list())
       if (
         transcript.state === 'complete' &&
-        transcript.context.gameId === gameId &&
-        recordings.has(transcript.sourceId)
+        recordings.has(transcript.sourceId) &&
+        (transcript.context.gameId === gameId ||
+          (!transcript.context.gameId && ofGame.has(transcript.sourceId)))
       ) {
         const found = heardAsEdits(
           s.data.model,
