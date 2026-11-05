@@ -28,6 +28,10 @@ Batch imports ask about microphone notes and remember audio track assignments. I
 
 On **Media**, the left edge has separate folder-tree and media-pool toggles plus a hide/show-both control. Panel widths and visibility persist. **Trash icons on each source card** in Media and Cut remove that recording's batch membership; shared recordings retain their other batches and edits. An exclusive recording's app entries are removed after a protective manual save. Originals, previews and finished exports remain on disk. This operation clears edit Undo; use **Save history** to restore the recording and its edits. The adjacent folder icon opens Explorer at that recording's original file.
 
+## Export subtitles
+
+**Export selected clip** and **File queue** can write **SRT subtitles beside the video** from a finished game dialogue or microphone notes transcript, cut to the clip's verified range: `<video>.srt` and `<video>.mic.srt`, timed from the video's first frame for players. When the exported video carries a start timecode (as camera files and Resolve renders do), each also gets a `.timecode.srt` copy shifted to that timecode, for Resolve's **Audio Transcription > Import from Subtitles**; the companion `.vcut.json` names the copies. The export result lists every file written, or says _No timecode copies: the video has no start timecode_ (OBS recordings carry none). Existing files are never replaced.
+
 ## Saving and history
 
 **Save / Ctrl+S** saves immediately and makes a compact manual checkpoint. **Save history** includes autosave settings: a 10-minute default interval and optional **Also save after edits**, both remembered on this device. Automatic saves wait for playback/seeking/manipulation to stop and changes to settle. Normal close saves current work; an unexpected exit can lose edits since the last save. Undo stays in memory across saves and resets on project reopen. Five autosaves and five manual saves are retained in the adjacent `.vcut.saves` folder; restore first protects current work. Existing rolling saves are compacted on upgrade; pre-upgrade copies remain separate. See [save policy and measurements](save-policy.md).

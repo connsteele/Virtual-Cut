@@ -201,6 +201,21 @@ for (const [target, shift] of [
     'make_zero',
     target,
   ]);
+// A recording that carries a start timecode, as camera files and Resolve renders do (VC-158).
+const timed = path.join(dir, 'timecode.mp4');
+await command('ffmpeg', [
+  '-v',
+  'error',
+  '-i',
+  source,
+  '-map',
+  '0',
+  '-c',
+  'copy',
+  '-timecode',
+  '01:00:00:00',
+  timed,
+]);
 const service = new ProjectService(path.join(dir, 'profile'), '');
 const file = path.join(dir, 'test.vcut'),
   destination = path.join(dir, 'outputs'),
@@ -216,7 +231,7 @@ const wait = async () => {
   }
   throw Error('Export job timed out.');
 };
-await service.importFiles(project, batch, [source, offset, vfr, delayed, early], {
+await service.importFiles(project, batch, [source, offset, vfr, delayed, early, timed], {
   game: 1,
   mic: 2,
 });
@@ -424,6 +439,110 @@ try {
   );
   assert.deepEqual(a.subtitles.skipped, ['Microphone: no finished transcript for this recording.']);
   assert.match(a.message, /Subtitles: B frames outward\.srt\./);
+  // This source has no start timecode, so no Resolve copy and one line saying why (VC-158).
+  assert.equal(a.verification.startTimecode, undefined);
+  assert.match(
+    a.message,
+    /Subtitles: B frames outward\.srt\. No timecode copies: the video has no start timecode\./,
+  );
+  await assert.rejects(stat(path.join(destination, 'B frames outward.timecode.srt')), /ENOENT/);
+  assert.equal(companion.subtitleTimecode, undefined);
+  // With a start timecode, the copy is the plain SRT shifted to the timecode FFprobe reads from
+  // the exported file, and the companion names it in its own optional section.
+  const timedRecording = records.find((r) => r.sourcePath === timed.replaceAll('/', path.sep));
+  const timedSource = service.store.sources().find((x) => x.id === timedRecording.id);
+  service.store.transcripts.begin({
+    id: 'export-timecode-dialogue',
+    sourceId: timedRecording.id,
+    fingerprint: timedSource.fingerprint,
+    role: 'game',
+    track: 1,
+    language: 'en',
+    duration: timedRecording.duration,
+    offset: 0,
+    state: 'complete',
+    model: 'fixture',
+    device: 'cpu',
+    created: new Date().toISOString(),
+    context: { vocabulary: '', brief: '' },
+    segmentCount: 8,
+    wordCount: 8,
+  });
+  for (let i = 0; i < 8; i++)
+    service.store.transcripts.append('export-timecode-dialogue', {
+      id: i,
+      start: i,
+      end: i + 0.8,
+      text: ` Timed${i}`,
+      words: [{ text: ` Timed${i}`, start: i, end: i + 0.8, probability: 1 }],
+      noSpeechProbability: 0,
+      averageLogProbability: 0,
+    });
+  const t = await attempt(timedRecording.id, 2.2, 5.1, 'mp4', 'Start timecode', {
+    roles: ['game'],
+    srt: true,
+    companion: false,
+  });
+  const probed = JSON.parse(
+    await command('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=codec_type,r_frame_rate:stream_tags=timecode:format_tags=timecode',
+      '-of',
+      'json',
+      t.output,
+    ]),
+  );
+  const probedVideo = probed.streams.find((s) => s.codec_type === 'video');
+  const label = probedVideo.tags?.timecode || probed.format.tags?.timecode;
+  assert.equal(label, '01:00:00:00', JSON.stringify(probed));
+  const [hh, mm, ss, ff] = label.split(/[:;]/).map(Number);
+  const [rn, rd] = probedVideo.r_frame_rate.split('/').map(Number);
+  const offsetSeconds = hh * 3600 + mm * 60 + ss + ff / Math.round(rn / rd);
+  assert.deepEqual(t.verification.startTimecode, { value: label, seconds: offsetSeconds });
+  const plainFile = path.join(destination, 'Start timecode.srt'),
+    timecodeFile = path.join(destination, 'Start timecode.timecode.srt');
+  const times = (text) =>
+    [...text.matchAll(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/g)].map(
+      ([, h, m, s, ms]) => Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000,
+    );
+  const plainText = await readFile(plainFile, 'utf8'),
+    timecodeText = await readFile(timecodeFile, 'utf8');
+  const plainTimes = times(plainText),
+    shiftedTimes = times(timecodeText);
+  assert(plainTimes.length >= 6 && plainTimes[0] < 1, plainText);
+  assert.equal(shiftedTimes.length, plainTimes.length);
+  shiftedTimes.forEach((time, i) =>
+    assert(Math.abs(time - plainTimes[i] - offsetSeconds) < 0.0015, `${time} vs ${plainTimes[i]}`),
+  );
+  assert.equal(
+    timecodeText.replace(/\d{2}:\d{2}:\d{2},\d{3}/g, ''),
+    plainText.replace(/\d{2}:\d{2}:\d{2},\d{3}/g, ''),
+  );
+  assert.deepEqual(
+    t.subtitles.written.map((w) => [path.basename(w.file), w.timecode]),
+    [
+      ['Start timecode.srt', undefined],
+      ['Start timecode.timecode.srt', '01:00:00:00'],
+    ],
+  );
+  assert.match(
+    t.message,
+    /Subtitles: Start timecode\.srt\. Resolve copies from 01:00:00:00: Start timecode\.timecode\.srt\./,
+  );
+  const timedCompanion = JSON.parse(await readFile(t.metadata, 'utf8'));
+  assert.equal(timedCompanion.version, 4);
+  assert.equal(timedCompanion.subtitleTimecode.schema, 'virtual-cut-subtitle-timecode');
+  assert.equal(timedCompanion.subtitleTimecode.version, 1);
+  assert.equal(timedCompanion.subtitleTimecode.startTimecode, label);
+  assert.equal(timedCompanion.subtitleTimecode.startSeconds, offsetSeconds);
+  assert.deepEqual(timedCompanion.subtitleTimecode.files, ['Start timecode.timecode.srt']);
+  results.push({
+    label: 'Start timecode',
+    startTimecode: label,
+    firstCue: [plainTimes[0], shiftedTimes[0]],
+  });
   await attempt(normal.id, 0, 1.6, 'mp4', 'Zero marker MP4');
   await attempt(normal.id, 6.2, normal.duration, 'mkv', 'End of source');
   await attempt(records[1].id, 2.2, 5.1, 'mp4', 'Nonzero source timestamps');

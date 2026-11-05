@@ -46,6 +46,11 @@ export interface ExportVerification {
   /** Present only when original packet durations and presentation gaps are uniform. */
   constantFrameDuration?: number;
   audioCodec: string;
+  /**
+   * The finished video's start timecode as FFprobe reads it, and the same point in seconds at
+   * the video's nominal frame rate (VC-158). Absent when the video carries none.
+   */
+  startTimecode?: { value: string; seconds: number };
   bytes: number;
   sha256: string;
 }
@@ -72,7 +77,14 @@ export interface CompanionTranscripts {
 }
 export interface SubtitleSidecars {
   requested: SubtitleRole[];
-  written: { role: SubtitleRole; transcriptId: string; file: string; sha256: string }[];
+  written: {
+    role: SubtitleRole;
+    transcriptId: string;
+    file: string;
+    sha256: string;
+    /** Set on the copy shifted to the video's start timecode for Resolve (VC-158). */
+    timecode?: string;
+  }[];
   /** Plain reasons a requested SRT was not written; the verified video is unaffected. */
   skipped: string[];
 }
