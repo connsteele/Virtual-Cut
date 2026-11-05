@@ -97,6 +97,9 @@ try {
   // Hold the queue so removal covers a pending export deterministically.
   service.switching = true;
   await service.startExport(id, queued.id, path.join(dir, 'queued.mkv'), true);
+  // Holding the queue stops new filmstrips, not one already being made; let that one finish so
+  // the snapshot doesn't race its .partial.bin -> .bin rename (CI run 42094611702).
+  await service.filmstripBuild?.finished.catch(() => {});
   const cached = (await readdir(path.join(dir, 'cache'))).filter((name) =>
     name.startsWith(exclusive.id),
   );
