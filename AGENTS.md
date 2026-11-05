@@ -46,7 +46,9 @@ removal or transcription.
 ## Checks and delivery
 
 - `npm test` is the fast gate (lint, typecheck, format, unit tests). Judge a run by the first
-  line of its `report.md`; a suite-level failure shows as `failed: suite`, not `FAILED`.
+  line of its `report.md`; a suite-level failure shows as `failed: suite`, not `FAILED`. A
+  passed check that skipped part of itself says `(skipped: …)` on its line; optional parts call
+  `skippedStep` from `scripts/shared.mjs` rather than skipping silently.
 - Lint is type-aware oxlint (`.oxlintrc.json`), not ESLint; keep its rules in step with the
   file groups there. TypeScript 7 type-checks and builds; TypeScript 6 stays only for the
   coverage hooks until TypeScript 7.1 has an API (`docs/testing.md`, Toolchain).

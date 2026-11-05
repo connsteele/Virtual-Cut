@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, writeFile, readFile, access, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { require, root } from './shared.mjs';
+import { require, root, skippedStep } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const modules = process.env.VIRTUAL_CUT_TEST_EXECUTABLE
   ? path.join(path.dirname(process.env.VIRTUAL_CUT_TEST_EXECUTABLE), 'resources/app/dist-electron')
@@ -473,7 +473,7 @@ try {
     result.folder = state.folder;
     result.gpu = gpu;
     result.events = events;
-  }
+  } else skippedStep('real install', 'VIRTUAL_CUT_VERIFY_SPEECH_INSTALL not 1');
   await writeFile(path.join(dir, 'report.json'), JSON.stringify(result, null, 2));
   console.log(`Speech setup checks passed: ${dir}`);
 } finally {

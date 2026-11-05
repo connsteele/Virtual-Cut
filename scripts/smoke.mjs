@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { assertBuilt, electronEnvironment, require, root } from './shared.mjs';
+import { assertBuilt, electronEnvironment, require, root, skippedStep } from './shared.mjs';
 
 const packagedExecutable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
 const backgroundTest = process.env.VIRTUAL_CUT_TEST_BACKGROUND === '1';
@@ -249,7 +249,7 @@ try {
       await screenshot(`compact-${name.toLowerCase()}-notes`);
       await page.getByRole('button', { name: 'Close side panel' }).click();
     }
-  }
+  } else skippedStep('pages and layouts', 'VIRTUAL_CUT_TEST_PLAYBACK_ONLY is 1');
   if (process.env.VIRTUAL_CUT_TEST_VIDEO) {
     const fixtureVideo = path.resolve(process.env.VIRTUAL_CUT_TEST_VIDEO);
     await application.evaluate(({ BrowserWindow }) =>
@@ -385,7 +385,7 @@ try {
     console.log(
       `Video preview passed: ${metadata.width}x${metadata.height}, ${metadata.duration.toFixed(3)}s; decoded frames, play/pause, seek, speed, mute, layout continuity, 16:9 viewer, and picker cancellation.`,
     );
-  }
+  } else skippedStep('video playback', 'VIRTUAL_CUT_TEST_VIDEO not set');
   assert.deepEqual(errors, []);
   console.log(
     process.env.VIRTUAL_CUT_TEST_PLAYBACK_ONLY === '1'

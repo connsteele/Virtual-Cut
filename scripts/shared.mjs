@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -24,6 +24,18 @@ export function requiredSetting(name, purpose) {
   if (!value)
     throw new Error(`Set ${name} to ${purpose}, in .env or for this run (see .env.example).`);
   return value;
+}
+
+/**
+ * Records a part of a check that did not run, such as an install that needs a setting, so the
+ * suite report shows it beside the pass instead of hiding the gap. Prints it too, for runs
+ * outside the suite. test-suite.mjs gives each check VIRTUAL_CUT_SKIPPED_STEPS, a file of one
+ * JSON line per skipped part; checks started by a check inherit it.
+ */
+export function skippedStep(step, reason) {
+  console.log(`Skipped part: ${step} (${reason})`);
+  const file = process.env.VIRTUAL_CUT_SKIPPED_STEPS;
+  if (file) appendFileSync(file, JSON.stringify({ step, reason }) + '\n');
 }
 
 if (process.env.VIRTUAL_CUT_COVERAGE_DIR && process.env.VIRTUAL_CUT_COVERAGE_CHECK)

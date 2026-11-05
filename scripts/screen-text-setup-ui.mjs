@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { require, root, electronEnvironment } from './shared.mjs';
+import { require, root, electronEnvironment, skippedStep } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 
 const fixture = JSON.parse(
@@ -128,6 +128,12 @@ try {
 
   if (!canInstall) {
     result.installSkipped = 'Set VIRTUAL_CUT_OCR_DOWNLOADS to a folder of the pinned files.';
+    skippedStep(
+      'install',
+      downloads
+        ? 'VIRTUAL_CUT_OCR_DOWNLOADS lacks the pinned files'
+        : 'VIRTUAL_CUT_OCR_DOWNLOADS not set',
+    );
   } else {
     await card.getByRole('button', { name: 'Download and install', exact: true }).click();
     await expect(engine).toHaveAccessibleName(/^Screen text engine: (Installing|Checking)…$/);

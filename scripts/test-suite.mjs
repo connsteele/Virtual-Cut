@@ -105,6 +105,8 @@ async function run(name, command, args, extra = {}) {
   // A desktop check that runs out of time saves screenshots of its windows when this file
   // appears (scripts/hang-capture.mjs), before it is stopped.
   const hang = desktop.includes(name) ? path.join(directory, `${fileName(name)}.hang`) : null;
+  // Parts the check skipped (skippedStep in shared.mjs) are listed beside its result.
+  const skippedSteps = path.join(directory, `${fileName(name)}.skipped-steps`);
   const code = await new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd: root,
@@ -113,6 +115,7 @@ async function run(name, command, args, extra = {}) {
         ...env,
         TEMP: temp,
         TMP: temp,
+        VIRTUAL_CUT_SKIPPED_STEPS: skippedSteps,
         ...(hang
           ? {
               VIRTUAL_CUT_HANG_REQUEST: hang,
@@ -168,6 +171,12 @@ async function run(name, command, args, extra = {}) {
     ...(timedOut ? { reason: `Timed out after ${Math.round(limit / 1000)} s` } : {}),
     ...(stopped ? { reason: `Stopped because ${halted} failed` } : {}),
   };
+  const skippedParts = await readFile(skippedSteps, 'utf8').catch(() => '');
+  if (skippedParts.trim())
+    result.skippedSteps = skippedParts
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line));
   if (timedOut) {
     result.lastLines = lastLines(output);
     if (hang) {
@@ -179,7 +188,10 @@ async function run(name, command, args, extra = {}) {
   }
   report.checks.push(result);
   await writeFile(path.join(directory, fileName(name) + '.log'), output);
-  console.log(`${result.status.toUpperCase()} ${name} (${(result.durationMs / 1000).toFixed(1)}s)`);
+  console.log(
+    `${result.status.toUpperCase()} ${name} (${(result.durationMs / 1000).toFixed(1)}s)` +
+      (result.skippedSteps ? ` ${skippedNote(result)}` : ''),
+  );
   if (result.status === 'failed') {
     console.log(output.slice(-5000));
     if (result.screenshots) console.log('Screenshots at the timeout:', result.screenshots);
@@ -191,9 +203,14 @@ async function run(name, command, args, extra = {}) {
   }
   return result.status === 'passed';
 }
+// "(skipped: install, VIRTUAL_CUT_OCR_DOWNLOADS not set; …)" for the parts a check skipped.
+function skippedNote(r) {
+  return `(skipped: ${r.skippedSteps.map((s) => `${s.step}, ${s.reason}`).join('; ')})`;
+}
 // A timed-out check also lists its screenshots; its last log lines are in report.json.
 const reportLine = (r) =>
-  `- ${r.status}: ${r.name}${r.reason ? ' — ' + r.reason : ''}` +
+  `- ${r.status}: ${r.name}${r.skippedSteps ? ' ' + skippedNote(r) : ''}` +
+  (r.reason ? ' — ' + r.reason : '') +
   (Array.isArray(r.screenshots) ? `. Screenshots: ${r.screenshots.join(', ')}` : '');
 const skip = (name, reason) => {
   report.checks.push({ name, status: 'skipped', reason });

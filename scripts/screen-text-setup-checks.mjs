@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile, access } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { require, root } from './shared.mjs';
+import { require, root, skippedStep } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 
 const app = process.env.VIRTUAL_CUT_TEST_EXECUTABLE
@@ -80,7 +80,7 @@ try {
     const check = await checkScreenText(devEngine, new AbortController().signal);
     assert.equal(check.ok, true, check.error);
     result.devCheck = check;
-  }
+  } else skippedStep('engine check', 'VIRTUAL_CUT_OCR_RUNTIME not set');
 
   const profile = path.join(dir, 'profile');
   const runtime = new ScreenTextRuntime(profile, path.join(dir, 'tools'));
@@ -144,6 +144,12 @@ try {
 
   if (!downloads || !existsSync(path.join(downloads, manifest.artifacts[0].name))) {
     result.installSkipped = 'Set VIRTUAL_CUT_OCR_DOWNLOADS to a folder of the pinned files.';
+    skippedStep(
+      'install',
+      downloads
+        ? 'VIRTUAL_CUT_OCR_DOWNLOADS lacks the pinned files'
+        : 'VIRTUAL_CUT_OCR_DOWNLOADS not set',
+    );
   } else {
     // A real install from the pinned copies: unpack, versions, test image, then used at once.
     // Any network use here would be a bug, so the network is refused.

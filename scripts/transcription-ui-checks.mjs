@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises'
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { require, root, electronEnvironment } from './shared.mjs';
+import { require, root, electronEnvironment, skippedStep } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 import { testPath } from './test-paths.mjs';
 const fixture = JSON.parse(
@@ -502,7 +502,7 @@ try {
       page.getByRole('region', { name: 'Transcription device readiness' }),
     ).toContainText('NVIDIA GPU is available');
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-  }
+  } else skippedStep('installed GPU engine', 'VIRTUAL_CUT_VERIFY_GPU not 1');
   // Consent belongs to each import, rather than silently carrying forward.
   await app.evaluate(({ ipcMain }) => {
     globalThis.gpuTest = { available: false, configured: true, calls: 0 };
