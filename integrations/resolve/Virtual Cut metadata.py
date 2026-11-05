@@ -1,7 +1,8 @@
-"""Explicit marker enrichment for already imported media. No imports or timeline edits.
+"""Explicit marker and transcript enrichment for already imported media. No imports or timeline edits.
 
 Run from Resolve's Workspace > Scripts > Utility menu. Plan is read-only; Apply
 checks the selected clips, file identity and marker snapshot again before writing.
+Transcripts (decision 0023) are set only on clips that have none, never replaced.
 """
 import copy
 import hashlib
@@ -14,6 +15,8 @@ import time
 COLORS = {'Blue', 'Cyan', 'Green', 'Yellow', 'Red', 'Pink', 'Purple', 'Fuchsia',
           'Rose', 'Lavender', 'Sky', 'Mint', 'Lemon', 'Sand', 'Cocoa', 'Cream'}
 PREFIX = 'virtual-cut-marker:'
+SRT_TIME = re.compile(r'(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})\s*-->\s*(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})')
+NEEDS_RESOLVE = 'Setting transcripts needs DaVinci Resolve Studio 21.1.2 or later.'
 EXPORT_EXTENSIONS = {'.mp4', '.mkv', '.mov', '.m4v', '.webm'}
 
 
@@ -170,6 +173,145 @@ def plan_markers(data, fps, existing):
     return changes, conflicts
 
 
+def has_transcript(existing):
+    if isinstance(existing, dict):
+        return bool(existing.get('segments'))
+    return bool(existing)
+
+
+def history_lines(data):
+    """Game dialogue from the companion's transcript history (VC-154): corrected words, word timing."""
+    history = data.get('transcripts') if data.get('version', 1) >= 4 else None
+    if not isinstance(history, dict) or history.get('schema') != 'virtual-cut-transcript-history' or history.get('version') != 1:
+        return None
+    for entry in history.get('items') or []:
+        if not isinstance(entry, dict) or (entry.get('transcript') or {}).get('role') != 'game':
+            continue
+        lines = []
+        for span in entry.get('spans') or []:
+            start, end = span.get('clipStart'), span.get('clipEnd')
+            if not all(isinstance(t, (int, float)) and math.isfinite(t) for t in (start, end)):
+                raise ValueError('The companion transcript history has invalid timing.')
+            words = []
+            if span.get('timingPrecision') == 'word':
+                for word in span.get('words') or []:
+                    text = (word.get('correctedText', word.get('text')) or '').strip()
+                    if text and all(isinstance(word.get(k), (int, float)) for k in ('clipStart', 'clipEnd')):
+                        words.append((text, word['clipStart'], word['clipEnd']))
+            if not words:
+                words = [(text, None, None) for text in (span.get('subtitleText') or '').split()]
+            if words:
+                lines.append((start, end, words))
+        return lines
+    return None
+
+
+def srt_lines(path):
+    """Game dialogue from the plain .srt beside the video: whole lines, words spread by Resolve."""
+    if os.path.getsize(path) > 16 * 1024 * 1024:
+        raise ValueError('The .srt beside this video is too large.')
+    with open(path, encoding='utf-8-sig') as handle:
+        blocks = re.split(r'\n\s*\n', handle.read().replace('\r\n', '\n').strip())
+    lines = []
+    for block in blocks:
+        rows = block.split('\n')
+        timing = next((i for i, row in enumerate(rows) if SRT_TIME.search(row)), None)
+        if timing is None:
+            continue
+        t = [int(v) for v in SRT_TIME.search(rows[timing]).groups()]
+        start = t[0] * 3600 + t[1] * 60 + t[2] + t[3] / 1000
+        end = t[4] * 3600 + t[5] * 60 + t[6] + t[7] / 1000
+        words = ' '.join(rows[timing + 1:]).split()
+        if words and end > start:
+            lines.append((start, end, [(word, None, None) for word in words]))
+    return lines
+
+
+def timecode_frames(label, rate):
+    match = re.fullmatch(r'(\d{2}):([0-5]\d):([0-5]\d):(\d{2,3})', label or '')
+    if not match:
+        raise ValueError('Resolve reported a start timecode this helper cannot place (' + str(label) + ').')
+    hours, minutes, seconds, frames = (int(v) for v in match.groups())
+    return ((hours * 60 + minutes) * 60 + seconds) * rate + frames
+
+
+def timecode_label(frames, rate):
+    seconds = frames // rate
+    return '{:02d}:{:02d}:{:02d}:{:02d}'.format(seconds // 3600, seconds // 60 % 60, seconds % 60, frames % rate)
+
+
+def transcript_segments(lines, fps, start_label, duration):
+    """Clip-relative seconds to Resolve timecode from the clip's start, ascending and non-overlapping."""
+    rate = round(fps) if math.isfinite(fps) else 0
+    if fps <= 0 or fps > 240 or abs(fps - rate) > .001:
+        raise ValueError('Transcripts need a whole-number frame rate; Resolve reported ' + str(fps) + '.')
+    origin, last_frame = timecode_frames(start_label, rate), max(1, math.floor(duration * fps + 1e-7))
+
+    def frame(seconds):
+        return min(last_frame, max(0, math.floor(seconds * fps + 1e-7)))
+
+    segments, previous = [], 0
+    for start, end, words in sorted(lines, key=lambda line: line[0]):
+        first = max(frame(start), previous)
+        if first >= last_frame:
+            continue
+        last = min(max(first + 1, frame(end)), last_frame)
+        entries, cursor = [], first
+        for text, word_start, word_end in words:
+            entry = {'text': text}
+            if word_start is not None:
+                a = min(max(frame(word_start), cursor), last - 1)
+                b = min(max(a + 1, frame(word_end)), last)
+                entry['start'], entry['end'] = timecode_label(origin + a, rate), timecode_label(origin + b, rate)
+                cursor = b
+            entries.append(entry)
+        segments.append({'start': timecode_label(origin + first, rate), 'end': timecode_label(origin + last, rate),
+                         'text': ' '.join(e['text'] for e in entries), 'words': entries})
+        previous = last
+    return segments
+
+
+def plan_transcript(item, data, media_path, properties):
+    """What Apply does with this clip's transcript: set (only when it has none), keep, or none."""
+    if not callable(getattr(item, 'GetTranscription', None)) or not callable(getattr(item, 'SetTranscription', None)):
+        return {'action': 'none', 'line': 'Transcript: none. ' + NEEDS_RESOLVE}
+    if has_transcript(item.GetTranscription()):
+        return {'action': 'keep', 'line': 'Transcript: kept. This clip already has one in Resolve.'}
+    srt = os.path.splitext(media_path)[0] + '.srt'
+    lines, source = history_lines(data), 'the companion'
+    if lines is None and os.path.isfile(srt):
+        lines, source = srt_lines(srt), os.path.basename(srt)
+    if not lines:
+        return {'action': 'none', 'line': 'Transcript: none. No game dialogue .srt or transcript history beside this video.'}
+    duration = data['verified']['actual']['end'] - data['verified']['actual']['start']
+    segments = transcript_segments(lines, float(properties.get('FPS', 0)), properties.get('Start TC'), duration)
+    if not segments:
+        return {'action': 'none', 'line': 'Transcript: none. No game dialogue inside this clip.'}
+    timed = any('start' in word for segment in segments for word in segment['words'])
+    return {'action': 'set', 'segments': segments,
+            'line': 'Transcript: set from {} ({} lines{}).'.format(source, len(segments), ', word timing' if timed else '')}
+
+
+def apply_transcript(plan):
+    """Sets the planned transcript if the clip still has none. Returns True when it was set."""
+    transcript = plan.get('transcript') or {}
+    if transcript.get('action') != 'set':
+        return False
+    item = plan['item']
+    properties = item.GetClipProperty() or {}
+    if item.GetMediaId() != plan['mediaId'] or properties.get('File Path') != plan['path']:
+        raise ValueError(plan['name'] + ': the clip changed after the check. Check again.')
+    if has_transcript(item.GetTranscription()):
+        raise ValueError(plan['name'] + ': a transcript appeared in Resolve after the check; kept it.')
+    if plan_transcript(item, plan['data'], plan['path'], properties).get('segments') != transcript['segments']:
+        raise ValueError(plan['name'] + ': its transcript source or timing changed after the check. Check again.')
+    if not item.SetTranscription({'segments': copy.deepcopy(transcript['segments'])}):
+        raise RuntimeError(plan['name'] + ': Resolve refused the transcript.')
+    if not has_transcript(item.GetTranscription()):
+        raise RuntimeError(plan['name'] + ': Resolve did not keep the transcript.')
+    return True
+
+
 def plan_clip(item, verified=None):
     properties = item.GetClipProperty()
     media_path = properties.get('File Path')
@@ -185,9 +327,13 @@ def plan_clip(item, verified=None):
     fps = float(properties.get('FPS', 0))
     snapshot = copy.deepcopy(item.GetMarkers() or {})
     changes, conflicts = plan_markers(data, fps, snapshot)
+    try:
+        transcript = plan_transcript(item, data, media_path, properties)
+    except (ValueError, OSError, UnicodeDecodeError) as error:
+        transcript = {'action': 'none', 'line': 'Transcript: none. ' + str(error)}
     return {'item': item, 'mediaId': item.GetMediaId(), 'name': item.GetName(), 'path': media_path,
             'data': data, 'fps': fps, 'snapshot': snapshot, 'changes': changes, 'conflicts': conflicts,
-            'companionHash': digest(data)}
+            'companionHash': digest(data), 'transcript': transcript}
 
 
 def add(item, frame, marker):
@@ -237,16 +383,30 @@ def apply_clip(plan):
         raise RuntimeError(str(error) + ' Original markers restored.') from error
 
 
+def check_summary(scanned, checked, matching, seconds, changes, errors, plans, total):
+    actions = [plan['transcript']['action'] for plan in plans]
+    return ('{} items scanned, {} companion locations checked, {} matching clips in {:.2f}s. {} marker changes, {} conflicts/errors. '
+            '{} transcripts to set, {} kept, {} with none. Total with file verification: {:.2f}s.').format(
+        scanned, checked, matching, seconds, changes, errors, actions.count('set'), actions.count('keep'), actions.count('none'), total)
+
+
+def apply_summary(markers, transcripts, problems):
+    done = ' and {} transcripts set ({})'.format(len(transcripts), ', '.join(transcripts)) if transcripts else ' and no transcripts set'
+    return (str(markers) + ' marker changes applied' + done + '; project saved.'
+            + (' Not set: ' + ' '.join(problems) if problems else '')
+            + ' Check again to verify; repeated apply adds no duplicates.')
+
+
 def show_window(resolve, bmd):
     fusion = resolve.Fusion()
     ui = fusion.UIManager
     dispatcher = bmd.UIDispatcher(ui)
     window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 850, 600]}, ui.VGroup([
         ui.Label({'Text': 'Check the whole Media Pool to find supported video exports in every bin with an adjacent .vcut.json. No selection needed. Matching videos are fully verified; large exports can take time.', 'WordWrap': True, 'Weight': 0}),
-        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
+        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clips with no transcript get the game dialogue transcript from the export; existing transcripts are never replaced. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
         ui.TextEdit({'ID': 'Plan', 'ReadOnly': True, 'PlainText': 'No plan checked yet.'}),
         ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0}),
-        ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check whole Media Pool'}), ui.Button({'ID': 'Selected', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply marker metadata', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
+        ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check whole Media Pool'}), ui.Button({'ID': 'Selected', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply markers and transcripts', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
     ]))
     items = window.GetItems()
     state = {'plans': [], 'project': None}
@@ -281,20 +441,21 @@ def show_window(resolve, bmd):
                     errors.append(conflict); lines.append('  CONFLICT: ' + conflict)
                 if not plan['changes'] and not plan['conflicts']:
                     lines.append('  Already up to date; no changes.')
+                lines.append('  ' + plan['transcript']['line'])
                 lines.append('')
             except Exception as error:
                 errors.append(str(error)); lines.append(item.GetName() + ': ' + str(error))
         items['Plan'].PlainText = '\n'.join(lines) or 'No matching video companions found beside imported videos.'
         count = sum(len(plan['changes']) for plan in state['plans'])
-        items['Status'].Text = '{} items scanned, {} companion locations checked, {} matching clips in {:.2f}s. {} marker changes, {} conflicts/errors. Total with file verification: {:.2f}s.'.format(scanned, checked, len(selected), discovery_seconds, count, len(errors), time.perf_counter() - started)
-        items['Apply'].Enabled = bool(count and not errors)
+        items['Status'].Text = check_summary(scanned, checked, len(selected), discovery_seconds, count, len(errors), state['plans'], time.perf_counter() - started)
+        items['Apply'].Enabled = bool((count or any(plan['transcript']['action'] == 'set' for plan in state['plans'])) and not errors)
 
     def apply(_event):
         items['Apply'].Enabled = False
         current = resolve.GetProjectManager().GetCurrentProject()
         if not current or current.GetUniqueId() != state['project']:
             items['Status'].Text = 'The project changed. Check the plan again.'; return
-        count = 0
+        count, transcripts, problems = 0, [], []
         try:
             present = {item.GetMediaId(): item for item in pool_items(current.GetMediaPool())}
             for plan in state['plans']:
@@ -304,11 +465,17 @@ def show_window(resolve, bmd):
             for plan in state['plans']:
                 if plan['changes']:
                     count += apply_clip(plan)
+                # A transcript problem is reported for its clip and never undoes markers.
+                try:
+                    if apply_transcript(plan):
+                        transcripts.append(plan['name'])
+                except Exception as error:
+                    problems.append(str(error))
             if not resolve.GetProjectManager().SaveProject():
-                raise RuntimeError('Markers applied, but Resolve could not save the project. Save it manually.')
-            items['Status'].Text = str(count) + ' marker changes applied and project saved. Check again to verify; repeated apply adds no duplicates.'
+                raise RuntimeError('Changes applied, but Resolve could not save the project. Save it manually.')
+            items['Status'].Text = apply_summary(count, transcripts, problems)
         except Exception as error:
-            items['Status'].Text = str(count) + ' changes completed before this error: ' + str(error)
+            items['Status'].Text = '{} marker changes and {} transcripts completed before this error: {}'.format(count, len(transcripts), error)
 
     window.On.Check.Clicked = check
     window.On.Selected.Clicked = lambda event: check(event, True)

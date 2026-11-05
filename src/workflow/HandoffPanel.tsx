@@ -142,7 +142,7 @@ export function HandoffPanel() {
         unchanged placeholder in Resolve while preserving real markers. It can still appear on
         ordinary import before the helper runs. Older exports and edited placeholders are preserved.
       </p>
-      <h3>Transfer markers</h3>
+      <h3>Transfer markers and transcripts</h3>
       <ol className={s.handoffSteps}>
         <li>
           Keep each finished video with its adjacent <strong>.vcut.json</strong> companion. Import
@@ -154,8 +154,9 @@ export function HandoffPanel() {
         <li>
           Choose <strong>Check whole Media Pool</strong> to find matching video companions across
           all bins. Selection is optional. The helper reports discovery and full file-verification
-          time. Inspect the plan, then choose <strong>Apply marker metadata</strong> to transfer
-          matching marker names, colors and notes.
+          time. Inspect the plan, then choose <strong>Apply markers and transcripts</strong> to
+          transfer matching marker names, colors and notes, and the game dialogue transcript to
+          clips that have none yet (Resolve Studio 21.1.2 or later; existing transcripts are kept).
         </li>
         <li>
           Inspect the Media Pool markers before adding clips to a new timeline. Rerunning the helper

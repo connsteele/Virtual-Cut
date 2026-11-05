@@ -30,6 +30,19 @@ class Item:
         return True
 
 
+class TranscribedItem(Item):
+    """Resolve 21.1.2+: a media-pool clip with its own start timecode and transcript."""
+    def __init__(self, file, markers, start='00:00:00:00', fps='60', transcript=None):
+        super().__init__(file, markers)
+        self.start, self.fps, self.transcript, self.sets = start, fps, copy.deepcopy(transcript), 0
+    def GetClipProperty(self): return {'File Path': self.file, 'FPS': self.fps, 'Start TC': self.start}
+    def GetTranscription(self): return copy.deepcopy(self.transcript)
+    def SetTranscription(self, transcription):
+        self.sets += 1
+        self.transcript = {'language': 'en', 'segments': copy.deepcopy(transcription['segments'])}
+        return True
+
+
 class Tests(unittest.TestCase):
     def test_pool_discovery_nested_bins_duplicates_and_no_video_reads(self):
         class Folder:
@@ -177,5 +190,84 @@ class Tests(unittest.TestCase):
         old = copy.deepcopy(self.old); old[34] = copy.deepcopy(old[33])
         self.assertTrue(helper.plan_markers(self.data, 60, old)[1])
 
+    def write_srt(self, text):
+        pathlib.Path(self.file[:-4] + '.srt').write_text(text, encoding='utf-8')
+    def test_transcript_from_srt_only_when_the_clip_has_none(self):
+        # Decision 0023: the plain .srt beside the video, placed from the clip's start in Resolve.
+        self.write_srt('1\n00:00:00,500 --> 00:00:01,250\nHello there\n\n2\n00:00:02,000 --> 00:00:03,000\nLapis\nrooted\n\n3\n00:00:09,000 --> 00:00:09,500\nPast the clip\n')
+        item = TranscribedItem(self.file, self.old)
+        plan = helper.plan_clip(item)
+        self.assertEqual(plan['transcript']['line'], 'Transcript: set from clip.srt (2 lines).')
+        segments = plan['transcript']['segments']
+        self.assertEqual([(s['start'], s['end'], s['text']) for s in segments],
+                         [('00:00:00:30', '00:00:01:15', 'Hello there'), ('00:00:02:00', '00:00:03:00', 'Lapis rooted')])
+        self.assertEqual(segments[1]['words'], [{'text': 'Lapis'}, {'text': 'rooted'}])  # Resolve spreads them.
+        self.assertTrue(helper.apply_transcript(plan))
+        self.assertEqual(item.transcript['segments'], segments)
+        # The next check keeps it, and Apply never sets it twice.
+        again = helper.plan_clip(item)
+        self.assertEqual(again['transcript']['action'], 'keep')
+        self.assertFalse(helper.apply_transcript(again))
+        self.assertEqual(item.sets, 1)
+        self.assertEqual(helper.apply_summary(2, ['clip.mp4'], []),
+                         '2 marker changes applied and 1 transcripts set (clip.mp4); project saved. Check again to verify; repeated apply adds no duplicates.')
+        self.assertEqual(helper.check_summary(10, 2, 2, .1, 0, 0, [plan, again], 1.5),
+                         '10 items scanned, 2 companion locations checked, 2 matching clips in 0.10s. 0 marker changes, 0 conflicts/errors. 1 transcripts to set, 1 kept, 0 with none. Total with file verification: 1.50s.')
+    def test_existing_transcript_is_never_replaced(self):
+        self.write_srt('1\n00:00:00,500 --> 00:00:01,250\nHello\n')
+        mine = {'language': 'en', 'segments': [{'start': '00:00:00:00', 'end': '00:00:01:00', 'text': 'Mine', 'words': [{'text': 'Mine'}]}]}
+        item = TranscribedItem(self.file, self.old, transcript=mine)
+        plan = helper.plan_clip(item)
+        self.assertEqual(plan['transcript']['line'], 'Transcript: kept. This clip already has one in Resolve.')
+        self.assertFalse(helper.apply_transcript(plan))
+        # One that appears between Check and Apply is kept too, and the clip is named.
+        fresh = TranscribedItem(self.file, self.old)
+        plan = helper.plan_clip(fresh)
+        fresh.transcript = mine
+        with self.assertRaisesRegex(ValueError, 'appeared in Resolve after the check'):
+            helper.apply_transcript(plan)
+        self.assertEqual(fresh.transcript, mine)
+        self.assertEqual(fresh.sets, 0)
+        # A source changed after the check is not written either.
+        fresh.transcript = None
+        self.write_srt('1\n00:00:00,500 --> 00:00:01,250\nChanged\n')
+        with self.assertRaisesRegex(ValueError, 'changed after the check'):
+            helper.apply_transcript(plan)
+        self.assertEqual(fresh.sets, 0)
+    def test_companion_word_timing_game_only_from_timecode(self):
+        self.data['version'] = 4
+        word = lambda text, start, end: {'text': ' ' + text, 'correctedText': ' ' + text, 'clipStart': start, 'clipEnd': end}
+        self.data['transcripts'] = {'schema': 'virtual-cut-transcript-history', 'version': 1, 'items': [
+            {'transcript': {'role': 'mic'}, 'spans': [{'clipStart': 0, 'clipEnd': 1, 'subtitleText': 'Clip start', 'timingPrecision': 'word', 'words': []}]},
+            {'transcript': {'role': 'game'}, 'spans': [
+                {'clipStart': 1, 'clipEnd': 2, 'subtitleText': ' Where is Kai', 'timingPrecision': 'word',
+                 'words': [word('Where', 1, 1.2), word('is', 1.2, 1.4), dict(word('Kai', 1.4, 2), correctedText=' Cai')]},
+                {'clipStart': 2.5, 'clipEnd': 3, 'subtitleText': 'Fixed phrase', 'timingPrecision': 'phrase', 'words': []}]}]}
+        self.save()
+        item = TranscribedItem(self.file, self.old, start='01:00:00:00', fps='30')
+        plan = helper.plan_clip(item)
+        self.assertEqual(plan['transcript']['line'], 'Transcript: set from the companion (2 lines, word timing).')
+        first, second = plan['transcript']['segments']
+        self.assertEqual((first['start'], first['end'], first['text']), ('01:00:01:00', '01:00:02:00', 'Where is Cai'))
+        self.assertEqual(first['words'][2], {'text': 'Cai', 'start': '01:00:01:12', 'end': '01:00:02:00'})
+        self.assertEqual(second['words'], [{'text': 'Fixed'}, {'text': 'phrase'}])
+        self.assertNotIn('Clip start', str(plan['transcript']['segments']))  # Microphone notes never go in.
+    def test_transcript_none_reasons(self):
+        older = Item(self.file, self.old)  # Resolve before 21.1.2: markers only.
+        self.assertEqual(helper.plan_clip(older)['transcript']['line'], 'Transcript: none. ' + helper.NEEDS_RESOLVE)
+        self.assertFalse(helper.apply_transcript(helper.plan_clip(older)))
+        item = TranscribedItem(self.file, self.old)
+        self.assertEqual(helper.plan_clip(item)['transcript']['line'],
+                         'Transcript: none. No game dialogue .srt or transcript history beside this video.')
+        self.write_srt('1\n00:00:01,000 --> 00:00:02,000\nHello\n')
+        fractional = TranscribedItem(self.file, self.old, fps='59.94')
+        self.assertRegex(helper.plan_clip(fractional)['transcript']['line'], 'whole-number frame rate')
+        drop = TranscribedItem(self.file, self.old, start='00:59:58;02', fps='30')
+        self.assertRegex(helper.plan_clip(drop)['transcript']['line'], 'cannot place')
+    def test_segments_stay_ascending_and_inside_the_clip(self):
+        lines = [(2.0, 3.0, [('b', 2.5, 3.5)]), (1.0, 2.4, [('a', 1.0, 2.4)]), (3.9, 9.0, [('c', None, None)])]
+        segments = helper.transcript_segments(lines, 10, '00:00:00:00', 4)
+        self.assertEqual([(s['start'], s['end']) for s in segments], [('00:00:01:00', '00:00:02:04'), ('00:00:02:04', '00:00:03:00'), ('00:00:03:09', '00:00:04:00')])
+        self.assertEqual(segments[1]['words'][0], {'text': 'b', 'start': '00:00:02:05', 'end': '00:00:03:00'})
 
 if __name__ == '__main__': unittest.main()
