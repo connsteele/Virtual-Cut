@@ -73,6 +73,7 @@ export const desktop = [
   'filmstrip-reuse-checks.mjs',
   'review-planning-ui.mjs',
   'agent-access-ui.mjs',
+  'agent-pictures-ui.mjs',
   'agent-proposals-ui.mjs',
   'split-snap-ui.mjs',
   'proposal-preview-ui.mjs',

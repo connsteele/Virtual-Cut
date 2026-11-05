@@ -70,3 +70,89 @@
 .refused {
   color: #e7b3a8;
 }
+/* Allow pictures (VC-195): one switch for every paired app. */
+.pictures {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.pictures.on {
+  border-color: #2e5a54;
+  background: #18302c;
+}
+.toggle {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-self: start;
+  padding: 2px 0;
+  border-radius: 4px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.track {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 17px;
+  border: 1px solid #56625f;
+  border-radius: 999px;
+  background: #3a4644;
+  transition: background 0.15s;
+}
+.track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #c9d2cf;
+  transition: left 0.15s;
+}
+.toggle[aria-checked='true'] .track {
+  border-color: #287e76;
+  background: #04635f;
+}
+.toggle[aria-checked='true'] .track::after {
+  left: 15px;
+  background: #fff;
+}
+.state {
+  font-weight: 400;
+  color: var(--muted);
+}
+.toggle[aria-checked='true'] .state {
+  color: #7fd3b0;
+}
+.where {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.note {
+  color: var(--accent);
+  font-size: 11px;
+}
+.today,
+.picmeta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.picmeta {
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .track::after {
+    transition: none;
+  }
+}
