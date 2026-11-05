@@ -3,6 +3,7 @@ import { link, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   ExportRecord,
+  ExportVerification,
   SubtitleRole,
   SubtitleSidecars,
   TranscriptOutputs,
@@ -45,6 +46,13 @@ export function subtitleFile(output: string, role: SubtitleRole) {
   const base = output.slice(0, output.length - path.extname(output).length);
   return `${base}${role === 'mic' ? '.mic' : ''}.srt`;
 }
+/**
+ * The copy shifted to the video's start timecode, for Resolve's Import from Subtitles (VC-158).
+ * Players don't pick it up, so the plain file stays the one they show.
+ */
+export function timecodeSubtitleFile(output: string, role: SubtitleRole) {
+  return subtitleFile(output, role).replace(/\.srt$/, '.timecode.srt');
+}
 
 export interface SubtitleSource {
   transcript: TranscriptSummary;
@@ -81,53 +89,106 @@ export async function writeSubtitleSidecars(
     output,
     name: record.plan.name,
   };
+  const timecode = verified.startTimecode;
   for (const role of result.requested) {
     const file = subtitleFile(output, role);
+    let source: SubtitleSource | undefined;
+    let handoff: ReturnType<typeof transcriptHandoff>;
     try {
-      const source = find(role);
+      source = find(role);
       if (!source) {
         result.skipped.push(`${label[role]}: no finished transcript for this recording.`);
         continue;
       }
-      const body = transcriptSrt(
-        transcriptHandoff(source.transcript, source.segments, source.model, scope),
-      );
-      if (!body.trim()) {
-        result.skipped.push(`${label[role]}: no speech in this clip.`);
-        continue;
-      }
-      const existing = await readFile(file, 'utf8').catch((e: NodeJS.ErrnoException) => {
-        if (e.code === 'ENOENT') return undefined;
-        throw e;
-      });
-      if (existing !== undefined && existing !== body) {
-        result.skipped.push(
-          `${label[role]}: ${path.basename(file)} already exists and was not replaced.`,
-        );
-        continue;
-      }
-      if (existing === undefined) {
-        // Stage, then hard-link: the name only ever appears complete, and never over a file.
-        const stage = path.join(path.dirname(file), `.vcut-${record.plan.id}-${role}.srt`);
-        await unlink(stage).catch(() => {});
-        await writeFile(stage, body, { encoding: 'utf8', flag: 'wx' });
-        try {
-          await link(stage, file);
-        } finally {
-          await unlink(stage).catch(() => {});
-        }
-      }
-      result.written.push({
-        role,
-        transcriptId: source.transcript.id,
-        file,
-        sha256: createHash('sha256').update(body, 'utf8').digest('hex'),
-      });
+      handoff = transcriptHandoff(source.transcript, source.segments, source.model, scope);
     } catch (e) {
       result.skipped.push(
-        `${label[role]}: ${path.basename(file)} could not be written (${e instanceof Error ? e.message : String(e)}).`,
+        `${label[role]}: ${path.basename(file)} could not be written (${message(e)}).`,
       );
+      continue;
+    }
+    const body = transcriptSrt(handoff);
+    if (!body.trim()) {
+      result.skipped.push(`${label[role]}: no speech in this clip.`);
+      continue;
+    }
+    const files: [string, string, string | undefined][] = [[file, body, undefined]];
+    if (timecode)
+      files.push([
+        timecodeSubtitleFile(output, role),
+        transcriptSrt({
+          ...handoff,
+          spans: handoff.spans.map((span) => ({
+            ...span,
+            clipStart: span.clipStart + timecode.seconds,
+            clipEnd: span.clipEnd + timecode.seconds,
+          })),
+        }),
+        timecode.value,
+      ]);
+    for (const [target, text, start] of files) {
+      const kept = await publishOnce(
+        target,
+        text,
+        `${record.plan.id}-${role}${start ? '-tc' : ''}`,
+      );
+      if (kept === true)
+        result.written.push({
+          role,
+          transcriptId: source.transcript.id,
+          file: target,
+          sha256: createHash('sha256').update(text, 'utf8').digest('hex'),
+          ...(start ? { timecode: start } : {}),
+        });
+      else result.skipped.push(`${label[role]}: ${path.basename(target)} ${kept}.`);
     }
   }
   return result;
+}
+
+/**
+ * The export result's subtitle line: the plain files, then Resolve's timecode copies and the
+ * timecode they start from, or one line saying the video has none (VC-158).
+ */
+export function subtitleSummary(subtitles: SubtitleSidecars, verified?: ExportVerification) {
+  const names = (list: SubtitleSidecars['written']) =>
+    list.map((w) => path.basename(w.file)).join(', ');
+  const plain = subtitles.written.filter((w) => !w.timecode),
+    copies = subtitles.written.filter((w) => w.timecode);
+  return (
+    (plain.length ? ` Subtitles: ${names(plain)}.` : '') +
+    (copies.length ? ` Resolve copies from ${copies[0].timecode}: ${names(copies)}.` : '') +
+    (plain.length && !verified?.startTimecode
+      ? ' No timecode copies: the video has no start timecode.'
+      : '') +
+    (subtitles.skipped.length ? ` ${subtitles.skipped.join(' ')}` : '')
+  );
+}
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/**
+ * Publishes a text file beside the video without ever replacing one: an identical file from an
+ * earlier attempt counts as written, any other is left alone. Returns true or why it wasn't.
+ */
+async function publishOnce(file: string, body: string, stageId: string): Promise<true | string> {
+  try {
+    const existing = await readFile(file, 'utf8').catch((e: NodeJS.ErrnoException) => {
+      if (e.code === 'ENOENT') return undefined;
+      throw e;
+    });
+    if (existing !== undefined)
+      return existing === body ? true : 'already exists and was not replaced';
+    // Stage, then hard-link: the name only ever appears complete, and never over a file.
+    const stage = path.join(path.dirname(file), `.vcut-${stageId}.srt`);
+    await unlink(stage).catch(() => {});
+    await writeFile(stage, body, { encoding: 'utf8', flag: 'wx' });
+    try {
+      await link(stage, file);
+    } finally {
+      await unlink(stage).catch(() => {});
+    }
+    return true;
+  } catch (e) {
+    return `could not be written (${message(e)})`;
+  }
 }

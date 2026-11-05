@@ -32,7 +32,8 @@ export function TranscriptChoice({
   /** Shown when only some of the clips have a finished transcript. */
   missingNote?: string;
 }) {
-  const any = value.roles.some((r) => available.includes(r));
+  const chosen = value.roles.filter((r) => available.includes(r)).length,
+    any = chosen > 0;
   return (
     <fieldset className={s.subtitleChoice}>
       <legend>Transcript</legend>
@@ -76,6 +77,8 @@ export function TranscriptChoice({
               .filter((r) => value.roles.includes(r.role) && available.includes(r.role))
               .map((r) => `<video>${r.file}`)
               .join(', ') || 'choose a transcript above'}
+            {any &&
+              `, and a .timecode.srt copy of ${chosen > 1 ? 'each' : 'it'} for Resolve when the video has a start timecode`}
           </span>
         </label>
         <label className={s.tools}>

@@ -29,9 +29,15 @@ import { readTranscriptView, saveTranscriptView } from '../dist-electron/transcr
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-const { subtitleFile, subtitleRequest, transcriptOutputs, writeSubtitleSidecars } = createRequire(
-  import.meta.url,
-)('../dist-electron/subtitle-sidecar.cjs');
+const {
+  subtitleFile,
+  subtitleRequest,
+  subtitleSummary,
+  timecodeSubtitleFile,
+  transcriptOutputs,
+  writeSubtitleSidecars,
+} = createRequire(import.meta.url)('../dist-electron/subtitle-sidecar.cjs');
+const { startTimecode } = createRequire(import.meta.url)('../dist-electron/clip-export.cjs');
 test('transcript reading state is bounded, session scoped and excludes editing drafts', () => {
   const values = new Map();
   let writes = 0;
@@ -843,6 +849,106 @@ test('export SRT sidecars follow the verified cut, are named after the video and
       find,
     );
     assert.deepEqual(quiet.skipped[0], 'Game dialogue: no speech in this clip.');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Resolve gets a copy shifted to the video start timecode; players keep the plain SRT (VC-158)', async () => {
+  // Timecode labels count whole frames per labelled second, drop frame included.
+  assert.deepEqual(startTimecode('01:00:00:00', '30/1'), { value: '01:00:00:00', seconds: 3600 });
+  assert.deepEqual(startTimecode('00:10:00:30', '60/1'), { value: '00:10:00:30', seconds: 600.5 });
+  assert.equal(startTimecode('00:59:58;02', '30000/1001').seconds, 3598 + 2 / 30);
+  for (const [value, rate] of [
+    [undefined, '30/1'],
+    ['01:00:00:30', '30/1'],
+    ['1:00:00:00', '30/1'],
+    ['01:00:00:00', '0/0'],
+    ['01:61:00:00', '30/1'],
+  ])
+    assert.equal(startTimecode(value, rate), undefined, `${value} at ${rate}`);
+  assert.equal(
+    timecodeSubtitleFile('D:/Clips/Anna arrives.mkv', 'game'),
+    'D:/Clips/Anna arrives.timecode.srt',
+  );
+  assert.equal(
+    timecodeSubtitleFile('D:/Clips/Anna arrives.mkv', 'mic'),
+    'D:/Clips/Anna arrives.mic.timecode.srt',
+  );
+  const dir = await mkdtemp(path.join(process.env.VIRTUAL_CUT_TEST_ROOT || os.tmpdir(), 'srt-tc-'));
+  try {
+    const output = path.join(dir, 'Anna arrives.mp4');
+    const verification = {
+      actual: { start: 11, end: 13 },
+      timestampShift: -16,
+      startTimecode: { value: '01:00:00:00', seconds: 3600 },
+    };
+    const record = {
+      output,
+      plan: { id: '00000000-0000-4000-8000-000000000158', name: 'Anna arrives' },
+      input: { sourceStart: 5 },
+      verification,
+      subtitles: { requested: ['game', 'mic'], written: [], skipped: [] },
+    };
+    const find = (role) => ({
+      transcript: { ...transcript, id: role, role },
+      segments: [phrase()],
+      model: {},
+    });
+    const done = await writeSubtitleSidecars(record, find);
+    assert.deepEqual(
+      done.written.map((w) => [w.role, path.basename(w.file), w.timecode]),
+      [
+        ['game', 'Anna arrives.srt', undefined],
+        ['game', 'Anna arrives.timecode.srt', '01:00:00:00'],
+        ['mic', 'Anna arrives.mic.srt', undefined],
+        ['mic', 'Anna arrives.mic.timecode.srt', '01:00:00:00'],
+      ],
+    );
+    const plain = await readFile(path.join(dir, 'Anna arrives.srt'), 'utf8'),
+      shifted = await readFile(path.join(dir, 'Anna arrives.timecode.srt'), 'utf8');
+    assert.match(plain, /^1\n00:00:00,000 --> 00:00:02,000\nis Kai\n/);
+    assert.equal(
+      shifted,
+      plain.replace('00:00:00,000 --> 00:00:02,000', '01:00:00,000 --> 01:00:02,000'),
+    );
+    assert.equal(
+      subtitleSummary(done, verification),
+      ' Subtitles: Anna arrives.srt, Anna arrives.mic.srt. Resolve copies from 01:00:00:00: Anna arrives.timecode.srt, Anna arrives.mic.timecode.srt.',
+    );
+    // A retry counts its own copies; someone else's copy is left alone and reported.
+    assert.equal((await writeSubtitleSidecars(record, find)).written.length, 4);
+    await writeFile(path.join(dir, 'Anna arrives.timecode.srt'), 'mine', 'utf8');
+    const kept = await writeSubtitleSidecars(record, find);
+    assert.equal(kept.written.length, 3);
+    assert.deepEqual(kept.skipped, [
+      'Game dialogue: Anna arrives.timecode.srt already exists and was not replaced.',
+    ]);
+    assert.equal(await readFile(path.join(dir, 'Anna arrives.timecode.srt'), 'utf8'), 'mine');
+    // Without a start timecode only the plain files are written, and the result says why.
+    const none = { ...verification, startTimecode: undefined };
+    const other = path.join(dir, 'No timecode.mp4');
+    const untimed = await writeSubtitleSidecars(
+      { ...record, output: other, verification: none, subtitles: { requested: ['game'] } },
+      find,
+    );
+    assert.deepEqual(
+      untimed.written.map((w) => path.basename(w.file)),
+      ['No timecode.srt'],
+    );
+    assert.equal(
+      subtitleSummary(untimed, none),
+      ' Subtitles: No timecode.srt. No timecode copies: the video has no start timecode.',
+    );
+    await assert.rejects(readFile(timecodeSubtitleFile(other, 'game')), /ENOENT/);
+    // Nothing written means no timecode line either.
+    assert.equal(
+      subtitleSummary(
+        { requested: ['game'], written: [], skipped: ['Game dialogue: no speech in this clip.'] },
+        none,
+      ),
+      ' Game dialogue: no speech in this clip.',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -107,7 +107,7 @@ import type {
   SubtitleRole,
   TranscriptOutputs,
 } from './export-contracts.js' with { 'resolution-mode': 'import' };
-import { transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
+import { subtitleSummary, transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs';
 import { BatchRecords } from './batch-records.cjs';
 import { batchOf } from './batch-record.js';
 import { dropLines } from './dropped-lines.js';
@@ -2824,11 +2824,7 @@ export class ProjectService {
             ? ` Transcript history kept in the companion (${kept.map((r) => (r === 'game' ? 'game dialogue' : 'microphone')).join(', ')}).`
             : ' No finished transcript for the companion history.';
         }
-        if (subtitles)
-          completed.message +=
-            (subtitles.written.length
-              ? ` Subtitles: ${subtitles.written.map((w) => path.basename(w.file)).join(', ')}.`
-              : '') + (subtitles.skipped.length ? ` ${subtitles.skipped.join(' ')}` : '');
+        if (subtitles) completed.message += subtitleSummary(subtitles, done.verification);
         s.putExport(completed);
         this.batchRecords.exportSettled(s, completed.plan.id);
         s.putJob({

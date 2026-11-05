@@ -59,6 +59,12 @@ try {
   await expect(subtitles).toBeVisible();
   await expect(subtitles.getByLabel('Microphone notes transcript')).toBeDisabled();
   await expect(subtitles).toContainText('no finished microphone notes transcript');
+  // The SRT hint names Resolve's timecode copy (VC-158).
+  await subtitles.getByLabel('Game dialogue transcript').check();
+  await subtitles.getByLabel('SRT subtitles beside the video').check();
+  await expect(subtitles).toContainText(
+    '<video>.srt, and a .timecode.srt copy of it for Resolve when the video has a start timecode',
+  );
   await capture('export-plan-wide');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1120, 760));
   await capture('export-plan-compact');
@@ -87,6 +93,27 @@ try {
     })
     .toBe('verified');
   await expect(history.getByRole('button', { name: /Show video:/ }).last()).toBeVisible();
+  // This source has no start timecode; the native check's timecode export sits in the same history.
+  await expect(
+    history.getByRole('row').filter({ hasText: 'UI exported clip' }).first(),
+  ).toContainText(
+    'Subtitles: UI exported clip.srt. No timecode copies: the video has no start timecode.',
+  );
+  await expect(
+    history
+      .getByRole('row')
+      .filter({ hasText: /Start timecode/ })
+      .first(),
+  ).toContainText('Resolve copies from 01:00:00:00: Start timecode.timecode.srt.');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 960));
+  await capture('export-history-no-timecode');
+  await history
+    .getByRole('row')
+    .filter({ hasText: /Start timecode/ })
+    .first()
+    .scrollIntoViewIfNeeded();
+  await capture('export-history-timecode');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1120, 760));
   await capture('export-history-compact');
   await app.evaluate(({ shell }) => {
     shell.showItemInFolder = (file) => {

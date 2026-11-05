@@ -17,6 +17,7 @@ import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
 import { colors, markerColor, markerColorName } from './workflow-types.js';
 import { transcriptHandoff } from './transcript-export.js';
+import { timecodeSubtitleFile } from './subtitle-sidecar.cjs';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -28,6 +29,7 @@ interface Stream {
   time_base: string;
   r_frame_rate?: string;
   disposition?: { attached_pic?: number };
+  tags?: { timecode?: string };
 }
 interface Packet {
   stream: number;
@@ -41,6 +43,8 @@ interface Media {
   streams: Stream[];
   packets: Packet[];
   chapters: { start_time: string; tags?: { title?: string } }[];
+  /** The container's start timecode as FFprobe reads it (video stream first, then the file). */
+  timecode?: string;
 }
 type Tools = { ffmpeg: string; ffprobe: string };
 const quickTime = (container: string) => ['mp4', 'mov', 'm4v'].includes(container);
@@ -56,7 +60,7 @@ async function probe(file: string, tool: string, signal: AbortSignal): Promise<M
   const facts = JSON.parse(
     await launchTool(
       tool,
-      ['-v', 'error', '-show_streams', '-show_chapters', '-of', 'json', file],
+      ['-v', 'error', '-show_streams', '-show_chapters', '-show_format', '-of', 'json', file],
       signal,
     ),
   );
@@ -104,7 +108,26 @@ async function probe(file: string, tool: string, signal: AbortSignal): Promise<M
         throw new Error('This recording exceeds the current export verification limit.');
     },
   );
-  return { streams, packets, chapters: facts.chapters || [] };
+  const video = streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
+  const timecode =
+    video?.tags?.timecode ||
+    facts.format?.tags?.timecode ||
+    streams.find((s) => s.tags?.timecode)?.tags?.timecode;
+  return { streams, packets, chapters: facts.chapters || [], ...(timecode ? { timecode } : {}) };
+}
+/**
+ * Reads a start timecode such as 01:00:00:00 (or 00:59:58;02, drop frame) against the video's
+ * nominal frame rate. Timecode labels count whole frames per labelled second, so the shift is the
+ * label itself; anything that isn't a valid label is ignored rather than guessed at.
+ */
+export function startTimecode(value: string | undefined, frameRate: string | undefined) {
+  const m = /^(\d{2}):([0-5]\d):([0-5]\d)[:;.](\d{2,3})$/.exec(value?.trim() || '');
+  const [num, den] = (frameRate || '').split('/').map(Number);
+  const rate = Math.round(num / (den || 1));
+  if (!m || !(rate > 0)) return undefined;
+  const [h, min, sec, frames] = m.slice(1).map(Number);
+  if (frames >= rate) return undefined;
+  return { value: m[0], seconds: h * 3600 + min * 60 + sec + frames / rate };
 }
 /**
  * The game track as exports carry it: either the original stream, or its verified
@@ -613,6 +636,8 @@ export async function exportClip(
     report('Checking final video and audio', 0.7);
     const finalMedia = await probe(final, tools.ffprobe, signal),
       checked = verify(source, finalMedia, record);
+    const finalVideo = finalMedia.streams.find((s) => s.codec_type === 'video');
+    const timecode = startTimecode(finalMedia.timecode, finalVideo?.r_frame_rate);
     if (Math.abs(checked.timestampShift - intendedShift) > checked.tolerance)
       throw new Error('Adding chapters changed stream timing.');
     const expectedChapters = chapters(record, checked);
@@ -634,6 +659,7 @@ export async function exportClip(
       throw new Error('Original recording changed during export.');
     const verification: ExportVerification = {
       ...checked,
+      ...(timecode ? { startTimecode: timecode } : {}),
       bytes: (await stat(final)).size,
       sha256: await fileHash(final, signal),
     };
@@ -764,6 +790,22 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                     },
                   ),
                 ),
+              },
+            }
+          : {}),
+        // Optional and separately versioned, like the history above (VC-158).
+        ...(v.startTimecode && record.subtitles?.requested.length && record.output
+          ? {
+              subtitleTimecode: {
+                schema: 'virtual-cut-subtitle-timecode',
+                version: 1,
+                startTimecode: v.startTimecode.value,
+                startSeconds: v.startTimecode.seconds,
+                files: record.subtitles.requested.map((role) =>
+                  path.basename(timecodeSubtitleFile(record.output!, role)),
+                ),
+                timing:
+                  'Each file repeats the plain .srt beside this video shifted by startSeconds, for Resolve. One is written for each requested transcript with speech in this clip.',
               },
             }
           : {}),
