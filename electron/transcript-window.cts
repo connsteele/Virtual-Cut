@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Diagnostics, failureFields } from './diagnostics.cjs';
 import { observeWindow } from './window-diagnostics.cjs';
 import { SpeechSetup } from './speech-setup.cjs';
+import { ScreenTextSetup } from './screen-text-setup.cjs';
 import type { ProjectService } from './project-service.cjs';
 import { applyTranscriptCommand } from './transcript-edits.js';
 import { applyProposalCommand, proposalStatus } from './proposal-edits.js';
@@ -28,6 +29,12 @@ export function registerTranscriptWindow(
     diagnostics.record(
       error ? 'operation-failed' : operation === 'install' ? 'operation-start' : 'operation-end',
       { kind: 'speechSetup', operation, ...(error ? failureFields(error) : {}) },
+    ),
+  );
+  const screenTextSetup = new ScreenTextSetup(profile, projects.screenText, (operation, error) =>
+    diagnostics.record(
+      error ? 'operation-failed' : operation === 'install' ? 'operation-start' : 'operation-end',
+      { kind: 'screenTextSetup', operation, ...(error ? failureFields(error) : {}) },
     ),
   );
   let window: BrowserWindow | null = null;
@@ -77,7 +84,7 @@ export function registerTranscriptWindow(
         !['session', 'page', 'pageAt', 'runtime', 'splitSnap', 'previews', 'focus'].includes(
           name,
         ) &&
-        !(name === 'speechSetup' && args[0] === 'status')
+        !(['speechSetup', 'screenTextSetup'].includes(name) && args[0] === 'status')
       )
         diagnostics.record('transcript-action', fields);
       try {
@@ -323,6 +330,49 @@ export function registerTranscriptWindow(
     return result.canceled || !result.filePaths[0]
       ? speechSetup.status()
       : speechSetup.plan(result.filePaths[0], includeGpu ?? true);
+  });
+  handle('screenTextSetup', async (action) => {
+    if (
+      ![
+        'plan',
+        'start',
+        'status',
+        'cancel',
+        'activate',
+        'check',
+        'restore',
+        'reveal-current',
+        'reveal-other',
+        'remove-other',
+      ].includes(action)
+    )
+      throw new Error('Unknown screen text setup action.');
+    if (action === 'status') return screenTextSetup.status();
+    if (action === 'reveal-current' || action === 'reveal-other') {
+      // Only the two known engine folders can be opened, never a renderer-supplied path.
+      const state = await screenTextSetup.status();
+      const location = action === 'reveal-current' ? state.current : state.other;
+      if (!location || (await shell.openPath(location.folder)))
+        throw new Error('That engine folder is not available.');
+      return state;
+    }
+    if (action === 'cancel') return screenTextSetup.cancel();
+    if (action === 'activate') return screenTextSetup.activate();
+    if (action === 'check') return screenTextSetup.check();
+    if (action === 'restore') return screenTextSetup.restore();
+    if (action === 'remove-other') return screenTextSetup.removeOther();
+    if (action === 'start') return screenTextSetup.start();
+    const start = await screenTextSetup.suggestedFolder();
+    // The suggested per-user folder may not exist yet; the picker opens inside it.
+    await mkdir(start, { recursive: true }).catch(() => {});
+    const result = await dialog.showOpenDialog(window || main()!, {
+      title: 'Choose where to put the screen text engine',
+      defaultPath: start,
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return result.canceled || !result.filePaths[0]
+      ? screenTextSetup.status()
+      : screenTextSetup.plan(result.filePaths[0]);
   });
   handle('setupHelp', async (topic) => {
     const links: Record<string, string> = {
@@ -627,9 +677,10 @@ export function registerTranscriptWindow(
     return chosen.filePath;
   });
   return {
-    stopSetup: () => speechSetup.cancel(),
+    stopSetup: () => Promise.all([speechSetup.cancel(), screenTextSetup.cancel()]),
     close: () => {
       speechSetup.cancel().catch(() => {});
+      screenTextSetup.cancel().catch(() => {});
       window?.close();
     },
   };

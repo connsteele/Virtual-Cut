@@ -79,4 +79,20 @@ test('screen text engine lookup: override, saved folder, bundled default', async
   assert.match(runtime.removed, /Python was not found/);
 
   assert.ok(SCREEN_TEXT_WORKER.endsWith(path.join('integrations', 'screen-text', 'worker.py')));
+
+  // Setup's choice is saved under an override but only used once the override is cleared.
+  assert.equal(runtime.overridden, true);
+  runtime.use(saved);
+  assert.equal(runtime.settings.folder, path.resolve(override));
+  assert.equal(runtime.savedFolder, saved);
+  delete process.env.VIRTUAL_CUT_OCR_RUNTIME;
+  runtime = new ScreenTextRuntime(profile, tools);
+  assert.equal(runtime.overridden, false);
+  assert.equal(runtime.settings.folder, saved);
+  // Without one, use() switches at once, and a fresh profile has nothing saved.
+  await engine(path.join(dir, 'next'));
+  runtime.use(path.join(dir, 'next'));
+  assert.equal(runtime.settings.folder, path.join(dir, 'next'));
+  assert.equal(runtime.configured, true);
+  assert.equal(new ScreenTextRuntime(path.join(dir, 'empty'), tools).savedFolder, '');
 });
