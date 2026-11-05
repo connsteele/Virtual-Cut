@@ -193,6 +193,7 @@ const api: VirtualCutApi = {
     setEnabled: (enabled) => ipcRenderer.invoke('agent:setEnabled', enabled),
     pair: (projectId, name) => ipcRenderer.invoke('agent:pair', projectId, name),
     revoke: (clientId) => ipcRenderer.invoke('agent:revoke', clientId),
+    setPictures: (clientId, allowed) => ipcRenderer.invoke('agent:setPictures', clientId, allowed),
     copy: (text) => ipcRenderer.invoke('agent:copy', text),
     view: (view) => ipcRenderer.send('agent:view', view),
     onChanged: (callback) => {

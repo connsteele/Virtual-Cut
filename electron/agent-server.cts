@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod';
-import { AgentAccess } from './agent-access.cjs';
+import { AgentAccess, PicturesOff } from './agent-access.cjs';
 import type { ProjectService } from './project-service.cjs';
 import type { AgentClient, AgentPairing, AgentView } from './agent-contracts.js' with {
   'resolution-mode': 'import',
@@ -149,7 +149,8 @@ export function registerAgentAccess(options: {
             access.record(client, name, summary(a, label), proposes ? 'proposed' : 'read');
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 1) }] };
           } catch (e) {
-            const known = e instanceof Refused || e instanceof AgentReadError;
+            const known =
+              e instanceof Refused || e instanceof AgentReadError || e instanceof PicturesOff;
             access.record(client, name, summary(a, label), 'refused');
             return failure(known ? (e as Error).message : 'Virtual Cut could not read that.');
           }
@@ -459,6 +460,11 @@ export function registerAgentAccess(options: {
   ipcMain.handle('agent:revoke', (event, clientId: unknown) => {
     options.trusted(event);
     return access.revoke(String(clientId));
+  });
+  // Only the user changes Allow pictures, in the Agent panel (VC-195): no tool can.
+  ipcMain.handle('agent:setPictures', (event, clientId: unknown, allowed: unknown) => {
+    options.trusted(event);
+    return access.setPictures(String(clientId), allowed === true);
   });
   ipcMain.handle('agent:copy', async (event, text: unknown) => {
     options.trusted(event);

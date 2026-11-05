@@ -28,7 +28,19 @@ const visible = (c: StoredClient): AgentClient => ({
   projectName: c.projectName,
   paired: c.paired,
   lastUsed: c.lastUsed,
+  pictures: c.pictures === true,
 });
+
+/** Refusal for a picture call while the app's pictures are off (VC-195). */
+export class PicturesOff extends Error {
+  constructor() {
+    super(
+      'Pictures are off for this agent app. The user can turn on Allow pictures for it in ' +
+        "Virtual Cut's Agent panel; until then, work from transcripts, picture events and " +
+        'screen text.',
+    );
+  }
+}
 
 /** Serves one paired connection; returns a function that stops it. */
 export type AgentServe = (socket: Socket, client: AgentClient) => () => void;
@@ -98,6 +110,7 @@ export class AgentAccess {
       projectId: project.id,
       projectName: project.name,
       paired: new Date().toISOString(),
+      pictures: false,
       tokenHash: hash(token).toString('hex'),
     };
     this.data.clients.push(client);
@@ -113,8 +126,37 @@ export class AgentAccess {
     this.changed();
     return this.state();
   }
-  /** Records a read or a refusal; content is summarized, never copied. */
-  record(client: AgentClient, tool: string, summary: string, outcome: AgentActivity['outcome']) {
+  /**
+   * Allow pictures (VC-195). Stored per pairing and read on every picture call, so a change
+   * applies to live connections from their next call. Pairings start with pictures off.
+   */
+  async setPictures(clientId: string, allowed: boolean) {
+    const client = this.data.clients.find((c) => c.id === clientId);
+    if (!client) throw new Error('That agent app is no longer paired.');
+    client.pictures = allowed;
+    this.log?.('agent-pictures', { clientId, allowed });
+    await this.persist();
+    this.changed();
+    return this.state();
+  }
+  picturesAllowed(clientId: string) {
+    return this.data.clients.find((c) => c.id === clientId)?.pictures === true;
+  }
+  /** The one check every picture call goes through: throws PicturesOff unless allowed. */
+  checkPictures(clientId: string) {
+    if (!this.picturesAllowed(clientId)) throw new PicturesOff();
+  }
+  /**
+   * Records a read or a refusal; content is summarized, never copied. Picture calls add
+   * their image count and estimated tokens, never the pictures.
+   */
+  record(
+    client: AgentClient,
+    tool: string,
+    summary: string,
+    outcome: AgentActivity['outcome'],
+    pictures?: { images: number; imageTokens: number },
+  ) {
     this.data.activity.push({
       at: new Date().toISOString(),
       clientId: client.id,
@@ -122,6 +164,7 @@ export class AgentAccess {
       tool,
       summary: summary.slice(0, 300),
       outcome,
+      ...(pictures ? { images: pictures.images, imageTokens: pictures.imageTokens } : {}),
     });
     if (this.data.activity.length > activityLimit)
       this.data.activity.splice(0, this.data.activity.length - activityLimit);
@@ -201,7 +244,14 @@ export class AgentAccess {
       if (!client) {
         this.log?.('agent-refused');
         this.record(
-          { id: '', name: 'Unpaired app', projectId: '', projectName: '', paired: '' },
+          {
+            id: '',
+            name: 'Unpaired app',
+            projectId: '',
+            projectName: '',
+            paired: '',
+            pictures: false,
+          },
           'connect',
           'Connection refused: not paired, or its pairing was revoked',
           'refused',

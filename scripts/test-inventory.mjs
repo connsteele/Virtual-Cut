@@ -22,6 +22,7 @@ export const fast = [
   'screen-text.test.mjs',
   'script-paths.test.mjs',
   'screen-text-runtime.test.mjs',
+  'agent-access.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
