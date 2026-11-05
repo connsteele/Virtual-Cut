@@ -85,6 +85,9 @@ try {
   const transcript = await pending;
   transcript.setDefaultTimeout(20000);
   transcript.on('pageerror', (e) => errors.push(e.message));
+  // The window event can come before the page has its #transcript address, which the resize
+  // below looks it up by.
+  await transcript.waitForURL(/#transcript$/);
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
       .find((w) => w.webContents.getURL().endsWith('#transcript'))
@@ -137,7 +140,19 @@ try {
   } else {
     await card.getByRole('button', { name: 'Download and install', exact: true }).click();
     await expect(engine).toHaveAccessibleName(/^Screen text engine: (Installing|Checking)…$/);
-    await expect(engine).toHaveAccessibleName(/^Screen text engine: Ready/, { timeout: 120000 });
+    await expect(engine).toHaveAccessibleName(/^Screen text engine: (Ready|Not installed)/, {
+      timeout: 120000,
+    });
+    // A failed install returns the card to Not installed; keep why, so a failure says more
+    // than the card's label (one full-suite run on 2026-11-05 ended this way).
+    if ((await engine.getAttribute('aria-label')).endsWith('Not installed')) {
+      const status = await transcript.evaluate(() =>
+        window.virtualCut.transcript.screenTextSetup('status'),
+      );
+      result.install = { state: status.state, message: status.message, problem: status.problem };
+      await capture('03-install-failed.png');
+      assert.fail(`The install ended ${status.state}: ${status.message} ${status.problem || ''}`);
+    }
     await expect(card.getByText('The screen text engine is installed and in use.')).toBeVisible();
     await expect(engine).toContainText('Virtual Cut screen text engine');
     await expect(engine).toContainText(
