@@ -661,7 +661,7 @@ try {
     kept.runs.map((r) => [r.agent, r.model, r.intent, r.proposals]),
     [['Claude Code', 'check-model', 'mic intent pass', 6]],
   );
-  assert.equal(kept.runs[0].read.intentGuideVersion, '3');
+  assert.equal(kept.runs[0].read.intentGuideVersion, '4');
   assert.deepEqual(
     kept.runs[0].read.transcripts.find((t) => t.role === 'mic'),
     { role: 'mic', transcriptId: 'agent-mic', corrections: 0 },

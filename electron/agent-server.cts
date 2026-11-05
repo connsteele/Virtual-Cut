@@ -37,6 +37,8 @@ import {
 } from './agent-proposals.js';
 import { proposalLimit } from './proposal-store.cjs';
 import { intentGuideAnswer } from './intent-guide.js';
+import { look, lookRecording, type LookInput } from './look.cjs';
+import { LookError, clock as lookClock } from './look-plan.js';
 import { readFileSync, statSync } from 'node:fs';
 const instructions =
   'Virtual Cut prepares game footage for YouTube. These tools read the project that is open in ' +
@@ -52,7 +54,8 @@ const instructions =
   'Before proposing, read get_intent_guide: it says what their free mic speech means, what to ' +
   'propose when there is none, and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
-  'never return file paths or media.';
+  'never return file paths or media files. look shows pictures of moments in a recording, ' +
+  'rendered by Virtual Cut, when the user has allowed pictures for this app.';
 
 /**
  * Agent access (VC-159/VC-160): pairing and activity IPC for the main window, and a read-only
@@ -344,7 +347,7 @@ export function registerAgentAccess(options: {
         recording_id: z.string().max(200).optional().describe('The recording you will work on.'),
         max_examples: z.number().int().min(0).max(200).optional().describe('Default 40.'),
       }),
-      (s, a) => intentGuideAnswer(s, a),
+      (s, a) => intentGuideAnswer(s, { ...a, pictures: access.picturesAllowed(client.id) }),
       (a, n) => `Intent guide${a.recording_id ? ` for ${n(a.recording_id)}` : ''}`,
     );
     read<SubmitInput>(
@@ -412,6 +415,62 @@ export function registerAgentAccess(options: {
       z.object({ batch_id: batch }),
       (s, a) => batchRecordAnswer(s, a.batch_id),
       (a, n) => `Batch record: ${a.batch_id ? n(a.batch_id) : 'active batch'}`,
+    );
+    // VC-172: pictures on request, only while the user allows pictures for this app.
+    server.registerTool(
+      'look',
+      {
+        description: lookDescription,
+        inputSchema: lookInput,
+        annotations: { readOnlyHint: true },
+      },
+      async (args: unknown) => {
+        const a = args as LookInput;
+        if (!access.isPaired(client.id)) {
+          socket.destroy();
+          return failure('This pairing was revoked in Virtual Cut.');
+        }
+        // Activity names the recording even when the call is refused, from the paired project only.
+        const store = options.projects()?.store;
+        const summary = () =>
+          lookSummary(a, (id) =>
+            store?.data.project.id === client.projectId
+              ? store.data.model.recordings.find((r) => r.id === id)?.title || id
+              : id,
+          );
+        try {
+          // The one check every picture call goes through, before anything is read.
+          access.checkPictures(client.id);
+          source(client);
+          const service = options.projects()!;
+          const result = await look(
+            service.tool('ffmpeg'),
+            lookRecording(service.store!, a.recording_id),
+            a,
+          );
+          access.record(client, 'look', summary(), 'read', {
+            images: result.images,
+            imageTokens: result.imageTokens,
+          });
+          options.log?.('agent-look', {
+            clientId: client.id,
+            images: result.images,
+            imageTokens: result.imageTokens,
+            elapsedMs: result.elapsedMs,
+          });
+          return { content: result.content };
+        } catch (e) {
+          const known =
+            e instanceof Refused ||
+            e instanceof AgentReadError ||
+            e instanceof PicturesOff ||
+            e instanceof LookError;
+          access.record(client, 'look', summary(), 'refused');
+          return failure(
+            known ? (e as Error).message : 'Virtual Cut could not make those pictures.',
+          );
+        }
+      },
     );
     const transport = new StdioServerTransport(socket, socket);
     void server.connect(transport).catch(() => socket.destroy());
@@ -491,6 +550,55 @@ export function registerAgentAccess(options: {
     };
   });
   return access;
+}
+
+const lookDescription =
+  'Pictures of moments in one recording, rendered by Virtual Cut, for when seeing the picture ' +
+  'would make your work better. Only while the user allows pictures for this app; otherwise it ' +
+  'says pictures are off. Check several moments in one call (up to 8), each one of: strip ' +
+  '(start_seconds to end_seconds as up to 16 small 252x140 tiles, each with its time burned ' +
+  'in), frames (times, at size 720p by default, about 1,200 image tokens each and up to 6 a ' +
+  'call, or 1080p for detail, about 2,700 tokens and up to 2), or crop (at_seconds and a box ' +
+  'shown at full source detail: a get_screen_text box from detail with box_units ' +
+  '"screen_text", padded a little, or x0,y0,x1,y1 as fractions 0-1 of the frame with box_units ' +
+  '"fraction"). Per call at most 16 pictures and about 8,000 image tokens; a bigger request is ' +
+  'fitted (fewer tiles, smaller sizes) and says so. Every picture comes after a line with its ' +
+  'time. Find where to look with picture events, screen text and transcripts; start with a ' +
+  'strip, then frames or crops where you need detail.';
+const lookInput = z.object({
+  recording_id: z.string().max(200),
+  moments: z
+    .array(
+      z.object({
+        kind: z.enum(['strip', 'frames', 'crop']),
+        start_seconds: z.number().min(0).optional().describe('strip: from. Default 0.'),
+        end_seconds: z.number().positive().optional().describe('strip: to. Default the end.'),
+        tiles: z.number().int().min(2).max(16).optional().describe('strip: tiles. Default 16.'),
+        times: z.array(z.number().min(0)).min(1).max(16).optional().describe('frames: seconds.'),
+        size: z.enum(['720p', '1080p']).optional().describe('frames: default 720p.'),
+        at_seconds: z.number().min(0).optional().describe('crop: when.'),
+        box: z.array(z.number()).length(4).optional().describe('crop: x0, y0, x1, y1.'),
+        box_units: z
+          .enum(['screen_text', 'fraction'])
+          .optional()
+          .describe('crop: pixels of a get_screen_text box, or fractions 0-1 of the frame.'),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+/** The Activity line of a look call: the recording and what was asked, never the pictures. */
+export function lookSummary(a: LookInput, name: (id: string) => string) {
+  const parts = (Array.isArray(a?.moments) ? a.moments : []).map((m) =>
+    m.kind === 'strip'
+      ? `strip ${lookClock(m.start_seconds ?? 0)}–${m.end_seconds === undefined ? 'end' : lookClock(m.end_seconds)}`
+      : m.kind === 'frames'
+        ? `${m.times?.length ?? 0} frame${m.times?.length === 1 ? '' : 's'} ${m.size ?? '720p'} ` +
+          (m.times || []).slice(0, 4).map(lookClock).join(', ') +
+          ((m.times?.length ?? 0) > 4 ? '…' : '')
+        : `crop at ${lookClock(m.at_seconds ?? 0)}`,
+  );
+  return `Look at ${name(String(a?.recording_id ?? ''))}: ${parts.join('; ')}`;
 }
 
 class Refused extends Error {}

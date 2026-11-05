@@ -23,6 +23,7 @@ export const fast = [
   'script-paths.test.mjs',
   'screen-text-runtime.test.mjs',
   'agent-access.test.mjs',
+  'look-plan.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -78,6 +79,7 @@ export const desktop = [
   'combined-transcript-ui.mjs',
   'visual-pass-ui.mjs',
   'screen-text-ui.mjs',
+  'look-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
@@ -130,6 +132,10 @@ export const other = {
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':
     'Makes the timed video and SRT pair for checking subtitle import in Resolve by hand (VC-154); not a test.',
+  'look-timing.mjs':
+    'Times the look tool decoding strips, frames and crops on a copied recording (VC-172); manual, needs real footage.',
+  'look-study.mjs':
+    'Makes look calls through the real MCP pipe on a copied recording and saves the pictures (VC-172); manual, needs real footage.',
   'intent-score.mjs':
     'Scores proposals and decisions against tagged mic notes (VC-128); on demand, reads only the files it is given.',
   'cue-accuracy-study.mjs':
