@@ -294,11 +294,13 @@ try {
   await original.check();
   await expect(phrases).toContainText("Kai, I don't think it's as simple as that.");
   await original.uncheck();
-  // Wait for the corrected text to render again, so both clicks land on the same word
-  // (CI once double-clicked "The" while the rows were still redrawing).
   await expect(phrases).toContainText("Cai, I don't think it's as simple as that.");
-  await word.scrollIntoViewIfNeeded();
-  await expect(word).toBeVisible();
+  // A click seeks to the word, and Follow playback scrolls the playing word to the centre when
+  // it sits near the window's edge, so a double-click's second click can land on another word
+  // (CI runs 42093060269 and 42096445162 edited "The"). Turn following off first.
+  const follow = view.getByRole('button', { name: 'Follow playback', exact: true });
+  if ((await follow.getAttribute('aria-pressed')) === 'true') await follow.click();
+  await expect(follow).toHaveAttribute('aria-pressed', 'false');
   await word.dblclick();
   const hint = view.getByLabel('Transcript correction');
   await expect(hint).toContainText(
