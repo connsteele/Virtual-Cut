@@ -2,6 +2,20 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.26 — Agents can look at pictures, and names spelled the game's way (November 5, 2026)
+
+Sprint 12. Agent apps can ask to see moments of a recording with a new `look` tool: a strip of
+small tiles across a range, 720p or 1080p frames, or a full-detail crop of a box such as a screen
+text line, several moments in one call and at most about 8,000 image tokens a call. Virtual Cut
+renders the pictures in memory and stores none. Pictures go out only while the new Allow pictures
+switch in the Agent panel is on; it is one switch for every paired app and starts off. Activity
+and each paired app show how many pictures were sent and their estimated tokens. Intent guide
+version 4 encourages looking when a picture would make the work better and asks for several
+moments in one call. A game's names and terms get a Heard as list (Cai heard as Kai), and every
+whole-word match in its game and mic transcripts becomes the game's spelling as an ordinary,
+undoable correction, with an offer to apply new rows to transcripts already made. See [the 0.4.26
+review](docs/review-0.4.26.md).
+
 ## 0.4.25 — Screen text and cleaner microphone transcripts (November 5, 2026)
 
 Sprint 11. After its picture pass, each recording gets a background screen text pass that reads
