@@ -81,6 +81,12 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
     current.droppedLines || [],
     byId,
   );
+  result.heardAsKept = mergeItems(
+    before.heardAsKept || [],
+    after.heardAsKept || [],
+    current.heardAsKept || [],
+    (x) => x,
+  );
   result.cueDecisions = mergeItems(
     before.cueDecisions || [],
     after.cueDecisions || [],
@@ -94,7 +100,13 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
     byId,
   );
   // Merely opening or seeking an older project must not create editorial changes.
-  for (const field of ['contexts', 'transcriptEdits', 'droppedLines', 'cueDecisions'] as const)
+  for (const field of [
+    'contexts',
+    'transcriptEdits',
+    'droppedLines',
+    'heardAsKept',
+    'cueDecisions',
+  ] as const)
     if (!result[field]?.length) delete result[field];
   for (const field of ['clips', 'terms', 'notes', 'sequence', 'targets'] as const) {
     // Each collection is homogeneous; the shared identity operation preserves its type.
@@ -149,6 +161,7 @@ export function editorial(model: Model): string {
     contexts: model.contexts?.length ? model.contexts : undefined,
     transcriptEdits: model.transcriptEdits?.length ? model.transcriptEdits : undefined,
     droppedLines: model.droppedLines?.length ? model.droppedLines : undefined,
+    heardAsKept: model.heardAsKept?.length ? model.heardAsKept : undefined,
     cueDecisions: model.cueDecisions?.length ? model.cueDecisions : undefined,
     clips: model.clips.map((c) => ({ ...c, filed: false })),
     selectedRecordingId: undefined,
@@ -173,9 +186,17 @@ export function validateEdits(model: Model): Model {
       !Number.isSafeInteger(edit.segmentId) ||
       edit.segmentId < 0 ||
       (edit.wordIndex != null && (!Number.isSafeInteger(edit.wordIndex) || edit.wordIndex < 0)) ||
-      !text(edit.text, 10000)
+      !text(edit.text, 10000) ||
+      (edit.heardAs !== undefined && !text(edit.heardAs, 100))
     )
       throw new Error('Invalid transcript correction.');
+  if (
+    model.heardAsKept !== undefined &&
+    (!Array.isArray(model.heardAsKept) ||
+      model.heardAsKept.length > 100000 ||
+      !model.heardAsKept.every((id) => text(id, 300)))
+  )
+    throw new Error('Invalid kept heard-as words.');
   if ((model.droppedLines?.length || 0) > 100000) throw new Error('Too many dropped lines.');
   for (const line of model.droppedLines || [])
     if (

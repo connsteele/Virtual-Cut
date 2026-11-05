@@ -24,6 +24,7 @@ export const fast = [
   'screen-text-runtime.test.mjs',
   'agent-access.test.mjs',
   'look-plan.test.mjs',
+  'heard-as.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -55,6 +56,7 @@ export const desktop = [
   'crash-diagnostics-checks.mjs',
   'transcription-review-ui.mjs',
   'dropped-lines-ui.mjs',
+  'heard-as-ui.mjs',
   'transcription-ui-checks.mjs',
   'project-deletion-ui.mjs',
   'range-markers-ui.mjs',
@@ -87,6 +89,7 @@ export const dependencies = {
   'screen-text-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
   'dropped-lines-ui.mjs': ['transcript-storage-checks.mjs'],
+  'heard-as-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-ui-checks.mjs': ['transcript-storage-checks.mjs'],
   'agent-proposals-ui.mjs': ['transcript-storage-checks.mjs'],
   'proposal-preview-ui.mjs': ['transcript-storage-checks.mjs'],
@@ -143,6 +146,8 @@ export const other = {
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'hint-guard-study.mjs':
     'Checks vocabulary hints and their guard against tagged notes (VC-164); copies the recording, needs a local speech engine and the GPU.',
+  'heard-as-study.mjs':
+    'Runs heard-as rows over saved transcripts and lists every word they change (VC-194); on demand, reads only the files it is given.',
   'dropped-lines-study.mjs':
     'Checks dropped microphone lines against tagged notes (VC-166); copies the recording, needs a local speech engine and the GPU.',
   'job-lanes-ui.mjs':

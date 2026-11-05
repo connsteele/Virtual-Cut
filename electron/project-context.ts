@@ -1,8 +1,9 @@
+import { validHeardAs, type HeardAs } from './heard-as.js';
 /** Editorial context is deliberately small. Recognition results live separately. */
 export interface CreativeContext {
   id: string;
   gameMode: 'inherit' | 'set' | 'none';
-  game?: { id: string; name: string; vocabulary: string };
+  game?: { id: string; name: string; vocabulary: string; heardAs?: HeardAs[] };
   briefMode: 'inherit' | 'append' | 'replace' | 'none';
   brief: string;
 }
@@ -52,7 +53,8 @@ export function validateContexts(value: CreativeContext[] = []) {
         (!text(c.game.id, 200) ||
           !c.game.id ||
           !text(c.game.name, 300) ||
-          !text(c.game.vocabulary, 10000)))
+          !text(c.game.vocabulary, 10000) ||
+          (c.game.heardAs !== undefined && !validHeardAs(c.game.heardAs))))
     )
       throw new Error('Choose a game name and valid video context.');
     ids.add(c.id);
