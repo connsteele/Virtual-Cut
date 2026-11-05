@@ -2,8 +2,8 @@ import type { MediaJob } from './project-contracts.js';
 
 // VC-145: jobs run in two lanes so a long transcription never holds up media work.
 // The speech lane runs transcription. The media lane runs inspection, audio preparation,
-// export, filing and the VC-180 picture pass; filmstrips fill the media lane when it has
-// nothing else to start.
+// export, filing, the VC-180 picture pass and the VC-141 screen text pass; filmstrips fill the
+// media lane when it has nothing else to start.
 export type JobLane = 'speech' | 'media';
 export const jobLanes: readonly JobLane[] = ['speech', 'media'];
 
@@ -18,6 +18,11 @@ const writesRecording = new Set<MediaJob['kind']>(['inspect', 'audio', 'transcri
 // Work a transcription of the same recording waits for.
 const preparesRecording = new Set<MediaJob['kind']>(['inspect', 'audio']);
 
+/** The background passes over a whole recording: picture events (VC-180), screen text (VC-141). */
+export function isPass(job: Pick<MediaJob, 'kind'>) {
+  return job.kind === 'visual' || job.kind === 'text';
+}
+
 /** Work the user started (Import, Export, Transcribe, Retry) goes ahead of background work. */
 export function isUserJob(job: MediaJob) {
   return job.origin !== 'background';
@@ -28,7 +33,7 @@ export function isUserJob(job: MediaJob) {
  * for ("Analyse picture now"), then background work, then background picture passes.
  */
 export function rank(job: MediaJob) {
-  if (job.kind === 'visual') return isUserJob(job) ? 1 : 3;
+  if (isPass(job)) return isUserJob(job) ? 1 : 3;
   return isUserJob(job) ? 0 : 2;
 }
 
@@ -59,8 +64,17 @@ export function pictureHold(
     return before.kind === 'transcribe'
       ? 'Waiting for this recording’s transcript'
       : 'Waiting for this recording’s inspection';
+  // Screen text skips unchanged keyframes using the picture pass's values, so it follows it.
+  if (
+    job.kind === 'text' &&
+    jobs.some((j) => same(j) && j.kind === 'visual' && ['queued', 'running'].includes(j.state))
+  )
+    return 'Waiting for this recording’s picture events';
   if (running.some((j) => j.kind === 'transcribe')) return 'Paused: transcription running';
   if (conditions.previewPlaying) return 'Paused: preview playing';
+  // Screen text decodes keyframes on the CPU and reads them on the GPU (DirectML), so it never
+  // waits for an NVIDIA decoder.
+  if (job.kind === 'text') return undefined;
   if (conditions.gpu?.(job) === false && !conditions.idle)
     return 'Waiting for the PC to be idle (no NVIDIA decoder)';
   return undefined;
@@ -115,7 +129,7 @@ export function readyJobs(
       j.state === 'queued' &&
       laneOf(j.kind) === lane &&
       !heldBy(j, jobs, running) &&
-      !(j.kind === 'visual' && pictureHold(j, jobs, running, conditions)),
+      !(isPass(j) && pictureHold(j, jobs, running, conditions)),
   );
   return ready
     .map((job, order) => ({ job, order }))
@@ -136,7 +150,8 @@ export function pictureYields(
   const others = running.filter((j) => j.id !== pass.id);
   const hold = pictureHold(pass, jobs, others, conditions);
   if (hold) return hold;
-  if (!pictureUse(pass, conditions)) return 'Waiting for the PC to be idle (no NVIDIA decoder)';
+  if (pass.kind === 'visual' && !pictureUse(pass, conditions))
+    return 'Waiting for the PC to be idle (no NVIDIA decoder)';
   const ahead = readyJobs('media', jobs, others, conditions).find(
     (j) => j.id !== pass.id && rank(j) < rank(pass),
   );

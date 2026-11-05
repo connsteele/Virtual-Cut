@@ -88,91 +88,112 @@ export function registerTranscriptWindow(
       }
     });
   }
+  // An engine card to bring into view once the window shows (VC-141's setup link).
+  let engineSetup = '';
+  const openWindow = async (sourceId?: string) => {
+    preferredSource = sourceId || projects.store?.data.model.selectedRecordingId || '';
+    if (window) {
+      window.webContents.send('transcript:source-event', preferredSource);
+      window.show();
+      window.focus();
+      return;
+    }
+    let bounds: { x?: number; y?: number; width: number; height: number } = {
+      width: 760,
+      height: 850,
+    };
+    try {
+      const saved = JSON.parse(readFileSync(boundsFile, 'utf8'));
+      if (!['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved[key])))
+        throw new Error('Invalid saved bounds.');
+      const display = screen
+        .getAllDisplays()
+        .find(
+          (d) =>
+            saved.x < d.workArea.x + d.workArea.width &&
+            saved.x + 200 > d.workArea.x &&
+            saved.y < d.workArea.y + d.workArea.height &&
+            saved.y + 100 > d.workArea.y,
+        );
+      if (display)
+        bounds = {
+          x: Math.max(
+            display.workArea.x,
+            Math.min(saved.x, display.workArea.x + display.workArea.width - 300),
+          ),
+          y: Math.max(
+            display.workArea.y,
+            Math.min(saved.y, display.workArea.y + display.workArea.height - 150),
+          ),
+          width: Math.min(Math.max(500, saved.width), display.workArea.width),
+          height: Math.min(Math.max(400, saved.height), display.workArea.height),
+        };
+    } catch {
+      /* Safe default for first use or removed display. */
+    }
+    window = new BrowserWindow({
+      ...bounds,
+      minWidth: 500,
+      minHeight: 400,
+      title: 'Transcript · Virtual Cut',
+      show: !hidden,
+      backgroundColor: '#101918',
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+      },
+    });
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    observeWindow(window, 'transcript', diagnostics);
+    window.webContents.on('will-navigate', (e) => e.preventDefault());
+    window.on('close', () => {
+      if (window) writeFileSync(boundsFile, JSON.stringify(window.getBounds()));
+      for (const p of pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(new Error('Transcript window closed.'));
+      }
+      pending.clear();
+    });
+    window.on('closed', () => {
+      window = null;
+      // No card is in focus once the transcript window is gone (VC-170).
+      const projectId = projects.store?.data.project.id,
+        editor = main();
+      if (projectId && editor && !editor.isDestroyed())
+        editor.webContents.send('transcript:focus-event', {
+          projectId,
+          sourceId: '',
+          card: null,
+        });
+    });
+    await window.loadURL(rendererUrl() + '#transcript');
+  };
+  handle('open', openWindow, true);
+  // "Screen text engine not installed · Set up" in the main window: the transcript window opens
+  // with its engine settings showing and that engine's card in view.
   handle(
-    'open',
-    async (sourceId) => {
-      preferredSource = sourceId || projects.store?.data.model.selectedRecordingId || '';
-      if (window) {
-        window.webContents.send('transcript:source-event', preferredSource);
-        window.show();
-        window.focus();
-        return;
+    'openEngineSetup',
+    async (engine) => {
+      if (engine !== 'screen-text') throw new Error('Unknown engine.');
+      const open = !!window;
+      engineSetup = engine;
+      await openWindow();
+      if (open) {
+        engineSetup = '';
+        window?.webContents.send('transcript:engine-setup-event', engine);
       }
-      let bounds: { x?: number; y?: number; width: number; height: number } = {
-        width: 760,
-        height: 850,
-      };
-      try {
-        const saved = JSON.parse(readFileSync(boundsFile, 'utf8'));
-        if (!['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved[key])))
-          throw new Error('Invalid saved bounds.');
-        const display = screen
-          .getAllDisplays()
-          .find(
-            (d) =>
-              saved.x < d.workArea.x + d.workArea.width &&
-              saved.x + 200 > d.workArea.x &&
-              saved.y < d.workArea.y + d.workArea.height &&
-              saved.y + 100 > d.workArea.y,
-          );
-        if (display)
-          bounds = {
-            x: Math.max(
-              display.workArea.x,
-              Math.min(saved.x, display.workArea.x + display.workArea.width - 300),
-            ),
-            y: Math.max(
-              display.workArea.y,
-              Math.min(saved.y, display.workArea.y + display.workArea.height - 150),
-            ),
-            width: Math.min(Math.max(500, saved.width), display.workArea.width),
-            height: Math.min(Math.max(400, saved.height), display.workArea.height),
-          };
-      } catch {
-        /* Safe default for first use or removed display. */
-      }
-      window = new BrowserWindow({
-        ...bounds,
-        minWidth: 500,
-        minHeight: 400,
-        title: 'Transcript · Virtual Cut',
-        show: !hidden,
-        backgroundColor: '#101918',
-        autoHideMenuBar: true,
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.cjs'),
-          contextIsolation: true,
-          sandbox: true,
-          nodeIntegration: false,
-        },
-      });
-      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      observeWindow(window, 'transcript', diagnostics);
-      window.webContents.on('will-navigate', (e) => e.preventDefault());
-      window.on('close', () => {
-        if (window) writeFileSync(boundsFile, JSON.stringify(window.getBounds()));
-        for (const p of pending.values()) {
-          clearTimeout(p.timer);
-          p.reject(new Error('Transcript window closed.'));
-        }
-        pending.clear();
-      });
-      window.on('closed', () => {
-        window = null;
-        // No card is in focus once the transcript window is gone (VC-170).
-        const projectId = projects.store?.data.project.id,
-          editor = main();
-        if (projectId && editor && !editor.isDestroyed())
-          editor.webContents.send('transcript:focus-event', {
-            projectId,
-            sourceId: '',
-            card: null,
-          });
-      });
-      await window.loadURL(rendererUrl() + '#transcript');
     },
     true,
   );
+  // A window opened for that link asks once, when it starts.
+  handle('takeEngineSetup', async () => {
+    const engine = engineSetup;
+    engineSetup = '';
+    return engine;
+  });
   // The game transcript a combined page reads beside the microphone one (VC-185).
   const readTogether = (also: unknown) => {
     if (also == null) return undefined;

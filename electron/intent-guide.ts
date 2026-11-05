@@ -5,12 +5,12 @@ import { rejectReasons, type RejectReason } from './transcript-contracts.js';
 import { AgentReadError, findRecording, type AgentReadSource } from './agent-tools.js';
 
 /**
- * The intent guide (VC-155, v2 VC-187): what a creator means by free mic speech, what to propose
+ * The intent guide (VC-155, v2 VC-187, v3 VC-191): what a creator means by free mic speech, what to propose
  * when there is none, and how an agent turns it into proposals. It ships with Virtual Cut and is
  * versioned, so every agent reads the same instructions; the user's own labelled examples and
  * habits come with it from their data. docs/intent-guide.md is the readable copy and must match.
  */
-export const intentGuideVersion = '2';
+export const intentGuideVersion = '3';
 
 /** How many instances of a recurring moment get a clip before it drops to a marker or nothing. */
 export const defaultRecurringClips = 3;
@@ -104,7 +104,11 @@ export const intentGuide = {
       'A lesson moves to general only when it holds in a second game or the creator says so.',
     general: {
       recurringClips: defaultRecurringClips,
-      lessons: [] as string[],
+      // v3 (VC-191): screen text through MCP; the second is decision D6's held sentence.
+      lessons: [
+        "Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.",
+        'Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure.',
+      ] as string[],
     },
     // A game gets a section when its footage comes through and it has lessons of its own.
     sections: [] as {

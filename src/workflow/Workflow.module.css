@@ -2161,6 +2161,18 @@
 .sourceActions .pictureStart {
   color: var(--teal-light);
 }
+.sourceActions .pictureSetup {
+  color: #d9b26a;
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--teal-light);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .sourceActions [aria-disabled='true'] {
   color: var(--faint);
   cursor: default;

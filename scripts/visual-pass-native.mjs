@@ -15,6 +15,8 @@ const { readBlacks, snapArgs } = await import('../dist-electron/split-snap.js');
 // only when the PC is idle (no NVIDIA decoder), stores its events once per fingerprint
 // outside the model, and the Split snap reads them. The speech worker is a held stand-in.
 delete process.env.VIRTUAL_CUT_PICTURE_PASS; // this check wants passes after import
+// No screen text engine here, whatever .env says: screen-text-native covers that pass (VC-141).
+delete process.env.VIRTUAL_CUT_OCR_RUNTIME;
 await mkdir(testPath('visual-pass'), { recursive: true });
 const dir = await mkdtemp(path.join(testPath('visual-pass'), 'run-'));
 const ffmpeg = process.env.VIRTUAL_CUT_FFMPEG || 'ffmpeg';

@@ -213,6 +213,11 @@ export interface TranscriptApi {
   apply(token: string): Promise<import('./project-contracts.js').ProjectSnapshot>;
   open(sourceId?: string): Promise<void>;
   onSource(callback: (sourceId: string) => void): () => void;
+  /** Opens the transcript window with its engine settings and that engine's card in view. */
+  openEngineSetup(engine: 'screen-text'): Promise<void>;
+  /** The engine a window opened by openEngineSetup should show, once ('' otherwise). */
+  takeEngineSetup(): Promise<string>;
+  onEngineSetup(callback: (engine: string) => void): () => void;
   session(sourceId?: string): Promise<TranscriptSession | null>;
   page(
     projectId: string,

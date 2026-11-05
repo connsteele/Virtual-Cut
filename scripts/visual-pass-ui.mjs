@@ -5,6 +5,9 @@
 // VIRTUAL_CUT_PICTURE_UI_GPU=1 (only on a PC with NVDEC) it reads on the GPU decoder while you
 // work and adds CPU workers once idle. Screenshots of each state are saved beside the project.
 // An agent app paired over MCP then reads the stored events with get_visual_events (VC-171).
+// The screen text engine is not installed here (VC-141): the badge says so, picture events still
+// run, and the scan icon and Jobs open its setup in the Transcript window. screen-text-ui covers
+// the screen text pass itself.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -95,6 +98,8 @@ try {
       // Small chunks so each state lasts long enough to see on a 45 s recording.
       VIRTUAL_CUT_PICTURE_CHUNK: '0.5',
       VIRTUAL_CUT_PICTURE_GPU: gpu ? '' : '0',
+      // No screen text engine, whatever .env says.
+      VIRTUAL_CUT_OCR_RUNTIME: '',
     }),
   });
   const main = await app.firstWindow();
@@ -156,7 +161,10 @@ try {
     await expect(status(first)).toHaveAttribute('data-picture-status', 'running');
     await main.getByRole('button', { name: /^Jobs/ }).click();
     await expect(lane).toHaveText('Media lane · GPU decoder');
-    await expect(badge(first)).toHaveAttribute('title', /^Reading picture… \d+%$/);
+    await expect(badge(first)).toHaveAttribute(
+      'title',
+      /^Reading picture… \d+% · Screen text engine not installed$/,
+    );
     await shot('3-reading-gpu-decoder.png');
     await setIdle(600);
     await expect(lane).toHaveText('Media lane · GPU decoder + CPU');
@@ -167,7 +175,10 @@ try {
     await shot('3-waiting-for-idle-no-nvidia.png');
     await setIdle(600);
     await expect(lane).toHaveText('Media lane · CPU');
-    await expect(badge(first)).toHaveAttribute('title', /^Reading picture… \d+%$/);
+    await expect(badge(first)).toHaveAttribute(
+      'title',
+      /^Reading picture… \d+% · Screen text engine not installed$/,
+    );
     await shot('4-reading-cpu.png');
   }
   await jobs.getByRole('button', { name: 'Close' }).click();
@@ -187,10 +198,19 @@ try {
   await expect(badge(first)).toHaveAttribute(
     'title',
     gpu
-      ? /^Picture events ready · (\d+ min )?\d+ s · GPU( \+ CPU)?$/
-      : /^Picture events ready · (\d+ min )?\d+ s · CPU$/,
+      ? /^Picture events ready · (\d+ min )?\d+ s · GPU( \+ CPU)? · Screen text engine not installed$/
+      : /^Picture events ready · (\d+ min )?\d+ s · CPU · Screen text engine not installed$/,
   );
+  // Picture events alone keep the eye and the tick; the scan icon now opens screen text setup.
+  await expect(badge(first).locator('svg')).toHaveCount(1);
+  const setup = card(first).locator('[data-picture-action]');
+  await expect(setup).toHaveAttribute('data-picture-action', 'setup');
+  await expect(setup).toHaveAttribute('title', 'Screen text engine not installed · Set up');
   await shot('5-card-picture-events-ready.png');
+  await setup.click();
+  const transcript = await app.waitForEvent('window');
+  await expect(transcript.getByRole('region', { name: 'Speech engine settings' })).toBeVisible();
+  await transcript.close();
 
   // VC-171: an agent app reads the stored events as text; the unread recording says so.
   await main.getByRole('button', { name: 'Agent', exact: true }).click();
@@ -227,6 +247,10 @@ try {
     'Picture events of First session, 0:05–0:20',
   );
   await shot('5b-agent-activity-picture-events.png');
+  // VC-191: without the engine, get_screen_text says so instead of an empty list.
+  const noText = JSON.parse((await tool(client, 'get_screen_text', { recording_id: first })).text);
+  assert.equal(noText.state, 'engine not installed');
+  assert.match(noText.note, /Screen text engine not installed/);
   client.end();
   await main.getByRole('button', { name: 'Agent', exact: true }).click();
   await expect(panel).toHaveCount(0);
@@ -236,7 +260,11 @@ try {
   await expect(jobs).toContainText('1 recording in this batch without picture events');
   await jobs.getByRole('button', { name: 'Analyse picture now', exact: true }).click();
   await expect(status(second)).toHaveAttribute('data-picture-status', 'ready', { timeout: 60000 });
-  await expect(jobs).toContainText('Every recording in this batch has picture events');
+  await expect(jobs).toContainText('Every recording in this batch has picture events, or is');
+  const engine = jobs.locator('[data-screen-text-engine]');
+  await expect(engine).toHaveText(
+    'Screen text engine not installed. Picture events still run. Set up screen text engine',
+  );
   await expect(
     jobs.getByRole('button', { name: 'Analyse picture now', exact: true }),
   ).toBeDisabled();

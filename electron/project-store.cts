@@ -35,6 +35,10 @@ import { decodeTimes, encodeTimes, extractFrameIndexes } from './frame-index.js'
 import type { FrameIndex } from './frame-index.js' with { 'resolution-mode': 'import' };
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 import { VISUAL_VERSION, summarize } from './visual-events.js';
+import { SCREEN_TEXT_VERSION, summarizeText } from './screen-text.js';
+import type { ScreenText, ScreenTextSummary } from './screen-text.js' with {
+  'resolution-mode': 'import',
+};
 import type { VisualEvents, VisualSummary } from './visual-events.js' with {
   'resolution-mode': 'import',
 };
@@ -160,8 +164,8 @@ export class ProjectStore {
         if (!this.data.project.id || !Array.isArray(this.data.model.recordings))
           throw new Error('Project data is invalid.');
         for (const job of this.jobs())
-          if (job.kind === 'visual' && ['running', 'queued'].includes(job.state))
-            // Background picture passes simply carry on; they start again from the first chunk.
+          if (['visual', 'text'].includes(job.kind) && ['running', 'queued'].includes(job.state))
+            // Background passes simply carry on; they start again from the beginning.
             this.putJob({ ...job, state: 'queued', message: 'Waiting', use: undefined });
           else if (['running', 'queued'].includes(job.state))
             this.putJob({
@@ -178,6 +182,11 @@ export class ProjectStore {
       // model like frame indexes, keyed by source fingerprint, and never enter Undo.
       this.db.exec(
         'CREATE TABLE IF NOT EXISTS picture_events (source_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, version INTEGER NOT NULL, body TEXT NOT NULL, times BLOB NOT NULL, brightness BLOB NOT NULL, cut BLOB NOT NULL)',
+      );
+      // Screen text (VC-141) sits beside picture events, the same way. Its summary has a column
+      // of its own, so snapshots never parse the lines.
+      this.db.exec(
+        'CREATE TABLE IF NOT EXISTS screen_text (source_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, version INTEGER NOT NULL, summary TEXT NOT NULL, body TEXT NOT NULL)',
       );
       this.transcripts = new TranscriptStore(this.db);
       this.proposals = new ProposalStore(this.db);
@@ -589,9 +598,50 @@ export class ProjectStore {
       );
     this.changed?.();
   }
+  /** A recording's screen text, or null when missing, older or from another file revision. */
+  screenText(sourceId: string): ScreenText | null {
+    const source = this.sources().find((s) => s.id === sourceId);
+    const row = this.db
+      .prepare('SELECT fingerprint, version, body FROM screen_text WHERE source_id=?')
+      .get(sourceId);
+    if (!source || !row || row.fingerprint !== source.fingerprint) return null;
+    if (row.version !== SCREEN_TEXT_VERSION) return null;
+    return JSON.parse(String(row.body)) as ScreenText;
+  }
+  /** Summaries of every current recording's screen text, by recording id. */
+  screenTextSummaries() {
+    const sources = new Map(this.sources().map((s) => [s.id, s.fingerprint]));
+    const out: Record<string, ScreenTextSummary> = {};
+    for (const row of this.db
+      .prepare('SELECT source_id, fingerprint, version, summary FROM screen_text')
+      .all()) {
+      if (
+        row.version !== SCREEN_TEXT_VERSION ||
+        sources.get(String(row.source_id)) !== row.fingerprint
+      )
+        continue;
+      out[String(row.source_id)] = JSON.parse(String(row.summary)) as ScreenTextSummary;
+    }
+    return out;
+  }
+  putScreenText(sourceId: string, fingerprint: string, value: ScreenText) {
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO screen_text (source_id, fingerprint, version, summary, body) VALUES (?,?,?,?,?)',
+      )
+      .run(
+        sourceId,
+        fingerprint,
+        value.version,
+        JSON.stringify(summarizeText(value)),
+        JSON.stringify(value),
+      );
+    this.changed?.();
+  }
   removeSource(id: string) {
     this.db.prepare('DELETE FROM frame_indexes WHERE source_id=?').run(id);
     this.db.prepare('DELETE FROM picture_events WHERE source_id=?').run(id);
+    this.db.prepare('DELETE FROM screen_text WHERE source_id=?').run(id);
     this.transcripts.removeSource(id);
     this.proposals.removeSource(id);
     this.db.prepare("DELETE FROM jobs WHERE json_extract(body,'$.sourceId')=?").run(id);

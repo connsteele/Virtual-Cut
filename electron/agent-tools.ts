@@ -7,6 +7,7 @@ import type { TranscriptSegment, TranscriptSummary } from './transcript-contract
 import type { AgentView } from './agent-contracts.js';
 import type { MediaJob } from './project-contracts.js';
 import { eventLine, type VisualEvent, type VisualEvents } from './visual-events.js';
+import type { Box, ScreenText } from './screen-text.js';
 
 /**
  * Read-only answers for agent apps (VC-160). Every function takes a live project
@@ -34,6 +35,10 @@ export interface AgentReadSource {
   pictureEvents?: (recordingId: string) => Pick<VisualEvents, 'events'> | null;
   /** Jobs, newest first, to say where a picture pass that has not finished stands. */
   jobs?: () => MediaJob[];
+  /** A recording's stored screen text for its current file (VC-141), or null. */
+  screenText?: (recordingId: string) => ScreenText | null;
+  /** Why screen text cannot be read on this PC ("Screen text engine not installed."), or ''. */
+  screenTextEngine?: () => string;
 }
 export class AgentReadError extends Error {}
 /** A recording or batch named for the activity list; ids an agent made up stay as given. */
@@ -205,6 +210,8 @@ export function contextPacket(source: AgentReadSource, batchId?: string) {
       clips: source.model.clips.filter((c) => c.rid === r.id).length,
       notes: source.model.notes.filter((n) => n.sourceId === r.id).length,
       transcripts: Object.keys(currentTranscripts(source, r.id)),
+      // Whether get_screen_text has lines for it yet (VC-191).
+      screenText: source.screenText?.(r.id) ? 'ready' : screenTextWait(source, r.id).state,
     })),
   };
   return {
@@ -469,6 +476,192 @@ export function visualEventLines(
     counts,
     events: lines.slice(offset, offset + eventPage),
     nextCursor: lines.length > offset + eventPage ? String(offset + eventPage) : undefined,
+    projectRevision: source.revision,
+  };
+}
+
+// ---- Screen text (VC-191): what the screen showed, as facts, never labelled ----
+const textPage = 200;
+/** A plain position: the third of the frame across and down that holds the box's centre. */
+export const screenAreas = [
+  'top left',
+  'top centre',
+  'top right',
+  'middle left',
+  'centre',
+  'middle right',
+  'bottom left',
+  'bottom centre',
+  'bottom right',
+] as const;
+export type ScreenArea = (typeof screenAreas)[number];
+export function screenArea(box: Box, width: number, height: number): ScreenArea {
+  const third = (v: number, size: number) => Math.min(2, Math.max(0, Math.floor((3 * v) / size)));
+  const col = third((box[0] + box[2]) / 2, width),
+    row = third((box[1] + box[3]) / 2, height);
+  return screenAreas[row * 3 + col];
+}
+/** Text that is only numbers (and the signs around them): damage, counters, timers, HP. */
+export function numbersOnly(text: string) {
+  return /\d/.test(text) && /^[\d\s.,:;%/+\-−×()#]*$/.test(text);
+}
+const textHow =
+  'Every piece of text the screen showed, read by OCR from one frame a second (keyframes); ' +
+  'nothing is labelled. Each line: first-last whole seconds it was on screen, where (a third ' +
+  'of the frame across and down), then the text exactly as read. Pieces that appeared and ' +
+  'went together in the same area are one line, top to bottom and left to right, joined by ' +
+  '" / " (a name plate with its dialogue, a HUD panel, a menu). Text that moves or changes is ' +
+  'a new line.';
+const textDetailHow =
+  'Every piece of text the screen showed, read by OCR from one frame a second (keyframes) at ' +
+  'the frame size given; nothing is labelled. Each line is one piece: first-last seconds on ' +
+  'screen, where (a third of the frame across and down, then the box x0,y0,x1,y1 in pixels), ' +
+  'how long it stayed up and on how many keyframes, the engine confidence 0-1, then the text ' +
+  'exactly as read. OCR can misread a letter, so treat low confidence as unsure.';
+/** Where a recording's screen text pass stands when it has no lines yet. */
+function screenTextWait(source: AgentReadSource, recordingId: string) {
+  const passes = (source.jobs?.() || []).filter(
+    (j) => j.sourceId === recordingId && j.kind === 'text',
+  );
+  const active =
+    passes.find((j) => j.state === 'running') || passes.find((j) => j.state === 'queued');
+  const unknown = 'Until then nothing is known about its on-screen text; do not read that as none.';
+  if (active?.state === 'running')
+    return {
+      state: 'reading',
+      progress: round(active.progress),
+      note: `Virtual Cut is reading this recording's screen text (${Math.floor(active.progress * 100)}%). Ask again later. ${unknown}`,
+    };
+  if (active)
+    return {
+      state: 'waiting',
+      progress: round(active.progress),
+      note: `This recording's screen text pass is waiting (${active.message}). Ask again later. ${unknown}`,
+    };
+  const engine = source.screenTextEngine?.() || '';
+  if (engine)
+    return {
+      state: 'engine not installed',
+      note: `${engine} Ask the user to set up the screen text engine (Transcript window, engine settings), then press Analyse picture now on the recording's card. ${unknown}`,
+    };
+  const failed = passes.find((j) => j.state === 'failed');
+  if (failed && passes.every((j) => j.updated <= failed.updated))
+    return {
+      state: 'failed',
+      note: `The screen text pass failed (${failed.message}). The user can start it again with Analyse picture now on the recording's card. ${unknown}`,
+    };
+  return {
+    state: 'not analysed',
+    note: `Virtual Cut has not read this recording's screen text yet. Ask the user to press Analyse picture now (the scan icon) on its card. ${unknown}`,
+  };
+}
+
+/** Screen text of one recording between two times, as text lines (VC-191). */
+export function screenTextLines(
+  source: AgentReadSource,
+  input: {
+    recordingId: string;
+    start?: number;
+    end?: number;
+    areas?: readonly ScreenArea[];
+    minSeconds?: number;
+    numbers?: boolean;
+    /** Only pieces the engine read at least this sure of, 0 to 1. */
+    minConfidence?: number;
+    /** Every piece on its own line with its box, keyframes and confidence (M391). */
+    detail?: boolean;
+    cursor?: string;
+  },
+) {
+  const recording = findRecording(source, input.recordingId);
+  const start = input.start ?? 0,
+    end = Math.min(input.end ?? Number.POSITIVE_INFINITY, recording.duration);
+  if (!Number.isFinite(start) || start < 0 || !(end > start))
+    throw new AgentReadError(
+      'Give start and end in seconds inside the recording, with end after start.',
+    );
+  const minSeconds = input.minSeconds ?? 0;
+  if (!Number.isFinite(minSeconds) || minSeconds < 0)
+    throw new AgentReadError('min_seconds must be 0 or more.');
+  const minConfidence = input.minConfidence ?? 0;
+  if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1)
+    throw new AgentReadError('min_confidence must be between 0 and 1.');
+  let offset = 0;
+  if (input.cursor !== undefined) {
+    offset = Number(input.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new AgentReadError('Invalid cursor.');
+  }
+  const head = {
+    recording: { id: recording.id, title: recording.title },
+    fromSeconds: round(start),
+    toSeconds: round(end),
+  };
+  const stored = source.screenText?.(recording.id);
+  if (!stored)
+    return { ...head, ...screenTextWait(source, recording.id), projectRevision: source.revision };
+  const areas = new Set(input.areas?.length ? input.areas : screenAreas);
+  const lines = stored.lines
+    .map((l) => ({ ...l, area: screenArea(l.box, stored.width, stored.height) }))
+    .filter(
+      (l) =>
+        l.last >= start &&
+        l.first <= end &&
+        areas.has(l.area) &&
+        l.last - l.first >= minSeconds &&
+        l.score >= minConfidence &&
+        (input.numbers !== false || !numbersOnly(l.text)),
+    );
+  // By default, pieces on screen over the same keyframes in the same area are one compact line
+  // (M391); detail lists every piece with its box, keyframes and confidence.
+  const out: { area: ScreenArea; text: string }[] = [];
+  if (input.detail)
+    for (const l of lines)
+      out.push({
+        area: l.area,
+        text:
+          `${l.first.toFixed(1)}-${l.last.toFixed(1)}  ${l.area} ${l.box.join(',')}  ` +
+          `${(l.last - l.first).toFixed(1)}s/${l.seen}kf  ${l.score.toFixed(2)}  ${JSON.stringify(l.text)}`,
+      });
+  else {
+    const groups = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const key = `${l.first}|${l.last}|${l.area}`;
+      const group = groups.get(key);
+      if (group) group.push(l);
+      else groups.set(key, [l]);
+    }
+    for (const group of groups.values()) {
+      // Reading order: rows top to bottom (a piece starting within half a line of the row's
+      // top is on that row), each row left to right.
+      group.sort((a, b) => a.box[1] - b.box[1]);
+      const rows: (typeof lines)[] = [];
+      for (const l of group) {
+        const row = rows.at(-1);
+        if (row && l.box[1] - row[0].box[1] < (row[0].box[3] - row[0].box[1]) / 2) row.push(l);
+        else rows.push([l]);
+      }
+      const text = rows
+        .flatMap((row) => row.sort((a, b) => a.box[0] - b.box[0]))
+        .map((l) => l.text);
+      const { first, last, area } = group[0];
+      out.push({
+        area,
+        text: `${first.toFixed(0)}-${last.toFixed(0)} ${area} ${JSON.stringify(text.join(' / '))}`,
+      });
+    }
+  }
+  const page = out.slice(offset, offset + textPage);
+  const counts: Partial<Record<ScreenArea, number>> = {};
+  for (const l of page) counts[l.area] = (counts[l.area] || 0) + 1;
+  return {
+    ...head,
+    state: 'ready',
+    how: input.detail ? textDetailHow : textHow,
+    ...(input.detail ? { frame: `${stored.width}x${stored.height}` } : {}),
+    totalLines: out.length,
+    areas: counts,
+    lines: page.map((l) => l.text),
+    nextCursor: out.length > offset + textPage ? String(offset + textPage) : undefined,
     projectRevision: source.revision,
   };
 }

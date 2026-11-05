@@ -20,6 +20,7 @@ import {
   validateTranscriptionOptions,
   TRANSCRIPTION_PIPELINE,
 } from './transcription-runtime.cjs';
+import { ScreenTextRuntime } from './screen-text-runtime.cjs';
 import { effectiveContext } from './project-context.js';
 import type {
   TranscriptionOptions,
@@ -61,6 +62,7 @@ import {
   type SplitSnap,
 } from './split-snap.js';
 import {
+  isPass,
   jobLanes,
   laneOf,
   nextJob,
@@ -82,6 +84,14 @@ import {
   type VisualUse,
 } from './visual-events.js';
 import { cpuWorkers, gpuReads, runPass, type PassProgress } from './visual-pass.cjs';
+import {
+  LineJoiner,
+  SCREEN_TEXT_VERSION,
+  keyframeArgs,
+  readSize,
+  unchangedSpans,
+} from './screen-text.js';
+import { readKeyframes } from './screen-text-pass.cjs';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -127,6 +137,7 @@ async function waveform(file: string, sampleRate: number) {
 
 export class ProjectService {
   readonly transcription: TranscriptionRuntime;
+  readonly screenText: ScreenTextRuntime;
   /** The agent's first pass beside the exported state, per batch (VC-182). */
   readonly batchRecords: BatchRecords;
   transcriptSession(sourceId?: string): TranscriptSession | null {
@@ -523,6 +534,7 @@ export class ProjectService {
     private diagnostics?: Diagnostics,
   ) {
     this.transcription = new TranscriptionRuntime(profile, toolsDirectory);
+    this.screenText = new ScreenTextRuntime(profile, toolsDirectory);
     this.batchRecords = new BatchRecords(profile);
     this.batchRecords.log = (event, details) => diagnostics?.record(event, details);
   }
@@ -639,6 +651,7 @@ export class ProjectService {
       if (this.pictureTimer) clearInterval(this.pictureTimer);
       this.pictureTimer = undefined;
       this.pictureProgress.clear();
+      this.textProgress.clear();
       await this.store?.checkpoint('auto', true);
       this.store?.close();
       this.store = null;
@@ -793,6 +806,8 @@ export class ProjectService {
     }
     snapshot.filmstrips = this.filmstripStates(store);
     snapshot.pictures = store.pictureSummaries();
+    snapshot.screenText = store.screenTextSummaries();
+    snapshot.screenTextEngine = this.screenText.problem;
     if (!existsSync(store.data.project.destination))
       snapshot.warning =
         'The destination folder is offline. Your saved project is still available.';
@@ -1998,7 +2013,7 @@ export class ProjectService {
     for (const lane of jobLanes) {
       // A picture pass gives way to anything ranked ahead of it and to its pause rules.
       const current = this.active[lane];
-      if (current?.job.kind === 'visual') {
+      if (current && isPass(current.job)) {
         const why = pictureYields(
           current.job,
           [...this.store.jobs()].reverse(),
@@ -2010,11 +2025,7 @@ export class ProjectService {
       const job = this.nextJob(lane);
       if (!job) continue;
       // Filmstrips go before background picture passes; a pass asked for goes first.
-      if (
-        job.kind === 'visual' &&
-        rank(job) === 3 &&
-        (this.filmstripBuild || this.filmstripSource())
-      )
+      if (isPass(job) && rank(job) === 3 && (this.filmstripBuild || this.filmstripSource()))
         continue;
       // Filmstrips share the media lane and give way to any media job.
       if (lane === 'media') this.filmstripBuild?.controller.abort();
@@ -2022,7 +2033,9 @@ export class ProjectService {
       const work =
         job.kind === 'visual'
           ? this.runPicture(job, controller.signal)
-          : this.run(job, controller.signal);
+          : job.kind === 'text'
+            ? this.runScreenText(job, controller.signal)
+            : this.run(job, controller.signal);
       const finished = work.finally(() => {
         this.active[lane] = null;
         this.pump();
@@ -2080,9 +2093,7 @@ export class ProjectService {
     const s = this.store;
     if (!s) return;
     const jobs = [...s.jobs()].reverse();
-    const passes = jobs.filter(
-      (j) => j.kind === 'visual' && ['queued', 'running'].includes(j.state),
-    );
+    const passes = jobs.filter((j) => isPass(j) && ['queued', 'running'].includes(j.state));
     const conditions = this.pictureConditions();
     for (const job of passes) {
       if (job.state !== 'queued') continue;
@@ -2139,9 +2150,219 @@ export class ProjectService {
     for (const sourceId of new Set(sourceIds))
       if (!s.data.model.recordings.some((r) => r.id === sourceId))
         throw new Error('Recording not found.');
-    for (const sourceId of new Set(sourceIds)) this.enqueuePicture(sourceId, 'user');
+    for (const sourceId of new Set(sourceIds)) {
+      this.enqueuePicture(sourceId, 'user');
+      this.enqueueScreenText(sourceId, 'user');
+    }
     this.pump();
     return this.snapshot();
+  }
+  // ---- Screen text pass (VC-141) ----
+  // Lines read so far by pass, kept while it waits so it carries on after the last keyframe.
+  private textProgress = new Map<string, { joiner: LineJoiner; elapsedMs: number }>();
+  private enqueueScreenText(sourceId: string, origin: 'user' | 'background') {
+    const s = this.require();
+    const r = s.data.model.recordings.find((r) => r.id === sourceId);
+    if (!r || r.availability !== 'ready' || r.retained) return false;
+    // Without the engine there is nothing to queue; cards and Jobs link to its setup.
+    if (this.screenText.problem) return false;
+    const queued = s
+      .jobs()
+      .find(
+        (j) =>
+          j.sourceId === sourceId && j.kind === 'text' && ['queued', 'running'].includes(j.state),
+      );
+    if (queued) {
+      if (origin === 'user' && queued.origin === 'background')
+        s.putJob({ ...queued, origin, updated: new Date().toISOString() });
+      return true;
+    }
+    if (s.screenText(sourceId)) return false;
+    s.putJob({
+      id: randomUUID(),
+      sourceId,
+      kind: 'text',
+      origin,
+      state: 'queued',
+      progress: 0,
+      message: 'Waiting',
+      updated: new Date().toISOString(),
+    });
+    return true;
+  }
+  private async runScreenText(job: MediaJob, signal: AbortSignal) {
+    const s = this.require(),
+      source = s.sources().find((x) => x.id === job.sourceId),
+      record = s.data.model.recordings.find((r) => r.id === job.sourceId);
+    const progress = this.textProgress.get(job.id) ?? { joiner: new LineJoiner(), elapsedMs: 0 };
+    this.textProgress.set(job.id, progress);
+    const began = performance.now();
+    this.diagnostics?.record('job-start', {
+      jobId: job.id,
+      sourceId: job.sourceId,
+      projectId: s.data.project.id,
+      kind: job.kind,
+    });
+    let fraction = job.progress || 0,
+      last = 0,
+      use: 'gpu' | 'cpu' | undefined;
+    const elapsed = () => progress.elapsedMs + Math.round(performance.now() - began);
+    const put = (force = false) => {
+      if (!force && Date.now() - last < 500) return;
+      last = Date.now();
+      s.putJob({
+        ...job,
+        state: 'running',
+        progress: fraction,
+        use,
+        message: 'Reading screen text',
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    };
+    job = { ...job, started: job.started || new Date().toISOString() };
+    put(true);
+    let failureCode: string | undefined;
+    try {
+      if (!source || !record || record.availability !== 'ready')
+        throw new Error('Source file is not registered. Import it again.');
+      const problem = this.screenText.problem;
+      if (problem) throw new Error(problem);
+      const actual = await identify(source.file, source.id).catch(() => {
+        throw new Error('The recording could not be read. Relink it, then retry.');
+      });
+      if (actual.fingerprint !== source.fingerprint || actual.modified !== source.modified)
+        throw new Error(
+          'Source changed since import. Relink an unchanged copy or import it as new.',
+        );
+      const offset = record.sourceStart || 0;
+      const size = readSize(record.width, record.height);
+      const joiner = progress.joiner;
+      const resumed = Number.isFinite(joiner.last);
+      // The pass gives way like the picture pass: to work ranked ahead of it and its pause rules.
+      const watch = setInterval(() => {
+        const why = pictureYields(
+          job,
+          [...s.jobs()].reverse(),
+          this.running(),
+          this.pictureConditions(),
+        );
+        if (why) this.active.media?.controller.abort(new PictureYield(why));
+      }, 1000);
+      let result;
+      try {
+        result = await readKeyframes(
+          this.screenText.settings,
+          {
+            ffmpeg: this.tool('ffmpeg'),
+            args: keyframeArgs({
+              file: source.file,
+              offset,
+              from: resumed ? joiner.last : 0,
+              size,
+              sourceHeight: record.height,
+            }),
+            width: size.width,
+            height: size.height,
+            same: unchangedSpans(s.pictureEvents(source.id, false)?.events, offset),
+            after: resumed ? offset + joiner.last : undefined,
+          },
+          (frame) => {
+            const time = Math.max(0, frame.time - offset);
+            if (!(time > joiner.last)) return;
+            if ('same' in frame) joiner.same(time);
+            else joiner.frame(time, frame.lines);
+            fraction = Math.max(fraction, Math.min(0.99, time / Math.max(record.duration, 0.001)));
+            put();
+          },
+          signal,
+          undefined,
+          (gpu) => {
+            use = gpu ? 'gpu' : 'cpu';
+            put(true);
+          },
+        );
+      } finally {
+        clearInterval(watch);
+      }
+      const final = await stat(source.file);
+      if (
+        this.store !== s ||
+        final.size !== source.bytes ||
+        final.mtimeMs !== source.modified ||
+        !s.sources().some((x) => x.id === source.id && x.fingerprint === source.fingerprint)
+      )
+        throw new Error('Recording changed while its screen text was read.');
+      if (!joiner.keyframes) throw new Error('The screen text pass found no keyframes.');
+      const stored = {
+        version: SCREEN_TEXT_VERSION,
+        width: size.width,
+        height: size.height,
+        lines: joiner.lines(),
+        keyframes: joiner.keyframes,
+        read: joiner.read,
+        gpu: result.gpu,
+        elapsedMs: elapsed(),
+        peakMemoryBytes: result.peakMemoryBytes,
+        created: new Date().toISOString(),
+      };
+      s.putScreenText(source.id, source.fingerprint, stored);
+      this.textProgress.delete(job.id);
+      const count = `${stored.lines.length} line${stored.lines.length === 1 ? '' : 's'}`;
+      s.putJob({
+        ...job,
+        state: 'succeeded',
+        progress: 1,
+        use: stored.gpu ? 'gpu' : 'cpu',
+        message: `Screen text ready · ${count} from ${stored.keyframes} keyframes (${stored.keyframes - stored.read} unchanged)${stored.gpu ? '' : ' · read on the CPU'}`,
+        elapsedMs: stored.elapsedMs,
+        updated: new Date().toISOString(),
+      });
+    } catch (e) {
+      failureCode = errorCode(e);
+      const reason: unknown = signal.reason;
+      if (signal.aborted && (reason instanceof PictureYield || this.switching)) {
+        // Waits with the lines it has read and carries on after the last keyframe.
+        progress.elapsedMs = elapsed();
+        s.putJob({
+          ...job,
+          state: 'queued',
+          progress: fraction,
+          message: reason instanceof PictureYield ? reason.message : 'Waiting',
+          elapsedMs: elapsed(),
+          updated: new Date().toISOString(),
+        });
+        if (this.switching) this.textProgress.delete(job.id);
+        return;
+      }
+      this.textProgress.delete(job.id);
+      s.putJob({
+        ...job,
+        state: signal.aborted ? 'cancelled' : 'failed',
+        progress: 0,
+        message: signal.aborted ? 'Cancelled' : e instanceof Error ? e.message : String(e),
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    } finally {
+      const finalJob = s.jobs().find((j) => j.id === job.id);
+      this.diagnostics?.record(
+        finalJob?.state === 'succeeded'
+          ? 'job-end'
+          : finalJob?.state === 'queued'
+            ? 'job-paused'
+            : signal.aborted
+              ? 'job-cancelled'
+              : 'job-failed',
+        {
+          jobId: job.id,
+          sourceId: job.sourceId,
+          kind: job.kind,
+          elapsedMs: elapsed(),
+          errorCode: finalJob?.state === 'queued' ? undefined : failureCode,
+        },
+      );
+    }
   }
   private async runPicture(job: MediaJob, signal: AbortSignal) {
     const s = this.require(),
@@ -2358,7 +2579,7 @@ export class ProjectService {
       this.active.media ||
       this.switching ||
       this.filmstripBuild ||
-      (next && !(next.kind === 'visual' && rank(next) === 3))
+      (next && !(isPass(next) && rank(next) === 3))
     )
       return;
     const source = this.filmstripSource();
@@ -2810,8 +3031,11 @@ export class ProjectService {
         }
         // The picture pass (VC-180) follows in the background, after the transcript. Checks
         // run with it manual so imports elsewhere in the suite don't start GPU work.
-        if (process.env.VIRTUAL_CUT_PICTURE_PASS !== 'manual')
+        if (process.env.VIRTUAL_CUT_PICTURE_PASS !== 'manual') {
           this.enqueuePicture(source.id, 'background');
+          // Screen text (VC-141) follows the picture pass.
+          this.enqueueScreenText(source.id, 'background');
+        }
       } else {
         // Publish a fresh generation. Windows may lock a preview currently playing;
         // replacing that file breaks waveform upgrades and retry preparation.

@@ -217,6 +217,19 @@ export function TranscriptWindow() {
     };
   }, [api, sourceId, acceptSession]);
   useEffect(() => api.onSource(setSourceId), [api]);
+  // The main window's screen text setup link (VC-141): show the engine settings and bring that
+  // engine's card (#screen-text-setup, VC-192) into view.
+  useEffect(() => {
+    const show = (engine: string) => {
+      if (!engine) return;
+      setSetup(true);
+      requestAnimationFrame(() =>
+        document.getElementById(`${engine}-setup`)?.scrollIntoView({ block: 'start' }),
+      );
+    };
+    void api.takeEngineSetup().then(show, () => {});
+    return api.onEngineSetup(show);
+  }, [api]);
   // Name the recording in the title bar, so a window left open on another one is obvious.
   const sessionTitle = session?.title;
   useEffect(() => {
