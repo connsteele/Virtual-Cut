@@ -173,6 +173,8 @@ export interface Model {
   transcriptEdits?: import('./transcript-contracts.js').TranscriptEdit[];
   /** Short microphone lines with no speech, left out of the transcript (VC-166). */
   droppedLines?: import('./transcript-contracts.js').DroppedLine[];
+  /** Words restored from a heard-as correction; a later apply leaves them as heard (VC-194). */
+  heardAsKept?: string[];
   cueDecisions?: import('./transcript-contracts.js').CueDecision[];
   contexts?: import('./project-context.js').CreativeContext[];
   selectedRecordingId?: string;

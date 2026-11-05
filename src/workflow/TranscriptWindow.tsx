@@ -10,6 +10,7 @@ import type {
   TranscriptSummary,
 } from '../../electron/transcript-contracts';
 import { correctionId, cueCandidate, reviewedCue } from '../../electron/transcript-edits';
+import { heardAsUsed } from '../../electron/heard-as';
 import { readTranscriptView, saveTranscriptView } from '../../electron/transcript-view';
 import type { TranscriptView } from '../../electron/transcript-view';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
@@ -909,6 +910,19 @@ export function TranscriptWindow() {
               {selected.guardRedos
                 ? ` · ${selected.guardRedos} ${selected.guardRedos === 1 ? 'span' : 'spans'} redone without hints`
                 : ''}
+              {(() => {
+                // VC-194: the game's heard-as spellings at work in what is on screen now.
+                const ids = new Set([selected.id, combined?.game.id]);
+                const used = heardAsUsed(session.edits.filter((e) => ids.has(e.transcriptId)));
+                return used.length ? (
+                  <span data-heard-as-used>
+                    {' · heard-as spellings used: '}
+                    {used
+                      .map((u) => `${u.pair} (${u.words} ${u.words === 1 ? 'word' : 'words'})`)
+                      .join(', ')}
+                  </span>
+                ) : null;
+              })()}
               {' · Help'}
             </summary>
             <p>Speech model: {selected.model}</p>
@@ -923,6 +937,12 @@ export function TranscriptWindow() {
               you.”, are left out. Original shows them as “Dropped: no speech”; Undo in the main
               window brings them back. With vocabulary hints, a hinted line that comes back as a
               stock phrase or with far too few words is recognized again without hints.
+            </p>
+            <p>
+              Heard-as spellings from the game’s names and terms, such as Cai heard as Kai, are
+              written as corrections after recognition, in game and microphone transcripts. Original
+              shows what was heard; Restore original on a word or Undo in the main window takes them
+              back, and a restored word stays as heard. Your own corrections are never replaced.
             </p>
             <p>
               Spoken microphone cues: Marker, Note, Split, Clip start and Clip end. Marker is
@@ -1047,7 +1067,7 @@ export function TranscriptWindow() {
                               key={index}
                               className={`${playing ? s.active : ''} ${focused ? s.selected : ''} ${word.probability < 0.5 ? s.uncertain : ''} ${correction && !original ? s.corrected : ''}`}
                               data-active-word={playing ? 'true' : undefined}
-                              title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}`}
+                              title={`${time(word.start)} · confidence ${Math.round(word.probability * 100)}%${correction ? ` · original: ${word.text.trim()}` : ''}${correction?.heardAs ? ` · heard-as spelling from ${owner.context.gameName ? `${owner.context.gameName}’s` : 'the game’s'} names and terms` : ''}`}
                               onClick={() => seek(segment, index, false, owner)}
                               onDoubleClick={() =>
                                 owner.state === 'complete' &&
@@ -1084,6 +1104,11 @@ export function TranscriptWindow() {
                     {editing && (
                       <p className={s.editHint} aria-label="Transcript correction">
                         Enter saves · Escape cancels · Original: {originalText}
+                        {session.edits.find(
+                          (e) => e.id === correctionId(owner.id, segment.id, editing.wordIndex),
+                        )?.heardAs
+                          ? ` · heard-as spelling from ${owner.context.gameName ? `${owner.context.gameName}’s` : 'the game’s'} names and terms`
+                          : ''}
                         {editing.wordIndex == null
                           ? ' · the line keeps its phrase timing'
                           : ' · one word; use Edit phrase to add or remove words'}

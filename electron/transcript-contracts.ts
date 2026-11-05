@@ -78,7 +78,14 @@ export interface TranscriptSummary {
   device: string;
   created: string;
   completed?: string;
-  context: { gameId?: string; gameName?: string; vocabulary: string; brief: string };
+  context: {
+    gameId?: string;
+    gameName?: string;
+    vocabulary: string;
+    brief: string;
+    /** The game's Heard as list when this transcription started (VC-194); absent when empty. */
+    heardAs?: import('./heard-as.js').HeardAs[];
+  };
   segmentCount: number;
   wordCount: number;
   elapsedMs?: number;
@@ -92,6 +99,8 @@ export interface TranscriptEdit {
   /** A word replacement keeps its original timing; phrase edits explicitly keep only phrase timing. */
   wordIndex?: number;
   text: string;
+  /** The spelling heard, when a game's Heard as list made this correction (VC-194). */
+  heardAs?: string;
 }
 export interface CueDecision {
   transcriptId?: string;

@@ -163,6 +163,9 @@ export function applyTranscriptCommand(
     if (JSON.stringify(current || null) !== command.expected)
       throw new Error('This correction changed elsewhere. Refresh it before saving.');
     next.transcriptEdits = (model.transcriptEdits || []).filter((e) => e.id !== id);
+    // VC-194: a restored heard-as word stays as heard; a later apply leaves it alone.
+    if (command.action === 'restore' && current?.heardAs && !model.heardAsKept?.includes(id))
+      next.heardAsKept = [...(model.heardAsKept || []), id];
     if (command.action === 'correct') {
       if (typeof command.text !== 'string' || !command.text.trim() || command.text.length > 10000)
         throw new Error('Enter a correction of up to 10,000 characters.');

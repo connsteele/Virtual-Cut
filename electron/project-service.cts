@@ -111,6 +111,14 @@ import { transcriptOutputs, writeSubtitleSidecars } from './subtitle-sidecar.cjs
 import { BatchRecords } from './batch-records.cjs';
 import { batchOf } from './batch-record.js';
 import { dropLines } from './dropped-lines.js';
+import {
+  cleanHeardAs,
+  heardAsEdits,
+  heardAsRules,
+  hintVocabulary,
+  validHeardAs,
+  type HeardAs,
+} from './heard-as.js';
 
 async function waveform(file: string, sampleRate: number) {
   const handle = await open(file, 'r');
@@ -206,11 +214,14 @@ export class ProjectService {
       throw new Error('Choose an inspected recording in this batch.');
     if (!this.transcription.configured) throw new Error(this.transcription.problem);
     const effective = effectiveContext(s.data.model.contexts, batchId);
+    const heardAs = cleanHeardAs(effective.game?.heardAs);
     const context = {
       gameId: effective.game?.id,
       gameName: effective.game?.name,
-      vocabulary: options.vocabulary ? effective.game?.vocabulary || '' : '',
+      // VC-164 hints carry the game's spellings, including each Heard as row's (VC-194).
+      vocabulary: options.vocabulary ? hintVocabulary(effective.game) : '',
       brief: effective.brief,
+      ...(heardAs.length ? { heardAs } : {}),
     };
     const contextId = s.transcripts.registerContext(context);
     const runtimeSignature = JSON.stringify({
@@ -913,6 +924,47 @@ export class ProjectService {
   async checkpoint(id: string) {
     await this.require(id).checkpoint('manual');
     return this.snapshot();
+  }
+  /**
+   * VC-194: what a game's Heard as rows would correct in this project's finished transcripts of
+   * that game, and, with `apply`, the corrections made as one edit (Undo takes them all back).
+   */
+  async heardAs(id: string, gameId: string, rows: HeardAs[], apply = false) {
+    const s = this.require(id);
+    if (typeof gameId !== 'string' || !gameId || gameId.length > 200 || !validHeardAs(rows))
+      throw new Error('Choose a game with valid heard-as spellings.');
+    const rules = heardAsRules(cleanHeardAs(rows)).rules;
+    const recordings = new Set(s.data.model.recordings.map((r) => r.id));
+    const edits: import('./transcript-contracts.js').TranscriptEdit[] = [];
+    const heard = new Set<string>();
+    let transcripts = 0,
+      own = 0;
+    for (const transcript of s.transcripts.list())
+      if (
+        transcript.state === 'complete' &&
+        transcript.context.gameId === gameId &&
+        recordings.has(transcript.sourceId)
+      ) {
+        const found = heardAsEdits(
+          s.data.model,
+          transcript,
+          s.transcripts.segments(transcript.id, -1, false, true),
+          rules,
+        );
+        own += found.own;
+        if (found.edits.length) transcripts++;
+        for (const edit of found.edits) {
+          edits.push(edit);
+          heard.add(edit.heardAs!.replace(/^./u, (c) => c.toLocaleUpperCase()));
+        }
+      }
+    const preview = { transcripts, words: edits.length, own, heard: [...heard] };
+    if (!apply) return { preview };
+    if (edits.length) {
+      const model = s.data.model;
+      s.save(model, { ...model, transcriptEdits: [...(model.transcriptEdits || []), ...edits] });
+    }
+    return { preview, snapshot: await this.snapshot() };
   }
   async autosave(id: string) {
     await this.require(id).checkpoint('auto');
@@ -2820,8 +2872,11 @@ export class ProjectService {
             : {
                 gameId: context.game?.id,
                 gameName: context.game?.name,
-                vocabulary: request.vocabulary ? context.game?.vocabulary || '' : '',
+                vocabulary: request.vocabulary ? hintVocabulary(context.game) : '',
                 brief: context.brief,
+                ...(cleanHeardAs(context.game?.heardAs).length
+                  ? { heardAs: cleanHeardAs(context.game?.heardAs) }
+                  : {}),
               },
           segmentCount: 0,
           wordCount: 0,
@@ -2940,10 +2995,21 @@ export class ProjectService {
         // VC-166: short microphone lines with no voice under them, or stock phrases, are dropped
         // as one edit, so Undo brings them back. The recognition itself stays as it was heard.
         const dropped = dropLines(finished, s.transcripts.segments(job.id, -1, false, true));
+        // VC-194: the game's heard-as spellings become visible corrections, in the same edit.
+        const heard = heardAsEdits(
+          s.data.model,
+          finished,
+          s.transcripts.segments(job.id, -1, false, true),
+          heardAsRules(finished.context.heardAs).rules,
+        ).edits;
         s.transcripts.put(finished);
-        if (dropped.length) {
+        if (dropped.length || heard.length) {
           const model = s.data.model;
-          s.save(model, { ...model, droppedLines: [...(model.droppedLines || []), ...dropped] });
+          s.save(model, {
+            ...model,
+            droppedLines: [...(model.droppedLines || []), ...dropped],
+            transcriptEdits: [...(model.transcriptEdits || []), ...heard],
+          });
         }
       } else if (job.kind === 'inspect') {
         const info = await inspectMedia(source.file, source.id, this.tool('ffprobe'), signal, (n) =>

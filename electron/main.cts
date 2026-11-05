@@ -395,6 +395,9 @@ function registerDesktopApi(): void {
     shell.showItemInFolder(await projects.sourceLocation(id, sourceId)),
   );
   workspace('history', (id, direction) => projects.history(id, direction));
+  workspace('heardAs', (id, gameId, rows, apply) =>
+    projects.heardAs(id, gameId, rows, apply === true),
+  );
   workspace('batch', (id, name) => projects.batch(id, name));
   workspace('select-batch', (id, batchId) => projects.selectBatch(id, batchId));
   workspace('removeRecording', (id, batchId, sourceId) =>

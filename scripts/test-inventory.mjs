@@ -24,6 +24,7 @@ export const fast = [
   'screen-text-runtime.test.mjs',
   'agent-access.test.mjs',
   'look-plan.test.mjs',
+  'heard-as.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -143,6 +144,8 @@ export const other = {
     'Scores spoken-cue recognition against labelled recordings (VC-128); copies them, needs a local speech engine.',
   'hint-guard-study.mjs':
     'Checks vocabulary hints and their guard against tagged notes (VC-164); copies the recording, needs a local speech engine and the GPU.',
+  'heard-as-study.mjs':
+    'Runs heard-as rows over saved transcripts and lists every word they change (VC-194); on demand, reads only the files it is given.',
   'dropped-lines-study.mjs':
     'Checks dropped microphone lines against tagged notes (VC-166); copies the recording, needs a local speech engine and the GPU.',
   'job-lanes-ui.mjs':

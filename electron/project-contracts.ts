@@ -176,6 +176,19 @@ export interface ProjectApi {
   revealSave(id: string, saveId: string): Promise<void>;
   revealSource(id: string, sourceId: string): Promise<void>;
   history(id: string, direction: 'undo' | 'redo'): Promise<ProjectSnapshot>;
+  /**
+   * VC-194: what a game's Heard as rows would correct in this project's finished transcripts of
+   * that game; with `apply`, makes those corrections as one edit and returns the new snapshot.
+   */
+  heardAs(
+    id: string,
+    gameId: string,
+    rows: import('./heard-as.js').HeardAs[],
+    apply?: boolean,
+  ): Promise<{
+    preview: { transcripts: number; words: number; own: number; heard: string[] };
+    snapshot?: ProjectSnapshot;
+  }>;
   batch(id: string, name: string): Promise<ProjectSnapshot>;
   selectBatch(id: string, batchId: string): Promise<ProjectSnapshot>;
   removeRecording(id: string, batchId: string, sourceId: string): Promise<ProjectSnapshot>;

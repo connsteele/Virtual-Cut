@@ -13,11 +13,33 @@ import type {
 import { Button, Field, Modal } from './ui';
 import { CleanupFiles, ProjectStorage, storageSize as size } from './ProjectStorage';
 import s from './Workflow.module.css';
-import { ContextEditor, defaultContext } from './ContextEditor';
+import { ContextEditor, defaultContext, type HeardAsOffer } from './ContextEditor';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 import { background } from './background';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
+/** VC-194: the open project's transcripts of a game can take its heard-as spellings. */
+function heardAsOffer(w: Workspace): HeardAsOffer | undefined {
+  const id = w.snapshot?.project.id;
+  if (!id) return undefined;
+  const api = window.virtualCut!.project;
+  return {
+    preview: (gameId, rows) =>
+      api.heardAs(id, gameId, rows).then(
+        (r) => r.preview,
+        () => null,
+      ),
+    apply: async (gameId, rows) => {
+      let preview = null;
+      await w.run(async () => {
+        const result = await api.heardAs(id, gameId, rows, true);
+        preview = result.preview;
+        return result.snapshot;
+      });
+      return preview;
+    },
+  };
+}
 export function ProjectPanel({
   workspace: w,
   onClose,
@@ -201,6 +223,7 @@ export function ProjectPanel({
             <summary>Project game and video brief</summary>
             <ContextEditor
               contexts={w.model.contexts}
+              heardAsOffer={heardAsOffer(w)}
               value={w.model.contexts?.find((c) => c.id === 'project') || defaultContext('project')}
               onChange={(context) =>
                 w.setModel((model) => ({
@@ -601,6 +624,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
         <Modal title="Batch game and video brief" onClose={() => setContextOpen(false)}>
           <ContextEditor
             contexts={w.model.contexts}
+            heardAsOffer={heardAsOffer(w)}
             value={
               w.model.contexts?.find((c) => c.id === p.activeBatchId) ||
               defaultContext(p.activeBatchId)
