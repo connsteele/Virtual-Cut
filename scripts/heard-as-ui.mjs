@@ -294,6 +294,11 @@ try {
   await original.check();
   await expect(phrases).toContainText("Kai, I don't think it's as simple as that.");
   await original.uncheck();
+  // Wait for the corrected text to render again, so both clicks land on the same word
+  // (CI once double-clicked "The" while the rows were still redrawing).
+  await expect(phrases).toContainText("Cai, I don't think it's as simple as that.");
+  await word.scrollIntoViewIfNeeded();
+  await expect(word).toBeVisible();
   await word.dblclick();
   const hint = view.getByLabel('Transcript correction');
   await expect(hint).toContainText(
