@@ -83,6 +83,7 @@ export const desktop = [
   'visual-pass-ui.mjs',
   'screen-text-ui.mjs',
   'look-ui.mjs',
+  'follow-dblclick-ui.mjs',
 ];
 export const dependencies = {
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
@@ -111,6 +112,7 @@ export const dependencies = {
   'filmstrip-ui-checks.mjs': ['filmstrip-checks.mjs'],
   'filmstrip-reuse-checks.mjs': ['filmstrip-checks.mjs'],
   'review-planning-ui.mjs': ['review-planning-native.mjs'],
+  'follow-dblclick-ui.mjs': ['transcript-storage-checks.mjs'],
 };
 // With --jobs above 1, these run with nothing beside them: they measure real decoding and
 // timers while seeking or playing.

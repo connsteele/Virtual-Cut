@@ -142,6 +142,11 @@ export function TranscriptWindow() {
   const followLookup = useRef<{ owner: string } | undefined>(undefined);
   const reading = useRef<{ owner: string; view: TranscriptView } | undefined>(undefined);
   const restore = useRef<{ identity: string; scroll: number } | undefined>(undefined);
+  // VC-197: a click in the transcript seeks to a word that is already on screen, so Follow leaves
+  // the list still until playback moves off that word. Scrolling there would move another word
+  // under a double-click's second click. Positions sent before the click's seek landed (the main
+  // window sends one every 120 ms while playing) don't count as moving off it.
+  const clicked = useRef<{ sourceId: string; start: number; end: number; at: number }>(undefined);
   const remember = useCallback(() => {
     const storage = viewStorage();
     if (reading.current && storage)
@@ -451,6 +456,15 @@ export function TranscriptWindow() {
       position.sourceId !== session?.sourceId
     )
       return;
+    const click = clicked.current;
+    if (click) {
+      const onWord =
+        click.sourceId === position.sourceId &&
+        position.time >= click.start &&
+        position.time < click.end;
+      if (onWord || performance.now() - click.at < 500) return;
+      clicked.current = undefined;
+    }
     if (
       position.time >= (usablePage.followStart ?? 0) &&
       position.time < (usablePage.followEnd ?? Infinity)
@@ -532,6 +546,12 @@ export function TranscriptWindow() {
       setSelection(undefined);
     }
     const target = word?.start ?? segment.start;
+    clicked.current = {
+      sourceId: session.sourceId,
+      start: target,
+      end: (word ?? segment.words[0])?.end ?? segment.end,
+      at: performance.now(),
+    };
     setPosition({ projectId: session.projectId, sourceId: session.sourceId, time: target });
     void api.seek(session.projectId, session.sourceId, target).catch((e) => setError(String(e)));
   }
@@ -666,6 +686,7 @@ export function TranscriptWindow() {
                 onClick={() => {
                   setFollow(!follow);
                   if (!follow) {
+                    clicked.current = undefined;
                     setFilter('all');
                     setSearch('');
                     setSelection(undefined);
