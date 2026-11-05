@@ -85,6 +85,9 @@ try {
   const transcript = await pending;
   transcript.setDefaultTimeout(20000);
   transcript.on('pageerror', (e) => errors.push(e.message));
+  // The window event can come before the page has its #transcript address, which the resize
+  // below looks it up by.
+  await transcript.waitForURL(/#transcript$/);
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
       .find((w) => w.webContents.getURL().endsWith('#transcript'))
