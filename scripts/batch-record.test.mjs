@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   addSubmission,
+  addWithdrawal,
   batchOf,
   finalState,
   removedSpans,
@@ -504,4 +505,123 @@ console.log('batch record checks passed');
   );
   assert.equal(settleExports(record, exports), false, 'nothing left to change');
   assert.equal(settleExports({}, exports), false, 'no final state yet');
+}
+
+// VC-201: a withdrawal is the agent's, kept apart from the user's rejections. It ends the first
+// pass, and the final state labels each withdrawn proposal with its reason.
+{
+  const clean = { ...emptyModel(), recordings: [recording] };
+  const pass = [proposal('w1', 'mark'), proposal('w2', 'mark', { time: 30 })];
+  let kept = addSubmission(undefined, {
+    project,
+    batch,
+    model: clean,
+    proposals: pass,
+    stored: pass,
+    ...read,
+    now: '2026-11-06T07:00:00Z',
+  });
+  const withdrawn = { at: '2026-11-06T07:10:00Z', clientId: 'cl', reason: 'superseded' };
+  kept = addWithdrawal(kept, {
+    project,
+    batch,
+    recordingId: 'r1',
+    agent: 'Claude Code',
+    proposalIds: ['w1'],
+    reason: 'superseded',
+    now: withdrawn.at,
+  });
+  kept = addWithdrawal(kept, {
+    project,
+    batch,
+    recordingId: 'r1',
+    agent: 'Claude Code',
+    proposalIds: ['w2'],
+    now: '2026-11-06T07:11:00Z',
+  });
+  assert.deepEqual(kept.withdrawals, [
+    {
+      at: withdrawn.at,
+      recordingId: 'r1',
+      agent: 'Claude Code',
+      proposalIds: ['w1'],
+      reason: 'superseded',
+    },
+    { at: '2026-11-06T07:11:00Z', recordingId: 'r1', agent: 'Claude Code', proposalIds: ['w2'] },
+  ]);
+  assert.equal(
+    addWithdrawal(undefined, {
+      project,
+      batch,
+      recordingId: 'r1',
+      agent: 'Claude Code',
+      proposalIds: ['w1'],
+      now: 't',
+    }).firstPass.length,
+    0,
+  );
+  const stored = [
+    { ...pass[0], withdrawn },
+    { ...pass[1], withdrawn: { at: 't2', clientId: 'cl' } },
+  ];
+  const second = [proposal('w3', 'mark', { time: 18, submissionId: 's2' })];
+  kept = addSubmission(kept, {
+    project,
+    batch,
+    model: clean,
+    proposals: second,
+    stored: [...stored, ...second],
+    ...read,
+    now: '2026-11-06T07:12:00Z',
+  });
+  assert.equal(kept.runs[1].afterDecisions, true, 'the second pass is not first pass');
+  assert.deepEqual(
+    kept.firstPass[0].proposals.map((p) => p.id),
+    ['w1', 'w2'],
+  );
+  const done = finalState(kept, {
+    project,
+    batch,
+    model: clean,
+    proposals: [...stored, ...second],
+    exports: [],
+    projectRevision: 5,
+    now: '2026-11-06T08:00:00Z',
+  });
+  assert.deepEqual(
+    done.final.proposals.map((p) => [p.id, p.status, p.withdrawn]),
+    [
+      ['w1', 'withdrawn', { at: withdrawn.at, reason: 'superseded' }],
+      ['w2', 'withdrawn', { at: 't2' }],
+      ['w3', 'pending', undefined],
+    ],
+  );
+
+  // On disk: one entry per recording, in that recording's batch; a recording outside every
+  // batch is skipped.
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'vc-withdrawals-'));
+  try {
+    const records = new BatchRecords(profile);
+    const store = {
+      data: {
+        project,
+        model: {
+          ...clean,
+          recordings: [recording, { ...recording, id: 'r4', batchIds: [] }],
+        },
+        batches: [{ ...batch, created: '' }],
+        activeBatchId: 'b1',
+        revision: 4,
+      },
+    };
+    records.withdrew(store, []);
+    assert.equal(records.read('p1', 'b1'), undefined);
+    records.withdrew(store, [pass[0], pass[1], { ...pass[0], id: 'w9', sourceId: 'r4' }], 'gone');
+    assert.deepEqual(
+      records.read('p1', 'b1').withdrawals.map((w) => [w.recordingId, w.proposalIds, w.reason]),
+      [['r1', ['w1', 'w2'], 'gone']],
+    );
+  } finally {
+    await rm(profile, { recursive: true, force: true });
+  }
 }

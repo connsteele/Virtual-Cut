@@ -108,10 +108,20 @@ export interface FinalRecording {
   /** Spans of the recording outside every included clip; absent when it has no clips. */
   removedSpans?: { start: number; end: number }[];
 }
+/** One withdraw_proposals call on one recording (VC-201): the agent's, not the user's. */
+export interface RecordWithdrawal {
+  at: string;
+  recordingId: string;
+  agent: string;
+  proposalIds: string[];
+  reason?: string;
+}
 export interface FinalProposal {
   id: string;
-  status: 'pending' | 'accepted' | 'rejected';
+  /** withdrawn: its agent took it back before the user decided it (VC-201). */
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   decided?: string;
+  withdrawn?: { at: string; reason?: string };
   /** What accepting chose (position, end, title or clip names), before any later change. */
   chosen?: {
     time: number;
@@ -153,6 +163,8 @@ export interface BatchRecord {
   updated: string;
   runs: RecordRun[];
   firstPass: FirstPassRecording[];
+  /** Proposals the agent took back, newest last; absent until it withdraws one (VC-201). */
+  withdrawals?: RecordWithdrawal[];
   /** The state at the latest export in this batch; absent until something is exported. */
   final?: {
     exported: string;
@@ -269,7 +281,11 @@ export function addSubmission(
     : emptyRecord(input.project, input.batch, input.now);
   const first = input.proposals[0];
   const recording = input.model.recordings.find((r) => r.id === first.sourceId)!;
-  const decided = input.stored.some((p) => proposalDecision(input.model.cueDecisions || [], p.id));
+  // A decision or a withdrawal on this recording ends its first pass: what lands after it is a
+  // revised pass (VC-201).
+  const decided = input.stored.some(
+    (p) => p.withdrawn || proposalDecision(input.model.cueDecisions || [], p.id),
+  );
   next.runs.push({
     submissionId: first.submissionId,
     recordingId: recording.id,
@@ -300,6 +316,36 @@ export function addSubmission(
     }
     pass.proposals.push(...input.proposals.map(recordProposal));
   }
+  next.updated = input.now;
+  return next;
+}
+
+/** Proposals on one recording that their agent withdrew in one call. */
+export function addWithdrawal(
+  record: BatchRecord | undefined,
+  input: {
+    project: BatchRecord['project'];
+    batch: BatchRecord['batch'];
+    recordingId: string;
+    agent: string;
+    proposalIds: string[];
+    reason?: string;
+    now: string;
+  },
+): BatchRecord {
+  const next = record
+    ? { ...structuredClone(record), batch: input.batch }
+    : emptyRecord(input.project, input.batch, input.now);
+  next.withdrawals = [
+    ...(next.withdrawals || []),
+    {
+      at: input.now,
+      recordingId: input.recordingId,
+      agent: input.agent,
+      proposalIds: input.proposalIds,
+      ...(input.reason ? { reason: input.reason } : {}),
+    },
+  ];
   next.updated = input.now;
   return next;
 }
@@ -614,8 +660,16 @@ export function finalState(
       const changed = chosen && proposalChanges(p, chosen);
       return {
         id: p.id,
-        status: d?.status || 'pending',
+        status: d?.status || (p.withdrawn ? 'withdrawn' : 'pending'),
         ...(d?.decided ? { decided: d.decided } : {}),
+        ...(!d && p.withdrawn
+          ? {
+              withdrawn: {
+                at: p.withdrawn.at,
+                ...(p.withdrawn.reason ? { reason: p.withdrawn.reason } : {}),
+              },
+            }
+          : {}),
         ...(chosen ? { chosen } : {}),
         ...(changed ? { changed } : {}),
         ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),

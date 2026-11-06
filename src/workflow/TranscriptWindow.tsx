@@ -371,6 +371,8 @@ export function TranscriptWindow() {
     });
     return () => cancelAnimationFrame(frame);
   }, [usablePage]);
+  // Proposals arriving or withdrawn change no project revision; their ids refresh the counts.
+  const proposalIds = (session?.proposals || []).map((p) => p.id).join();
   useEffect(() => {
     let alive = true;
     if (!projectId || !currentId) return;
@@ -407,6 +409,7 @@ export function TranscriptWindow() {
     combined?.game.state,
     editRevision,
     session?.revision,
+    proposalIds,
     pageKey,
   ]);
   useEffect(() => {

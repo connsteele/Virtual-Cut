@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   addSubmission,
+  addWithdrawal,
   batchOf,
   batchRecordVersion,
   finalState,
@@ -68,7 +69,7 @@ export class BatchRecords {
           batch: { id: batch.id, name: batch.name },
           model,
           proposals,
-          stored: store.proposals.list(proposals[0].sourceId),
+          stored: store.proposals.list(proposals[0].sourceId, { withdrawn: true }),
           runIntent: read.runIntent,
           intentGuideVersion,
           transcripts: read.transcripts,
@@ -76,6 +77,30 @@ export class BatchRecords {
           now: new Date().toISOString(),
         }),
       );
+    });
+  }
+  /** The agent withdrew proposals: one entry per recording, in its batch's record (VC-201). */
+  withdrew(store: ProjectStore, proposals: AgentProposal[], reason?: string) {
+    if (!proposals.length) return;
+    this.guard('batch-record', () => {
+      const { project, model, batches, activeBatchId } = store.data;
+      const now = new Date().toISOString();
+      for (const recordingId of new Set(proposals.map((p) => p.sourceId))) {
+        const batch = batches.find((b) => b.id === batchOf(model, activeBatchId, recordingId));
+        if (!batch) continue;
+        const ids = proposals.filter((p) => p.sourceId === recordingId);
+        this.write(
+          addWithdrawal(this.read(project.id, batch.id), {
+            project: { id: project.id, name: project.name },
+            batch: { id: batch.id, name: batch.name },
+            recordingId,
+            agent: ids[0].agent.name,
+            proposalIds: ids.map((p) => p.id),
+            reason,
+            now,
+          }),
+        );
+      }
     });
   }
   /** An export or filing was queued: save the batch's state as it goes out. */
@@ -89,7 +114,7 @@ export class BatchRecords {
           project: { id: project.id, name: project.name },
           batch: { id: batch.id, name: batch.name },
           model,
-          proposals: store.proposals.list(),
+          proposals: store.proposals.list(undefined, { withdrawn: true }),
           exports: store.exports(),
           projectRevision: revision,
           now: new Date().toISOString(),

@@ -22,7 +22,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0012](0012-change-notifications.md)           | Native change notifications instead of renderer polling                     | Accepted                                                        |
 | [0013](0013-filmstrip-tile-files.md)           | Filmstrips made once per recording and kept in the preview cache            | Accepted                                                        |
 | [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed                                                        |
-| [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed                                                        |
+| [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed, amended by [0024](0024-agent-withdrawals.md)          |
 | [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed                                                        |
 | [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed                                                        |
 | [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed                                                        |
@@ -31,6 +31,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0021](0021-screen-text.md)                    | Screen text read once per recording, recorded as facts beside the model     | Proposed                                                        |
 | [0022](0022-look-pictures.md)                  | Agents may look at pictures Virtual Cut renders, off until allowed          | Proposed                                                        |
 | [0023](0023-resolve-helper-transcripts.md)     | The Resolve helper sets transcripts on clips that have none                 | Proposed                                                        |
+| [0024](0024-agent-withdrawals.md)              | Agents withdraw their own pending proposals                                 | Proposed                                                        |
 
 ## Adding a record
 

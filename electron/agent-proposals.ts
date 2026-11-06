@@ -7,14 +7,20 @@ import {
 } from './agent-tools.js';
 import { correctedText, cueCandidate } from './transcript-edits.js';
 import { proposalDecision, proposalIntents, proposalStatus } from './proposal-edits.js';
-import type { AgentProposal, ProposalEvidence, ProposalKind } from './proposal-contracts.js';
+import type {
+  AgentProposal,
+  ProposalEvidence,
+  ProposalKind,
+  ProposalWithdrawal,
+} from './proposal-contracts.js';
 import type { TranscriptSegment } from './transcript-contracts.js';
 import { changesSinceAccepting } from './batch-record.js';
 
 /**
  * Agent proposals over MCP (VC-161/VC-162). `submit_proposals` validates a whole submission
  * against the project and stores it as candidates; nothing changes in the project until the user
- * accepts one on its cue card. `get_proposal_decisions` reads the user's choices back.
+ * accepts one on its cue card. `get_proposal_decisions` reads the user's choices back, and
+ * `withdraw_proposals` lets the agent take back its own proposals still waiting (VC-201).
  */
 const kinds = { marker: 'mark', note: 'note', split: 'cut', clip: 'clip' } as const;
 const kindName = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [v, k])) as Record<
@@ -111,10 +117,30 @@ export const submitInput = z.object({
 export const decisionsInput = z.object({
   recording_id: z.string().max(200).optional().describe('Limit to one recording.'),
   proposal_ids: z.array(z.string().max(200)).max(200).optional(),
-  status: z.enum(['pending', 'accepted', 'rejected', 'decided']).optional(),
+  status: z
+    .enum(['pending', 'accepted', 'rejected', 'decided', 'withdrawn'])
+    .optional()
+    .describe('decided: accepted or rejected by the user. withdrawn: taken back by its agent.'),
+});
+export const withdrawInput = z.object({
+  proposal_ids: z
+    .array(z.string().max(200))
+    .min(1)
+    .max(200)
+    .describe('Your own proposals still waiting for review, from submit_proposals.'),
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(300)
+    .optional()
+    .describe(
+      "Why you take them back, such as 'superseded by the second pass after the creator's correction'; kept in the batch record.",
+    ),
 });
 export type SubmitInput = z.input<typeof submitInput>;
 export type DecisionsInput = z.input<typeof decisionsInput>;
+export type WithdrawInput = z.input<typeof withdrawInput>;
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 /** Pending proposals of the same kind within this many seconds repeat each other. */
@@ -175,8 +201,9 @@ export function prepareSubmission(
       `"${recording.title}" already holds ${stored} proposals; at most ${limit} are kept per recording.`,
     );
   const current = currentTranscripts(source, recording.id);
+  // Withdrawn proposals neither block a repeat nor hold a spoken cue (VC-201).
   const pending = (source.proposals?.list(recording.id) || []).filter(
-    (p) => proposalStatus(source.model.cueDecisions || [], p.id) === 'pending',
+    (p) => !p.withdrawn && proposalStatus(source.model.cueDecisions || [], p.id) === 'pending',
   );
   const result: AgentProposal[] = [];
   value.proposals.forEach((p, i) => {
@@ -342,7 +369,7 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
   const recording = value.recording_id ? findRecording(source, value.recording_id) : undefined;
   const decisions = source.model.cueDecisions || [];
   const wanted = value.proposal_ids && new Set(value.proposal_ids);
-  const all = (source.proposals?.list(recording?.id) || []).filter(
+  const all = (source.proposals?.list(recording?.id, { withdrawn: true }) || []).filter(
     (p) =>
       source.model.recordings.some((r) => r.id === p.sourceId) && (!wanted || wanted.has(p.id)),
   );
@@ -355,7 +382,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
   };
   const mapped = all.map((p) => {
     const d = proposalDecision(decisions, p.id);
-    const status = d?.status || 'pending';
+    // A decision outranks a withdrawal; withdrawn is the agent's own, never the user's (VC-201).
+    const status = d?.status || (p.withdrawn ? 'withdrawn' : 'pending');
     // A split's decision keeps the two clip names in title and text.
     const chosen =
       d?.status === 'accepted'
@@ -401,6 +429,14 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
       submitted: p.submitted,
       status,
       decided: d?.decided,
+      ...(!d && p.withdrawn
+        ? {
+            withdrawn: {
+              at: p.withdrawn.at,
+              ...(p.withdrawn.reason ? { reason: p.withdrawn.reason } : {}),
+            },
+          }
+        : {}),
       // A clip range the user kept as a range marker instead (VC-186).
       ...(d?.status === 'accepted' && d.kindChange ? { kindChange: d.kindChange } : {}),
       // The user's reason, when they gave one (VC-173).
@@ -431,15 +467,88 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
     !value.status
       ? true
       : value.status === 'decided'
-        ? r.status !== 'pending'
+        ? r.status === 'accepted' || r.status === 'rejected'
         : r.status === value.status,
   );
   const count = (s: string) => mapped.filter((r) => r.status === s).length;
   return {
     recording: recording && { id: recording.id, title: recording.title },
-    counts: { pending: count('pending'), accepted: count('accepted'), rejected: count('rejected') },
+    counts: {
+      pending: count('pending'),
+      accepted: count('accepted'),
+      rejected: count('rejected'),
+      withdrawn: count('withdrawn'),
+    },
     // The newest 200; older ones remain readable through proposal_ids.
     proposals: rows.slice(-200),
+    projectRevision: source.revision,
+  };
+}
+
+/**
+ * Checks a withdrawal (VC-201): every id must be this app's own proposal, still waiting for the
+ * user. Returns the proposals to withdraw, or throws naming the first that cannot be, so nothing
+ * changes unless all can.
+ */
+export function prepareWithdrawal(
+  source: AgentReadSource,
+  input: WithdrawInput,
+  clientId: string,
+  now = new Date().toISOString(),
+): { proposals: AgentProposal[]; withdrawal: ProposalWithdrawal } {
+  const parsed = withdrawInput.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new AgentReadError(`${issue.path.join('.') || 'input'}: ${issue.message}`);
+  }
+  const value = parsed.data;
+  const decisions = source.model.cueDecisions || [];
+  const stored = new Map(
+    (source.proposals?.list(undefined, { withdrawn: true }) || [])
+      .filter((p) => source.model.recordings.some((r) => r.id === p.sourceId))
+      .map((p) => [p.id, p]),
+  );
+  const proposals: AgentProposal[] = [];
+  for (const id of new Set(value.proposal_ids)) {
+    const p = stored.get(id);
+    if (!p) throw new AgentReadError(`proposal_ids: no proposal "${id}".`);
+    if (p.agent.clientId !== clientId)
+      throw new AgentReadError(
+        `proposal_ids: "${id}" came from ${p.agent.name}, another paired app; only the app that proposed it can withdraw it.`,
+      );
+    const status = proposalStatus(decisions, id);
+    if (status !== 'pending')
+      throw new AgentReadError(
+        `proposal_ids: the user already ${status} "${id}"; decided proposals stay as they are.`,
+      );
+    if (p.withdrawn) throw new AgentReadError(`proposal_ids: "${id}" is already withdrawn.`);
+    proposals.push(p);
+  }
+  return {
+    proposals,
+    withdrawal: { at: now, clientId, ...(value.reason ? { reason: value.reason } : {}) },
+  };
+}
+
+export function withdrawalAnswer(
+  source: AgentReadSource,
+  proposals: AgentProposal[],
+  withdrawal: ProposalWithdrawal,
+) {
+  return {
+    withdrawn: proposals.map((p) => ({
+      id: p.id,
+      recordingId: p.sourceId,
+      kind: kindName[p.kind],
+      time: round(p.time),
+      end: p.end === undefined ? undefined : round(p.end),
+      title: p.title,
+    })),
+    ...(withdrawal.reason ? { reason: withdrawal.reason } : {}),
+    next:
+      'They left the cue cards in the transcript window. They stay in the batch record as ' +
+      'withdrawn by you, not rejected by the user, and get_proposal_decisions lists them with ' +
+      'status withdrawn.',
     projectRevision: source.revision,
   };
 }

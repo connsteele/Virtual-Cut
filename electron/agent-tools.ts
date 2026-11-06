@@ -28,7 +28,13 @@ export interface AgentReadSource {
   view?: AgentView;
   /** The tagged mic notes (.txt) beside a recording's file, if any (VC-155). */
   taggedNotes?: (recordingId: string) => string | undefined;
-  proposals?: { list(sourceId?: string): import('./proposal-contracts.js').AgentProposal[] };
+  proposals?: {
+    /** Withdrawn proposals only with `withdrawn` (VC-201). */
+    list(
+      sourceId?: string,
+      options?: { withdrawn?: boolean },
+    ): import('./proposal-contracts.js').AgentProposal[];
+  };
   /** The batch's saved record of the agent's first pass and the exported state (VC-182). */
   batchRecord?: (batchId: string) => import('./batch-record.js').BatchRecord | undefined;
   /** A recording's stored picture events for its current file (VC-180), or null. */

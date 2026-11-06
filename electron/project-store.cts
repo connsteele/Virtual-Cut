@@ -213,6 +213,7 @@ export class ProjectStore {
             return undefined;
           }
         });
+      this.proposals.decisions = () => this.data.model.cueDecisions || [];
       for (const transcript of this.transcripts.list())
         if (transcript.state === 'running')
           this.transcripts.put({ ...transcript, state: 'interrupted' });

@@ -149,7 +149,7 @@ const md = [
       `| ${i.intent} | ${i.tagged} | ${i.covered} (${pct(i.covered, i.tagged)}) | ${i.proposals} | ${i.matched} (${pct(i.matched, i.proposals)}) | ${i.accepted} | ${i.rejected} |`,
   ),
   '',
-  `Decisions: ${score.decisions.accepted} accepted, ${score.decisions.rejected} rejected, ${score.decisions.pending} pending, ${score.decisions.moved} moved.`,
+  `Decisions: ${score.decisions.accepted} accepted, ${score.decisions.rejected} rejected, ${score.decisions.pending} pending, ${score.decisions.moved} moved${score.decisions.withdrawn ? `, ${score.decisions.withdrawn} withdrawn by the agent` : ''}.`,
   '',
   '## Splits',
   '',

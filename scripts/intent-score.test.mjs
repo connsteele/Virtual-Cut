@@ -121,6 +121,14 @@ const p = (id, values) => ({
     }),
     // A game moment just before the speech, without mic evidence.
     p('treasure', { time: 1665, intents: ['marker'], status: 'rejected' }),
+    // Withdrawn by the agent (VC-201): scored as never proposed, counted on its own.
+    p('withdrawn', {
+      time: 76.5,
+      intents: ['marker'],
+      mic: [{ start: 76.6, end: 80 }],
+      status: 'withdrawn',
+    }),
+    p('withdrawn-late', { time: 5000, status: 'withdrawn' }),
     // On the cough: false.
     p('cough', { time: 295.5, mic: [{ start: 295.2, end: 297 }] }),
     // Nowhere near tagged speech: false.
@@ -187,7 +195,14 @@ const p = (id, values) => ({
     accepted: 0,
     rejected: 0,
   });
-  assert.deepEqual(score.decisions, { accepted: 1, rejected: 1, pending: 7, moved: 1 });
+  assert.deepEqual(score.decisions, {
+    accepted: 1,
+    rejected: 1,
+    pending: 7,
+    moved: 1,
+    withdrawn: 1,
+  });
+  assert.ok(!score.entries.some((e) => e.proposals.includes('withdrawn')));
 }
 {
   const empty = scoreRecording([], []);

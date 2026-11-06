@@ -535,7 +535,7 @@ try {
   const decisions = (
     await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
   ).json();
-  assert.deepEqual(decisions.counts, { pending: 1, accepted: 4, rejected: 1 });
+  assert.deepEqual(decisions.counts, { pending: 1, accepted: 4, rejected: 1, withdrawn: 0 });
   const row = (id) => decisions.proposals.find((p) => p.id === id);
   assert.equal(row(ids[0]).chosen.time, moved);
   assert.equal(row(ids[0]).movedSeconds, 0.5);
@@ -737,6 +737,73 @@ try {
   );
   assert(batchRecord.text.length < 20000, 'times, names and notes only');
   assert(!batchRecord.text.includes(JSON.stringify(dir).slice(1, -1)), 'no file paths');
+
+  // VC-201: before a second pass the agent takes back its own proposals still waiting. A decided
+  // proposal refuses the whole call; a withdrawn card leaves the transcript window and reads back
+  // as withdrawn, apart from the user's rejections, with its reason in the batch record.
+  const withdrawTool = listed.find((t) => t.name === 'withdraw_proposals');
+  assert.deepEqual(withdrawTool.annotations, {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+  });
+  const secondPass = await tool(client, 'submit_proposals', {
+    recording_id: fixture.rid,
+    proposals: ['First read', 'Second read'].map((title, i) => ({
+      kind: 'note',
+      time_seconds: mic.lines[i].end,
+      title,
+      reason: 'A first-pass note.',
+    })),
+    run_intent: 'first pass to take back',
+  });
+  assert(!secondPass.error, secondPass.text);
+  const [firstRead, waiting] = secondPass.json().submitted.map((p) => p.id);
+  await view.bringToFront();
+  await view.locator('[data-filter="pending"]').click();
+  await expect(cards).toHaveCount(2);
+  const pendingCount = view.locator('[data-filter="pending"] span');
+  const pendingBefore = Number(await pendingCount.textContent());
+  await view.screenshot({ path: path.join(dir, 'proposal-withdraw-before.png') });
+  const refusedWithdraw = await tool(client, 'withdraw_proposals', {
+    proposal_ids: [firstRead, ids[0]],
+  });
+  assert(refusedWithdraw.error);
+  assert.match(refusedWithdraw.text, new RegExp(`already accepted "${ids[0]}"`));
+  const reason = 'Superseded after the correction';
+  const withdrawn = await tool(client, 'withdraw_proposals', { proposal_ids: [firstRead], reason });
+  assert(!withdrawn.error, withdrawn.text);
+  assert.deepEqual(
+    withdrawn.json().withdrawn.map((p) => p.id),
+    [firstRead],
+  );
+  await expect(view.locator(`[data-proposal-card="${firstRead}"]`)).toHaveCount(0);
+  await expect(view.locator(`[data-proposal-card="${waiting}"]`)).toHaveCount(1);
+  await expect(pendingCount).toHaveText(String(pendingBefore - 1));
+  await view.screenshot({ path: path.join(dir, 'proposal-withdraw-after.png') });
+  await view.locator('[data-filter="all"]').click();
+  const activity = await main.evaluate(() => window.virtualCut.agent.state());
+  assert.deepEqual(
+    activity.activity
+      .filter((a) => a.tool === 'withdraw_proposals')
+      .map((a) => [a.summary, a.outcome]),
+    [
+      [`Withdrew 1 for ${recording.title}`, 'withdrew'],
+      [`Withdrew 2 for ${recording.title}`, 'refused'],
+    ],
+  );
+  const afterWithdraw = (
+    await tool(client, 'get_proposal_decisions', { recording_id: fixture.rid })
+  ).json();
+  assert.deepEqual(afterWithdraw.counts, { pending: 1, accepted: 5, rejected: 1, withdrawn: 1 });
+  const withdrawnRow = afterWithdraw.proposals.find((p) => p.id === firstRead);
+  assert.equal(withdrawnRow.status, 'withdrawn');
+  assert.equal(withdrawnRow.withdrawn.reason, reason);
+  const withdrawals = (await tool(client, 'get_batch_record')).json();
+  assert.deepEqual(
+    withdrawals.withdrawals.map((w) => [w.recordingId, w.proposalIds, w.reason]),
+    [[fixture.rid, [firstRead], reason]],
+  );
   client.end();
   await client.exited;
   assert.deepEqual(errors, []);

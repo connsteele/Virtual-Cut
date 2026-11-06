@@ -29,11 +29,15 @@ import {
 import {
   decisionsInput,
   prepareSubmission,
+  prepareWithdrawal,
   proposalDecisions,
   submissionAnswer,
   submitInput,
+  withdrawalAnswer,
+  withdrawInput,
   type DecisionsInput,
   type SubmitInput,
+  type WithdrawInput,
 } from './agent-proposals.js';
 import { proposalLimit } from './proposal-store.cjs';
 import { intentGuideAnswer } from './intent-guide.js';
@@ -49,6 +53,7 @@ const instructions =
   'seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
+  'withdraw_proposals takes back your own proposals the user has not decided yet. ' +
   "get_batch_record keeps a batch's first pass beside what the user exported, for learning " +
   'from the misses. ' +
   'Before proposing, read get_intent_guide: it says what their free mic speech means, what to ' +
@@ -126,15 +131,17 @@ export function registerAgentAccess(options: {
       input: z.ZodObject,
       run: (s: AgentReadSource, args: A) => unknown,
       summary: (args: A, name: (id: string) => string) => string,
-      proposes = false,
+      /** What a call that changes the review queue records in Activity. */
+      writes?: 'proposed' | 'withdrew',
     ) =>
       server.registerTool(
         name,
         {
           description,
           inputSchema: input,
-          // Proposals add review candidates only: nothing is replaced, deleted or applied.
-          annotations: proposes
+          // Proposals add review candidates and withdrawing takes back the agent's own: nothing
+          // in the project is replaced, deleted or applied.
+          annotations: writes
             ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
             : { readOnlyHint: true },
         },
@@ -149,7 +156,7 @@ export function registerAgentAccess(options: {
           try {
             project = source(client);
             const result = run(project, a);
-            access.record(client, name, summary(a, label), proposes ? 'proposed' : 'read');
+            access.record(client, name, summary(a, label), writes ?? 'read');
             return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 1) }] };
           } catch (e) {
             const known =
@@ -389,7 +396,40 @@ export function registerAgentAccess(options: {
         return submissionAnswer(s, proposals);
       },
       (a, n) => `Proposed ${a.proposals?.length ?? 0} for ${n(a.recording_id)}`,
-      true,
+      'proposed',
+    );
+    read<WithdrawInput>(
+      'withdraw_proposals',
+      'Take back your own proposals that are still waiting for the user, such as a first pass ' +
+        'the creator corrected before you submit the second. They leave the cue cards and stay ' +
+        'in the batch record as withdrawn by you, apart from what the user rejected. Proposals ' +
+        "the user already accepted or rejected, and other apps' proposals, cannot be withdrawn: " +
+        'the whole call is refused, naming the first such id. Find pending ids with ' +
+        "get_proposal_decisions status 'pending'.",
+      withdrawInput,
+      (s, a) => {
+        const projects = options.projects()!;
+        const { proposals, withdrawal } = prepareWithdrawal(s, a, client.id);
+        projects.store!.proposals.withdraw(
+          proposals.map((p) => p.id),
+          withdrawal,
+        );
+        projects.batchRecords.withdrew(projects.store!, proposals, withdrawal.reason);
+        return withdrawalAnswer(s, proposals, withdrawal);
+      },
+      (a, n) => {
+        const ids = Array.isArray(a.proposal_ids) ? a.proposal_ids : [];
+        const store = options.projects()?.store;
+        const recordings = [...new Set(ids.map((id) => store?.proposals.sourceOf(String(id))))];
+        const where =
+          recordings.length === 1 && recordings[0]
+            ? ` for ${n(recordings[0])}`
+            : recordings.length > 1
+              ? ` across ${recordings.length} recordings`
+              : '';
+        return `Withdrew ${ids.length}${where}`;
+      },
+      'withdrew',
     );
     read<DecisionsInput>(
       'get_proposal_decisions',

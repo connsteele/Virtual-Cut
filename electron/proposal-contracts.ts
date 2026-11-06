@@ -52,4 +52,15 @@ export interface AgentProposal {
   submitted: string;
   submissionId: string;
   projectRevision: number;
+  /**
+   * The agent took it back before the user decided it (VC-201): it leaves review but stays
+   * stored, labelled as the agent's own withdrawal rather than the user's rejection.
+   */
+  withdrawn?: ProposalWithdrawal;
+}
+export interface ProposalWithdrawal {
+  at: string;
+  /** The paired app that withdrew it, always the app that submitted it. */
+  clientId: string;
+  reason?: string;
 }

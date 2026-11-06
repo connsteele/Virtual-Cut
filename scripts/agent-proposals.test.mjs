@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import * as z from 'zod';
+import { DatabaseSync } from 'node:sqlite';
 import {
   prepareSubmission,
+  prepareWithdrawal,
   proposalDecisions,
   submissionAnswer,
   submitInput,
+  withdrawalAnswer,
+  withdrawInput,
 } from '../dist-electron/agent-proposals.js';
 import { AgentReadError } from '../dist-electron/agent-tools.js';
 import {
@@ -14,6 +18,9 @@ import {
   proposalStatus,
 } from '../dist-electron/proposal-edits.js';
 import { validateEdits, emptyModel } from '../dist-electron/project-edits.js';
+import { require } from './shared.mjs';
+
+const { ProposalStore } = require('../dist-electron/proposal-store.cjs');
 
 // Agent proposals (VC-161/VC-162): a submission is checked whole, names the failing field,
 // cites only the current transcript, and changes nothing until a decision is applied.
@@ -313,7 +320,7 @@ assert.throws(
 
 // Reading decisions back: moved, retitled, rejected and still pending.
 const read = proposalDecisions({ ...source, model: next });
-assert.deepEqual(read.counts, { pending: 0, accepted: 3, rejected: 1 });
+assert.deepEqual(read.counts, { pending: 0, accepted: 3, rejected: 1, withdrawn: 0 });
 const markerRow = read.proposals.find((p) => p.id === marker.id);
 assert.equal(markerRow.status, 'accepted');
 assert.equal(markerRow.movedSeconds, 1.5);
@@ -794,4 +801,158 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   assert.equal(row(note).afterAccepting, undefined, 'a reject made nothing to change');
   assert.equal(row(split).afterAccepting, undefined, 'unchanged since accepting');
 }
-console.log('Agent proposals: submission checks, decisions and read-back passed.');
+
+// VC-201: an agent withdraws its own proposals still waiting for review. Accepted, rejected and
+// other apps' proposals refuse the whole call; withdrawn ones read back apart from rejections.
+{
+  const local = [];
+  const src = {
+    ...source,
+    model: structuredClone(model),
+    proposals: {
+      list: (id, options = {}) =>
+        local.filter((p) => (!id || p.sourceId === id) && (options.withdrawn || !p.withdrawn)),
+    },
+  };
+  let k = 0;
+  const mine = { clientId: 'cl', name: 'Claude Code' };
+  const send = (proposals, who = mine) =>
+    prepareSubmission(
+      src,
+      { recording_id: 'r1', proposals },
+      who,
+      { submission: 'w', proposal: () => `w${++k}` },
+      '2026-11-06T07:00:00Z',
+    );
+  local.push(
+    ...send([
+      base({ time_seconds: 20, title: 'First read' }),
+      base({ time_seconds: 40, title: 'Wrong guess' }),
+      base({ time_seconds: 60, title: 'Kept' }),
+      base({ time_seconds: 70, title: 'Taken' }),
+    ]),
+    ...send([base({ time_seconds: 80, title: 'Other app' })], { clientId: 'x', name: 'Codex' }),
+  );
+  const decision = (id, time, status) => ({
+    id: `agent:${id}`,
+    proposalId: id,
+    sourceId: 'r1',
+    kind: 'mark',
+    time,
+    status,
+    decided: '2026-11-06T07:05:00Z',
+  });
+  src.model.cueDecisions = [decision('w3', 60, 'rejected'), decision('w4', 70, 'accepted')];
+  const withdraw = (input) => prepareWithdrawal(src, input, 'cl', '2026-11-06T07:10:00Z');
+  assert.deepEqual(Object.keys(z.toJSONSchema(withdrawInput).properties).sort(), [
+    'proposal_ids',
+    'reason',
+  ]);
+  assert.throws(() => withdraw({ proposal_ids: [] }), /proposal_ids: Too small/);
+  assert.throws(() => withdraw({ proposal_ids: ['nope'] }), /no proposal "nope"/);
+  assert.throws(() => withdraw({ proposal_ids: ['w5'] }), /came from Codex, another paired app/);
+  assert.throws(() => withdraw({ proposal_ids: ['w1', 'w3'] }), /already rejected "w3"/);
+  assert.throws(() => withdraw({ proposal_ids: ['w4'] }), /already accepted "w4"/);
+  assert.throws(
+    () => withdraw({ proposal_ids: ['w1'], reason: 'x'.repeat(301) }),
+    /reason: Too big/,
+  );
+  const taken = withdraw({ proposal_ids: ['w1', 'w2', 'w1'], reason: '  superseded  ' });
+  assert.deepEqual(
+    taken.proposals.map((p) => p.id),
+    ['w1', 'w2'],
+  );
+  assert.deepEqual(taken.withdrawal, {
+    at: '2026-11-06T07:10:00Z',
+    clientId: 'cl',
+    reason: 'superseded',
+  });
+  assert.equal(withdraw({ proposal_ids: ['w1'] }).withdrawal.reason, undefined);
+  const answer = withdrawalAnswer(src, taken.proposals, taken.withdrawal);
+  assert.deepEqual(
+    answer.withdrawn.map((w) => [w.id, w.kind, w.time, w.title]),
+    [
+      ['w1', 'marker', 20, 'First read'],
+      ['w2', 'marker', 40, 'Wrong guess'],
+    ],
+  );
+  assert.equal(answer.reason, 'superseded');
+  assert.equal(
+    withdrawalAnswer(src, taken.proposals, { at: '', clientId: 'cl' }).reason,
+    undefined,
+  );
+  for (const p of local)
+    if (taken.proposals.some((t) => t.id === p.id)) p.withdrawn = taken.withdrawal;
+  assert.throws(() => withdraw({ proposal_ids: ['w2'] }), /"w2" is already withdrawn/);
+
+  const back = proposalDecisions(src, { recording_id: 'r1' });
+  assert.deepEqual(back.counts, { pending: 1, accepted: 1, rejected: 1, withdrawn: 2 });
+  const row = (id) => back.proposals.find((p) => p.id === id);
+  assert.equal(row('w1').status, 'withdrawn');
+  assert.deepEqual(row('w1').withdrawn, { at: '2026-11-06T07:10:00Z', reason: 'superseded' });
+  assert.equal(row('w3').withdrawn, undefined);
+  const only = (status) => proposalDecisions(src, { status }).proposals.map((p) => p.id);
+  assert.deepEqual(only('withdrawn'), ['w1', 'w2']);
+  assert.deepEqual(only('decided'), ['w3', 'w4']);
+  assert.deepEqual(only('pending'), ['w5']);
+  // A decision outranks a withdrawal (Redo after the agent withdrew what Undo reopened).
+  const redone = {
+    ...src,
+    model: {
+      ...src.model,
+      cueDecisions: [...src.model.cueDecisions, decision('w2', 40, 'rejected')],
+    },
+  };
+  const w2 = proposalDecisions(redone, { proposal_ids: ['w2'] }).proposals[0];
+  assert.deepEqual([w2.status, w2.withdrawn], ['rejected', undefined]);
+  // Withdrawn proposals don't block the second pass from proposing the same moment again.
+  assert.equal(send([base({ time_seconds: 20, title: 'First read' })])[0].title, 'First read');
+}
+
+// The store keeps withdrawn proposals, leaves them out of review unless decided, and withdraws
+// all or nothing without storing what reading inferred.
+{
+  const db = new DatabaseSync(':memory:');
+  const store = new ProposalStore(db);
+  const p = (id) => ({ id, sourceId: 'r1', kind: 'mark', time: 1, title: id, evidence: [] });
+  store.add([p('a'), p('b'), p('c')]);
+  store.infer = (list) => list.map((q) => ({ ...q, inferred: true }));
+  let decisions = [];
+  store.decisions = () => decisions;
+  store.withdraw(['a', 'b'], { at: 't', clientId: 'cl', reason: 'r' });
+  assert.deepEqual(
+    store.list('r1').map((q) => q.id),
+    ['c'],
+  );
+  assert.deepEqual(
+    store.list(undefined, { withdrawn: true }).map((q) => [q.id, !!q.withdrawn, !!q.inferred]),
+    [
+      ['a', true, false],
+      ['b', true, false],
+      ['c', false, true],
+    ],
+  );
+  assert.equal(
+    JSON.parse(db.prepare("SELECT body FROM agent_proposals WHERE id='c'").get().body).inferred,
+    undefined,
+  );
+  decisions = [{ proposalId: 'b' }, {}];
+  assert.deepEqual(
+    store.list('r1').map((q) => q.id),
+    ['b', 'c'],
+  );
+  assert.throws(
+    () => store.withdraw(['c', 'gone'], { at: 't2', clientId: 'cl' }),
+    /No stored proposal "gone"/,
+  );
+  assert.equal(store.list('r1').find((q) => q.id === 'c').withdrawn, undefined, 'all or nothing');
+  assert.equal(store.sourceOf('a'), 'r1');
+  assert.equal(store.sourceOf('gone'), undefined);
+  delete store.decisions;
+  assert.deepEqual(
+    store.list('r1').map((q) => q.id),
+    ['c'],
+  );
+  assert.throws(() => store.get('a'), /no longer available/);
+}
+console.log('Agent proposals: submission checks, decisions, withdrawal and read-back passed.');

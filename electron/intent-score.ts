@@ -15,7 +15,8 @@ export interface ScoredProposal {
   intents: IntentTag[];
   /** Spans of the mic lines the proposal cites. */
   mic: { start: number; end: number }[];
-  status: 'pending' | 'accepted' | 'rejected';
+  /** withdrawn: its agent took it back (VC-201); scored as never proposed, not as rejected. */
+  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   movedSeconds?: number;
 }
 export interface EntryResult {
@@ -50,7 +51,13 @@ export interface RecordingScore {
   entries: EntryResult[];
   intents: IntentSummary[];
   falseProposals: { id: string; time: number; title: string; reason: string; status: string }[];
-  decisions: { accepted: number; rejected: number; pending: number; moved: number };
+  decisions: {
+    accepted: number;
+    rejected: number;
+    pending: number;
+    moved: number;
+    withdrawn: number;
+  };
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -97,7 +104,8 @@ export function scoreRecording(
 ): RecordingScore {
   const sorted = [...entries].sort((a, b) => a.at - b.at);
   const labelledUntil = options.labelledUntil ?? (sorted.at(-1)?.at ?? 0) + 60;
-  const inRange = proposals.filter((p) => p.time <= labelledUntil);
+  const labelled = proposals.filter((p) => p.time <= labelledUntil);
+  const inRange = labelled.filter((p) => p.status !== 'withdrawn');
   const used = new Map<string, TaggedEntry[]>();
   const results: EntryResult[] = sorted.map((entry, i) => {
     const next = sorted[i + 1];
@@ -190,6 +198,7 @@ export function scoreRecording(
       rejected: inRange.filter((p) => p.status === 'rejected').length,
       pending: inRange.filter((p) => p.status === 'pending').length,
       moved: inRange.filter((p) => Math.abs(p.movedSeconds ?? 0) >= 0.001).length,
+      withdrawn: labelled.length - inRange.length,
     },
   };
 }
