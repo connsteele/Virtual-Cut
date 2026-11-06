@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.28 — Agents withdraw proposals and suggest marker colors (November 6, 2026)
+
+A hotfix during the first real batch. Agent apps can take back their own proposals still waiting
+for review with a new `withdraw_proposals` tool, for example a first pass the creator corrected
+before the second: the cards leave the transcript window and stay in the batch record as
+withdrawn by the agent, never as the user's rejections, and accepted or rejected proposals can't be
+withdrawn (decision 0024). Marker, range marker and clip range proposals can carry one of
+Resolve's 16 marker colors: the card shows it, Edit changes it in a dropdown, Accept keeps it, and
+the agent reads back the color it proposed and the color kept (decision 0025). The transcript
+window's counts now update when proposals arrive or leave. See [the 0.4.28
+review](docs/review-0.4.28.md).
+
 ## 0.4.27 — Ready for the first real batch (November 6, 2026)
 
 Sprint 13. Double-clicking a word in the Transcript window while Follow playback is on now opens

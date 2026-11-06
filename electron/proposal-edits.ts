@@ -1,4 +1,4 @@
-import type { Model } from './workflow-types.js';
+import { markerColors, type Model } from './workflow-types.js';
 import {
   rejectReasons,
   type CueDecision,
@@ -178,6 +178,10 @@ export function applyProposalCommand(
     throw new Error('Enter a title of up to 200 characters.');
   if (command.text != null && (typeof command.text !== 'string' || command.text.length > 10000))
     throw new Error('Enter a note of up to 10,000 characters.');
+  if (command.color != null && !Object.hasOwn(markerColors, command.color))
+    throw new Error('Choose one of the marker colors.');
+  // The marker's color (VC-200): the card's choice, else the agent's, else the default.
+  const color = command.color ?? proposal.color ?? 'Blue';
   const title = (command.title ?? proposal.title).trim(),
     text = (command.text ?? proposal.text).trim();
   if (proposal.kind !== 'cut') {
@@ -261,6 +265,7 @@ export function applyProposalCommand(
       throw new Error('Marker end must follow its start within this recording.');
     if (end !== undefined) decision.appliedEnd = end;
     decision.markerId = newId();
+    decision.color = color;
     next.markers[record.id] = [
       ...(next.markers[record.id] || []),
       {
@@ -271,7 +276,7 @@ export function applyProposalCommand(
         note: text,
         category: 'Context',
         topic: '',
-        color: 'Blue',
+        color,
       },
     ];
   }

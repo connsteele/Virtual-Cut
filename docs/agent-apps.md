@@ -26,6 +26,10 @@ Proposals change nothing: each waits in the transcript window on a proposal card
 
 Line 1 shows who proposed it (**Spoken**, **Agent**, or both when an agent reworked a spoken cue), the kind and the intents, with **Accept**, **Reject**, **Details** and **Edit** at the right; line 2 the name and the time code. **Details** shows the note, the reason and the transcript lines it cited; **Edit** turns the name, time and note into fields in place. Keys on a focused card: A accept, R reject, D details, E edit, N/P next or previous card.
 
+An agent's marker, range marker or clip range can carry a marker color, one of Resolve's 16, for example from the color key in your brief. The card shows it after the time code (Blue when the agent gave none, the default for new markers); **Edit** shows it as a color dropdown, and **Accept** keeps the color shown. A clip range's color is used if you keep it as a range marker. The agent reads back the color it proposed, the color you kept and whether you changed it.
+
+An agent can also take back its own proposals that are still waiting, for example a first pass you corrected before it sends the second. A withdrawn card leaves the transcript window; it stays in the batch record as withdrawn by the agent, never as one of your rejections. Proposals you already accepted or rejected can't be withdrawn.
+
 An agent's clip range offers two accepts: **Accept as clip** (A) makes the clip, **Accept as range marker** (M) keeps the same span, name and note as a range marker instead. An agent's range marker works the other way round: **Accept as range marker** (A) or **Accept as clip** (C). The agent reads that change back.
 
 ## Microphone and game together

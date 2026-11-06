@@ -211,7 +211,12 @@ assert.deepEqual(r1.removedSpans, [{ start: 180, end: 200 }]);
 assert.deepEqual(
   exported.final.proposals.map((p) => [p.id, p.status, p.firstPass, p.chosen]),
   [
-    ['p1', 'accepted', true, { time: 16.5, title: 'Bertrand at the gate', note: '' }],
+    [
+      'p1',
+      'accepted',
+      true,
+      { time: 16.5, title: 'Bertrand at the gate', note: '', color: 'Blue' },
+    ],
     ['p2', 'accepted', true, { time: 100, clipNames: { first: 'Fort', second: 'Talk' } }],
     ['p3', 'rejected', true, undefined],
     ['p4', 'pending', true, undefined],
@@ -383,7 +388,7 @@ assert.deepEqual(
     id: 'p6',
     status: 'accepted',
     decided: '2026-10-15T03:00:00Z',
-    chosen: { time: 20, end: 30, title: 'Fort scene', note: 'Part' },
+    chosen: { time: 20, end: 30, title: 'Fort scene', note: 'Part', color: 'Blue' },
     kindChange: { from: 'clip-range', to: 'range-marker' },
     firstPass: true,
   });
@@ -624,4 +629,56 @@ console.log('batch record checks passed');
   } finally {
     await rm(profile, { recursive: true, force: true });
   }
+}
+
+// VC-200: the agent's color, the color the card kept and a later recolor in Cut are all kept.
+{
+  const marker = proposal('c1', 'mark', { time: 20, title: 'Saren', color: 'Red' });
+  const base = { ...emptyModel(), recordings: [recording] };
+  const kept = applyProposalCommand(
+    base,
+    marker,
+    {
+      action: 'accept-proposal',
+      proposalId: marker.id,
+      sourceId: 'r1',
+      projectId: 'p1',
+      transcriptId: '',
+      segmentId: 0,
+      expected: 'null',
+      color: 'Green',
+    },
+    () => 'm1',
+    '2026-11-06T08:00:00Z',
+  );
+  const input = {
+    project,
+    batch,
+    proposals: [marker],
+    exports: [],
+    projectRevision: 12,
+    now: '2026-11-06T08:05:00Z',
+  };
+  const first = addSubmission(undefined, {
+    project,
+    batch,
+    model: base,
+    proposals: [marker],
+    stored: [marker],
+    ...read,
+    now: '2026-11-06T07:59:00Z',
+  });
+  assert.equal(first.firstPass[0].proposals[0].color, 'Red');
+  const done = finalState(first, { ...input, model: kept });
+  assert.equal(done.final.proposals[0].chosen.color, 'Green');
+  assert.deepEqual(done.final.proposals[0].changed, { color: { from: 'Red', to: 'Green' } });
+  const recolored = structuredClone(kept);
+  recolored.markers.r1[0].color = 'Purple';
+  const later = finalState(first, { ...input, model: recolored });
+  assert.deepEqual(later.final.recordings[0].markers[0].changed, {
+    color: { from: 'Green', to: 'Purple' },
+  });
+  assert.deepEqual(later.final.proposals[0].afterAccepting, [
+    { item: 'marker', id: 'm1', changed: { color: { from: 'Green', to: 'Purple' } } },
+  ]);
 }

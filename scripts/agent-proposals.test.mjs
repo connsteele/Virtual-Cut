@@ -955,4 +955,103 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
   );
   assert.throws(() => store.get('a'), /no longer available/);
 }
+
+// VC-200: markers and clip ranges carry a suggested color; Accept keeps it or the card's choice,
+// and the read-back gives both, with recolored when they differ.
+{
+  const local = [];
+  const src = {
+    ...source,
+    model: structuredClone(model),
+    proposals: { list: (id) => local.filter((p) => !id || p.sourceId === id) },
+  };
+  let k = 0;
+  const send = (proposals) =>
+    prepareSubmission(
+      src,
+      { recording_id: 'r1', proposals },
+      agent,
+      { submission: 'c', proposal: () => `c${++k}` },
+      '2026-11-06T08:00:00Z',
+    );
+  assert.deepEqual(z.toJSONSchema(submitInput).properties.proposals.items.properties.color.enum, [
+    'Blue',
+    'Cyan',
+    'Green',
+    'Yellow',
+    'Red',
+    'Pink',
+    'Purple',
+    'Fuchsia',
+    'Rose',
+    'Lavender',
+    'Sky',
+    'Mint',
+    'Lemon',
+    'Sand',
+    'Cocoa',
+    'Cream',
+  ]);
+  assert.throws(
+    () => send([base({ kind: 'note', title: 'N', color: 'Red', evidence: [] })]),
+    /proposals\[0\]\.color: only a marker or a clip range has a color/,
+  );
+  assert.throws(
+    () => send([base({ title: 'M', color: 'Teal', evidence: [] })]),
+    /proposals\.0\.color: Invalid option/,
+  );
+  const made = send([
+    base({ time_seconds: 20, title: 'Saren', color: 'Red', evidence: [] }),
+    base({ time_seconds: 30, title: 'Plain', evidence: [] }),
+    base({
+      kind: 'clip',
+      time_seconds: 40,
+      end_seconds: 60,
+      title: 'Mako',
+      color: 'Yellow',
+      evidence: [],
+    }),
+  ]);
+  assert.deepEqual(
+    made.map((p) => p.color),
+    ['Red', undefined, 'Yellow'],
+  );
+  assert.equal(submissionAnswer(src, made).submitted[0].color, 'Red');
+  local.push(...made);
+  const [saren, plain, mako] = made;
+  const accept = (m, p, extra = {}) =>
+    applyProposalCommand(
+      m,
+      p,
+      { ...command(p, 'accept-proposal'), ...extra },
+      () => `made-${p.id}`,
+      '2026-11-06T08:10:00Z',
+    );
+  assert.throws(() => accept(src.model, saren, { color: 'Teal' }), /one of the marker colors/);
+  let next = accept(src.model, saren, { color: 'Green' });
+  next = accept(next, plain);
+  next = accept(next, mako, { acceptAs: 'range-marker' });
+  const markers = Object.fromEntries(next.markers.r1.map((m) => [m.name, m.color]));
+  assert.deepEqual(markers, { Saren: 'Green', Plain: 'Blue', Mako: 'Yellow' });
+  validateEdits(structuredClone(next));
+  assert.throws(
+    () =>
+      validateEdits({
+        ...structuredClone(next),
+        cueDecisions: [{ ...next.cueDecisions[0], color: 'Teal' }],
+      }),
+    /Invalid cue decision/,
+  );
+  const back = proposalDecisions({ ...src, model: next });
+  const row = (p) => back.proposals.find((r) => r.id === p.id);
+  assert.deepEqual(
+    [row(saren).proposed.color, row(saren).chosen.color, row(saren).recolored],
+    ['Red', 'Green', true],
+  );
+  assert.deepEqual(
+    [row(plain).proposed.color, row(plain).chosen.color, row(plain).recolored],
+    [undefined, 'Blue', false],
+  );
+  assert.deepEqual([row(mako).chosen.color, row(mako).recolored], ['Yellow', false]);
+}
 console.log('Agent proposals: submission checks, decisions, withdrawal and read-back passed.');

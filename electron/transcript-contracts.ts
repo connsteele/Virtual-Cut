@@ -131,6 +131,8 @@ export interface CueDecision {
   kindChange?: ProposalKindChange;
   /** Why the user decided an agent proposal as they did (VC-173); never required. */
   why?: ProposalWhy;
+  /** The color of the marker accepting made (VC-200). */
+  color?: import('./workflow-types.js').MarkerColor;
 }
 /** The one-tap reasons for rejecting an agent proposal (VC-173). */
 export const rejectReasons = ['wrong-moment', 'not-needed', 'wrong-intent', 'other'] as const;
@@ -225,6 +227,8 @@ export interface TranscriptCommand {
   secondName?: string;
   /** Accepting an agent range as the other range kind: clip range ↔ range marker (VC-186). */
   acceptAs?: 'range-marker' | 'clip';
+  /** Accepting an agent proposal that makes a marker: its color (VC-200). */
+  color?: import('./workflow-types.js').MarkerColor;
   /** `why-proposal`: the reason for a decided proposal, or none to clear it (VC-173). */
   why?: ProposalWhy;
   segmentId: number;

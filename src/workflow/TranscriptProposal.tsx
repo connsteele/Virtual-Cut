@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TranscriptCommand, TranscriptSession } from '../../electron/transcript-contracts';
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
+import { markerColors, type MarkerColor } from '../../electron/workflow-types';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { ProposalWhy } from './ProposalWhy';
 import { TimeField } from './TimeField';
@@ -75,6 +76,7 @@ export function TranscriptProposal({
     clipId?: string;
     first?: string;
     second?: string;
+    color?: MarkerColor;
   }>();
   const decision = proposalDecision(session.decisions, proposal.id);
   useCardAdjust(proposal.id, adjust, (at) =>
@@ -99,6 +101,16 @@ export function TranscriptProposal({
   const second = draft.second ?? proposal.names?.second ?? (first ? `${first} · 2` : '');
   const title = draft.title ?? proposal.title;
   const text = draft.text ?? proposal.text;
+  // A marker's color (VC-200): the agent's suggestion, else the default; a clip range's applies
+  // if it is kept as a range marker.
+  const colored = proposal.kind === 'mark' || proposal.kind === 'clip';
+  const color: MarkerColor = draft.color ?? proposal.color ?? 'Blue';
+  const swatchOf = (name: MarkerColor, title: string) => (
+    <span className={s.pcColor} data-proposal-color={name} title={title}>
+      <span className={s.pcColorDot} style={{ background: markerColors[name] }} />
+      {name}
+    </span>
+  );
   const cue = proposal.refines;
   // What the agent changed on the spoken cue it reworked, old → new.
   const moved = cue && Math.abs(proposal.time - cue.time) >= 0.05;
@@ -147,6 +159,8 @@ export function TranscriptProposal({
       const endShift = decision.appliedEnd - proposal.end;
       if (Math.abs(endShift) >= 0.05) kept.push(`end ${signed(endShift)}`);
     }
+    if (decision.color && decision.color !== (proposal.color ?? 'Blue'))
+      kept.push(`color ${proposal.color ?? 'Blue'} → ${decision.color}`);
     if (split) {
       if (decision.title != null) kept.push('clips named');
     } else {
@@ -224,7 +238,40 @@ export function TranscriptProposal({
               />
             </>
           )}
+          {colored && (
+            <select
+              className={s.pcColorSelect}
+              aria-label={`Proposal color ${proposal.id}`}
+              title={
+                proposal.kind === 'clip'
+                  ? 'Marker color, if you keep it as a range marker'
+                  : 'Marker color'
+              }
+              value={color}
+              style={{ color: markerColors[color] }}
+              onChange={(e) => setDraft({ ...draft, color: e.target.value as MarkerColor })}
+            >
+              {Object.entries(markerColors).map(([name, hex]) => (
+                <option key={name} value={name} style={{ color: hex }}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
         </>
+      }
+      swatch={
+        decision
+          ? decision.color && swatchOf(decision.color, 'Marker color')
+          : (proposal.kind === 'mark' || (proposal.kind === 'clip' && proposal.color)) &&
+            swatchOf(
+              color,
+              proposal.kind === 'clip'
+                ? 'Marker color, if you keep it as a range marker'
+                : proposal.color || draft.color
+                  ? 'Marker color'
+                  : 'Marker color: the default, as the agent gave none',
+            )
       }
       time={decision?.appliedTime ?? start}
       end={decision?.appliedEnd ?? end}
@@ -281,6 +328,7 @@ export function TranscriptProposal({
           clipId: split ? target : undefined,
           firstName: split ? first : undefined,
           secondName: split ? second : undefined,
+          color: proposal.kind === 'mark' ? color : undefined,
         })
       }
       acceptOther={
@@ -297,6 +345,7 @@ export function TranscriptProposal({
                   time: start,
                   endTime: end,
                   acceptAs: 'range-marker',
+                  color,
                 }),
             }
           : ranged

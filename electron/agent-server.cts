@@ -439,7 +439,10 @@ export function registerAgentAccess(options: {
         'or rejected. why holds the reason when the user gave one: a reject reason (wrong-moment, ' +
         'not-needed, wrong-intent, or other with a note) or a note about an accept. ' +
         'afterAccepting lists what the user changed later to what accepting made (moved, ' +
-        'retitled, given or cleared an end, removed). Filter by recording, proposal ids or status.',
+        'retitled, given or cleared an end, removed). A marker accepted from a proposal has its ' +
+        'color in chosen, with recolored when it differs from the color you proposed (Blue if none). ' +
+        'withdrawn lists what you took back with withdraw_proposals, apart from rejections. ' +
+        'Filter by recording, proposal ids or status.',
       decisionsInput,
       (s, a) => proposalDecisions(s, a),
       (a, n) => `Proposal decisions${a.recording_id ? `: ${n(a.recording_id)}` : ''}`,

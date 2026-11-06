@@ -64,6 +64,7 @@ export function ProposalCard({
   onPreview,
   at,
   was,
+  swatch,
   children,
 }: {
   id: string;
@@ -118,6 +119,8 @@ export function ProposalCard({
    * preview), line 2 shows the new times with these beside them (VC-184).
    */
   was?: PreviewAt;
+  /** A marker's color (VC-200): after the times on line 2 and on the folded line. */
+  swatch?: ReactNode;
   children?: ReactNode;
 }) {
   // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
@@ -170,6 +173,7 @@ export function ProposalCard({
           <span className={s.pcKind}>{kind}</span>
           <span className={s.pcDoneName}>{name}</span>
           <span className={s.pcTime}>{timecode}</span>
+          {swatch}
           <span className={s.pcActions}>
             <span className={status === 'accepted' ? s.pcAccepted : s.pcRejected}>
               {status === 'accepted' ? '✓ Accepted' : '✕ Rejected'}
@@ -371,6 +375,7 @@ export function ProposalCard({
             )}
             {wasLine}
           </span>
+          {swatch}
         </div>
       )}
       {(meta.length > 0 || (editing && wasLine)) && (

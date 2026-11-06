@@ -940,3 +940,28 @@
   font-size: 11px;
   font-weight: 600;
 }
+/* A marker's color on a proposal card (VC-200), shaped like the marker on the timeline. */
+.pcColor {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pcColorDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.window .pc select.pcColorSelect {
+  flex: none;
+  width: auto;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+.pcColorSelect option {
+  background: #121a19;
+}

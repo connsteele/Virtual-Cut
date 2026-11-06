@@ -804,6 +804,73 @@ try {
     withdrawals.withdrawals.map((w) => [w.recordingId, w.proposalIds, w.reason]),
     [[fixture.rid, [firstRead], reason]],
   );
+
+  // VC-200: a marker proposal carries the agent's color. The card shows it, Edit changes it,
+  // Accept keeps the card's choice and the read-back gives both.
+  const colorPass = await tool(client, 'submit_proposals', {
+    recording_id: fixture.rid,
+    proposals: [
+      {
+        kind: 'marker',
+        time_seconds: mic.lines[2].end,
+        title: 'Colored by the key',
+        color: 'Red',
+        reason: 'Red is Antagonist in the color key.',
+      },
+    ],
+  });
+  assert(!colorPass.error, colorPass.text);
+  const colorId = colorPass.json().submitted[0].id;
+  assert.equal(colorPass.json().submitted[0].color, 'Red');
+  const colorCard = view.locator(`[data-proposal-card="${colorId}"]`);
+  // Under All, where the card stays put once accepted (a filter change drops a card's edits).
+  await view.bringToFront();
+  await expect(colorCard.locator('[data-proposal-color]')).toHaveAttribute(
+    'data-proposal-color',
+    'Red',
+  );
+  await colorCard.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-color.png') });
+  await colorCard.getByRole('button', { name: 'Edit', exact: true }).click();
+  const colorField = colorCard.getByLabel(`Proposal color ${colorId}`);
+  await colorField.selectOption('Green');
+  await expect(colorCard.locator('[data-proposal-color]')).toHaveCount(0);
+  await view.screenshot({ path: path.join(dir, 'proposal-color-edit.png') });
+  await resize(true);
+  await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);
+  await colorCard.scrollIntoViewIfNeeded();
+  const colorBox = await colorField.boundingBox();
+  assert(colorBox && colorBox.x + colorBox.width <= 500, 'the color field fits the compact window');
+  await view.screenshot({ path: path.join(dir, 'proposal-color-edit-compact.png') });
+  await resize(false);
+  await colorCard.getByRole('button', { name: 'Done editing', exact: true }).click();
+  await expect(colorCard.locator('[data-proposal-color]')).toHaveAttribute(
+    'data-proposal-color',
+    'Green',
+  );
+  await colorCard
+    .getByRole('button', { name: /^Accept/ })
+    .first()
+    .click();
+  await expect(colorCard).toHaveAttribute('data-status', 'accepted');
+  await expect(colorCard.locator('[data-proposal-color]')).toHaveAttribute(
+    'data-proposal-color',
+    'Green',
+  );
+  await expect(colorCard).toContainText('color Red → Green');
+  await colorCard.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: path.join(dir, 'proposal-color-accepted.png') });
+  const colorRow = (
+    await tool(client, 'get_proposal_decisions', { proposal_ids: [colorId] })
+  ).json().proposals[0];
+  assert.deepEqual(
+    [colorRow.proposed.color, colorRow.chosen.color, colorRow.recolored],
+    ['Red', 'Green', true],
+  );
+  const colored = (await tool(client, 'get_annotations', { recording_id: fixture.rid }))
+    .json()
+    .recordings[0].markers.find((m) => m.name === 'Colored by the key');
+  assert.equal(colored.color, 'Green');
   client.end();
   await client.exited;
   assert.deepEqual(errors, []);

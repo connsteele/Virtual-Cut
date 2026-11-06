@@ -1,4 +1,10 @@
-import type { Model, Recording, Clip, Marker } from './workflow-types.js';
+import {
+  markerColors,
+  type Model,
+  type Recording,
+  type Clip,
+  type Marker,
+} from './workflow-types.js';
 import { validateContexts } from './project-context.js';
 import { validWhy } from './proposal-edits.js';
 
@@ -245,6 +251,7 @@ export function validateEdits(model: Model): Model {
         (!Number.isFinite(decision.appliedEnd) ||
           !(decision.appliedEnd > (decision.appliedTime ?? -1)))) ||
       (decision.text != null && !text(decision.text, 10000)) ||
+      (decision.color != null && !Object.hasOwn(markerColors, decision.color)) ||
       (decision.why != null && !validWhy(decision.why, decision.status)) ||
       (decision.decided != null && !text(decision.decided, 40))
     )

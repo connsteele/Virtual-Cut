@@ -15,6 +15,7 @@ import type {
 } from './proposal-contracts.js';
 import type { TranscriptSegment } from './transcript-contracts.js';
 import { changesSinceAccepting } from './batch-record.js';
+import { markerColors, type MarkerColor } from './workflow-types.js';
 
 /**
  * Agent proposals over MCP (VC-161/VC-162). `submit_proposals` validates a whole submission
@@ -50,6 +51,12 @@ export const proposalInput = z.object({
     .optional()
     .describe(
       'Splits only: suggested names for the clip before the split and the clip after it, from what the recording shows and says. Strongly recommended for every split.',
+    ),
+  color: z
+    .enum(Object.keys(markerColors) as [MarkerColor, ...MarkerColor[]])
+    .optional()
+    .describe(
+      "Markers and clip ranges only: the marker color, one of Resolve's 16 names, for example from the project's color key in the brief. A clip range's color applies if the user keeps it as a range marker. Without one, the marker is Blue.",
     ),
   reason: z
     .string()
@@ -277,6 +284,8 @@ export function prepareSubmission(
     }
     if (p.clip_names && kind !== 'cut')
       throw new AgentReadError(`${at}.clip_names: only a split names two clips.`);
+    if (p.color && kind !== 'mark' && kind !== 'clip')
+      throw new AgentReadError(`${at}.color: only a marker or a clip range has a color.`);
     if (kind !== 'clip' && p.title.length > 100)
       throw new AgentReadError(`${at}.title: at most 100 characters except for clips.`);
     const evidence = p.evidence.map((e, j) => {
@@ -315,6 +324,7 @@ export function prepareSubmission(
       ...(p.clip_names
         ? { names: { first: p.clip_names.first.trim(), second: p.clip_names.second.trim() } }
         : {}),
+      ...(p.color ? { color: p.color } : {}),
       reason: p.reason.trim(),
       ...(intents.length ? { intent: intents[0], intents } : {}),
       ...(p.notion
@@ -347,6 +357,7 @@ export function submissionAnswer(source: AgentReadSource, proposals: AgentPropos
       time: round(p.time),
       end: p.end === undefined ? undefined : round(p.end),
       title: p.title,
+      color: p.color,
     })),
     next:
       'They wait on the cue cards in the transcript window until the user accepts or rejects ' +
@@ -393,6 +404,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
             ...(p.kind === 'cut'
               ? { clipNames: d.title ? { first: d.title, second: d.text ?? '' } : undefined }
               : { title: d.title, note: d.text }),
+            // The color of the marker accepting made, as the user kept it (VC-200).
+            ...(d.color ? { color: d.color } : {}),
           }
         : undefined;
     return {
@@ -405,6 +418,7 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
         title: p.title,
         note: p.text || undefined,
         clipNames: p.names,
+        color: p.color,
       },
       intents: proposalIntents(p),
       ...(p.notion ? { notion: p.notion } : {}),
@@ -458,6 +472,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
                   retitled: d!.title !== p.title,
                   noteEdited: (d!.text ?? '') !== p.text,
                 }),
+            // Blue when the agent gave no color: the card showed it as the default.
+            ...(d!.color ? { recolored: d!.color !== (p.color ?? 'Blue') } : {}),
             ...afterAccepting(p, d),
           }
         : {}),

@@ -67,6 +67,8 @@ export interface RecordProposal {
   title: string;
   note?: string;
   clipNames?: { first: string; second: string };
+  /** The marker color the agent suggested (VC-200). */
+  color?: string;
   intents: string[];
   submissionId: string;
 }
@@ -94,6 +96,8 @@ export interface Changes {
   end?: FieldChange<number | undefined>;
   name?: FieldChange<string>;
   note?: FieldChange<string>;
+  /** A marker's color (VC-200). */
+  color?: FieldChange<string | undefined>;
 }
 export interface FinalRecording {
   id: string;
@@ -129,6 +133,8 @@ export interface FinalProposal {
     title?: string;
     note?: string;
     clipNames?: { first: string; second: string };
+    /** The color of the marker accepting made (VC-200). */
+    color?: string;
   };
   /**
    * How the chosen values differ from the proposal (VC-184): its time and end moved on the card
@@ -237,6 +243,7 @@ export function recordProposal(p: AgentProposal): RecordProposal {
     title: p.title,
     ...(p.text ? { note: p.text } : {}),
     ...(p.names ? { clipNames: p.names } : {}),
+    ...(p.color ? { color: p.color } : {}),
     intents: proposalIntents(p),
     submissionId: p.submissionId,
   };
@@ -364,6 +371,7 @@ function chosenOf(d: CueDecision | undefined, p: AgentProposal): FinalProposal['
     ...(d.appliedEnd !== undefined ? { end: round(d.appliedEnd) } : {}),
     ...(d.title != null ? { title: d.title } : {}),
     ...(d.text != null ? { note: d.text } : {}),
+    ...(d.color ? { color: d.color } : {}),
   };
 }
 /** What accepting changed from the proposal itself; a split's names are in `chosen`. */
@@ -374,8 +382,16 @@ function proposalChanges(p: AgentProposal, chosen: NonNullable<FinalProposal['ch
       start: round(p.time),
       end: p.end === undefined || cut ? undefined : round(p.end),
       ...(cut ? {} : { name: p.title, note: p.text }),
+      // The card showed Blue when the agent gave no color.
+      ...(chosen.color ? { color: p.color ?? 'Blue' } : {}),
     },
-    { start: chosen.time, end: chosen.end, name: chosen.title, note: chosen.note },
+    {
+      start: chosen.time,
+      end: chosen.end,
+      name: chosen.title,
+      note: chosen.note,
+      color: chosen.color,
+    },
   );
 }
 /** An item's position, end, name and note, whatever its kind. */
@@ -384,10 +400,12 @@ interface Comparable {
   end?: number;
   name?: string;
   note?: string;
+  /** Markers only, and only compared when the earlier side has one. */
+  color?: string;
 }
 function comparable(x: RecordClip | RecordMarker | RecordNote): Comparable {
   if ('start' in x) return { start: x.start, end: x.end, name: x.name, note: x.note };
-  if ('name' in x) return { start: x.time, end: x.end, name: x.name, note: x.note };
+  if ('name' in x) return { start: x.time, end: x.end, name: x.name, note: x.note, color: x.color };
   return { start: x.time ?? 0, name: x.title, note: x.text };
 }
 function changes(was: Comparable, now: Comparable): Changes | undefined {
@@ -402,6 +420,8 @@ function changes(was: Comparable, now: Comparable): Changes | undefined {
     out.name = { from: was.name, to: now.name ?? '' };
   if ((was.note ?? '') !== (now.note ?? ''))
     out.note = { from: was.note ?? '', to: now.note ?? '' };
+  if (was.color !== undefined && was.color !== now.color)
+    out.color = { from: was.color, to: now.color };
   return Object.keys(out).length ? out : undefined;
 }
 /** How an item differs from what was chosen, comparing only what was chosen. */
@@ -429,7 +449,13 @@ function madeBy(
     return {
       id: d.markerId,
       kind: 'marker',
-      chosen: { start, end, name: d.title ?? p.title, note: d.text ?? p.text },
+      chosen: {
+        start,
+        end,
+        name: d.title ?? p.title,
+        note: d.text ?? p.text,
+        ...(d.color ? { color: d.color } : {}),
+      },
     };
   if (d.noteId)
     return {

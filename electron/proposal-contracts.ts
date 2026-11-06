@@ -41,6 +41,8 @@ export interface AgentProposal {
   text: string;
   /** Splits only: suggested names for the clips before and after the split. */
   names?: { first: string; second: string };
+  /** Markers and clip ranges: the marker color suggested (VC-200), one of Resolve's 16. */
+  color?: import('./workflow-types.js').MarkerColor;
   reason: string;
   /** The first intent; kept for proposals stored before `intents` (0.4.18). */
   intent?: ProposalIntent;
