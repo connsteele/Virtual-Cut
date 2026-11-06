@@ -201,7 +201,8 @@ class Tests(unittest.TestCase):
         segments = plan['transcript']['segments']
         self.assertEqual([(s['start'], s['end'], s['text']) for s in segments],
                          [('00:00:00:30', '00:00:01:15', 'Hello there'), ('00:00:02:00', '00:00:03:00', 'Lapis rooted')])
-        self.assertEqual(segments[1]['words'], [{'text': 'Lapis'}, {'text': 'rooted'}])  # Resolve spreads them.
+        self.assertEqual(segments[0]['words'], [{'text': 'Hello '}, {'text': 'there '}])
+        self.assertEqual(segments[1]['words'], [{'text': 'Lapis '}, {'text': 'rooted'}])  # Resolve spreads them.
         self.assertTrue(helper.apply_transcript(plan))
         self.assertEqual(item.transcript['segments'], segments)
         # The next check keeps it, and Apply never sets it twice.
@@ -249,8 +250,8 @@ class Tests(unittest.TestCase):
         self.assertEqual(plan['transcript']['line'], 'Transcript: set from the companion (2 lines, word timing).')
         first, second = plan['transcript']['segments']
         self.assertEqual((first['start'], first['end'], first['text']), ('01:00:01:00', '01:00:02:00', 'Where is Cai'))
-        self.assertEqual(first['words'][2], {'text': 'Cai', 'start': '01:00:01:12', 'end': '01:00:02:00'})
-        self.assertEqual(second['words'], [{'text': 'Fixed'}, {'text': 'phrase'}])
+        self.assertEqual(first['words'][2], {'text': 'Cai ', 'start': '01:00:01:12', 'end': '01:00:02:00'})
+        self.assertEqual(second['words'], [{'text': 'Fixed '}, {'text': 'phrase'}])
         self.assertNotIn('Clip start', str(plan['transcript']['segments']))  # Microphone notes never go in.
     def test_transcript_none_reasons(self):
         older = Item(self.file, self.old)  # Resolve before 21.1.2: markers only.
@@ -268,6 +269,7 @@ class Tests(unittest.TestCase):
         lines = [(2.0, 3.0, [('b', 2.5, 3.5)]), (1.0, 2.4, [('a', 1.0, 2.4)]), (3.9, 9.0, [('c', None, None)])]
         segments = helper.transcript_segments(lines, 10, '00:00:00:00', 4)
         self.assertEqual([(s['start'], s['end']) for s in segments], [('00:00:01:00', '00:00:02:04'), ('00:00:02:04', '00:00:03:00'), ('00:00:03:09', '00:00:04:00')])
-        self.assertEqual(segments[1]['words'][0], {'text': 'b', 'start': '00:00:02:05', 'end': '00:00:03:00'})
+        self.assertEqual(segments[1]['words'][0], {'text': 'b ', 'start': '00:00:02:05', 'end': '00:00:03:00'})
+        self.assertEqual(segments[2]['words'], [{'text': 'c'}])
 
 if __name__ == '__main__': unittest.main()

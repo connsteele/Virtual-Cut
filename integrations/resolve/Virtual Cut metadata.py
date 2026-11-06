@@ -268,6 +268,11 @@ def transcript_segments(lines, fps, start_label, duration):
         segments.append({'start': timecode_label(origin + first, rate), 'end': timecode_label(origin + last, rate),
                          'text': ' '.join(e['text'] for e in entries), 'words': entries})
         previous = last
+    # Resolve builds its lines from the pauses (a second or more starts a new one), joining
+    # nearer lines word to word, so every word but the last carries its space as Resolve's own do.
+    words = [word for segment in segments for word in segment['words']]
+    for word in words[:-1]:
+        word['text'] += ' '
     return segments
 
 
@@ -401,11 +406,11 @@ def show_window(resolve, bmd):
     fusion = resolve.Fusion()
     ui = fusion.UIManager
     dispatcher = bmd.UIDispatcher(ui)
-    window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 850, 600]}, ui.VGroup([
-        ui.Label({'Text': 'Check the whole Media Pool to find supported video exports in every bin with an adjacent .vcut.json. No selection needed. Matching videos are fully verified; large exports can take time.', 'WordWrap': True, 'Weight': 0}),
-        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clips with no transcript get the game dialogue transcript from the export; existing transcripts are never replaced. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0}),
+    window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 900, 680]}, ui.VGroup([
+        ui.Label({'Text': 'Check the whole Media Pool to find supported video exports in every bin with an adjacent .vcut.json. No selection needed. Matching videos are fully verified; large exports can take time.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 40]}),
+        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clips with no transcript get the game dialogue transcript from the export; existing transcripts are never replaced. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 58]}),
         ui.TextEdit({'ID': 'Plan', 'ReadOnly': True, 'PlainText': 'No plan checked yet.'}),
-        ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0}),
+        ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 58]}),
         ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check whole Media Pool'}), ui.Button({'ID': 'Selected', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply markers and transcripts', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
     ]))
     items = window.GetItems()
