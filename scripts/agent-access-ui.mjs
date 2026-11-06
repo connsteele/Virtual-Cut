@@ -102,12 +102,14 @@ try {
     'get_visual_events',
     'look',
     'submit_proposals',
+    'withdraw_proposals',
   ]);
-  // Only proposing is not read-only, and it is never destructive (VC-162).
+  // Only proposing and withdrawing are not read-only, and neither is destructive (VC-162,
+  // VC-201).
   for (const t of listed)
     assert.deepEqual(
       t.annotations,
-      t.name === 'submit_proposals'
+      ['submit_proposals', 'withdraw_proposals'].includes(t.name)
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
         : { readOnlyHint: true },
     );
