@@ -44,6 +44,30 @@ export function markerColorName(marker: Marker): MarkerColor {
 export function markerColor(marker: Marker) {
   return markerColors[markerColorName(marker)];
 }
+// Names/order match Resolve's ClipColor API, which differs from its marker colors.
+// The hex values approximate Resolve's swatches for display only.
+export const clipColors = {
+  Orange: '#e8862a',
+  Apricot: '#f3a65a',
+  Yellow: '#e2c13b',
+  Lime: '#9fc63f',
+  Olive: '#5f9a3a',
+  Green: '#3fa86b',
+  Teal: '#2fa3a3',
+  Navy: '#2e5b9e',
+  Blue: '#4a8fd8',
+  Purple: '#8a56c2',
+  Violet: '#c156c9',
+  Pink: '#e2669c',
+  Tan: '#c9a880',
+  Beige: '#e0cfae',
+  Brown: '#9a6a3e',
+  Chocolate: '#6e4a32',
+} as const;
+export type ClipColor = keyof typeof clipColors;
+export function isClipColor(value: unknown): value is ClipColor {
+  return typeof value === 'string' && Object.hasOwn(clipColors, value);
+}
 export interface Marker {
   id: string;
   time: number;
@@ -72,6 +96,8 @@ export interface Clip {
   holdReason?: string;
   originalName?: string;
   originalFolder?: string;
+  /** Optional Resolve clip color (VC-207); absent means Resolve's default. */
+  color?: ClipColor;
 }
 export interface Recording {
   /** Read-only completed output; playback uses its embedded game audio. */

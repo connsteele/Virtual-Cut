@@ -696,6 +696,11 @@ async function setDate(file: string, record: ExportRecord) {
     new Date(record.input.sourceModified + record.plan.requested.start * 1000),
   );
 }
+function withoutColor(clip: ExportRecord['input']['clip']) {
+  const rest = { ...clip };
+  delete rest.color;
+  return rest;
+}
 export function annotation(record: ExportRecord, v: ExportVerification) {
   const { input, plan } = record;
   return (
@@ -705,7 +710,8 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
         version: record.annotationVersion ?? 1,
         exportId: plan.id,
         created: plan.created,
-        clip: input.clip,
+        // The clip color travels in its own optional section below (VC-207).
+        clip: withoutColor(input.clip),
         requested: plan.requested,
         planned: plan.planned,
         verified: v,
@@ -806,6 +812,17 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                 ),
                 timing:
                   'Each file repeats the plain .srt beside this video shifted by startSeconds, for Resolve. One is written for each requested transcript with speech in this clip.',
+              },
+            }
+          : {}),
+        // Optional and separately versioned, so helpers that read version 4 are unaffected (VC-207).
+        ...(input.clip.color
+          ? {
+              clipColor: {
+                schema: 'virtual-cut-clip-color',
+                version: 1,
+                name: input.clip.color,
+                purpose: "Resolve's clip color (MediaPoolItem.SetClipColor).",
               },
             }
           : {}),

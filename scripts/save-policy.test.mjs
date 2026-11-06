@@ -60,12 +60,22 @@ test('save validation rejects missing marker sources, foreign audio and invalid 
       },
       /Invalid marker/,
     ],
+    [
+      (m) => {
+        // A marker color name is not a Resolve clip color (VC-207).
+        m.clips[0].color = 'Cyan';
+      },
+      /Invalid clip color/,
+    ],
   ]) {
     const model = editFixture();
     change(model);
     assert.throws(() => validateEdits(model), message);
   }
   assert.doesNotThrow(() => validateEdits(editFixture()));
+  const colored = editFixture();
+  colored.clips[0].color = 'Apricot';
+  assert.equal(validateEdits(colored).clips[0].color, 'Apricot');
 });
 
 test('stale note/source edits and duplicate clip identities cannot overwrite current work', () => {
@@ -144,4 +154,44 @@ test('small changes preserve unrelated native facts and ordered deletion Undo', 
       ],
     },
   );
+});
+
+test('a clip color reaches the companion in its own optional section (VC-207)', async () => {
+  const { annotation } = await import('../dist-electron/clip-export.cjs');
+  const record = (color) => ({
+    annotationVersion: 4,
+    plan: {
+      id: 'p',
+      created: '2026-11-06T00:00:00.000Z',
+      requested: { start: 1, end: 4 },
+      planned: { start: 0, end: 5 },
+      name: 'A',
+    },
+    input: {
+      clip: { ...editFixture().clips[0], include: true, ...(color ? { color } : {}) },
+      markers: [],
+      context: '',
+      gameTrack: 1,
+      sourceFile: 'source.mkv',
+      sourceFingerprint: 'f',
+      sourceBytes: 1,
+      sourceModified: 0,
+      sourceStart: 0,
+      duration: 10,
+    },
+  });
+  const verified = { actual: { start: 0, end: 5 }, timestampShift: 0 };
+  const colored = JSON.parse(annotation(record('Teal'), verified));
+  assert.equal(colored.version, 4, 'the receipt version stays put');
+  assert.deepEqual(
+    {
+      schema: colored.clipColor.schema,
+      version: colored.clipColor.version,
+      name: colored.clipColor.name,
+    },
+    { schema: 'virtual-cut-clip-color', version: 1, name: 'Teal' },
+  );
+  assert.equal('color' in colored.clip, false, 'the section is the one place the color lives');
+  const plain = JSON.parse(annotation(record(), verified));
+  assert.equal('clipColor' in plain, false);
 });

@@ -1,4 +1,5 @@
 import {
+  isClipColor,
   markerColors,
   type Model,
   type Recording,
@@ -281,6 +282,7 @@ export function validateEdits(model: Model): Model {
       !text(c.folder, 2000)
     )
       throw new Error('A clip must belong to a recording and have valid in/out points.');
+    if (c.color != null && !isClipColor(c.color)) throw new Error('Invalid clip color.');
     return {
       ...c,
       start: micro(c.start),
