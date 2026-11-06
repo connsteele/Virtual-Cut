@@ -27,6 +27,7 @@ import { Button, Modal } from './ui';
 import { Timeline } from './Timeline';
 import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
+import { audioSyncStep } from './audioSync';
 import type { PlaybackDiagnostic, PlaybackTrace } from '../../electron/diagnostic-contracts';
 import s from './Workflow.module.css';
 /** J and L speed steps. Preview audio follows forward playback up to `audioLimit`. */
@@ -118,6 +119,15 @@ export function Player({
   const previewId = useRef(crypto.randomUUID()),
     recent = useRef<PlaybackTrace[]>([]),
     awaitingRecovery = useRef(false);
+  // Separate-audio sync since the last play, reported with the pause diagnostic (VC-29 note 28).
+  const audioSync = useRef({
+    holds: 0,
+    seeksBack: 0,
+    seeksForward: 0,
+    waits: 0,
+    stalledMs: 0,
+    stalledSince: 0,
+  });
   const gestures = useRef({ scrub: false, trim: false });
   const [activity, setActivity] = useState(false);
   const reportActivity = useCallback(() => {
@@ -285,12 +295,31 @@ export function Player({
     trace(status === 'Paused' ? 'pause' : status.includes('scan') ? 'scan' : 'play', {
       rate: speed.current,
     });
+    const sync = audioSync.current;
+    if (sync.stalledSince) sync.stalledMs += performance.now() - sync.stalledSince;
     window.virtualCut?.diagnostics?.playback({
       event: status === 'Paused' ? 'pause' : status.includes('scan') ? 'scan' : 'play',
       sourceId: r.id,
       rate: speed.current,
       direction: status.includes('reverse') ? -1 : 1,
+      ...(status === 'Paused'
+        ? {
+            audioHolds: sync.holds,
+            audioSeeksBack: sync.seeksBack,
+            audioSeeksForward: sync.seeksForward,
+            videoWaits: sync.waits,
+            stalledMs: Math.round(sync.stalledMs),
+          }
+        : {}),
     });
+    audioSync.current = {
+      holds: 0,
+      seeksBack: 0,
+      seeksForward: 0,
+      waits: 0,
+      stalledMs: 0,
+      stalledSince: 0,
+    };
   }, [status, r.id, trace]);
   const callbacks = useRef({ onPosition, onDuration, onEnded });
   useEffect(() => {
@@ -313,7 +342,25 @@ export function Player({
       elements = audio.current;
     const lastCorrection = new Map<number, number>();
     const starting = new Set<HTMLAudioElement>();
+    // Tracks held until the picture catches up (audioSyncStep, VC-29 note 28).
+    const holding = new Set<number>();
+    let waiting = false,
+      lastVideoTime = v.currentTime,
+      progressed = performance.now();
     const sync = () => {
+      const now = performance.now(),
+        stats = audioSync.current;
+      if (v.paused || v.seeking || v.currentTime !== lastVideoTime) {
+        lastVideoTime = v.currentTime;
+        progressed = now;
+      }
+      const stalled = waiting || now - progressed > 150;
+      if (stalled && !v.paused && !v.seeking) {
+        if (!stats.stalledSince) stats.stalledSince = now;
+      } else if (stats.stalledSince) {
+        stats.stalledMs += now - stats.stalledSince;
+        stats.stalledSince = 0;
+      }
       for (const track of monitored) {
         const a = audio.current.get(track.index);
         if (!a) continue;
@@ -327,21 +374,35 @@ export function Player({
           scan.current ||
           v.playbackRate > audioLimit
         ) {
+          holding.delete(track.index);
           a.pause();
           continue;
         }
         if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate;
         if (a.seeking) continue;
-        // A fixed source-time tolerance shrinks to a few wall-clock milliseconds
-        // when fast forwarding and can make the audio seek again on every tick.
-        const now = performance.now();
-        if (
-          a.readyState >= 1 &&
-          Math.abs(a.currentTime - time) > 0.12 * v.playbackRate &&
-          now - (lastCorrection.get(track.index) ?? -Infinity) > 350
-        ) {
-          a.currentTime = Math.max(0, time);
-          lastCorrection.set(track.index, now);
+        if (a.readyState >= 1) {
+          const drift = a.currentTime - time,
+            step = audioSyncStep({
+              drift,
+              rate: v.playbackRate,
+              stalled,
+              holding: holding.has(track.index),
+              spaced: now - (lastCorrection.get(track.index) ?? -Infinity) > 350,
+            });
+          if (step === 'seek') {
+            a.currentTime = Math.max(0, time);
+            lastCorrection.set(track.index, now);
+            holding.delete(track.index);
+            if (drift > 0) stats.seeksBack++;
+            else stats.seeksForward++;
+          } else if (step === 'hold' && !holding.has(track.index)) {
+            holding.add(track.index);
+            stats.holds++;
+          } else if (step === 'release') holding.delete(track.index);
+        }
+        if (holding.has(track.index)) {
+          if (!a.paused) a.pause();
+          continue;
         }
         if (a.paused && !starting.has(a)) {
           starting.add(a);
@@ -352,11 +413,22 @@ export function Player({
         }
       }
     };
+    const onWaiting = () => {
+      waiting = true;
+      audioSync.current.waits++;
+      sync();
+    };
+    const onPlaying = () => {
+      waiting = false;
+      sync();
+    };
     const seekAudio = () => {
       if (scan.current || v.playbackRate > audioLimit) {
         sync();
         return;
       }
+      waiting = false;
+      holding.clear();
       for (const track of monitored) {
         const a = audio.current.get(track.index);
         if (a && a.readyState >= 1)
@@ -369,11 +441,15 @@ export function Player({
     };
     const events = ['play', 'pause', 'ratechange', 'seeking', 'seeked', 'ended'] as const;
     events.forEach((e) => v.addEventListener(e, e === 'seeked' ? seekAudio : sync));
+    v.addEventListener('waiting', onWaiting);
+    v.addEventListener('playing', onPlaying);
     const timer = setInterval(sync, 50);
     sync();
     return () => {
       clearInterval(timer);
       events.forEach((e) => v.removeEventListener(e, e === 'seeked' ? seekAudio : sync));
+      v.removeEventListener('waiting', onWaiting);
+      v.removeEventListener('playing', onPlaying);
       elements.forEach((a) => a.pause());
     };
     // The key includes all selected stream URLs and timing offsets.

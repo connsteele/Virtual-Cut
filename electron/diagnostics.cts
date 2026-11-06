@@ -194,6 +194,11 @@ function safeFields(data: Record<string, unknown>, nested = false): Record<strin
         'windowId',
         'line',
         'pid',
+        'audioHolds',
+        'audioSeeksBack',
+        'audioSeeksForward',
+        'videoWaits',
+        'stalledMs',
       ].includes(key) &&
       typeof value === 'number' &&
       Number.isFinite(value)

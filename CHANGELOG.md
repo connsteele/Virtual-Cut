@@ -2,6 +2,18 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.29 — Fast playback without echo beside the Transcript window (November 6, 2026)
+
+A hotfix during the first real batch. At 2x and faster, Cut playback stuttered and the sound
+repeated like an echo while the Transcript window was open. Each time the 4K picture stalled, the
+listening tracks ran ahead and were pulled back to it, replaying a slice of sound. Now a track
+waits while the picture stalls or while it is ahead, and only skips forward to catch up, so a
+stall is a short gap instead of a repeat. The Transcript window also redraws far less work on
+each playhead update: looking up corrections once per change instead of searching every
+correction for every word cut its busy time while playing from about 75% to about 2% on a dense
+page. Pausing records how often the audio waited or moved in the diagnostics log. See [the
+0.4.29 review](docs/review-0.4.29.md).
+
 ## 0.4.28 — Agents withdraw proposals and suggest marker colors (November 6, 2026)
 
 A hotfix during the first real batch. Agent apps can take back their own proposals still waiting

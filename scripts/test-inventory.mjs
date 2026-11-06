@@ -7,6 +7,7 @@ export const fast = [
   'source-folders.test.mjs',
   'timeline-viewport.test.mjs',
   'scan-playback.test.mjs',
+  'audio-sync.test.mjs',
   'filmstrip-memory.test.mjs',
   'marker-timing.test.mjs',
   'review-order.test.mjs',
@@ -132,6 +133,8 @@ export const longerTimeouts = {};
 export const other = {
   'playback-speed-study.mjs':
     'Measures painted frames, gaps and decode load at each J/K/L speed on a copied project; manual, needs real footage.',
+  'transcript-render-study.mjs':
+    'Times the Transcript window main thread while the playhead moves on a dense Both page with many corrections (VC-29 note 28); manual study on a suite run.',
   'proxy-study.mjs':
     'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
   'reverse-cache-study.mjs':

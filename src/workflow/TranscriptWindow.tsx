@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Settings, ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import type {
   TranscriptApi,
@@ -274,7 +274,16 @@ export function TranscriptWindow() {
   useEffect(() => {
     previewOwner.current = { projectId, sourceId: previewSource };
   }, [projectId, previewSource]);
-  const editRevision = JSON.stringify(session?.edits);
+  // The main window sends the playhead about 8 times a second while playing, and each one
+  // renders this page again. Work that depends only on the corrections is done once per change
+  // (VC-29 note 28: a slow page here made fast playback stall and the audio echo).
+  const edits = session?.edits;
+  const editRevision = useMemo(() => JSON.stringify(edits), [edits]);
+  const editById = useMemo(() => new Map((edits || []).map((e) => [e.id, e])), [edits]);
+  const heardAsShown = useMemo(() => {
+    const ids = new Set([currentId, gameId]);
+    return heardAsUsed((edits || []).filter((e) => ids.has(e.transcriptId)));
+  }, [edits, currentId, gameId]);
   // Original also reads the dropped lines (VC-166), so it is a different page.
   const pageKey = JSON.stringify([
     identity.current,
@@ -307,6 +316,12 @@ export function TranscriptWindow() {
   const usablePage = loadedPageKey === pageKey && ours ? page : undefined;
   // Chip counts cover the whole transcript, so the previous page's counts stay while loading.
   const counts = ours ? page.counts : undefined;
+  // Where speech last ended before each row, for the silence gaps between lines.
+  const spokenBefore: number[] = [];
+  usablePage?.segments.reduce((spoken, segment, row) => {
+    spokenBefore[row] = spoken;
+    return Math.max(spoken, segment.end);
+  }, 0);
   // Each row's own transcript: under Both, game lines belong to the game transcript.
   const ownerOf = (row: number) =>
     combined && usablePage?.owners?.[row] === combined.game.id ? combined.game : selected!;
@@ -528,9 +543,7 @@ export function TranscriptWindow() {
   ) {
     if (!session || !transcript) return;
     const word = wordIndex == null ? undefined : segment.words[wordIndex];
-    const correction = session.edits.find(
-      (e) => e.id === correctionId(transcript.id, segment.id, wordIndex),
-    );
+    const correction = editById.get(correctionId(transcript.id, segment.id, wordIndex));
     setFocusedWord({ segment: segment.id, word: wordIndex, transcript: transcript.id });
     if (edit) {
       setFollow(false);
@@ -610,7 +623,7 @@ export function TranscriptWindow() {
     if (!session || !transcript) return Promise.resolve();
     const expected = type.endsWith('cue')
       ? reviewedCue(session.decisions, transcript, segment)
-      : session.edits.find((e) => e.id === correctionId(transcript.id, segment.id, wordIndex));
+      : editById.get(correctionId(transcript.id, segment.id, wordIndex));
     return api.command({
       ...values,
       projectId: session.projectId,
@@ -936,8 +949,7 @@ export function TranscriptWindow() {
                 : ''}
               {(() => {
                 // VC-194: the game's heard-as spellings at work in what is on screen now.
-                const ids = new Set([selected.id, combined?.game.id]);
-                const used = heardAsUsed(session.edits.filter((e) => ids.has(e.transcriptId)));
+                const used = heardAsShown;
                 return used.length ? (
                   <span data-heard-as-used>
                     {' · heard-as spellings used: '}
@@ -987,11 +999,9 @@ export function TranscriptWindow() {
             onWheel={() => setFollow(false)}
           >
             {placed.get(-1)?.map(proposalCard)}
-            {usablePage?.segments.map((segment, row, segments) => {
+            {usablePage?.segments.map((segment, row) => {
               const owner = ownerOf(row);
-              const phraseEdit = session.edits.find(
-                (e) => e.id === correctionId(owner.id, segment.id),
-              );
+              const phraseEdit = editById.get(correctionId(owner.id, segment.id));
               const cue = cueCandidate(owner, segment);
               const active =
                 position.projectId === projectId && position.sourceId === session.sourceId;
@@ -1004,7 +1014,7 @@ export function TranscriptWindow() {
               ).trim();
               // Gaps only make sense in the unfiltered, time-ordered reading view. Under Both,
               // speech from either transcript ends the silence.
-              const spoken = row ? Math.max(...segments.slice(0, row).map((p) => p.end)) : 0;
+              const spoken = spokenBefore[row];
               const pause = row && filter === 'all' && !search ? segment.start - spoken : 0;
               const editor = (initial: string, phrase: boolean) => (
                 <TranscriptInlineEdit
@@ -1077,8 +1087,8 @@ export function TranscriptWindow() {
                                 {word.text.match(/\s*$/)?.[0]}
                               </Fragment>
                             );
-                          const correction = session.edits.find(
-                            (e) => e.id === correctionId(owner.id, segment.id, index),
+                          const correction = editById.get(
+                            correctionId(owner.id, segment.id, index),
                           );
                           const focused =
                             focusedWord?.segment === segment.id &&
@@ -1128,9 +1138,8 @@ export function TranscriptWindow() {
                     {editing && (
                       <p className={s.editHint} aria-label="Transcript correction">
                         Enter saves · Escape cancels · Original: {originalText}
-                        {session.edits.find(
-                          (e) => e.id === correctionId(owner.id, segment.id, editing.wordIndex),
-                        )?.heardAs
+                        {editById.get(correctionId(owner.id, segment.id, editing.wordIndex))
+                          ?.heardAs
                           ? ` · heard-as spelling from ${owner.context.gameName ? `${owner.context.gameName}’s` : 'the game’s'} names and terms`
                           : ''}
                         {editing.wordIndex == null
@@ -1141,9 +1150,7 @@ export function TranscriptWindow() {
                           .filter((c) => c.start < segment.end && c.end > segment.start)
                           .map((c) => c.name)
                           .join(', ') || 'No clip at this phrase'}
-                        {session.edits.some(
-                          (e) => e.id === correctionId(owner.id, segment.id, editing.wordIndex),
-                        ) && (
+                        {editById.has(correctionId(owner.id, segment.id, editing.wordIndex)) && (
                           <button
                             className={s.linkButton}
                             disabled={busy}
@@ -1157,7 +1164,7 @@ export function TranscriptWindow() {
                     {cue && !reworked.has(segment.id) && (
                       <div className={s.rowCue}>
                         <TranscriptCue
-                          key={`${owner.id}:${segment.id}:${JSON.stringify(session.edits)}`}
+                          key={`${owner.id}:${segment.id}:${editRevision}`}
                           segment={segment}
                           transcript={owner}
                           session={session}

@@ -22,6 +22,12 @@ export type PlaybackDiagnostic = {
   duration?: number;
   offset?: number;
   recent?: PlaybackTrace[];
+  /** Separate-audio sync since play began, sent with a pause (VC-29 note 28). */
+  audioHolds?: number;
+  audioSeeksBack?: number;
+  audioSeeksForward?: number;
+  videoWaits?: number;
+  stalledMs?: number;
 };
 export type PlaybackTrace = {
   action:

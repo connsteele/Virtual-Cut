@@ -168,6 +168,34 @@ try {
         ),
     )
     .toBeLessThan(0.25);
+  // VC-29 note 28: when the picture stalls, the listening tracks wait for it. They used to be
+  // pulled back to the picture, replaying a slice of sound each time (an echo at speed).
+  const stall = await page.evaluate(async () => {
+    const v = document.querySelector('video');
+    const tracks = [...document.querySelectorAll('audio')];
+    const frozen = v.currentTime;
+    Object.defineProperty(v, 'currentTime', { configurable: true, get: () => frozen });
+    v.dispatchEvent(new Event('waiting'));
+    const samples = [];
+    for (let i = 0; i < 40; i++) {
+      samples.push(tracks.map((a) => ({ time: a.currentTime, paused: a.paused })));
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    delete v.currentTime;
+    v.dispatchEvent(new Event('playing'));
+    const backward = samples
+      .slice(1)
+      .some((row, i) => row.some((t, n) => t.time < samples[i][n].time - 0.001));
+    return {
+      backward,
+      held: samples.at(-1).every((t) => t.paused),
+      ahead: Math.max(...samples.at(-1).map((t) => t.time - frozen)),
+    };
+  });
+  assert(!stall.backward && stall.held && stall.ahead < 0.3, JSON.stringify(stall));
+  await expect
+    .poll(() => page.locator('audio').evaluateAll((items) => items.every((a) => !a.paused)))
+    .toBe(true);
   await page.getByRole('button', { name: 'Pause · K / Space', exact: true }).click();
   await expect
     .poll(() => page.locator('audio').evaluateAll((items) => items.every((a) => a.paused)))
