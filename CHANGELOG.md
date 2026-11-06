@@ -2,6 +2,19 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.27 — Ready for the first real batch (November 6, 2026)
+
+Sprint 13. Double-clicking a word in the Transcript window while Follow playback is on now opens
+the editor on that word: a seek from clicking a word no longer scrolls the list under the
+pointer, and Follow carries on once playback moves off it. When SRT subtitles are chosen and the
+finished video carries a start timecode, export and filing also write a `.timecode.srt` copy
+shifted to that timecode, for Resolve's Import from Subtitles; the result line says when a video
+has none (OBS recordings don't). The Resolve helper's Check and Apply now also set each matching
+clip's Resolve transcript from its game dialogue export on Resolve Studio 21.1.2 or later, only on
+clips that have none, so transcripts no longer need importing clip by clip (decision 0023 amends
+0009). Passing desktop checks now say in the suite report which parts they skipped. See [the
+0.4.27 review](docs/review-0.4.27.md).
+
 ## 0.4.26 — Agents can look at pictures, and names spelled the game's way (November 5, 2026)
 
 Sprint 12. Agent apps can ask to see moments of a recording with a new `look` tool: a strip of
