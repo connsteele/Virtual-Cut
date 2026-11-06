@@ -1,6 +1,7 @@
 # 0009. Explicit Resolve helper for marker metadata; transcript import stays manual
 
 - Status: Accepted (October 1, 2026; transcript findings October 3)
+- Amended by: [0023](0023-resolve-helper-transcripts.md) (the helper sets transcripts on clips that have none, Resolve 21.1.2+)
 - Sources: [filing and Library — Resolve marker metadata](../filing-and-library.md#resolve-marker-metadata), [Resolve transcript handoff research](../research/resolve-transcript-handoff.md), [library and Resolve handoff research](../research/library-and-resolve-handoff.md)
 
 ## Context

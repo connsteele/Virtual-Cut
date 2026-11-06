@@ -6,30 +6,31 @@ Short records of confirmed architecture and product decisions: what was decided,
 
 ## Records
 
-| #                                              | Decision                                                                    | Status   |
-| ---------------------------------------------- | --------------------------------------------------------------------------- | -------- |
-| [0001](0001-desktop-stack.md)                  | Electron desktop app with React, TypeScript, Vite and CSS Modules           | Accepted |
-| [0002](0002-native-boundary.md)                | Sandboxed renderer with a narrow typed preload; main owns native operations | Accepted |
-| [0003](0003-project-storage-and-saving.md)     | SQLite project files with session-only Undo and timed autosave              | Accepted |
-| [0004](0004-exports-reference-sources.md)      | Reference sources in place; game-audio-only packet-copy exports             | Accepted |
-| [0005](0005-cleanup-never-deletes-outputs.md)  | Cleanup never deletes originals, completed exports or companions            | Accepted |
-| [0006](0006-markers-and-clips.md)              | OBS chapters import as point markers; markers stay distinct from clips      | Accepted |
-| [0007](0007-local-transcription.md)            | Local, on-demand faster-whisper transcription with immutable recognition    | Accepted |
-| [0008](0008-utterance-recognition-adapters.md) | Keep utterance recognition; alignment and speakers as optional adapters     | Accepted |
-| [0009](0009-resolve-handoff.md)                | Explicit Resolve helper for marker metadata; transcript import stays manual | Accepted |
-| [0010](0010-floating-transcript-window.md)     | Transcript in a separate floating window, no docking                        | Accepted |
-| [0011](0011-frame-indexes-outside-model.md)    | Frame and keyframe indexes live outside the editable project model          | Accepted |
-| [0012](0012-change-notifications.md)           | Native change notifications instead of renderer polling                     | Accepted |
-| [0013](0013-filmstrip-tile-files.md)           | Filmstrips made once per recording and kept in the preview cache            | Accepted |
-| [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed |
-| [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed |
-| [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed |
-| [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed |
-| [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed |
-| [0019](0019-job-lanes.md)                      | Transcription and media work run in separate lanes                          | Proposed |
-| [0020](0020-picture-events.md)                 | One background picture pass per recording, events kept beside the model     | Proposed |
-| [0021](0021-screen-text.md)                    | Screen text read once per recording, recorded as facts beside the model     | Proposed |
-| [0022](0022-look-pictures.md)                  | Agents may look at pictures Virtual Cut renders, off until allowed          | Proposed |
+| #                                              | Decision                                                                    | Status                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [0001](0001-desktop-stack.md)                  | Electron desktop app with React, TypeScript, Vite and CSS Modules           | Accepted                                                        |
+| [0002](0002-native-boundary.md)                | Sandboxed renderer with a narrow typed preload; main owns native operations | Accepted                                                        |
+| [0003](0003-project-storage-and-saving.md)     | SQLite project files with session-only Undo and timed autosave              | Accepted                                                        |
+| [0004](0004-exports-reference-sources.md)      | Reference sources in place; game-audio-only packet-copy exports             | Accepted                                                        |
+| [0005](0005-cleanup-never-deletes-outputs.md)  | Cleanup never deletes originals, completed exports or companions            | Accepted                                                        |
+| [0006](0006-markers-and-clips.md)              | OBS chapters import as point markers; markers stay distinct from clips      | Accepted                                                        |
+| [0007](0007-local-transcription.md)            | Local, on-demand faster-whisper transcription with immutable recognition    | Accepted                                                        |
+| [0008](0008-utterance-recognition-adapters.md) | Keep utterance recognition; alignment and speakers as optional adapters     | Accepted                                                        |
+| [0009](0009-resolve-handoff.md)                | Explicit Resolve helper for marker metadata; transcript import stays manual | Accepted, amended by [0023](0023-resolve-helper-transcripts.md) |
+| [0010](0010-floating-transcript-window.md)     | Transcript in a separate floating window, no docking                        | Accepted                                                        |
+| [0011](0011-frame-indexes-outside-model.md)    | Frame and keyframe indexes live outside the editable project model          | Accepted                                                        |
+| [0012](0012-change-notifications.md)           | Native change notifications instead of renderer polling                     | Accepted                                                        |
+| [0013](0013-filmstrip-tile-files.md)           | Filmstrips made once per recording and kept in the preview cache            | Accepted                                                        |
+| [0014](0014-agent-access-boundary.md)          | Agents read through a local, paired, read-only MCP server                   | Proposed                                                        |
+| [0015](0015-agent-proposals.md)                | Agent proposals wait on the cue card and are decided like spoken cues       | Proposed                                                        |
+| [0016](0016-mic-intents-and-proposal-card.md)  | Free mic speech becomes intent proposals on one proposal card               | Proposed                                                        |
+| [0017](0017-lossless-audio-copies.md)          | One lossless audio copy per track, heard and exported                       | Proposed                                                        |
+| [0018](0018-batch-records.md)                  | One batch record keeps the agent's first pass beside the exported state     | Proposed                                                        |
+| [0019](0019-job-lanes.md)                      | Transcription and media work run in separate lanes                          | Proposed                                                        |
+| [0020](0020-picture-events.md)                 | One background picture pass per recording, events kept beside the model     | Proposed                                                        |
+| [0021](0021-screen-text.md)                    | Screen text read once per recording, recorded as facts beside the model     | Proposed                                                        |
+| [0022](0022-look-pictures.md)                  | Agents may look at pictures Virtual Cut renders, off until allowed          | Proposed                                                        |
+| [0023](0023-resolve-helper-transcripts.md)     | The Resolve helper sets transcripts on clips that have none                 | Proposed                                                        |
 
 ## Adding a record
 
