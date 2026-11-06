@@ -436,6 +436,10 @@
   white-space: pre-wrap;
   text-align: left;
   line-height: inherit;
+  /* The active word moves about 8 times a second while playing. A fade on each move kept this
+     window drawing all the time, which starved the main window's 4K preview decode (VC-29
+     note 28: fast playback stalled while the Transcript window was open). */
+  transition: none;
 }
 .words button:hover {
   background: #294842;

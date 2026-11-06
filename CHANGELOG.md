@@ -11,7 +11,10 @@ waits while the picture stalls or while it is ahead, and only skips forward to c
 stall is a short gap instead of a repeat. The Transcript window also redraws far less work on
 each playhead update: looking up corrections once per change instead of searching every
 correction for every word cut its busy time while playing from about 75% to about 2% on a dense
-page. Pausing records how often the audio waited or moved in the diagnostics log. See [the
+page. The stutter itself came from the highlighted word fading as it moved, about 8 times a
+second: the open window never stopped drawing, which starved the 4K picture's decoding. Words
+now change highlight without a fade, and on Connor's PC 2x and 4x play at full speed beside the
+window. Pausing records how often the audio waited or moved in the diagnostics log. See [the
 0.4.29 review](docs/review-0.4.29.md).
 
 ## 0.4.28 — Agents withdraw proposals and suggest marker colors (November 6, 2026)

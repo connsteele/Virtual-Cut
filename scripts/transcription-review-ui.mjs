@@ -131,6 +131,35 @@ try {
   await position(12.2);
   await position(0.5);
   await expect(view.getByRole('navigation', { name: 'Transcript pages' })).toContainText('Page 1');
+  // VC-29 note 28: a moving playhead must not start animations among the phrases. A running
+  // animation keeps this window drawing, and that starved the main window's 4K preview decode
+  // (fast playback stalled while the window was open). Catch the first word change and look.
+  const animating = view.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const first = document.querySelector('[data-active-word="true"]');
+        const list = document.querySelector('[aria-label="Transcript phrases"]');
+        const check = () => {
+          const now = document.querySelector('[data-active-word="true"]');
+          if (!now || now === first) return requestAnimationFrame(check);
+          resolve(
+            document
+              .getAnimations()
+              .filter((a) => a.playState === 'running' && list.contains(a.effect?.target))
+              .map((a) => a.transitionProperty || a.animationName || 'animation'),
+          );
+        };
+        check();
+      }),
+  );
+  let changed = false;
+  void animating.then(() => (changed = true));
+  for (let i = 1; i <= 30 && !changed; i++) {
+    await position(0.5 + i * 0.1);
+    await new Promise((resolve) => setTimeout(resolve, 140));
+  }
+  assert(changed, 'The active word never moved');
+  assert.deepEqual(await animating, [], 'Playhead updates started animations');
   const storeModule = process.env.VIRTUAL_CUT_TEST_EXECUTABLE
     ? path.join(
         path.dirname(process.env.VIRTUAL_CUT_TEST_EXECUTABLE),
