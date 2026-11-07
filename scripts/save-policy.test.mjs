@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { autosaveSettings, autosaveDue } from '../src/workflow/autosave.ts';
 import { changes, applyChange } from '../electron/project-changes.ts';
 import { emptyModel, mergeEdits, validateEdits } from '../dist-electron/project-edits.js';
@@ -157,7 +158,9 @@ test('small changes preserve unrelated native facts and ordered deletion Undo', 
 });
 
 test('a clip color reaches the companion in its own optional section (VC-207)', async () => {
-  const { annotation } = await import('../dist-electron/clip-export.cjs');
+  // require, not import: under --coverage the instrumented CommonJS module can't load its
+  // ES module neighbours through Node's import-to-CommonJS bridge.
+  const { annotation } = createRequire(import.meta.url)('../dist-electron/clip-export.cjs');
   const record = (color) => ({
     annotationVersion: 4,
     plan: {
