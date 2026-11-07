@@ -12,7 +12,7 @@ import {
 } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
-import { require } from './shared.mjs';
+import { require, withWholeClips } from './shared.mjs';
 
 const {
   FilmstripCache,
@@ -382,6 +382,8 @@ try {
       await new Promise((r) => setTimeout(r, 100));
     }
     assert(p.jobs.every((j) => j.state === 'succeeded'));
+    // Import makes no clip (VC-206); Whole recording gives the reuse check its Review cards.
+    p = await service.save(p.project.id, p.model, withWholeClips(p.model));
     results.native =
       'Dates, intake persistence, duplicate import, validation, cancellation, unchanged sources and no timeline image files passed';
     await writeFile(
