@@ -101,6 +101,12 @@ export interface ExportRecord {
     media?: { width?: number; height?: number; fps?: number };
   };
   annotationVersion?: 1 | 2 | 3 | 4;
+  /**
+   * 'clip': the companion, chapters and Library carry the markers of the clip's own range, not
+   * of its outward keyframe padding (VC-208). Absent on older exports, whose companions must
+   * keep reproducing byte for byte.
+   */
+  markerScope?: 'clip';
   started?: string;
   elapsedMs?: number;
   plan: ExportPlan;

@@ -28,6 +28,10 @@ Batch imports ask about microphone notes and remember audio track assignments. I
 
 On **Media**, the left edge has separate folder-tree and media-pool toggles plus a hide/show-both control. Panel widths and visibility persist. **Trash icons on each source card** in Media and Cut remove that recording's batch membership; shared recordings retain their other batches and edits. An exclusive recording's app entries are removed after a protective manual save. Originals, previews and finished exports remain on disk. This operation clears edit Undo; use **Save history** to restore the recording and its edits. The adjacent folder icon opens Explorer at that recording's original file.
 
+## Export markers
+
+An export starts and ends on keyframes outside the clip, so it can show a moment of the neighbouring clips. Its chapters and `.vcut.json` companion carry only the clip's own markers: a marker in that extra footage belongs to the neighbouring clip and stays out. A range that crosses the clip's edge is cut to the clip, unless less than a second of it falls inside and most of it lies outside; then it is the neighbour's. A marker at the clip's in-point sits at the video's first frame. Exports made before 0.4.30 keep the markers they were written with.
+
 ## Export subtitles
 
 **Export selected clip** and **File queue** can write **SRT subtitles beside the video** from a finished game dialogue or microphone notes transcript, cut to the clip's verified range: `<video>.srt` and `<video>.mic.srt`, timed from the video's first frame for players. When the exported video carries a start timecode (as camera files and Resolve renders do), each also gets a `.timecode.srt` copy shifted to that timecode, for Resolve's **Audio Transcription > Import from Subtitles**; the companion `.vcut.json` names the copies. The export result lists every file written, or says _No timecode copies: the video has no start timecode_ (OBS recordings carry none). Existing files are never replaced.

@@ -33,6 +33,7 @@ export const native = [
   'transcript-storage-checks.mjs',
   'project-deletion-checks.mjs',
   'range-markers-native.mjs',
+  'marker-spill-native.mjs',
   'resolve-helper-checks.mjs',
   'filing-native-checks.mjs',
   'save-policy-native.mjs',

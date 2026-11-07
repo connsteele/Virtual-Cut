@@ -1,4 +1,4 @@
-import { markerIntersects, relativeMarker } from './marker-ranges.js';
+import { clipMarkers, markerIntersects, relativeMarker } from './marker-ranges.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
@@ -1587,6 +1587,7 @@ export class ProjectService {
     return {
       plan,
       annotationVersion: 4,
+      markerScope: 'clip',
       input,
       inputHash: hash,
       state: 'planned',
@@ -1918,13 +1919,24 @@ export class ProjectService {
             video: e.verification!.videoCodec,
             note: e.input.clip.note || '',
             context: e.input.context,
-            markers: e.input.markers
-              .filter((m) =>
-                markerIntersects(m, e.verification!.actual.start, e.verification!.actual.end),
-              )
-              .map((m) =>
-                relativeMarker(m, e.verification!.actual.start, e.verification!.actual.end),
-              ),
+            markers:
+              e.markerScope === 'clip'
+                ? clipMarkers(
+                    e.input.markers,
+                    e.plan.requested,
+                    e.verification!.constantFrameDuration ?? 1 / 60,
+                  ).map(({ marker, start, end, atIn }) => ({
+                    ...marker,
+                    time: atIn ? 0 : start - e.verification!.actual.start,
+                    ...(end != null ? { end: end - e.verification!.actual.start } : {}),
+                  }))
+                : e.input.markers
+                    .filter((m) =>
+                      markerIntersects(m, e.verification!.actual.start, e.verification!.actual.end),
+                    )
+                    .map((m) =>
+                      relativeMarker(m, e.verification!.actual.start, e.verification!.actual.end),
+                    ),
             available:
               !!info?.isFile() &&
               !info.isSymbolicLink() &&
