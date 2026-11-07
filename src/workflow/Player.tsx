@@ -138,10 +138,8 @@ export function Player({
     moved: boolean;
     queued: { position: number; exact: boolean } | null;
     settling: boolean;
-    tile?: { src: string; time: number };
     rest?: ReturnType<typeof setTimeout>;
   }>({ target: 0, moved: false, queued: null, settling: false });
-  const [scrubTile, setScrubTile] = useState('');
   // A demuxer-seek fault reloads the preview once by itself before the error shows (VC-41).
   const autoReloadAt = useRef(-Infinity);
   const [activity, setActivity] = useState(false);
@@ -533,10 +531,9 @@ export function Player({
     if (!v || v.error) return;
     const state = scrubbing.current;
     if (v.seeking) {
-      // The decoder is behind: wait, and show the nearest filmstrip tile if it is close.
+      // The decoder is behind: wait. The last decoded frame stays up; a low-resolution
+      // filmstrip tile in its place looked like broken footage (Connor, 0.4.30-52).
       state.queued = { position, exact };
-      const tile = state.tile;
-      if (tile && Math.abs(tile.time - position) <= 2) setScrubTile(tile.src);
       return;
     }
     state.queued = null;
@@ -776,7 +773,6 @@ export function Player({
     v.playbackRate = 1;
     scrubbing.current.queued = null;
     scrubbing.current.settling = false;
-    setScrubTile('');
     setError('');
     setErrorDetails('');
     setReady(false);
@@ -898,7 +894,6 @@ export function Player({
             const queued = state.queued;
             state.queued = null;
             if (queued && startScrubSeek(queued.position, queued.exact)) return;
-            setScrubTile('');
             if (state.settling) {
               state.settling = false;
               const v = video.current!;
@@ -999,15 +994,6 @@ export function Player({
         {holdFrame && (
           <img className={s.transitionFrame} src={holdFrame} alt="" aria-hidden="true" />
         )}
-        {scrubTile && !holdFrame && (
-          <img
-            className={s.transitionFrame}
-            data-scrub-tile
-            src={scrubTile}
-            alt=""
-            aria-hidden="true"
-          />
-        )}
         {error && (
           <div className={s.playbackFailure} role="alert">
             <div className={s.playbackFailureCard}>
@@ -1075,9 +1061,6 @@ export function Player({
           }
           stop();
           seek(t);
-        }}
-        onScrubTile={(tile) => {
-          scrubbing.current.tile = tile;
         }}
         onSelect={onSelect}
         handleMode={handleMode}

@@ -53,7 +53,6 @@ export function Timeline({
   onTrim,
   onTrimActive,
   onScrubActive,
-  onScrubTile,
   proposals = [],
   proposalFocus = null,
   proposalReveal = false,
@@ -85,8 +84,6 @@ export function Timeline({
   onTrim?: (id: string, edge: 'start' | 'end', value: number) => void;
   onTrimActive?: (active: boolean) => void;
   onScrubActive?: (active: boolean) => void;
-  /** The filmstrip tile under each scrub position, sent before its seek (VC-202). */
-  onScrubTile?: (tile: { src: string; time: number } | undefined) => void;
   /** Pending proposals for this recording, previewed faintly and read-only (VC-170). */
   proposals?: ProposalPreview[];
   /** The transcript window card in focus; its preview is drawn brighter. */
@@ -353,15 +350,7 @@ export function Timeline({
         )
       : null;
     setSnapGuide(target);
-    const at = target ?? value;
-    if (onScrubTile) {
-      const i = filmstrip.tiles.findIndex((tile) => at >= tile.left && at < tile.right);
-      const src = i >= 0 ? frames[i] : undefined;
-      onScrubTile(
-        src ? { src, time: filmstrip.exact[i]?.time ?? filmstrip.tiles[i].requested } : undefined,
-      );
-    }
-    onSeek(at);
+    onSeek(target ?? value);
   }
   function moveMarker(x: number) {
     const d = markerDrag.current;
