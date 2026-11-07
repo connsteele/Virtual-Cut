@@ -139,6 +139,8 @@ export const other = {
     'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
   'scrub-timing-study.mjs':
     'Times timeline scrubbing (pointer-to-frame, frames per second of drag, rest and release to the exact frame) on a copied project; manual, needs real footage.',
+  'scrub-cache-study.mjs':
+    'Times scrubbing from a WebCodecs frame cache with the scrub-timing-study drag on a copied recording (VC-202, VC-147); manual study.',
   'reverse-cache-study.mjs':
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':

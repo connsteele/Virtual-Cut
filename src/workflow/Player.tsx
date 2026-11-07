@@ -136,7 +136,7 @@ export function Player({
   const scrubbing = useRef<{
     target: number;
     moved: boolean;
-    queued: number | null;
+    queued: { position: number; exact: boolean } | null;
     settling: boolean;
     tile?: { src: string; time: number };
     rest?: ReturnType<typeof setTimeout>;
@@ -514,10 +514,16 @@ export function Player({
     const key = Math.abs(left - t) <= Math.abs(right - t) ? left : right;
     return key >= a && key < z && Math.abs(key - t) <= 2 ? key : t;
   }
-  /** Starts a scrub seek unless the video already shows `target`; true when one started. */
-  function startScrubSeek(target: number) {
+  /** Starts a scrub seek unless the video already shows the frame; true when one started.
+   * A move whose nearest keyframe is already shown (the pointer is still inside one keyframe
+   * interval, as when zoomed in) seeks the exact frame instead, so the picture keeps moving. */
+  function startScrubSeek(position: number, exact: boolean) {
     const v = video.current;
-    if (!v || v.error || Math.abs(v.currentTime - clockOffset - target) < 0.0005) return false;
+    if (!v || v.error) return false;
+    const shown = v.currentTime - clockOffset;
+    let target = exact ? position : nearestKey(position);
+    if (Math.abs(shown - target) < 0.0005) target = position;
+    if (Math.abs(shown - target) < 0.0005) return false;
     trace('seek', { target });
     v.currentTime = target + clockOffset;
     return true;
@@ -525,17 +531,16 @@ export function Player({
   function requestScrubSeek(position: number, exact: boolean) {
     const v = video.current;
     if (!v || v.error) return;
-    const target = exact ? position : nearestKey(position);
     const state = scrubbing.current;
     if (v.seeking) {
       // The decoder is behind: wait, and show the nearest filmstrip tile if it is close.
-      state.queued = target;
+      state.queued = { position, exact };
       const tile = state.tile;
       if (tile && Math.abs(tile.time - position) <= 2) setScrubTile(tile.src);
       return;
     }
     state.queued = null;
-    startScrubSeek(target);
+    startScrubSeek(position, exact);
   }
   function scrubTo(t: number) {
     if (!Number.isFinite(t) || !Number.isFinite(z) || z <= 0) return;
@@ -892,7 +897,7 @@ export function Player({
             const state = scrubbing.current;
             const queued = state.queued;
             state.queued = null;
-            if (queued != null && startScrubSeek(queued)) return;
+            if (queued && startScrubSeek(queued.position, queued.exact)) return;
             setScrubTile('');
             if (state.settling) {
               state.settling = false;
