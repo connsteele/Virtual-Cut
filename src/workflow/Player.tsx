@@ -27,6 +27,7 @@ import { Button, Modal } from './ui';
 import { Timeline } from './Timeline';
 import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
+import { fastScrubbing } from './SettingsPanel';
 import { audioSyncStep } from './audioSync';
 import type { PlaybackDiagnostic, PlaybackTrace } from '../../electron/diagnostic-contracts';
 import s from './Workflow.module.css';
@@ -138,8 +139,9 @@ export function Player({
     moved: boolean;
     queued: { position: number; exact: boolean } | null;
     settling: boolean;
+    fast: boolean;
     rest?: ReturnType<typeof setTimeout>;
-  }>({ target: 0, moved: false, queued: null, settling: false });
+  }>({ target: 0, moved: false, queued: null, settling: false, fast: false });
   // A demuxer-seek fault reloads the preview once by itself before the error shows (VC-41).
   const autoReloadAt = useRef(-Infinity);
   const [activity, setActivity] = useState(false);
@@ -524,7 +526,9 @@ export function Player({
     const interval =
       keys.length > 1 ? Math.max(0.25, (keys.at(-1)! - keys[0]) / (keys.length - 1)) : Infinity;
     let target = position;
-    if (!exact && Math.abs(position - shown) > interval) target = nearestKey(position);
+    // Fastest scrubbing (Settings) seeks a keyframe on every move, as 0.4.30-53 did.
+    if (!exact && (scrubbing.current.fast || Math.abs(position - shown) > interval))
+      target = nearestKey(position);
     if (Math.abs(shown - target) < 0.0005) target = position;
     if (Math.abs(shown - target) < 0.0005) return false;
     trace('seek', { target });
@@ -564,6 +568,7 @@ export function Player({
       gestures.current.scrub = true;
       state.moved = false;
       state.settling = false;
+      state.fast = fastScrubbing();
     } else if (gestures.current.scrub) {
       gestures.current.scrub = false;
       clearTimeout(state.rest);

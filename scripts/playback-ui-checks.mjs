@@ -253,6 +253,36 @@ try {
   const released = Number(await scrubSurface.getAttribute('aria-valuenow'));
   await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeCloseTo(released, 1);
   await expect(page.locator('[data-scrub-tile]')).toHaveCount(0);
+  // Settings sits last in the bottom bar and holds Fastest scrubbing, off by default, with its
+  // description folded away (VC-202).
+  const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
+  assert.equal(
+    await settingsButton.evaluate((el) => el === el.parentElement.lastElementChild),
+    true,
+    'Settings is the rightmost item in the bottom bar',
+  );
+  await settingsButton.click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const fastScrub = settings.getByRole('checkbox', { name: 'Fastest scrubbing' });
+  await expect(fastScrub).not.toBeChecked();
+  await expect(settings.getByText(/Shows keyframes on every move/)).toBeHidden();
+  await settings.getByText('What this does', { exact: true }).click();
+  await expect(settings.getByText(/Shows keyframes on every move/)).toBeVisible();
+  await fastScrub.check();
+  assert.equal(await page.evaluate(() => localStorage.getItem('virtual-cut.fast-scrub')), 'true');
+  await capture('settings-dialog-compact');
+  await page.keyboard.press('Escape');
+  await expect(settings).toHaveCount(0);
+  // Fastest scrubbing still keeps one seek in flight.
+  await video.evaluate(() => Object.assign(window.__scrubSeeks, { started: 0, overlapping: 0 }));
+  await page.mouse.move(ruler.x + ruler.width * 0.7, rulerY);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++)
+    await page.mouse.move(ruler.x + ruler.width * (0.7 - i * 0.02), rulerY);
+  await page.mouse.up();
+  await expect.poll(() => video.evaluate((v) => v.seeking)).toBe(false);
+  assert.equal((await video.evaluate(() => window.__scrubSeeks)).overlapping, 0);
+  await page.evaluate(() => localStorage.removeItem('virtual-cut.fast-scrub'));
   // Regression: deleting every edit must keep the source grant/player intact.
   const sourceUrl = await video.evaluate((v) => v.currentSrc);
   while (await page.locator('[data-cut-clip]').count()) {
