@@ -9,7 +9,13 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 const require = createRequire(import.meta.url);
-const { ProjectService } = require('../dist-electron/project-service.cjs');
+// Set VIRTUAL_CUT_TEST_EXECUTABLE to a packaged Virtual Cut.exe to run it against that build.
+const packaged = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
+const { ProjectService } = require(
+  packaged
+    ? path.join(path.dirname(packaged), 'resources/app/dist-electron/project-service.cjs')
+    : '../dist-electron/project-service.cjs',
+);
 const root = testPath('srt-sources');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-')),
