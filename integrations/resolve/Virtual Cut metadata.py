@@ -286,6 +286,9 @@ def plan_transcript(item, data, media_path, properties):
     lines, source = history_lines(data), 'the companion'
     if lines is None and os.path.isfile(srt):
         lines, source = srt_lines(srt), os.path.basename(srt)
+    if lines == [] and source != 'the companion':
+        # Virtual Cut writes an empty .srt when the clip has no game dialogue (VC-236).
+        return {'action': 'none', 'line': 'Transcript: none. The game dialogue .srt is empty: no dialogue in this clip.'}
     if not lines:
         return {'action': 'none', 'line': 'Transcript: none. No game dialogue .srt or transcript history beside this video.'}
     duration = data['verified']['actual']['end'] - data['verified']['actual']['start']

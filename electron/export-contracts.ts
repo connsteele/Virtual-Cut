@@ -77,6 +77,12 @@ export interface CompanionTranscripts {
 }
 export interface SubtitleSidecars {
   requested: SubtitleRole[];
+  /**
+   * Set on exports queued since VC-236: every requested transcript gets its SRT, an empty one
+   * when the clip has no speech in it, and the companion names each SRT's transcript. Absent on
+   * older exports, whose companions must keep reproducing byte for byte.
+   */
+  named?: true;
   written: {
     role: SubtitleRole;
     transcriptId: string;
@@ -84,6 +90,8 @@ export interface SubtitleSidecars {
     sha256: string;
     /** Set on the copy shifted to the video's start timecode for Resolve (VC-158). */
     timecode?: string;
+    /** An empty SRT: this transcript has no speech in the clip (VC-236). */
+    noDialogue?: true;
   }[];
   /** Plain reasons a requested SRT was not written; the verified video is unaffected. */
   skipped: string[];

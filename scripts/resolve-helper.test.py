@@ -260,6 +260,9 @@ class Tests(unittest.TestCase):
         item = TranscribedItem(self.file, self.old)
         self.assertEqual(helper.plan_clip(item)['transcript']['line'],
                          'Transcript: none. No game dialogue .srt or transcript history beside this video.')
+        self.write_srt('')  # VC-236: an empty .srt says the clip has no dialogue.
+        self.assertEqual(helper.plan_clip(item)['transcript']['line'],
+                         'Transcript: none. The game dialogue .srt is empty: no dialogue in this clip.')
         self.write_srt('1\n00:00:01,000 --> 00:00:02,000\nHello\n')
         fractional = TranscribedItem(self.file, self.old, fps='59.94')
         self.assertRegex(helper.plan_clip(fractional)['transcript']['line'], 'whole-number frame rate')

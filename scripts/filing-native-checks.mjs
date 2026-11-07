@@ -351,6 +351,7 @@ assert(survivor, JSON.stringify(individualRecords()));
 await verifyPublished(survivor);
 assert.deepEqual(survivor.subtitles, {
   requested: ['game'],
+  named: true,
   written: [],
   skipped: ['Game dialogue: no finished transcript for this recording.'],
 });

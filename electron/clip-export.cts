@@ -17,7 +17,7 @@ import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
 import { colors, markerColor, markerColorName } from './workflow-types.js';
 import { transcriptHandoff } from './transcript-export.js';
-import { timecodeSubtitleFile } from './subtitle-sidecar.cjs';
+import { subtitleFile, subtitleSourceLabel, timecodeSubtitleFile } from './subtitle-sidecar.cjs';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -868,6 +868,22 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                 ),
                 timing:
                   'Each file repeats the plain .srt beside this video shifted by startSeconds, for Resolve. One is written for each requested transcript with speech in this clip.',
+              },
+            }
+          : {}),
+        // Optional and separately versioned: which transcript each SRT holds (VC-236).
+        ...(record.subtitles?.named && record.subtitles.requested.length && record.output
+          ? {
+              subtitles: {
+                schema: 'virtual-cut-subtitles',
+                version: 1,
+                files: record.subtitles.requested.map((role) => ({
+                  file: path.basename(subtitleFile(record.output!, role)),
+                  transcript: role,
+                  label: subtitleSourceLabel[role],
+                })),
+                noDialogue:
+                  'An SRT with no lines means its transcript has no speech in this clip (no dialogue). A missing SRT was not written; the export result says why.',
               },
             }
           : {}),

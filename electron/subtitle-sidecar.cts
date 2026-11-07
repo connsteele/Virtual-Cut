@@ -19,6 +19,8 @@ import type { TranscriptScope } from './transcript-export.js';
 
 export const subtitleRoles: readonly SubtitleRole[] = ['game', 'mic'];
 const label = { game: 'Game dialogue', mic: 'Microphone' } as const;
+/** How the companion names each SRT's transcript (VC-236). */
+export const subtitleSourceLabel = { game: 'game dialogue', mic: 'microphone notes' } as const;
 
 /** Validates the transcript option from the window; anything malformed is refused. */
 export function transcriptOutputs(value: unknown): TranscriptOutputs {
@@ -71,6 +73,7 @@ export async function writeSubtitleSidecars(
 ): Promise<SubtitleSidecars> {
   const result: SubtitleSidecars = {
     requested: record.subtitles?.requested || [],
+    ...(record.subtitles?.named ? { named: true as const } : {}),
     written: [],
     skipped: [],
   };
@@ -108,12 +111,17 @@ export async function writeSubtitleSidecars(
       continue;
     }
     const body = transcriptSrt(handoff);
-    if (!body.trim()) {
+    const noDialogue = !body.trim();
+    if (noDialogue && !result.named) {
       result.skipped.push(`${label[role]}: no speech in this clip.`);
       continue;
     }
-    const files: [string, string, string | undefined][] = [[file, body, undefined]];
-    if (timecode)
+    // No speech: an empty SRT, so a missing file always means something went wrong (VC-236).
+    // It has nothing for Resolve to import, so it gets no timecode copy.
+    const files: [string, string, string | undefined][] = [
+      [file, noDialogue ? '' : body, undefined],
+    ];
+    if (timecode && !noDialogue)
       files.push([
         timecodeSubtitleFile(output, role),
         transcriptSrt({
@@ -139,6 +147,7 @@ export async function writeSubtitleSidecars(
           file: target,
           sha256: createHash('sha256').update(text, 'utf8').digest('hex'),
           ...(start ? { timecode: start } : {}),
+          ...(noDialogue ? { noDialogue: true as const } : {}),
         });
       else result.skipped.push(`${label[role]}: ${path.basename(target)} ${kept}.`);
     }
@@ -152,7 +161,7 @@ export async function writeSubtitleSidecars(
  */
 export function subtitleSummary(subtitles: SubtitleSidecars, verified?: ExportVerification) {
   const names = (list: SubtitleSidecars['written']) =>
-    list.map((w) => path.basename(w.file)).join(', ');
+    list.map((w) => path.basename(w.file) + (w.noDialogue ? ' (no dialogue)' : '')).join(', ');
   const plain = subtitles.written.filter((w) => !w.timecode),
     copies = subtitles.written.filter((w) => w.timecode);
   return (

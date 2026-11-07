@@ -1752,7 +1752,9 @@ export class ProjectService {
         })
       : [];
     return {
-      subtitles: outputs.srt ? { requested: outputs.roles, written: [], skipped: [] } : undefined,
+      subtitles: outputs.srt
+        ? { requested: outputs.roles, named: true as const, written: [], skipped: [] }
+        : undefined,
       companionTranscripts: outputs.companion
         ? { requested: outputs.roles, items: structuredClone(items) }
         : undefined,
