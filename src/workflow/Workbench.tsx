@@ -1124,6 +1124,37 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     }));
     selectClip(id);
   }
+  /** One action for a clip covering the whole recording (VC-206); import no longer makes one. */
+  function addWholeClip() {
+    if (!r.duration || !canEdit) return;
+    const whole = model.clips.find(
+      (x) => x.rid === r.id && x.start <= 0.001 && x.end >= r.duration - 0.001,
+    );
+    if (whole) {
+      selectClip(whole.id);
+      setNotice('This recording already has a clip covering all of it.');
+      return;
+    }
+    const id = uid();
+    setModel((m) => ({
+      ...m,
+      clips: [
+        ...m.clips,
+        {
+          id,
+          rid: r.id,
+          name: r.title,
+          originalName: r.title,
+          originalFolder: '_Review',
+          start: 0,
+          end: r.duration,
+          include: true,
+          folder: '_Review',
+        },
+      ],
+    }));
+    selectClip(id);
+  }
   function trim(edge: 'start' | 'end') {
     if (!canEdit) return;
     if (!c) {
@@ -1565,6 +1596,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     .filter((c) => recordings.some((r) => r.id === c.rid))
     .map((c) => (destinationIssues[c.id]?.length ? { ...c, held: true, accepted: false } : c));
   const readyQueue = batchClips.filter((c) => c.accepted && !c.held && !c.filed);
+  // Recordings in this batch with no clips export nothing (VC-206); Review names them.
+  const clipless = recordings.filter((x) => !model.clips.some((c) => c.rid === x.id));
   const filingPending =
     project?.exports.filter((e) => e.filing && ['queued', 'running'].includes(e.state)).length || 0;
   const reviewItems = reviewRows(batchClips, model.recordings, project?.exports, project?.library);
@@ -1762,7 +1795,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               {page === 'cut' && (
                 <Button
                   primary
-                  disabled={!!project && (!c || r.availability !== 'ready' || workspace.blocking)}
+                  disabled={
+                    project ? !c || r.availability !== 'ready' || workspace.blocking : !clips.length
+                  }
                   onClick={() => (project ? setExportClipId(c!.id) : setDialog('export'))}
                 >
                   {project ? 'Export selected clip' : `Export ${clips.length} clips`}
@@ -1918,7 +1953,20 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 </div>
               </div>
               <aside className={s.inspector}>
-                <h3>Clips</h3>
+                <div className={`${s.tools} ${s.clipsHeading}`}>
+                  <h3>Clips</h3>
+                  <Button
+                    onClick={addWholeClip}
+                    disabled={!r.duration || !canEdit}
+                    title={
+                      canEdit
+                        ? 'Add a clip from the first frame to the last'
+                        : 'Wait for playable footage'
+                    }
+                  >
+                    <Plus size={15} /> Whole recording
+                  </Button>
+                </div>
                 {clips.map((x) => (
                   <div
                     className={`${s.clipTile} ${x.id === c?.id && !mid ? s.selected : ''}`}
@@ -2012,7 +2060,15 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     </div>
                   </div>
                 ))}
-                {!clips.length && <p className={s.muted}>Choose + Clip to begin a draft.</p>}
+                {!clips.length && (
+                  <div className={s.noClips} data-no-clips>
+                    <strong>No clips yet</strong>
+                    <p>
+                      This recording exports nothing until it has a clip. Choose Whole recording, or
+                      + Clip at the playhead.
+                    </p>
+                  </div>
+                )}
                 {markerEditor(r.id)}
                 <Field label="Capture intent">
                   <textarea
@@ -2303,6 +2359,31 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         : ' Folders repeat when the sorted sequence returns to them.'}
                     </p>
                   )}
+                  {!!batchClips.length && !!clipless.length && (
+                    <p className={`${s.muted} ${s.cliplessNote}`} data-clipless>
+                      {clipless.length === 1
+                        ? '1 recording has'
+                        : `${clipless.length} recordings have`}{' '}
+                      no clips and exports nothing:{' '}
+                      {clipless.slice(0, 6).map((x, i) => (
+                        <span key={x.id}>
+                          {i > 0 && ', '}
+                          <button
+                            type="button"
+                            className={s.linkButton}
+                            title="Open this recording in Cut"
+                            onClick={() => {
+                              selectRecord(x.id);
+                              go('cut');
+                            }}
+                          >
+                            {x.title}
+                          </button>
+                        </span>
+                      ))}
+                      {clipless.length > 6 && ` and ${clipless.length - 6} more`}.
+                    </p>
+                  )}
                   {reviewGroups.flatMap(({ key, location, rows }) => [
                     <header
                       key={`group-${key}`}
@@ -2585,7 +2666,17 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       </article>
                     )),
                   ])}
-                  {!filtered.length && (
+                  {!batchClips.length && !!recordings.length && (
+                    <div className={s.empty} data-review-no-clips>
+                      <h2>No clips in this batch yet</h2>
+                      <p>
+                        Cut clips on the Cut page, or accept spoken or agent clips. A recording with
+                        no clips exports nothing.
+                      </p>
+                      <Button onClick={() => go('cut')}>Open Cut</Button>
+                    </div>
+                  )}
+                  {!filtered.length && !!batchClips.length && (
                     <p className={s.empty}>
                       No clips in this view. Choose All to return to the batch.
                     </p>

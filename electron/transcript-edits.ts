@@ -246,6 +246,10 @@ export function applyTranscriptCommand(
           target < c.end - 0.001 &&
           (!command.clipId || c.id === command.clipId),
       );
+      if (!next.clips.some((c) => c.rid === record.id))
+        throw new Error(
+          'This recording has no clips to split yet. Make a clip in Cut (Whole recording), then split it.',
+        );
       if (intersecting.length !== 1)
         throw new Error(
           'Split needs exactly one clip containing this position. Select a target for overlapping clips.',

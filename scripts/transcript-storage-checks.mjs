@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { require } from './shared.mjs';
+import { require, withWholeClips } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const base = testPath('transcripts');
@@ -285,6 +285,10 @@ try {
     2,
     'Restoring an existing transcript never duplicates segments',
   );
+  // Import makes no clip (VC-206); the Whole recording action in Cut makes this one.
+  const unclipped = (await service.snapshot()).model;
+  assert.equal(unclipped.clips.length, 0, 'import makes no clip');
+  await service.save(id, unclipped, withWholeClips(unclipped));
   const exportPlan = await service.exportPlan(id, service.store.data.model.clips[0].id, 'mp4');
   await service.startExport(id, exportPlan.id, path.join(dir, 'completed.mp4'), true);
   await wait();

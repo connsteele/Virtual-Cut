@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, stat, writeFile, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -241,6 +242,12 @@ assert.equal(
   0,
   JSON.stringify(service.store.jobs()),
 );
+// Import makes no clip (VC-206): Whole recording in Cut gives each recording the clip it trims.
+{
+  const unclipped = structuredClone(service.store.data.model);
+  assert.equal(unclipped.clips.length, 0);
+  await service.save(project, unclipped, withWholeClips(unclipped));
+}
 const results = [];
 await service.checkpoint(project);
 const baselineSave = service.store.snapshot().saves.find((s) => s.kind === 'manual').id;

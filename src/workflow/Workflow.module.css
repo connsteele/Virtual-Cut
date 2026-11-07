@@ -379,6 +379,27 @@
 .inspector > h3 {
   margin-bottom: 12px;
 }
+.clipsHeading {
+  margin-bottom: 12px;
+}
+/* A recording with no clips (VC-206): import no longer makes one. */
+.noClips {
+  padding: 13px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.noClips strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.cliplessNote {
+  margin: 0 0 10px;
+}
 .clipTile {
   padding: 13px;
   border: 1px solid var(--line);

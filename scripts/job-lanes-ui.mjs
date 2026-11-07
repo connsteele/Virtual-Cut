@@ -12,7 +12,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { _electron as electron } from 'playwright/test';
 import { expect } from './desktop-expect.mjs';
-import { electronEnvironment, require, root } from './shared.mjs';
+import { electronEnvironment, require, root, withWholeClips } from './shared.mjs';
 
 const out = process.env.VIRTUAL_CUT_LANES_UI_OUTPUT;
 const options = JSON.parse(process.env.VIRTUAL_CUT_LANES_UI || '{}');
@@ -41,7 +41,7 @@ if (process.argv[2] === '--prepare') {
   while (service.store.jobs().some((j) => ['queued', 'running'].includes(j.state)))
     await new Promise((r) => setTimeout(r, 100));
   const before = structuredClone(service.store.data.model),
-    after = structuredClone(before),
+    after = withWholeClips(before),
     clip = after.clips[0];
   Object.assign(clip, {
     start: 0,

@@ -109,6 +109,49 @@ try {
   let p = await current();
   const rid = p.model.recordings[0].id;
   await page.locator(`[data-recording="${rid}"]`).click();
+  // VC-206: import makes no clip. Cut and Review say so, export is off, and Whole recording
+  // (reached by keyboard here) makes the clip from the first frame to the last in one step.
+  assert.equal(p.model.clips.length, 0, 'import makes no clip');
+  await expect(page.locator('[data-no-clips]')).toContainText('exports nothing');
+  await expect(page.locator('[data-cut-clip]')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Export selected clip', exact: true }),
+  ).toBeDisabled();
+  await capture('01a-cut-no-clips');
+  const fullSize = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getSize(),
+  );
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBeLessThanOrEqual(1100);
+  await expect(page.getByRole('button', { name: 'Whole recording', exact: true })).toBeInViewport();
+  await capture('01b-cut-no-clips-compact');
+  await app.evaluate(
+    ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
+    fullSize,
+  );
+  await go('Review');
+  await expect(page.locator('[data-review-no-clips]')).toContainText('No clips in this batch yet');
+  await capture('01c-review-no-clips');
+  await page.locator('[data-review-no-clips]').getByRole('button', { name: 'Open Cut' }).click();
+  await expect(page.locator('[data-no-clips]')).toBeVisible();
+  await page.getByRole('button', { name: 'Whole recording', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-cut-clip]')).toHaveCount(1);
+  await expect(page.locator('[data-no-clips]')).toHaveCount(0);
+  await saved();
+  p = await current();
+  assert.deepEqual(
+    p.model.clips.map((c) => [c.rid, c.name, c.start, c.end, c.folder]),
+    [[rid, p.model.recordings[0].title, 0, p.model.recordings[0].duration, '_Review']],
+  );
+  await expect(
+    page.getByRole('button', { name: 'Export selected clip', exact: true }),
+  ).toBeEnabled();
+  // A second press keeps the one clip and says why.
+  await page.getByRole('button', { name: 'Whole recording', exact: true }).click();
+  await expect(page.locator('[data-cut-clip]')).toHaveCount(1);
+  await expect(page.getByText('already has a clip covering all of it')).toBeVisible();
+  await capture('01d-cut-whole-recording');
   await page.getByLabel('Selection follows playhead').uncheck();
   await page.getByLabel('Clip name', { exact: true }).fill('Saved UI clip');
   await seek(1);

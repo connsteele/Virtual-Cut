@@ -582,6 +582,17 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
       applyProposalCommand(model, range, command(range, 'accept-proposal', { endTime: 10 }), newId),
     /Marker end must follow/,
   );
+  // VC-206: import makes no clip, so a split on a recording with no clips says what to do.
+  assert.throws(
+    () =>
+      applyProposalCommand(
+        { ...model, clips: model.clips.filter((c) => c.rid !== 'r1') },
+        rework,
+        command(rework, 'accept-proposal', {}),
+        newId,
+      ),
+    /no clips to split yet/,
+  );
   const settled = applyProposalCommand(
     camp,
     rework,
