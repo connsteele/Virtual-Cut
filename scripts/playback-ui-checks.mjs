@@ -214,6 +214,45 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await go('Cut');
   await capture('marker-spacing-compact');
+  // Scrubbing keeps one seek in flight, the playhead under the pointer, and lands on the exact
+  // frame on release (VC-202).
+  await video.evaluate((v) => {
+    const s = (window.__scrubSeeks = { started: 0, overlapping: 0, open: false });
+    v.addEventListener('seeking', () => {
+      s.started++;
+      if (s.open) s.overlapping++;
+      s.open = true;
+    });
+    v.addEventListener('seeked', () => (s.open = false));
+  });
+  const ruler = await page.locator('[data-seek-surface="ruler"]').boundingBox();
+  const scrubSurface = page.getByTestId('scrub-surface');
+  const rulerY = ruler.y + ruler.height / 2;
+  await page.mouse.move(ruler.x + ruler.width * 0.2, rulerY);
+  await page.mouse.down();
+  for (let i = 1; i <= 40; i++) {
+    await page.mouse.move(ruler.x + ruler.width * (0.2 + i * 0.012), rulerY);
+    if (i % 10 === 0) {
+      // The playhead follows the pointer while the decoder catches up.
+      const playhead = Number(await scrubSurface.getAttribute('aria-valuenow'));
+      const view = await scrubSurface.evaluate((el) => [
+        +el.dataset.viewStart,
+        +el.dataset.viewEnd,
+      ]);
+      const expected = view[0] + (0.2 + i * 0.012) * (view[1] - view[0]);
+      // Within snapping reach (a few pixels) of the pointer.
+      const reach = ((view[1] - view[0]) / ruler.width) * 12;
+      assert(Math.abs(playhead - expected) < reach, `${playhead} ${expected}`);
+    }
+  }
+  await page.mouse.up();
+  await expect.poll(() => video.evaluate((v) => v.seeking)).toBe(false);
+  const scrubbed = await video.evaluate(() => window.__scrubSeeks);
+  assert(scrubbed.started > 0);
+  assert.equal(scrubbed.overlapping, 0, JSON.stringify(scrubbed));
+  const released = Number(await scrubSurface.getAttribute('aria-valuenow'));
+  await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeCloseTo(released, 1);
+  await expect(page.locator('[data-scrub-tile]')).toHaveCount(0);
   // Regression: deleting every edit must keep the source grant/player intact.
   const sourceUrl = await video.evaluate((v) => v.currentSrc);
   while (await page.locator('[data-cut-clip]').count()) {
@@ -241,8 +280,40 @@ try {
   await expect(status).toHaveText('Paused');
   await seek(1.431);
   const stageBefore = await page.locator('[data-video-stage]').boundingBox();
-  // Deterministic terminal error exercises recovery; it does not reproduce the
+  // Deterministic terminal errors exercise recovery; they do not reproduce the
   // user's underlying demuxer failure or claim its cause has been fixed.
+  const demuxerFault = () =>
+    video.evaluate((v) => {
+      Object.defineProperty(v, 'error', {
+        configurable: true,
+        value: {
+          code: 2,
+          message: 'PipelineStatus::PIPELINE_ERROR_READ: FFmpegDemuxer: demuxer seek failed',
+        },
+      });
+      v.dispatchEvent(new Event('error'));
+      delete v.error;
+    });
+  const playbackLog = async () =>
+    (await page.evaluate(() => window.virtualCut.diagnostics.summary())).text
+      .split('\n')
+      .filter((line) => line.startsWith('{'))
+      .map(JSON.parse);
+  // The first demuxer-seek fault reloads the preview by itself at the same spot (VC-41).
+  const recoveredBefore = (await playbackLog()).filter(
+    (e) => e.event === 'preview-recovered',
+  ).length;
+  await demuxerFault();
+  await expect
+    .poll(async () => (await playbackLog()).filter((e) => e.event === 'preview-recovered').length)
+    .toBe(recoveredBefore + 1);
+  await expect(page.locator('[data-video-stage]').getByRole('alert')).toHaveCount(0);
+  const automatic = (await playbackLog()).findLast((e) => e.event === 'reload');
+  assert.equal(automatic.automatic, true);
+  assert(Math.abs(automatic.position - 1.431) < 0.05, JSON.stringify(automatic));
+  await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeCloseTo(1.431, 1);
+  await expect(video).toHaveJSProperty('paused', true);
+  // A second one within 10 s shows the error and the Reload preview button.
   await video.evaluate((v) => {
     Object.defineProperty(v, 'error', {
       configurable: true,

@@ -223,7 +223,7 @@ function safeFields(data: Record<string, unknown>, nested = false): Record<strin
       /^(UNCLASSIFIED|E[A-Z0-9_]{2,35}|SQLITE_[A-Z_]+)$/.test(value)
     )
       output[key] = value;
-    if (['packaged', 'paused', 'seeking'].includes(key) && typeof value === 'boolean')
+    if (['packaged', 'paused', 'seeking', 'automatic'].includes(key) && typeof value === 'boolean')
       output[key] = value;
     if (['enabled', 'uploadToServer'].includes(key) && typeof value === 'boolean')
       output[key] = value;

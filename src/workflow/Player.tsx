@@ -129,6 +129,21 @@ export function Player({
     stalledSince: 0,
   });
   const gestures = useRef({ scrub: false, trim: false });
+  // Scrubbing (VC-202): one seek in flight; the newest target waits behind it and replaces any
+  // older waiting one. Moves seek the nearest keyframe, which decodes one frame; the exact frame
+  // follows when the pointer rests for 100 ms or lets go. The first seek of a drag is exact, so
+  // a click lands on its frame at once.
+  const scrubbing = useRef<{
+    target: number;
+    moved: boolean;
+    queued: number | null;
+    settling: boolean;
+    tile?: { src: string; time: number };
+    rest?: ReturnType<typeof setTimeout>;
+  }>({ target: 0, moved: false, queued: null, settling: false });
+  const [scrubTile, setScrubTile] = useState('');
+  // A demuxer-seek fault reloads the preview once by itself before the error shows (VC-41).
+  const autoReloadAt = useRef(-Infinity);
   const [activity, setActivity] = useState(false);
   const reportActivity = useCallback(() => {
     const v = video.current;
@@ -475,12 +490,87 @@ export function Player({
     const v = video.current;
     if (!v || v.error || !Number.isFinite(t) || !Number.isFinite(z) || z <= 0) return;
     const position = Math.max(a, Math.min(z - 0.001, t));
+    scrubbing.current.queued = null;
+    scrubbing.current.settling = false;
     trace('seek', { target: position });
     v.currentTime = position + clockOffset;
     reportActivity();
     setCurrent(position);
     callbacks.current.onPosition?.(position);
   };
+  /** The keyframe nearest `t` inside the bounds, or `t` itself when none is within 2 s. */
+  function nearestKey(t: number) {
+    const keys = r.keys;
+    if (!keys?.length) return t;
+    let lo = 0,
+      hi = keys.length;
+    while (lo < hi) {
+      const m = (lo + hi) >>> 1;
+      if (keys[m] < t) lo = m + 1;
+      else hi = m;
+    }
+    const left = keys[Math.max(0, lo - 1)],
+      right = keys[Math.min(lo, keys.length - 1)];
+    const key = Math.abs(left - t) <= Math.abs(right - t) ? left : right;
+    return key >= a && key < z && Math.abs(key - t) <= 2 ? key : t;
+  }
+  /** Starts a scrub seek unless the video already shows `target`; true when one started. */
+  function startScrubSeek(target: number) {
+    const v = video.current;
+    if (!v || v.error || Math.abs(v.currentTime - clockOffset - target) < 0.0005) return false;
+    trace('seek', { target });
+    v.currentTime = target + clockOffset;
+    return true;
+  }
+  function requestScrubSeek(position: number, exact: boolean) {
+    const v = video.current;
+    if (!v || v.error) return;
+    const target = exact ? position : nearestKey(position);
+    const state = scrubbing.current;
+    if (v.seeking) {
+      // The decoder is behind: wait, and show the nearest filmstrip tile if it is close.
+      state.queued = target;
+      const tile = state.tile;
+      if (tile && Math.abs(tile.time - position) <= 2) setScrubTile(tile.src);
+      return;
+    }
+    state.queued = null;
+    startScrubSeek(target);
+  }
+  function scrubTo(t: number) {
+    if (!Number.isFinite(t) || !Number.isFinite(z) || z <= 0) return;
+    const state = scrubbing.current;
+    const position = Math.max(a, Math.min(z - 0.001, t));
+    state.target = position;
+    // The playhead follows the pointer; the project and Transcript hear about it on release.
+    setCurrent(position);
+    clearTimeout(state.rest);
+    const exact = !state.moved;
+    state.moved = true;
+    requestScrubSeek(position, exact);
+    if (!exact) state.rest = setTimeout(() => requestScrubSeek(state.target, true), 100);
+  }
+  function scrubActive(active: boolean) {
+    const state = scrubbing.current;
+    if (active) {
+      stop();
+      gestures.current.scrub = true;
+      state.moved = false;
+      state.settling = false;
+    } else if (gestures.current.scrub) {
+      gestures.current.scrub = false;
+      clearTimeout(state.rest);
+      if (state.moved) {
+        state.settling = true;
+        requestScrubSeek(state.target, true);
+        callbacks.current.onPosition?.(state.target);
+        if (!video.current?.seeking) state.settling = false;
+      }
+      state.moved = false;
+    }
+    reportActivity();
+  }
+  useEffect(() => () => clearTimeout(scrubbing.current.rest), []);
   useEffect(() => {
     if (!looping) return;
     const timer = setInterval(() => {
@@ -664,6 +754,30 @@ export function Player({
     document.addEventListener('visibilitychange', pause);
     return () => document.removeEventListener('visibilitychange', pause);
   }, [reportActivity]);
+  /** Reloads the media at `position`, paused at 1×, keeping edits. */
+  function reloadPreview(position: number, automatic: boolean) {
+    const v = video.current!;
+    stop();
+    trace('reload');
+    window.virtualCut?.diagnostics?.playback({
+      ...playbackDetails(),
+      event: 'reload',
+      sourceId: r.id,
+      position: Math.max(0, position),
+      ...(automatic ? { automatic } : {}),
+    });
+    retryPosition.current = Math.max(a, Math.min(z - 0.001, position));
+    speed.current = 1;
+    v.playbackRate = 1;
+    scrubbing.current.queued = null;
+    scrubbing.current.settling = false;
+    setScrubTile('');
+    setError('');
+    setErrorDetails('');
+    setReady(false);
+    awaitingRecovery.current = true;
+    v.load();
+  }
   function capture() {
     const v = video.current;
     if (!v || v.readyState < 2) return;
@@ -775,28 +889,55 @@ export function Player({
           onSeeking={() => trace('seek')}
           onSeeked={() => {
             trace('seeked');
+            const state = scrubbing.current;
+            const queued = state.queued;
+            state.queued = null;
+            if (queued != null && startScrubSeek(queued)) return;
+            setScrubTile('');
+            if (state.settling) {
+              state.settling = false;
+              const v = video.current!;
+              setCurrent(Math.max(0, v.currentTime - clockOffset));
+            }
             revealFrame();
           }}
           onWaiting={() => trace('waiting')}
           onStalled={() => trace('stalled')}
           onError={(e) => {
             const v = e.currentTarget;
+            const scrubTarget = gestures.current.scrub || scrubbing.current.settling;
             gestures.current = { scrub: false, trim: false };
+            clearTimeout(scrubbing.current.rest);
             trace('error');
+            const fault = v.error?.message.includes('demuxer seek failed')
+              ? 'demuxer-seek'
+              : v.error?.code === 2
+                ? 'media-read'
+                : v.error?.code === 3
+                  ? 'media-decode'
+                  : v.error?.code === 4
+                    ? 'media-unsupported'
+                    : 'unknown';
             window.virtualCut?.diagnostics?.playback({
               ...playbackDetails(),
               event: 'media-error',
               code: v.error?.code,
-              fault: v.error?.message.includes('demuxer seek failed')
-                ? 'demuxer-seek'
-                : v.error?.code === 2
-                  ? 'media-read'
-                  : v.error?.code === 3
-                    ? 'media-decode'
-                    : v.error?.code === 4
-                      ? 'media-unsupported'
-                      : 'unknown',
+              fault,
             });
+            // A demuxer-seek fault has always cleared with a reload (VC-41). Do that once by
+            // itself at the spot asked for; a second fault within 10 s shows the error.
+            if (
+              fault === 'demuxer-seek' &&
+              !r.sample &&
+              performance.now() - autoReloadAt.current > 10000
+            ) {
+              autoReloadAt.current = performance.now();
+              reloadPreview(
+                scrubTarget ? scrubbing.current.target : v.currentTime - clockOffset,
+                true,
+              );
+              return;
+            }
             setErrorDetails(
               JSON.stringify(
                 {
@@ -823,6 +964,8 @@ export function Player({
           }}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
+            // While scrubbing, the playhead stays under the pointer, not on the keyframe shown.
+            if (gestures.current.scrub || scrubbing.current.settling) return;
             const position = Math.max(0, v.currentTime - clockOffset);
             if (looping && !v.paused && !v.seeking && !scan.current && position >= loopEnd) {
               // Wrap before notifying selection-follow: the neighboring clip at
@@ -851,6 +994,15 @@ export function Player({
         {holdFrame && (
           <img className={s.transitionFrame} src={holdFrame} alt="" aria-hidden="true" />
         )}
+        {scrubTile && !holdFrame && (
+          <img
+            className={s.transitionFrame}
+            data-scrub-tile
+            src={scrubTile}
+            alt=""
+            aria-hidden="true"
+          />
+        )}
         {error && (
           <div className={s.playbackFailure} role="alert">
             <div className={s.playbackFailureCard}>
@@ -862,25 +1014,7 @@ export function Player({
                   className={s.reloadPreview}
                   onClick={() => {
                     const v = video.current!;
-                    stop();
-                    trace('reload');
-                    window.virtualCut?.diagnostics?.playback({
-                      ...playbackDetails(),
-                      event: 'reload',
-                      sourceId: r.id,
-                      position: Math.max(0, v.currentTime - clockOffset),
-                    });
-                    retryPosition.current = Math.max(
-                      a,
-                      Math.min(z - 0.001, v.currentTime - clockOffset),
-                    );
-                    speed.current = 1;
-                    v.playbackRate = 1;
-                    setError('');
-                    setErrorDetails('');
-                    setReady(false);
-                    awaitingRecovery.current = true;
-                    v.load();
+                    reloadPreview(v.currentTime - clockOffset, false);
                   }}
                 >
                   Reload preview
@@ -930,8 +1064,15 @@ export function Player({
         end={z}
         current={current}
         onSeek={(t) => {
+          if (gestures.current.scrub) {
+            scrubTo(t);
+            return;
+          }
           stop();
           seek(t);
+        }}
+        onScrubTile={(tile) => {
+          scrubbing.current.tile = tile;
         }}
         onSelect={onSelect}
         handleMode={handleMode}
@@ -944,10 +1085,7 @@ export function Player({
           reportActivity();
           onTrimActive?.(active);
         }}
-        onScrubActive={(active) => {
-          gestures.current.scrub = active;
-          reportActivity();
-        }}
+        onScrubActive={scrubActive}
         selectedMarkerId={selectedMarkerId}
         onMarkerSelect={onMarkerSelect}
         onMarkerDeselect={onMarkerDeselect}

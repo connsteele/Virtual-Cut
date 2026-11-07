@@ -137,6 +137,8 @@ export const other = {
     'Times the Transcript window main thread while the playhead moves on a dense Both page with many corrections (VC-29 note 28); manual study on a suite run.',
   'proxy-study.mjs':
     'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
+  'scrub-timing-study.mjs':
+    'Times timeline scrubbing (pointer-to-frame, frames per second of drag, rest and release to the exact frame) on a copied project; manual, needs real footage.',
   'reverse-cache-study.mjs':
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':
