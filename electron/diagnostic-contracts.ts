@@ -16,6 +16,8 @@ export type PlaybackDiagnostic = {
     | 'unknown';
   readyState?: number;
   networkState?: number;
+  /** A reload the player started by itself after a demuxer-seek fault (VC-41). */
+  automatic?: boolean;
   clipCount?: number;
   paused?: boolean;
   seeking?: boolean;

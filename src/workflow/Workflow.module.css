@@ -1977,6 +1977,29 @@
 .help p {
   margin: 0;
 }
+.settingsOption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settingsOption label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.settingsOption details {
+  margin-left: 26px;
+  color: var(--muted);
+}
+.settingsOption summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.settingsOption details p {
+  max-width: 60ch;
+  margin-top: 4px;
+}
 .help ul {
   display: flex;
   flex-direction: column;

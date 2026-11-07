@@ -17,6 +17,7 @@ import {
   NotebookPen,
   Plus,
   RotateCcw,
+  Settings,
   Sparkles,
   Trash2,
   X,
@@ -26,6 +27,7 @@ import {
 import { Brand } from '../components/Brand';
 import { RecordingFilmstrip, RecordingTranscription } from './RecordingJobs';
 import { HelpContent } from './HelpPanel';
+import { SettingsContent } from './SettingsPanel';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import {
@@ -642,7 +644,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   const [importing, setImporting] = useState(false),
     [savesOpen, setSavesOpen] = useState(false),
     [shortcutsOpen, setShortcutsOpen] = useState(false),
-    [helpOpen, setHelpOpen] = useState(false);
+    [helpOpen, setHelpOpen] = useState(false),
+    [settingsOpen, setSettingsOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [handleMode, setHandleMode] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(
@@ -2999,6 +3002,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           <HelpContent />
         </Modal>
       )}
+      {settingsOpen && (
+        <Modal title="Settings" onClose={() => setSettingsOpen(false)}>
+          <SettingsContent />
+        </Modal>
+      )}
       {projectsOpen && (
         <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
       )}
@@ -3068,6 +3076,9 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               Virtual Cut {version}
             </span>
           )}
+          <Button aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>
+            <Settings size={14} /> Settings
+          </Button>
         </div>
       </footer>
       {diagnosticsOpen && <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />}
