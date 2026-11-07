@@ -130,9 +130,9 @@ export function Player({
   });
   const gestures = useRef({ scrub: false, trim: false });
   // Scrubbing (VC-202): one seek in flight; the newest target waits behind it and replaces any
-  // older waiting one. Moves seek the nearest keyframe, which decodes one frame; the exact frame
-  // follows when the pointer rests for 100 ms or lets go. The first seek of a drag is exact, so
-  // a click lands on its frame at once.
+  // older waiting one. A fast drag seeks the nearest keyframe, which decodes in one step; a
+  // slow one seeks exact frames. The exact frame always follows when the pointer rests for
+  // 100 ms or lets go. The first seek of a drag is exact, so a click lands on its frame at once.
   const scrubbing = useRef<{
     target: number;
     moved: boolean;
@@ -513,13 +513,18 @@ export function Player({
     return key >= a && key < z && Math.abs(key - t) <= 2 ? key : t;
   }
   /** Starts a scrub seek unless the video already shows the frame; true when one started.
-   * A move whose nearest keyframe is already shown (the pointer is still inside one keyframe
-   * interval, as when zoomed in) seeks the exact frame instead, so the picture keeps moving. */
+   * Only a pointer that has run more than one keyframe interval ahead of the shown frame
+   * seeks a keyframe. A slow drag seeks exact frames, so holding still never jumps the picture
+   * to another moment, such as across a scene cut (Connor, 0.4.30-53). */
   function startScrubSeek(position: number, exact: boolean) {
     const v = video.current;
     if (!v || v.error) return false;
     const shown = v.currentTime - clockOffset;
-    let target = exact ? position : nearestKey(position);
+    const keys = r.keys || [];
+    const interval =
+      keys.length > 1 ? Math.max(0.25, (keys.at(-1)! - keys[0]) / (keys.length - 1)) : Infinity;
+    let target = position;
+    if (!exact && Math.abs(position - shown) > interval) target = nearestKey(position);
     if (Math.abs(shown - target) < 0.0005) target = position;
     if (Math.abs(shown - target) < 0.0005) return false;
     trace('seek', { target });

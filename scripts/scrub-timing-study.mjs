@@ -308,6 +308,12 @@ try {
       slow: lagFor(s.frames, slow, downAt, slowEnd),
       fast: lagFor(s.frames, fast, slowEnd, fastEnd),
       restToExactMs: rest,
+      // How far the picture jumps (footage seconds) when the exact frame replaces the last
+      // frame shown while the pointer was still moving.
+      restJumpS: (() => {
+        const before = s.frames.filter((f) => f.at <= fastEnd).at(-1);
+        return before ? Number(Math.abs(restTarget - before.media).toFixed(2)) : null;
+      })(),
       restTarget: Number(restTarget.toFixed(3)),
       lastShown: Number((s.frames.at(-1)?.media ?? NaN).toFixed(3)),
       releaseToExactMs: released,
