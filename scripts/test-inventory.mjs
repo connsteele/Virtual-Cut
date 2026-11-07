@@ -137,6 +137,12 @@ export const other = {
     'Times the Transcript window main thread while the playhead moves on a dense Both page with many corrections (VC-29 note 28); manual study on a suite run.',
   'proxy-study.mjs':
     'Generates H.264 NVENC playback-proxy candidates from a copied recording and records time and size; needs an NVIDIA GPU.',
+  'proxy-candidates-study.mjs':
+    'Makes the VC-16 proxy candidates (H.264, all-intra H.264, ProRes, DNxHR at 1080p and 720p) from copied recordings and records time, size, CPU and GPU load; needs an NVIDIA GPU.',
+  'viewer-probe-study.mjs':
+    'VC-16 probe outside the app: decodes ProRes or DNxHR proxies with FFmpeg and draws them on a WebGL canvas, timing seeks, drags and streaming; manual, needs proxies made from copies.',
+  'underflow-study.mjs':
+    'VC-16: finds why the app falls short at 4× and 8× on H.264 proxies by changing one thing at a time against a bare player; manual, needs copies and a free GPU.',
   'reverse-cache-study.mjs':
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':
