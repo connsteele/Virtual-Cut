@@ -1,10 +1,14 @@
 import type { Clip } from './model';
 
+import { clipColors } from '../../electron/workflow-types';
+
 // Clip identity colors are independent of marker categories and stay stable after edits.
 const palette = ['#73cdc2', '#dfb578', '#9ab6ef', '#c5a1da', '#b9c97e', '#dc9eab'];
-export function clipColor(id: string) {
+/** A chosen Resolve clip color (VC-207), else a stable identity color from the clip's id. */
+export function clipColor(clip: Pick<Clip, 'id' | 'color'>) {
+  if (clip.color) return clipColors[clip.color];
   let hash = 0;
-  for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
+  for (const char of clip.id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
   return palette[hash % palette.length];
 }
 

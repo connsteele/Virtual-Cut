@@ -51,7 +51,9 @@ import {
   type ReviewGrouping,
 } from './reviewOrder';
 import {
+  clipColors,
   colors,
+  isClipColor,
   markerColors,
   markerColor,
   markerColorName,
@@ -1954,13 +1956,39 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                       <span className={s.clipIdentity}>
                         <i
                           className={s.clipSwatch}
-                          style={{ background: clipColor(x.id) }}
+                          style={{ background: clipColor(x) }}
                           aria-hidden="true"
                         />
                         <span>{String(clips.indexOf(x) + 1).padStart(2, '0')}</span>
                         <span className={s.clipDuration}>{time(x.end - x.start)}</span>
                       </span>
                       <span className={s.spacer} />
+                      {/* Resolve's clip color; the helper sets it on the exported clip (VC-207). */}
+                      <select
+                        aria-label="Clip color"
+                        title="Clip color in Resolve"
+                        value={x.color || ''}
+                        style={x.color ? { color: clipColors[x.color] } : undefined}
+                        onFocus={() => selectClip(x.id)}
+                        onChange={(e) =>
+                          updateClip(x.id, {
+                            color: isClipColor(e.target.value) ? e.target.value : undefined,
+                          })
+                        }
+                      >
+                        <option value="" style={{ backgroundColor: '#121a19' }}>
+                          No clip color
+                        </option>
+                        {Object.entries(clipColors).map(([color, hex]) => (
+                          <option
+                            key={color}
+                            value={color}
+                            style={{ color: hex, backgroundColor: '#121a19' }}
+                          >
+                            {color}
+                          </option>
+                        ))}
+                      </select>
                       <Button
                         aria-label={`Delete clip: ${x.name}`}
                         onClick={() => {

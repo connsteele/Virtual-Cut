@@ -207,6 +207,8 @@ try {
     );
   }
   await writeFile(path.join(dir, 'companions.json'), JSON.stringify(report, null, 2));
+  // clip-color-ui.mjs opens this project: three neighbouring clips with exports.
+  await writeFile(path.join(root, 'latest-native.json'), JSON.stringify({ file, dir }, null, 2));
   console.log('Marker spill checks passed:', dir);
 } finally {
   await service.close();
