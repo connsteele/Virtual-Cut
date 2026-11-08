@@ -13,7 +13,7 @@ import {
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { require } from './shared.mjs';
+import { require, withWholeClips } from './shared.mjs';
 const { ProjectStore } = require('../dist-electron/project-store.cjs');
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 const { destinationPlan, destinationFolders } = require('../dist-electron/destination-plan.cjs');
@@ -308,7 +308,7 @@ while (service.store.jobs().some((j) => ['queued', 'running'].includes(j.state))
 p = await service.snapshot();
 assert.equal(p.model.recordings[0].availability, 'ready');
 let before = p.model,
-  after = structuredClone(before);
+  after = withWholeClips(before);
 after.clips[0].name = 'First';
 after.clips[0].folder = 'Existing';
 after.clips[0].end = 3;

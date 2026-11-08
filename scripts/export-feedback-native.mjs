@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -204,6 +205,11 @@ try {
     service.store.jobs().every((j) => j.state === 'succeeded'),
     JSON.stringify(service.store.jobs()),
   );
+  // Import makes no clip (VC-206); Whole recording in Cut makes one per recording.
+  {
+    const unclipped = structuredClone(service.store.data.model);
+    await service.save(id, unclipped, withWholeClips(unclipped));
+  }
   for (const r of service.store.data.model.recordings) {
     const c = service.store.data.model.clips.find((c) => c.rid === r.id);
     const plan = await service.exportPlan(id, c.id, 'source');

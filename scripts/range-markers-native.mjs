@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -86,7 +87,7 @@ try {
   p = await settled();
   const rid = p.model.recordings[0].id;
   const before = structuredClone(p.model),
-    after = structuredClone(before);
+    after = withWholeClips(before);
   after.clips = [
     { ...after.clips[0], start: 2.2, end: 5.4, name: 'Range export', folder: '_Review' },
   ];

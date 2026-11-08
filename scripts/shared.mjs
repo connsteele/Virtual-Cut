@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -13,6 +14,29 @@ export const require = createRequire(import.meta.url);
 // the README). A value already set for this run wins over the file.
 const settings = path.join(root, '.env');
 if (existsSync(settings)) process.loadEnvFile(settings);
+
+/**
+ * The Whole recording action in Cut (VC-206: import makes no clip). Returns a copy of the model
+ * with a clip from the first frame to the last on each inspected recording that has none, the
+ * same clip the button makes.
+ */
+export function withWholeClips(model) {
+  const next = structuredClone(model);
+  for (const r of next.recordings)
+    if (r.duration && !next.clips.some((c) => c.rid === r.id))
+      next.clips.push({
+        id: randomUUID(),
+        rid: r.id,
+        name: r.title,
+        originalName: r.title,
+        folder: '_Review',
+        originalFolder: '_Review',
+        start: 0,
+        end: r.duration,
+        include: true,
+      });
+  return next;
+}
 
 /** A folder for check and study output: VIRTUAL_CUT_SCRATCH, else the OS temp folder. */
 export const scratchPath = (...parts) =>

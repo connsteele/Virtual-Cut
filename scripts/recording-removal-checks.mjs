@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -45,7 +46,7 @@ try {
   assert.equal(await service.sourceLocation(id, shared.id), first);
   await assert.rejects(() => service.sourceLocation(id, '../../elsewhere'), /no longer in/);
   await assert.rejects(() => service.sourceLocation('other-project', shared.id));
-  const edited = structuredClone(p.model);
+  const edited = withWholeClips(p.model);
   edited.recordings.forEach((r) => {
     r.context = 'Retain this recording context';
   });

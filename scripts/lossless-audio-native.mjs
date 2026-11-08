@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withWholeClips } from './shared.mjs';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -153,7 +154,7 @@ for (const fixture of fixtures) {
   assert.ok(snapshot.model.recordings[0].audioTracks.every((t) => t.previewUrl));
 
   const before = structuredClone(service.store.data.model),
-    after = structuredClone(before);
+    after = withWholeClips(before);
   after.clips = [{ ...after.clips[0], name: 'Middle', start: 2, end: 5, folder: 'Checks' }];
   await service.save(id, before, after);
   await service.acceptReview(id, service.store.data.model.clips[0].id);

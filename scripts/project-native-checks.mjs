@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, rename, copyFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -118,13 +119,20 @@ try {
   assert.equal(r.keyCount, index.keys.length);
   assert.equal(p.model.markers[rid][1].name, 'Original chapter name');
   assert.equal(p.model.markers[rid][1].time, 2.5);
-  assert.equal(p.model.clips.length, 1, 'chapters must not create clip ranges');
+  assert.equal(p.model.clips.length, 0, 'import makes no clip (VC-206); chapters make none either');
   assert(r.audioTracks.find((t) => t.index === r.gameTrack).previewUrl);
   assert.equal(p.canUndo, false);
   let next = structuredClone(p.model);
   next.recordings[0].position = 2;
   p = await service.save(id, p.model, next);
   assert.equal(p.canUndo, false, 'seek must not enter undo history');
+  // Whole recording in Cut: one undoable step makes the clip import used to make.
+  p = await service.save(id, p.model, withWholeClips(p.model));
+  assert.deepEqual(
+    [p.model.clips.length, p.model.clips[0].name, p.model.clips[0].start, p.model.clips[0].end],
+    [1, 'two-tracks', 0, r.duration],
+  );
+  assert.equal(p.canUndo, true);
   next = structuredClone(p.model);
   next.clips[0].name = 'Retained clip';
   next.clips[0].start = 1.125;

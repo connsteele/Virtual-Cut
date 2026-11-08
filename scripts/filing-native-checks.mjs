@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withWholeClips } from './shared.mjs';
 import {
   mkdir,
   mkdtemp,
@@ -86,6 +87,12 @@ await service.importFiles(id, batch, [source], { game: 1, mic: 2 });
 await wait();
 assert.equal(service.store.jobs().filter((j) => j.state === 'failed').length, 0);
 const rid = service.store.data.model.recordings[0].id;
+// Import makes no clip (VC-206): Whole recording in Cut makes the clip the edits below reshape.
+assert.equal(service.store.data.model.clips.length, 0);
+{
+  const unclipped = structuredClone(service.store.data.model);
+  await service.save(id, unclipped, withWholeClips(unclipped));
+}
 const edit = async (fn) => {
   const before = structuredClone(service.store.data.model),
     after = structuredClone(before);

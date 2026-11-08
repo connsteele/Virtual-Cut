@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { require } from './shared.mjs';
+import { require, withWholeClips } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 const { ProjectService } = require('../dist-electron/project-service.cjs');
 
@@ -186,7 +186,7 @@ try {
 
   // 3. An export of the recording being transcribed starts at once and verifies.
   const before = structuredClone(service.store.data.model),
-    after = structuredClone(before),
+    after = withWholeClips(before),
     clip = after.clips.find((c) => c.rid === a);
   Object.assign(clip, { start: 2, end: 6, name: 'During transcription' });
   await service.save(project, before, after);

@@ -3101,17 +3101,8 @@ export class ProjectService {
           if (!s.data.model.markerBaseline?.[source.id]) {
             s.data.model.markers[source.id] = markers;
             (s.data.model.markerBaseline ??= {})[source.id] = structuredClone(markers);
-            s.data.model.clips.push({
-              id: randomUUID(),
-              rid: source.id,
-              name: r.title,
-              originalName: r.title,
-              folder: '_Review',
-              originalFolder: '_Review',
-              start: 0,
-              end: r.duration,
-              include: true,
-            });
+            // No clip is made here (VC-206): every clip is cut by the user or proposed by an
+            // agent. Cut offers a one-action whole-recording clip.
           }
           s.data.revision++;
         });

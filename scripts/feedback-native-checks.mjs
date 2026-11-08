@@ -1,4 +1,5 @@
 import { testPath } from './test-paths.mjs';
+import { withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, readdir, copyFile, rename } from 'node:fs/promises';
 import path from 'node:path';
@@ -105,7 +106,9 @@ try {
     p.model.recordings[2].audioWarning && p.model.recordings[2].micTrack == null,
     'Missing microphone tracks must not silently map to game audio',
   );
-  let next = structuredClone(p.model);
+  // Import makes no clip (VC-206); Whole recording in Cut makes the ones edited here.
+  assert.equal(p.model.clips.length, 0);
+  let next = withWholeClips(p.model);
   next.selectedRecordingId = record.id;
   next.recordings[0].monitor = 'both';
   next.clips[0].name = 'Checkpoint clip';
@@ -273,7 +276,7 @@ try {
     (r) => r.batchIds.includes(cleanupBatch) && r.batchIds.length === 1,
   );
   const exclusiveIds = new Set(exclusive.map((r) => r.id));
-  let edited = structuredClone(p.model);
+  let edited = withWholeClips(p.model);
   edited.clips.find((c) => exclusiveIds.has(c.rid)).note = 'Recover this note after cleanup';
   const editedRecord = edited.recordings.find((r) => exclusiveIds.has(r.id));
   [editedRecord.gameTrack, editedRecord.micTrack] = [editedRecord.micTrack, editedRecord.gameTrack];
