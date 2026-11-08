@@ -2,7 +2,8 @@
 // a clip with footage that belongs to its neighbours; markers in that padding used to spill in
 // ("Distress Transmission" at frame 0 of Eden Prime, "Drop Briefing" at 0:00.85, a duplicated
 // "Class Selection" in the first Mass Effect batch). The fixture is synthetic: 60 fps with a
-// keyframe every 2 s, so every clip edge below sits between keyframes like the real batch.
+// keyframe every 2 s, so every clip edge below sits between keyframes like the real batch. MP4
+// with a 1/60000 timescale, like OBS, so Resolve reads exactly 60 fps from the exports.
 // Set VIRTUAL_CUT_TEST_EXECUTABLE to a packaged Virtual Cut.exe to run it against that build.
 import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ const { ProjectService } = require(path.join(modules, 'project-service.cjs'));
 const root = testPath('marker-spill');
 await mkdir(root, { recursive: true });
 const dir = await mkdtemp(path.join(root, 'native-')),
-  source = path.join(dir, 'spill-fixture.mkv');
+  source = path.join(dir, 'spill-fixture.mp4');
 const run = (tool, args) =>
   new Promise((resolve, reject) => {
     const child = spawn(tool, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -39,7 +40,7 @@ await run(ffmpeg, [
   ...['-f', 'lavfi', '-i', 'sine=frequency=880:duration=12'],
   ...['-map', '0:v', '-map', '1:a', '-map', '2:a'],
   ...['-c:v', 'libx264', '-preset', 'ultrafast', '-g', '120', '-keyint_min', '120'],
-  ...['-sc_threshold', '0', '-c:a', 'flac', '-y', source],
+  ...['-sc_threshold', '0', '-c:a', 'flac', '-video_track_timescale', '60000', '-y', source],
 ]);
 
 const service = new ProjectService(path.join(dir, 'profile'), path.join(dir, 'tools'));
