@@ -151,10 +151,10 @@ try {
       0,
       'A marker at the in-point is at frame 0',
     );
-    assert.equal(
-      find('eden', 'Mission').clipTime,
-      0,
-      'A range clipped at the in-point is at frame 0',
+    // Cut at the in-point, it keeps its true position, off Drop Briefing's frame 0.
+    assert(
+      Math.abs(find('eden', 'Mission').clipTime - (edenIn - eden.verified.actual.start)) < 1e-6,
+      'A range cut at the in-point keeps its true position',
     );
     assert(
       Math.abs(find('eden', 'Mission').clipEnd - (edenOut - eden.verified.actual.start)) < 1e-6,
@@ -208,6 +208,31 @@ try {
     );
   }
   await writeFile(path.join(dir, 'companions.json'), JSON.stringify(report, null, 2));
+  // The Resolve helper plans every export without a conflict: no two markers on one frame.
+  const helperPlans = JSON.parse(
+    await run(process.env.VIRTUAL_CUT_PYTHON || 'python', [
+      '-c',
+      `import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('vcut', sys.argv[1])
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+out = {}
+for path in sys.argv[2:]:
+    with open(path, encoding='utf-8') as f: data = json.load(f)
+    changes, conflicts = helper.plan_markers(data, 60, {})
+    out[path] = {'changes': len(changes), 'conflicts': conflicts}
+print(json.dumps(out))`,
+      path.resolve('integrations/resolve/Virtual Cut metadata.py'),
+      ...report.runs.flatMap((r) =>
+        r.clips.map((c) =>
+          path.join(dir, c.name.replace(/ /g, '-') + '.' + r.container + '.vcut.json'),
+        ),
+      ),
+    ]),
+  );
+  report.helperPlans = helperPlans;
+  await writeFile(path.join(dir, 'companions.json'), JSON.stringify(report, null, 2));
+  for (const [file, plan] of Object.entries(helperPlans))
+    assert.deepEqual(plan.conflicts, [], `${path.basename(file)}: the helper plans it cleanly`);
   // clip-color-ui.mjs opens this project: three neighbouring clips with exports.
   await writeFile(path.join(root, 'latest-native.json'), JSON.stringify({ file, dir }, null, 2));
   console.log('Marker spill checks passed:', dir);
