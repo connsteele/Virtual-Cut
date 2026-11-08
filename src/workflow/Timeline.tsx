@@ -997,7 +997,7 @@ export function Timeline({
                   title={`${String(index + 1).padStart(2, '0')} · ${c.name} · ${time(c.start)} – ${time(c.end)}${layout.overlaps.some((o) => o.start < c.end && o.end > c.start) ? ' · Overlaps another clip' : ''}`}
                   style={
                     {
-                      '--clip-color': clipColor(c.id),
+                      '--clip-color': clipColor(c),
                       '--clip-lane': lane,
                       left: percent(c.start),
                       width: `${(100 * (Math.min(end, c.end) - Math.max(start, c.start))) / span}%`,

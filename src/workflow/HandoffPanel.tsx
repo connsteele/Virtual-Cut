@@ -155,8 +155,9 @@ export function HandoffPanel() {
           Choose <strong>Check whole Media Pool</strong> to find matching video companions across
           all bins. Selection is optional. The helper reports discovery and full file-verification
           time. Inspect the plan, then choose <strong>Apply markers and transcripts</strong> to
-          transfer matching marker names, colors and notes, and the game dialogue transcript to
-          clips that have none yet (Resolve Studio 21.1.2 or later; existing transcripts are kept).
+          transfer matching marker names, colors and notes, the game dialogue transcript to clips
+          that have none yet (Resolve Studio 21.1.2 or later; existing transcripts are kept), and
+          the clip color you chose in Cut to clips with no color in Resolve.
         </li>
         <li>
           Inspect the Media Pool markers before adding clips to a new timeline. Rerunning the helper

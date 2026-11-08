@@ -1,4 +1,4 @@
-import { markerIntersects } from './marker-ranges.js';
+import { clipMarkers, markerIntersects } from './marker-ranges.js';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -17,7 +17,7 @@ import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
 import { colors, markerColor, markerColorName } from './workflow-types.js';
 import { transcriptHandoff } from './transcript-export.js';
-import { timecodeSubtitleFile } from './subtitle-sidecar.cjs';
+import { subtitleFile, subtitleSourceLabel, timecodeSubtitleFile } from './subtitle-sidecar.cjs';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
   'resolution-mode': 'import',
 };
@@ -295,7 +295,37 @@ function verify(
 function escapeMetadata(s: string) {
   return s.replace(/([\\=;#\n])/g, '\\$1').replace(/\r/g, '');
 }
+/**
+ * The markers of an export made since VC-208, in clip time (0 is the verified first frame):
+ * chosen by the clip's own range rather than its outward keyframe padding.
+ */
+function ownMarkers(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
+  return clipMarkers(
+    record.input.markers,
+    record.plan.requested,
+    v.constantFrameDuration ?? 1 / 60,
+  ).map(({ marker, start, end, atIn }) => ({
+    marker,
+    clipTime: atIn ? 0 : start - v.actual.start,
+    ...(end != null ? { clipEnd: end - v.actual.start } : {}),
+  }));
+}
 function chapters(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
+  if (record.markerScope === 'clip') {
+    const entries = ownMarkers(record, v)
+      .sort((a, b) => a.clipTime - b.clipTime)
+      .map((m) => ({
+        start: Math.max(
+          0,
+          Math.round(
+            (v.actual.start + m.clipTime + record.input.sourceStart + v.timestampShift) * 1000000,
+          ),
+        ),
+        name: m.marker.name,
+      }))
+      .filter((entry, index, all) => index === 0 || entry.start !== all[index - 1].start);
+    return leadingAnchor(record, entries);
+  }
   const markers = record.input.markers
     .filter((m) =>
       (record.annotationVersion ?? 1) >= 4
@@ -321,6 +351,12 @@ function chapters(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 's
     entries = entries.filter(
       (entry, index) => index === 0 || entry.start !== entries[index - 1].start,
     );
+  return leadingAnchor(record, entries);
+}
+function leadingAnchor(
+  record: ExportRecord,
+  entries: { start: number; name: string; generated?: boolean }[],
+) {
   // QuickTime chapter tracks assign their first chapter to zero. A neutral
   // leading chapter prevents the first real annotation from being retimed.
   if (quickTime(record.plan.container) && entries.length && entries[0].start > 0)
@@ -746,34 +782,54 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                 : [],
             }
           : {}),
-        markers: input.markers
-          .filter((m) =>
-            (record.annotationVersion ?? 1) >= 4
-              ? markerIntersects(m, v.actual.start, v.actual.end)
-              : m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
-          )
-          .map((m) => ({
-            ...m,
-            ...((record.annotationVersion ?? 1) >= 2
-              ? { colorName: markerColorName(m), color: markerColor(m) }
-              : { color: colors[m.category] }),
-            sourceTime: m.time,
-            clipTime: (m.end != null ? Math.max(m.time, v.actual.start) : m.time) - v.actual.start,
-            containerTime:
-              (m.end != null ? Math.max(m.time, v.actual.start) : m.time) +
-              input.sourceStart +
-              v.timestampShift,
-            ...(m.end != null
-              ? {
-                  sourceEnd: m.end,
-                  sourceDuration: m.end - m.time,
-                  clipEnd: Math.min(m.end, v.actual.end) - v.actual.start,
-                  containerEnd:
-                    Math.min(m.end, v.actual.end) + input.sourceStart + v.timestampShift,
-                  duration: Math.min(m.end, v.actual.end) - Math.max(m.time, v.actual.start),
-                }
-              : {}),
-          })),
+        markers:
+          record.markerScope === 'clip'
+            ? ownMarkers(record, v).map(({ marker: m, clipTime, clipEnd }) => ({
+                ...m,
+                colorName: markerColorName(m),
+                color: markerColor(m),
+                sourceTime: m.time,
+                clipTime,
+                containerTime: v.actual.start + clipTime + input.sourceStart + v.timestampShift,
+                ...(m.end != null && clipEnd != null
+                  ? {
+                      sourceEnd: m.end,
+                      sourceDuration: m.end - m.time,
+                      clipEnd,
+                      containerEnd: v.actual.start + clipEnd + input.sourceStart + v.timestampShift,
+                      duration: clipEnd - clipTime,
+                    }
+                  : {}),
+              }))
+            : input.markers
+                .filter((m) =>
+                  (record.annotationVersion ?? 1) >= 4
+                    ? markerIntersects(m, v.actual.start, v.actual.end)
+                    : m.time >= v.actual.start - 0.000001 && m.time < v.actual.end,
+                )
+                .map((m) => ({
+                  ...m,
+                  ...((record.annotationVersion ?? 1) >= 2
+                    ? { colorName: markerColorName(m), color: markerColor(m) }
+                    : { color: colors[m.category] }),
+                  sourceTime: m.time,
+                  clipTime:
+                    (m.end != null ? Math.max(m.time, v.actual.start) : m.time) - v.actual.start,
+                  containerTime:
+                    (m.end != null ? Math.max(m.time, v.actual.start) : m.time) +
+                    input.sourceStart +
+                    v.timestampShift,
+                  ...(m.end != null
+                    ? {
+                        sourceEnd: m.end,
+                        sourceDuration: m.end - m.time,
+                        clipEnd: Math.min(m.end, v.actual.end) - v.actual.start,
+                        containerEnd:
+                          Math.min(m.end, v.actual.end) + input.sourceStart + v.timestampShift,
+                        duration: Math.min(m.end, v.actual.end) - Math.max(m.time, v.actual.start),
+                      }
+                    : {}),
+                })),
         // Optional and separately versioned, so helpers that read version 4 are unaffected (VC-154).
         ...(record.companionTranscripts?.items.length
           ? {
@@ -812,6 +868,22 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                 ),
                 timing:
                   'Each file repeats the plain .srt beside this video shifted by startSeconds, for Resolve. One is written for each requested transcript with speech in this clip.',
+              },
+            }
+          : {}),
+        // Optional and separately versioned: which transcript each SRT holds (VC-236).
+        ...(record.subtitles?.named && record.subtitles.requested.length && record.output
+          ? {
+              subtitles: {
+                schema: 'virtual-cut-subtitles',
+                version: 1,
+                files: record.subtitles.requested.map((role) => ({
+                  file: path.basename(subtitleFile(record.output!, role)),
+                  transcript: role,
+                  label: subtitleSourceLabel[role],
+                })),
+                noDialogue:
+                  'An SRT with no lines means its transcript has no speech in this clip (no dialogue). A missing SRT was not written; the export result says why.',
               },
             }
           : {}),

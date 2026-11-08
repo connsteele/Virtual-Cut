@@ -3,6 +3,7 @@
 Run from Resolve's Workspace > Scripts > Utility menu. Plan is read-only; Apply
 checks the selected clips, file identity and marker snapshot again before writing.
 Transcripts (decision 0023) are set only on clips that have none, never replaced.
+Clip colors (VC-207) likewise: set only on clips with no color in Resolve.
 """
 import copy
 import hashlib
@@ -14,6 +15,9 @@ import time
 
 COLORS = {'Blue', 'Cyan', 'Green', 'Yellow', 'Red', 'Pink', 'Purple', 'Fuchsia',
           'Rose', 'Lavender', 'Sky', 'Mint', 'Lemon', 'Sand', 'Cocoa', 'Cream'}
+# Resolve's clip colors (MediaPoolItem.SetClipColor), which differ from its marker colors.
+CLIP_COLORS = {'Orange', 'Apricot', 'Yellow', 'Lime', 'Olive', 'Green', 'Teal', 'Navy', 'Blue',
+               'Purple', 'Violet', 'Pink', 'Tan', 'Beige', 'Brown', 'Chocolate'}
 PREFIX = 'virtual-cut-marker:'
 SRT_TIME = re.compile(r'(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})\s*-->\s*(\d{2,}):([0-5]\d):([0-5]\d)[,.](\d{3})')
 NEEDS_RESOLVE = 'Setting transcripts needs DaVinci Resolve Studio 21.1.2 or later.'
@@ -286,6 +290,9 @@ def plan_transcript(item, data, media_path, properties):
     lines, source = history_lines(data), 'the companion'
     if lines is None and os.path.isfile(srt):
         lines, source = srt_lines(srt), os.path.basename(srt)
+    if lines == [] and source != 'the companion':
+        # Virtual Cut writes an empty .srt when the clip has no game dialogue (VC-236).
+        return {'action': 'none', 'line': 'Transcript: none. The game dialogue .srt is empty: no dialogue in this clip.'}
     if not lines:
         return {'action': 'none', 'line': 'Transcript: none. No game dialogue .srt or transcript history beside this video.'}
     duration = data['verified']['actual']['end'] - data['verified']['actual']['start']
@@ -317,6 +324,50 @@ def apply_transcript(plan):
     return True
 
 
+def clip_color(data):
+    """The clip color from the companion's optional section (VC-207), or None."""
+    section = data.get('clipColor') if data.get('version', 1) >= 4 else None
+    if not isinstance(section, dict) or section.get('schema') != 'virtual-cut-clip-color' or section.get('version') != 1:
+        return None
+    if section.get('name') not in CLIP_COLORS:
+        raise ValueError("The companion clip color is not one of Resolve's clip colors.")
+    return section['name']
+
+
+def plan_color(item, data):
+    """What Apply does with the clip color: set (only when Resolve has none), keep, or none."""
+    try:
+        name = clip_color(data)
+    except ValueError as error:
+        return {'action': 'none', 'line': 'Clip color: none. ' + str(error)}
+    if name is None:
+        return {'action': 'none', 'line': None}
+    if not callable(getattr(item, 'GetClipColor', None)) or not callable(getattr(item, 'SetClipColor', None)):
+        return {'action': 'none', 'line': 'Clip color: none. This Resolve cannot set clip colors from scripts.'}
+    current = item.GetClipColor() or ''
+    if current == name:
+        return {'action': 'keep', 'name': name, 'line': 'Clip color: already ' + name + '.'}
+    if current:
+        return {'action': 'keep', 'name': name,
+                'line': 'Clip color: kept {} set in Resolve (Virtual Cut has {}).'.format(current, name)}
+    return {'action': 'set', 'name': name, 'line': 'Clip color: set to ' + name + '.'}
+
+
+def apply_color(plan):
+    """Sets the planned clip color if the clip still has none. Returns True when it was set."""
+    color = plan.get('color') or {}
+    if color.get('action') != 'set':
+        return False
+    item = plan['item']
+    if item.GetMediaId() != plan['mediaId'] or (item.GetClipProperty() or {}).get('File Path') != plan['path']:
+        raise ValueError(plan['name'] + ': the clip changed after the check. Check again.')
+    if item.GetClipColor():
+        raise ValueError(plan['name'] + ': a clip color appeared in Resolve after the check; kept it.')
+    if not item.SetClipColor(color['name']) or item.GetClipColor() != color['name']:
+        raise RuntimeError(plan['name'] + ': Resolve did not keep the clip color ' + color['name'] + '.')
+    return True
+
+
 def plan_clip(item, verified=None):
     properties = item.GetClipProperty()
     media_path = properties.get('File Path')
@@ -338,7 +389,7 @@ def plan_clip(item, verified=None):
         transcript = {'action': 'none', 'line': 'Transcript: none. ' + str(error)}
     return {'item': item, 'mediaId': item.GetMediaId(), 'name': item.GetName(), 'path': media_path,
             'data': data, 'fps': fps, 'snapshot': snapshot, 'changes': changes, 'conflicts': conflicts,
-            'companionHash': digest(data), 'transcript': transcript}
+            'companionHash': digest(data), 'transcript': transcript, 'color': plan_color(item, data)}
 
 
 def add(item, frame, marker):
@@ -390,13 +441,17 @@ def apply_clip(plan):
 
 def check_summary(scanned, checked, matching, seconds, changes, errors, plans, total):
     actions = [plan['transcript']['action'] for plan in plans]
+    colors = sum(1 for plan in plans if (plan.get('color') or {}).get('action') == 'set')
     return ('{} items scanned, {} companion locations checked, {} matching clips in {:.2f}s. {} marker changes, {} conflicts/errors. '
-            '{} transcripts to set, {} kept, {} with none. Total with file verification: {:.2f}s.').format(
-        scanned, checked, matching, seconds, changes, errors, actions.count('set'), actions.count('keep'), actions.count('none'), total)
+            '{} transcripts to set, {} kept, {} with none.{} Total with file verification: {:.2f}s.').format(
+        scanned, checked, matching, seconds, changes, errors, actions.count('set'), actions.count('keep'), actions.count('none'),
+        ' {} clip colors to set.'.format(colors) if colors else '', total)
 
 
-def apply_summary(markers, transcripts, problems):
+def apply_summary(markers, transcripts, problems, colors=()):
     done = ' and {} transcripts set ({})'.format(len(transcripts), ', '.join(transcripts)) if transcripts else ' and no transcripts set'
+    if colors:
+        done += ', {} clip colors set ({})'.format(len(colors), ', '.join(colors))
     return (str(markers) + ' marker changes applied' + done + '; project saved.'
             + (' Not set: ' + ' '.join(problems) if problems else '')
             + ' Check again to verify; repeated apply adds no duplicates.')
@@ -408,7 +463,7 @@ def show_window(resolve, bmd):
     dispatcher = bmd.UIDispatcher(ui)
     window = dispatcher.AddWindow({'ID': 'VirtualCutMetadata', 'WindowTitle': 'Virtual Cut metadata', 'Geometry': [220, 180, 900, 680]}, ui.VGroup([
         ui.Label({'Text': 'Check the whole Media Pool to find supported video exports in every bin with an adjacent .vcut.json. No selection needed. Matching videos are fully verified; large exports can take time.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 40]}),
-        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clips with no transcript get the game dialogue transcript from the export; existing transcripts are never replaced. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 58]}),
+        ui.Label({'Text': 'Marker names, notes, colors and range durations are applied. Clips with no transcript get the game dialogue transcript from the export; existing transcripts are never replaced. Clip colors from Virtual Cut are set on clips with no color in Resolve. Clip notes and recording context stay in the companion; bins, files and timelines are untouched.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 58]}),
         ui.TextEdit({'ID': 'Plan', 'ReadOnly': True, 'PlainText': 'No plan checked yet.'}),
         ui.Label({'ID': 'Status', 'Text': 'Plan first, then apply.', 'WordWrap': True, 'Weight': 0, 'MinimumSize': [0, 58]}),
         ui.HGroup({'Weight': 0}, [ui.Button({'ID': 'Check', 'Text': 'Check whole Media Pool'}), ui.Button({'ID': 'Selected', 'Text': 'Check selected clips'}), ui.Button({'ID': 'Apply', 'Text': 'Apply markers and transcripts', 'Enabled': False}), ui.Button({'ID': 'Close', 'Text': 'Close'})]),
@@ -447,20 +502,22 @@ def show_window(resolve, bmd):
                 if not plan['changes'] and not plan['conflicts']:
                     lines.append('  Already up to date; no changes.')
                 lines.append('  ' + plan['transcript']['line'])
+                if plan['color']['line']:
+                    lines.append('  ' + plan['color']['line'])
                 lines.append('')
             except Exception as error:
                 errors.append(str(error)); lines.append(item.GetName() + ': ' + str(error))
         items['Plan'].PlainText = '\n'.join(lines) or 'No matching video companions found beside imported videos.'
         count = sum(len(plan['changes']) for plan in state['plans'])
         items['Status'].Text = check_summary(scanned, checked, len(selected), discovery_seconds, count, len(errors), state['plans'], time.perf_counter() - started)
-        items['Apply'].Enabled = bool((count or any(plan['transcript']['action'] == 'set' for plan in state['plans'])) and not errors)
+        items['Apply'].Enabled = bool((count or any(plan['transcript']['action'] == 'set' or plan['color']['action'] == 'set' for plan in state['plans'])) and not errors)
 
     def apply(_event):
         items['Apply'].Enabled = False
         current = resolve.GetProjectManager().GetCurrentProject()
         if not current or current.GetUniqueId() != state['project']:
             items['Status'].Text = 'The project changed. Check the plan again.'; return
-        count, transcripts, problems = 0, [], []
+        count, transcripts, colors, problems = 0, [], [], []
         try:
             present = {item.GetMediaId(): item for item in pool_items(current.GetMediaPool())}
             for plan in state['plans']:
@@ -476,9 +533,15 @@ def show_window(resolve, bmd):
                         transcripts.append(plan['name'])
                 except Exception as error:
                     problems.append(str(error))
+                # Likewise for the clip color (VC-207).
+                try:
+                    if apply_color(plan):
+                        colors.append(plan['name'] + ': ' + plan['color']['name'])
+                except Exception as error:
+                    problems.append(str(error))
             if not resolve.GetProjectManager().SaveProject():
                 raise RuntimeError('Changes applied, but Resolve could not save the project. Save it manually.')
-            items['Status'].Text = apply_summary(count, transcripts, problems)
+            items['Status'].Text = apply_summary(count, transcripts, problems, colors)
         except Exception as error:
             items['Status'].Text = '{} marker changes and {} transcripts completed before this error: {}'.format(count, len(transcripts), error)
 

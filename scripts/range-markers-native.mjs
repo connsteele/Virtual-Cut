@@ -153,19 +153,20 @@ try {
       Math.abs(data.verified.constantFrameDuration - 1 / 30) < 1e-8,
       'Frame-grid proof handles rounded MKV packet clocks',
     );
+    // Both crossing ranges overlap the clip by under a second and lie mostly outside it, so
+    // they are its neighbours' stubs (VC-208); marker-spill-native.mjs covers clipped ranges.
     assert.deepEqual(
       data.markers.map((m) => m.id),
-      ['cross-start', 'inside', 'cross-end', 'point'],
+      ['inside', 'point'],
     );
     for (const marker of data.markers.filter((m) => m.end != null)) {
       assert(marker.duration > 0);
       assert(Math.abs(marker.clipEnd - marker.clipTime - marker.duration) < 1e-6);
       assert(Math.abs(marker.containerEnd - marker.containerTime - marker.duration) < 1e-6);
     }
-    assert.equal(data.markers[0].sourceTime, 1);
-    assert.equal(data.markers[0].clipTime, 0);
-    assert.equal(data.markers[2].sourceEnd, 7);
-    assert.equal(data.markers[2].clipEnd, data.verified.actual.end - data.verified.actual.start);
+    assert.equal(data.markers[0].sourceTime, 3.2);
+    assert(Math.abs(data.markers[0].clipTime - (3.2 - data.verified.actual.start)) < 1e-6);
+    assert.equal(data.markers[0].sourceEnd, 4.2);
     outputs.push({ container, output, markers: data.markers, verified: data.verified });
   }
   assert.equal(

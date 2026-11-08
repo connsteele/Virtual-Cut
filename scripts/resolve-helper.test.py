@@ -43,6 +43,18 @@ class TranscribedItem(Item):
         return True
 
 
+class ColoredItem(Item):
+    """A media-pool clip with Resolve's clip color (MediaPoolItem.GetClipColor/SetClipColor)."""
+    def __init__(self, file, markers, color='', keeps=True):
+        super().__init__(file, markers)
+        self.color, self.keeps, self.sets = color, keeps, 0
+    def GetClipColor(self): return self.color
+    def SetClipColor(self, name):
+        self.sets += 1
+        if self.keeps: self.color = name
+        return True
+
+
 class Tests(unittest.TestCase):
     def test_pool_discovery_nested_bins_duplicates_and_no_video_reads(self):
         class Folder:
@@ -260,11 +272,54 @@ class Tests(unittest.TestCase):
         item = TranscribedItem(self.file, self.old)
         self.assertEqual(helper.plan_clip(item)['transcript']['line'],
                          'Transcript: none. No game dialogue .srt or transcript history beside this video.')
+        self.write_srt('')  # VC-236: an empty .srt says the clip has no dialogue.
+        self.assertEqual(helper.plan_clip(item)['transcript']['line'],
+                         'Transcript: none. The game dialogue .srt is empty: no dialogue in this clip.')
         self.write_srt('1\n00:00:01,000 --> 00:00:02,000\nHello\n')
         fractional = TranscribedItem(self.file, self.old, fps='59.94')
         self.assertRegex(helper.plan_clip(fractional)['transcript']['line'], 'whole-number frame rate')
         drop = TranscribedItem(self.file, self.old, start='00:59:58;02', fps='30')
         self.assertRegex(helper.plan_clip(drop)['transcript']['line'], 'cannot place')
+    def test_clip_color_set_only_when_resolve_has_none(self):
+        # VC-207: the optional clipColor section; markers are unaffected by it.
+        item = ColoredItem(self.file, self.old)
+        self.assertEqual(helper.plan_clip(item)['color'], {'action': 'none', 'line': None})
+        self.data['version'] = 4
+        self.data['clipColor'] = {'schema': 'virtual-cut-clip-color', 'version': 1, 'name': 'Orange'}
+        self.save()
+        plan = helper.plan_clip(item)
+        self.assertEqual([c['frame'] for c in plan['changes']], [33, 74])
+        self.assertEqual(plan['color'], {'action': 'set', 'name': 'Orange', 'line': 'Clip color: set to Orange.'})
+        self.assertEqual(helper.check_summary(1, 1, 1, .1, 2, 0, [plan], .2),
+                         '1 items scanned, 1 companion locations checked, 1 matching clips in 0.10s. 2 marker changes, 0 conflicts/errors. 0 transcripts to set, 0 kept, 1 with none. 1 clip colors to set. Total with file verification: 0.20s.')
+        self.assertTrue(helper.apply_color(plan))
+        self.assertEqual(item.color, 'Orange')
+        again = helper.plan_clip(item)
+        self.assertEqual(again['color']['line'], 'Clip color: already Orange.')
+        self.assertFalse(helper.apply_color(again))
+        self.assertEqual(item.sets, 1)
+        self.assertEqual(helper.apply_summary(2, [], [], ['clip.mp4: Orange']),
+                         '2 marker changes applied and no transcripts set, 1 clip colors set (clip.mp4: Orange); project saved. Check again to verify; repeated apply adds no duplicates.')
+        # A color chosen in Resolve is never replaced, at check or at apply.
+        mine = ColoredItem(self.file, self.old, color='Navy')
+        kept = helper.plan_clip(mine)
+        self.assertEqual(kept['color']['line'], 'Clip color: kept Navy set in Resolve (Virtual Cut has Orange).')
+        self.assertFalse(helper.apply_color(kept))
+        late = ColoredItem(self.file, self.old)
+        late_plan = helper.plan_clip(late)
+        late.color = 'Teal'
+        with self.assertRaisesRegex(ValueError, 'appeared in Resolve after the check'):
+            helper.apply_color(late_plan)
+        self.assertEqual(late.color, 'Teal')
+        refused = ColoredItem(self.file, self.old, keeps=False)
+        with self.assertRaisesRegex(RuntimeError, 'did not keep the clip color Orange'):
+            helper.apply_color(helper.plan_clip(refused))
+        # Older Resolve without the calls, and a marker color name in the clip color section.
+        self.assertEqual(helper.plan_clip(Item(self.file, self.old))['color']['line'],
+                         'Clip color: none. This Resolve cannot set clip colors from scripts.')
+        self.data['clipColor']['name'] = 'Cyan'
+        self.save()
+        self.assertRegex(helper.plan_clip(item)['color']['line'], "not one of Resolve's clip colors")
     def test_segments_stay_ascending_and_inside_the_clip(self):
         lines = [(2.0, 3.0, [('b', 2.5, 3.5)]), (1.0, 2.4, [('a', 1.0, 2.4)]), (3.9, 9.0, [('c', None, None)])]
         segments = helper.transcript_segments(lines, 10, '00:00:00:00', 4)

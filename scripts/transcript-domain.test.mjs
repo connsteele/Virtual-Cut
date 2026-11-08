@@ -849,6 +849,32 @@ test('export SRT sidecars follow the verified cut, are named after the video and
       find,
     );
     assert.deepEqual(quiet.skipped[0], 'Game dialogue: no speech in this clip.');
+    // Since VC-236 (named), a clip without speech gets an empty SRT instead, and no timecode copy.
+    const named = await writeSubtitleSidecars(
+      {
+        ...record,
+        output: path.join(dir, 'Quiet.mkv'),
+        verification: {
+          ...record.verification,
+          actual: { start: 50, end: 60 },
+          startTimecode: { value: '01:00:00:00', seconds: 3600 },
+        },
+        subtitles: { requested: ['game'], named: true, written: [], skipped: [] },
+      },
+      find,
+    );
+    assert.equal(named.named, true);
+    assert.deepEqual(named.skipped, []);
+    assert.deepEqual(
+      named.written.map((w) => [path.basename(w.file), w.noDialogue]),
+      [['Quiet.srt', true]],
+    );
+    assert.equal(await readFile(path.join(dir, 'Quiet.srt'), 'utf8'), '');
+    await assert.rejects(readFile(path.join(dir, 'Quiet.timecode.srt')), /ENOENT/);
+    assert.equal(
+      subtitleSummary(named, { startTimecode: { value: '01:00:00:00', seconds: 3600 } }),
+      ' Subtitles: Quiet.srt (no dialogue).',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
