@@ -198,3 +198,46 @@ test('a clip color reaches the companion in its own optional section (VC-207)', 
   const plain = JSON.parse(annotation(record(), verified));
   assert.equal('clipColor' in plain, false);
 });
+
+test('an export queued before VC-208 keeps its old marker scope; a new one keeps its own', () => {
+  const { annotation } = createRequire(import.meta.url)('../dist-electron/clip-export.cjs');
+  const marker = (id, time) => ({ id, time, name: id, category: 'Context', topic: '' });
+  const record = (markerScope) => ({
+    annotationVersion: 4,
+    ...(markerScope ? { markerScope } : {}),
+    plan: {
+      id: 'p',
+      created: '2026-11-06T00:00:00.000Z',
+      container: 'mp4',
+      requested: { start: 1, end: 4 },
+      planned: { start: 0, end: 5 },
+      name: 'A',
+    },
+    input: {
+      clip: { ...editFixture().clips[0], include: true },
+      // Out of time order, and "padding" sits in the outward keyframe padding before the in-point.
+      markers: [marker('inside', 2), marker('padding', 0.5)],
+      context: '',
+      gameTrack: 1,
+      sourceFile: 'source.mkv',
+      sourceFingerprint: 'f',
+      sourceBytes: 1,
+      sourceModified: 0,
+      sourceStart: 0,
+      duration: 10,
+    },
+  });
+  const verified = { actual: { start: 0, end: 5 }, timestampShift: 0 };
+  const old = JSON.parse(annotation(record(), verified));
+  assert.deepEqual(
+    old.markers.map((m) => m.id).sort(),
+    ['inside', 'padding'],
+    'a companion re-written for an older export reproduces its padding markers',
+  );
+  assert.equal(old.generatedChapters.length, 1, 'MP4 chapters lead with a neutral Clip start');
+  const own = JSON.parse(annotation(record('clip'), verified));
+  assert.deepEqual(
+    own.markers.map((m) => m.id),
+    ['inside'],
+  );
+});
