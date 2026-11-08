@@ -5,6 +5,7 @@
 // keyframe every 2 s, so every clip edge below sits between keyframes like the real batch. MP4
 // with a 1/60000 timescale, like OBS, so Resolve reads exactly 60 fps from the exports.
 // Set VIRTUAL_CUT_TEST_EXECUTABLE to a packaged Virtual Cut.exe to run it against that build.
+import { withWholeClips } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -73,8 +74,9 @@ try {
   // Three neighbouring clips with every edge between keyframes, as in the real batch.
   const edenIn = 2.7,
     edenOut = 6.3;
+  // Import makes no clip (VC-206); the whole-recording clip is the base the clips copy.
   const before = structuredClone(p.model),
-    after = structuredClone(before);
+    after = withWholeClips(before);
   const base = after.clips[0];
   after.clips = [
     { ...base, id: 'normandy', start: 0.5, end: edenIn, name: 'Normandy' },

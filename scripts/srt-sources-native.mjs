@@ -2,6 +2,7 @@
 // empty one when the clip has no speech in it, and the companion names which transcript each
 // SRT holds. Three clips of one synthetic recording with finished game and microphone
 // transcripts: game dialogue only, microphone speech only, and no speech at all.
+import { withWholeClips } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -94,8 +95,9 @@ try {
   };
   transcript('srt-game', 'game', 1, [1, 2, 3], 'Dialogue');
   transcript('srt-mic', 'mic', 2, [7, 8], 'Note');
+  // Import makes no clip (VC-206); the whole-recording clip is the base the clips copy.
   const before = structuredClone(p.model),
-    after = structuredClone(before);
+    after = withWholeClips(before);
   const base = after.clips[0];
   after.clips = [
     { ...base, id: 'dialogue', start: 1.2, end: 4.2, name: 'Game dialogue only' },
