@@ -51,6 +51,7 @@ import {
 } from './agent-changes.js';
 import { proposalLimit } from './proposal-store.cjs';
 import { intentGuideAnswer } from './intent-guide.js';
+import { agentNotes, releaseOf, unreadNotice } from './release-notes.js';
 import { look, lookRecording, type LookInput } from './look.cjs';
 import { LookError, clock as lookClock } from './look-plan.js';
 import { readFileSync, statSync } from 'node:fs';
@@ -73,7 +74,14 @@ const instructions =
   'propose when there is none, and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
   'never return file paths or media files. look shows pictures of moments in a recording, ' +
-  'rendered by Virtual Cut, while the user has Allow pictures on.';
+  'rendered by Virtual Cut, while the user has Allow pictures on. get_whats_new lists what ' +
+  'changed for agents in each Virtual Cut version since this app last read it.';
+
+/** The server instructions for one connection: unread notes first (VC-242). */
+function connectionInstructions(current: string, from: string | undefined) {
+  const unread = unreadNotice(current, from);
+  return unread ? `${unread} ${instructions}` : instructions;
+}
 
 /**
  * Agent access (VC-159/VC-160): pairing and activity IPC for the main window, and a read-only
@@ -93,6 +101,7 @@ export function registerAgentAccess(options: {
     if (window && !window.isDestroyed()) window.webContents.send('agent:changed');
   };
   access.serve = (socket, client) => serve(socket, client);
+  access.version = releaseOf(app.getVersion());
 
   function source(client: AgentClient): AgentReadSource {
     const store = options.projects()?.store;
@@ -136,7 +145,7 @@ export function registerAgentAccess(options: {
   function serve(socket: Socket, client: AgentClient) {
     const server = new McpServer(
       { name: 'virtual-cut', version: app.getVersion() },
-      { instructions },
+      { instructions: connectionInstructions(app.getVersion(), access.notesFrom(client.id)) },
     );
     const read = <A,>(
       name: string,
@@ -536,6 +545,51 @@ export function registerAgentAccess(options: {
       z.object({ batch_id: batch }),
       (s, a) => batchRecordAnswer(s, a.batch_id),
       (a, n) => `Batch record: ${a.batch_id ? n(a.batch_id) : 'active batch'}`,
+    );
+    // What's new (VC-242) needs no open project: it reads the notes built into this version.
+    server.registerTool(
+      'get_whats_new',
+      {
+        description:
+          'What changed for agents in each Virtual Cut version since this app last read it ' +
+          '(Virtual Cut remembers that per paired app), or since `since`: new and changed ' +
+          'tools, behaviour you will meet and the intent guide version, newest first. Call it ' +
+          'when the server instructions say Virtual Cut was updated.',
+        inputSchema: z.object({
+          since: z
+            .string()
+            .max(40)
+            .regex(/^\d+\.\d+\.\d+/, 'Use a version like 0.4.28.')
+            .optional()
+            .describe('A version like 0.4.28: list what changed after it instead.'),
+        }),
+        annotations: { readOnlyHint: true },
+      },
+      async (args: unknown) => {
+        const { since } = args as { since?: string };
+        if (!access.isPaired(client.id)) {
+          socket.destroy();
+          return failure('This pairing was revoked in Virtual Cut.');
+        }
+        const stored = access.state().clients.find((c) => c.id === client.id);
+        const from = since ?? access.notesFrom(client.id);
+        const basis = since
+          ? 'since'
+          : stored?.notesRead
+            ? 'last read'
+            : stored?.pairedVersion
+              ? 'paired'
+              : 'all';
+        const answer = agentNotes(app.getVersion(), from, basis);
+        access.notesWereRead(client.id, releaseOf(app.getVersion()));
+        access.record(
+          client,
+          'get_whats_new',
+          since ? `What's new since ${since}` : "What's new",
+          'read',
+        );
+        return { content: [{ type: 'text' as const, text: JSON.stringify(answer, null, 1) }] };
+      },
     );
     // VC-172: pictures on request, only while Allow pictures is on (one switch for every app).
     server.registerTool(

@@ -48,6 +48,7 @@ try {
     processType: typeof window.process,
     apiKeys: Object.keys(window.virtualCut).sort(),
     agentKeys: Object.keys(window.virtualCut.agent).sort(),
+    whatsNewKeys: Object.keys(window.virtualCut.whatsNew).sort(),
     info: await window.virtualCut.getAppInfo(),
   }));
   assert.equal(boundary.requireType, 'undefined');
@@ -61,7 +62,10 @@ try {
     'selectProjectFolder',
     'toggleFullscreen',
     'transcript',
+    'whatsNew',
   ]);
+  // What's new (VC-242) reads and records only when its window and pop-up were seen.
+  assert.deepEqual(boundary.whatsNewKeys, ['announced', 'opened', 'state']);
   // Agent access (VC-160) adds only pairing, activity and the reported view.
   assert.deepEqual(boundary.agentKeys, [
     'copy',

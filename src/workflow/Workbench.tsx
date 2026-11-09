@@ -28,6 +28,9 @@ import { Brand } from '../components/Brand';
 import { RecordingFilmstrip, RecordingTranscription } from './RecordingJobs';
 import { HelpContent } from './HelpPanel';
 import { SettingsContent } from './SettingsPanel';
+import { WhatsNewContent, WhatsNewPopup } from './WhatsNew';
+import wn from './WhatsNew.module.css';
+import type { WhatsNewState } from '../../electron/contracts';
 import { pages, type PageId } from '../workspace';
 import { useProjectWorkspace } from './useProjectWorkspace';
 import {
@@ -595,6 +598,27 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       .then((info) => setVersion(info.version))
       .catch(() => {});
   }, []);
+  // What's new (VC-242): the version number opens it; a dot and a one-time pop-up after an update.
+  const [whatsNew, setWhatsNew] = useState<WhatsNewState | null>(null),
+    [whatsNewOpen, setWhatsNewOpen] = useState<{ lastOpened?: string } | null>(null),
+    [whatsNewPopup, setWhatsNewPopup] = useState(false);
+  useEffect(() => {
+    const api = window.virtualCut?.whatsNew;
+    if (!api) return;
+    background(
+      api.state().then((state) => {
+        setWhatsNew(state);
+        if (!state.announce) return;
+        setWhatsNewPopup(true);
+        return api.announced();
+      }),
+    );
+  }, []);
+  function openWhatsNew() {
+    setWhatsNewPopup(false);
+    setWhatsNewOpen({ lastOpened: whatsNew?.lastOpened });
+    background(window.virtualCut?.whatsNew.opened().then(setWhatsNew));
+  }
   const [planOpen, setPlanOpen] = useState(false),
     [destinationPlan, setDestinationPlan] = useState<DestinationPlan | null>(null),
     [planError, setPlanError] = useState(''),
@@ -3126,6 +3150,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           <SettingsContent />
         </Modal>
       )}
+      {whatsNewOpen && whatsNew && (
+        <Modal title="What's new" onClose={() => setWhatsNewOpen(null)}>
+          <WhatsNewContent
+            version={whatsNew.version}
+            release={whatsNew.release}
+            lastOpened={whatsNewOpen.lastOpened}
+          />
+        </Modal>
+      )}
+      {whatsNewPopup && whatsNew && !whatsNewOpen && (
+        <WhatsNewPopup
+          state={whatsNew}
+          onOpen={openWhatsNew}
+          onLater={() => setWhatsNewPopup(false)}
+        />
+      )}
       {projectsOpen && (
         <ProjectPanel workspace={workspace} onClose={() => setProjectsOpen(false)} />
       )}
@@ -3191,9 +3231,16 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             <CircleHelp size={14} /> Help
           </Button>
           {version && (
-            <span className={s.muted} data-app-version>
-              Virtual Cut {version}
-            </span>
+            <Button
+              className={wn.versionButton}
+              aria-haspopup="dialog"
+              aria-label={`Version ${version}: what's new${whatsNew?.unseen ? ' (new notes)' : ''}`}
+              onClick={openWhatsNew}
+              data-app-version
+            >
+              {version}
+              {whatsNew?.unseen && <span className={wn.dot} aria-hidden data-whats-new-dot />}
+            </Button>
           )}
           <Button aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>
             <Settings size={14} /> Settings

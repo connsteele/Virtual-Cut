@@ -101,6 +101,7 @@ try {
     'get_screen_text',
     'get_transcript',
     'get_visual_events',
+    'get_whats_new',
     'look',
     'propose_changes',
     'submit_proposals',

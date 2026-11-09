@@ -1,4 +1,4 @@
-// Run a delivery end to end (VC-149): fast gate, desktop suite with coverage, Windows package,
+// Run a delivery end to end (VC-149): release notes (VC-242), fast gate, desktop suite with coverage, Windows package,
 // packaged checks and the transport check, then copy the evidence for the version.
 //
 //   node scripts/deliver.mjs [--version 0.4.15] [--no-transport]
@@ -10,6 +10,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { root, requiredSetting, stopChild } from './shared.mjs';
 
 const args = process.argv.slice(2);
@@ -132,6 +133,7 @@ async function finish(failure) {
   delivery.notes = {
     changelog: (await readFile(path.join(root, 'CHANGELOG.md'), 'utf8')).includes(`## ${version} `),
     review: existsSync(path.join(root, 'docs', `review-${version}.md`)),
+    whatsNew: !delivery.failure?.startsWith('Release notes'),
   };
   await writeFile(path.join(evidence, 'delivery.json'), JSON.stringify(delivery, null, 2));
   const lines = [
@@ -151,7 +153,38 @@ async function finish(failure) {
   process.exit(failure ? 1 : 0);
 }
 
+/**
+ * What's new (VC-242): the version needs a finished entry in electron/release-notes.ts. Read
+ * with Node's type stripping, so it is checked before anything is built.
+ */
+function releaseNotesProblem() {
+  const notes = pathToFileURL(path.join(root, 'electron', 'release-notes.ts')).href;
+  const read = spawnSync(
+    process.execPath,
+    [
+      '--experimental-strip-types',
+      '--no-warnings',
+      '--input-type=module',
+      '-e',
+      `const { releaseNotesProblem } = await import(${JSON.stringify(notes)});
+       process.stdout.write(releaseNotesProblem(${JSON.stringify(version)}));`,
+    ],
+    { cwd: root, encoding: 'utf8', windowsHide: true },
+  );
+  if (read.status !== 0) return `electron/release-notes.ts could not be read: ${read.stderr}`;
+  return read.stdout.trim();
+}
+
 delivery.paths = {};
+console.log('\n== Release notes');
+const notesProblem = releaseNotesProblem();
+delivery.steps.push({ name: 'Release notes', code: notesProblem ? 1 : 0, durationMs: 0 });
+if (notesProblem) {
+  delivery.steps.at(-1).status = 'failed';
+  await finish(`Release notes: ${notesProblem}`);
+}
+delivery.steps.at(-1).status = 'passed';
+console.log(`What's new has a ${version} entry.`);
 const fast = await step('Fast gate', 'scripts/test-suite.mjs', ['fast']);
 delivery.paths.fast = await keepRun(fast, 'fast');
 const suite = await step('Desktop suite with coverage', 'scripts/test-suite.mjs', [

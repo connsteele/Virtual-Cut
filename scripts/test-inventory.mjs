@@ -27,6 +27,7 @@ export const fast = [
   'agent-access.test.mjs',
   'look-plan.test.mjs',
   'heard-as.test.mjs',
+  'release-notes.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -83,6 +84,7 @@ export const desktop = [
   'agent-pictures-ui.mjs',
   'agent-proposals-ui.mjs',
   'agent-changes-ui.mjs',
+  'whats-new-ui.mjs',
   'split-snap-ui.mjs',
   'proposal-preview-ui.mjs',
   'combined-transcript-ui.mjs',

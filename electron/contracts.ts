@@ -21,12 +21,34 @@ export interface OpenedVideo {
   audio?: { url: string; offset: number };
 }
 
+/** What's new (VC-242): the bottom bar's dot and the one-time pop-up after an update. */
+export interface WhatsNewState {
+  /** The running version, as the bottom bar shows it (a test build keeps its -N label). */
+  version: string;
+  /** The release whose notes it runs: 0.4.30 for 0.4.30-71. */
+  release: string;
+  /** The release on which What's new was last opened. */
+  lastOpened?: string;
+  /** Notes newer than the last opening: the version number shows a dot. */
+  unseen: boolean;
+  /** Show the one-time "See what's new" pop-up. */
+  announce: boolean;
+}
+export interface WhatsNewApi {
+  state(): Promise<WhatsNewState>;
+  /** The window was opened: clears the dot and the pop-up for this release. */
+  opened(): Promise<WhatsNewState>;
+  /** The pop-up was shown: it doesn't come back for this release. */
+  announced(): Promise<WhatsNewState>;
+}
+
 export interface VirtualCutApi {
   transcript: import('./transcript-contracts.js').TranscriptApi;
   diagnostics: import('./diagnostic-contracts.js').DiagnosticApi;
   project: import('./project-contracts.js').ProjectApi;
   /** Agent access (VC-160): pairing, activity and the view agents may read. */
   agent: import('./agent-contracts.js').AgentApi;
+  whatsNew: WhatsNewApi;
   getAppInfo(): Promise<AppInfo>;
   /** Opens a native picker. Selection does not import, read, or change footage. */
   selectProjectFolder(): Promise<ProjectFolder | null>;

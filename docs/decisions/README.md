@@ -33,6 +33,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0023](0023-resolve-helper-transcripts.md)     | The Resolve helper sets transcripts on clips that have none                 | Proposed                                                                                          |
 | [0024](0024-agent-withdrawals.md)              | Agents withdraw their own pending proposals                                 | Proposed                                                                                          |
 | [0025](0025-proposal-marker-colors.md)         | Agents suggest marker colors                                                | Proposed                                                                                          |
+| [0027](0027-whats-new.md)                      | What's new: release notes in each version, for the user and for agents      | Proposed                                                                                          |
 
 ## Adding a record
 

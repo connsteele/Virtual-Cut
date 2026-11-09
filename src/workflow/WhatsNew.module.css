@@ -1,0 +1,239 @@
+/* What's new (VC-242): the window opened from the bottom bar's version number, and its pop-up. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  line-height: 1.55;
+}
+.content code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #2a2e2c;
+  font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace;
+  font-size: 0.92em;
+}
+.content p {
+  margin: 0;
+}
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+}
+.head strong {
+  font-weight: 600;
+}
+.head label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.agents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #1b2321;
+}
+.agents h3,
+.version h4 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.agents ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agents li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+.project {
+  color: var(--muted);
+  font-size: 12px;
+}
+.current,
+.behind {
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 11.5px;
+}
+.current {
+  color: #71d7cd;
+  border-color: #2e6f6a;
+}
+.behind {
+  color: #e3b45c;
+  border-color: #6b5426;
+}
+.versions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.version {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #1d1f1e;
+}
+.version[open] {
+  background: #1f2321;
+}
+.version > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+.version > summary::-webkit-details-marker {
+  display: none;
+}
+.number {
+  color: #71d7cd;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.title {
+  min-width: 0;
+  font-weight: 600;
+}
+.date {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tags {
+  grid-column: 2 / 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.newTag,
+.draftTag {
+  padding: 0 7px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.newTag {
+  color: #8ee0d5;
+  border-color: #2e6f6a;
+}
+.draftTag {
+  color: #e3b45c;
+  border-color: #6b5426;
+}
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 0 14px 12px;
+}
+.body.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.body ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.forAgents {
+  padding: 8px 10px;
+  border: 1px solid #26302d;
+  border-radius: 6px;
+  background: #101312;
+  font-size: 12.5px;
+}
+/* A compact window stacks the two lists. */
+@media (max-width: 1279px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The bottom bar's version number: a button with a dot after an update. */
+.versionButton {
+  position: relative;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: #4a5552;
+  text-underline-offset: 3px;
+}
+.versionButton:hover {
+  color: var(--text);
+}
+.dot {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #71d7cd;
+  box-shadow: 0 0 0 2px #181e1c;
+}
+.popup {
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px;
+  border: 1px solid #2e6f6a;
+  border-radius: 8px;
+  background: #262729;
+  box-shadow: 0 8px 24px #00000073;
+}
+.popup strong {
+  font-weight: 600;
+}
+.popup p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

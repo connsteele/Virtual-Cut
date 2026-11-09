@@ -204,6 +204,11 @@ const api: VirtualCutApi = {
       return () => ipcRenderer.removeListener('agent:changed', listener);
     },
   },
+  whatsNew: {
+    state: () => ipcRenderer.invoke('whatsNew:state'),
+    opened: () => ipcRenderer.invoke('whatsNew:opened'),
+    announced: () => ipcRenderer.invoke('whatsNew:announced'),
+  },
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   selectProjectFolder: () => ipcRenderer.invoke('project:select-folder'),
   openVideo: () => ipcRenderer.invoke('media:open-video'),
