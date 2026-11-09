@@ -1,0 +1,265 @@
+<!doctype html>
+<!-- VC-16 viewer probe page: draws raw YUV 4:2:0 frames from viewer-probe-main.cjs with WebGL
+     (BT.709 limited range to RGB in the shader, scaled to the canvas on the GPU) and runs the
+     seek, drag and playback experiments. Not part of the app. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+      }
+      canvas {
+        width: 1280px;
+        height: 720px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view" width="1280" height="720"></canvas>
+    <script>
+      const { ipcRenderer } = require('electron');
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const pct = (list, p) => {
+        if (!list.length) return undefined;
+        const s = [...list].sort((a, b) => a - b);
+        return Math.round(s[Math.min(s.length - 1, Math.floor(s.length * p))]);
+      };
+      const summary = (list) => ({
+        n: list.length,
+        p50: pct(list, 0.5),
+        p95: pct(list, 0.95),
+        max: pct(list, 1),
+      });
+
+      // --- WebGL: three single-channel textures and a YUV to RGB shader -------------------
+      const canvas = document.getElementById('view');
+      const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: false });
+      const shader = (type, src) => {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+        return s;
+      };
+      const program = gl.createProgram();
+      gl.attachShader(
+        program,
+        shader(
+          gl.VERTEX_SHADER,
+          `
+        attribute vec2 p; varying vec2 uv;
+        void main() { uv = vec2((p.x + 1.0) / 2.0, (1.0 - p.y) / 2.0); gl_Position = vec4(p, 0.0, 1.0); }`,
+        ),
+      );
+      gl.attachShader(
+        program,
+        shader(
+          gl.FRAGMENT_SHADER,
+          `
+        precision mediump float; varying vec2 uv; uniform sampler2D y, u, v;
+        void main() {
+          float Y = 1.1644 * (texture2D(y, uv).r - 0.0625);
+          float U = texture2D(u, uv).r - 0.5, V = texture2D(v, uv).r - 0.5;
+          gl_FragColor = vec4(Y + 1.7927 * V, Y - 0.2132 * U - 0.5329 * V, Y + 2.1124 * U, 1.0);
+        }`,
+        ),
+      );
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      const p = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(p);
+      gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 0, 0);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      const textures = ['y', 'u', 'v'].map((name, i) => {
+        const t = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE0 + i);
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER])
+          gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR);
+        for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T])
+          gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE);
+        gl.uniform1i(gl.getUniformLocation(program, name), i);
+        return t;
+      });
+      let W, H;
+      const uploads = [];
+      function draw(picture) {
+        const started = performance.now();
+        const bytes = picture instanceof Uint8Array ? picture : new Uint8Array(picture);
+        const planes = [
+          [bytes.subarray(0, W * H), W, H],
+          [bytes.subarray(W * H, W * H * 1.25), W / 2, H / 2],
+          [bytes.subarray(W * H * 1.25, W * H * 1.5), W / 2, H / 2],
+        ];
+        planes.forEach(([data, w, h], i) => {
+          gl.activeTexture(gl.TEXTURE0 + i);
+          gl.bindTexture(gl.TEXTURE_2D, textures[i]);
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.LUMINANCE,
+            w,
+            h,
+            0,
+            gl.LUMINANCE,
+            gl.UNSIGNED_BYTE,
+            data,
+          );
+        });
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        uploads.push(performance.now() - started);
+      }
+
+      // --- Experiments ----------------------------------------------------------------------
+      async function seeks(info, count) {
+        const latency = [],
+          decode = [];
+        for (let i = 0; i < count; i++) {
+          const t = Math.random() * (info.duration - 1);
+          const started = performance.now();
+          const r = await ipcRenderer.invoke('probe:seek', t);
+          draw(r.picture);
+          await frame();
+          latency.push(performance.now() - started);
+          decode.push(r.decodeMs);
+        }
+        return { seekToShownMs: summary(latency), decodeProcessMs: summary(decode) };
+      }
+      // Drag: the pointer moves every 16 ms for `ms`, covering `footageSeconds`. The latest
+      // pointer position wins; up to `parallel` decodes run at once, stale results are skipped.
+      async function drag(info, footageSeconds, ms, parallel) {
+        const start = Math.min(30, info.duration / 4);
+        let target = start,
+          targetAt = performance.now(),
+          shownTarget = -1;
+        const latency = [],
+          behind = [];
+        let shown = 0,
+          skipped = 0,
+          active = 0,
+          dragging = true,
+          serial = 0,
+          newest = -1;
+        const began = performance.now();
+        const mover = setInterval(() => {
+          const f = Math.min(1, (performance.now() - began) / ms);
+          target = start + f * footageSeconds;
+          targetAt = performance.now();
+          if (f >= 1) dragging = false;
+        }, 16);
+        let lastRequested = -1;
+        const pump = async () => {
+          while (dragging || active) {
+            if (!dragging || active >= parallel || target === lastRequested) {
+              await wait(1);
+              if (!dragging && !active) break;
+              continue;
+            }
+            const t = target,
+              at = targetAt,
+              id = ++serial;
+            lastRequested = t;
+            active++;
+            ipcRenderer.invoke('probe:seek', t).then(async (r) => {
+              active--;
+              if (id < newest) {
+                skipped++;
+                return;
+              }
+              newest = id;
+              draw(r.picture);
+              await frame();
+              shown++;
+              latency.push(performance.now() - at);
+              behind.push(Math.abs(target - t) * 1000);
+            });
+          }
+        };
+        await ipcRenderer.invoke('probe:metrics');
+        await pump();
+        clearInterval(mover);
+        const metrics = await ipcRenderer.invoke('probe:metrics');
+        const seconds = (performance.now() - began) / 1000;
+        return {
+          footageSeconds,
+          dragMs: ms,
+          parallel,
+          framesShownPerSecond: Number((shown / seconds).toFixed(1)),
+          staleSkipped: skipped,
+          pointerToFrameMs: summary(latency),
+          shownBehindPointerMs: summary(behind),
+          processes: metrics,
+        };
+      }
+      async function stream(info, count) {
+        let shown = 0;
+        const gaps = [];
+        let last;
+        const onFrame = (e, f) => {
+          draw(f.picture);
+          shown++;
+          const now = performance.now();
+          if (last) gaps.push(now - last);
+          last = now;
+          ipcRenderer.send('probe:ack');
+        };
+        ipcRenderer.on('probe:frame', onFrame);
+        await ipcRenderer.invoke('probe:metrics');
+        const r = await ipcRenderer.invoke('probe:stream', Math.min(30, info.duration / 4), count);
+        const metrics = await ipcRenderer.invoke('probe:metrics');
+        ipcRenderer.off('probe:frame', onFrame);
+        return {
+          frames: shown,
+          framesPerSecond: Number((shown / r.seconds).toFixed(1)),
+          versusRealtime: Number((shown / r.seconds / info.fps).toFixed(2)),
+          firstFrameMs: Math.round(r.firstByteMs),
+          gapMs: summary(gaps),
+          processes: metrics,
+        };
+      }
+
+      (async () => {
+        const results = {
+          gpu: JSON.parse(new URLSearchParams(location.search).get('gpu') || '{}'),
+        };
+        try {
+          const info = (results.info = await ipcRenderer.invoke('probe:info'));
+          W = info.width;
+          H = info.height;
+          results.webgl =
+            gl.getParameter(gl.VERSION) +
+            ' / ' +
+            (gl.getExtension('WEBGL_debug_renderer_info')
+              ? gl.getParameter(0x9246)
+              : 'renderer hidden');
+          await seeks(info, 3); // warm the file cache and the GPU path
+          results.seek = await seeks(info, 40);
+          results.drag = [];
+          for (const parallel of [1, 3])
+            for (const [footage, ms] of [
+              [4, 4000],
+              [40, 4000],
+            ])
+              results.drag.push(await drag(info, footage, ms, parallel));
+          results.stream = await stream(info, 600);
+          results.uploadAndDrawMs = summary(uploads);
+        } catch (error) {
+          results.error = String(error.stack || error);
+        }
+        await ipcRenderer.invoke('probe:done', results);
+      })();
+    </script>
+  </body>
+</html>

@@ -145,6 +145,12 @@ export const other = {
     'Times timeline scrubbing (pointer-to-frame, frames per second of drag, rest and release to the exact frame) on a copied project; manual, needs real footage.',
   'scrub-cache-study.mjs':
     'Times scrubbing from a WebCodecs frame cache with the scrub-timing-study drag on a copied recording (VC-202, VC-147); manual study.',
+  'proxy-candidates-study.mjs':
+    'Makes the VC-16 proxy candidates (H.264, all-intra H.264, ProRes, DNxHR at 1080p and 720p) from copied recordings and records time, size, CPU and GPU load; needs an NVIDIA GPU.',
+  'viewer-probe-study.mjs':
+    'VC-16 probe outside the app: decodes ProRes or DNxHR proxies with FFmpeg and draws them on a WebGL canvas, timing seeks, drags and streaming; manual, needs proxies made from copies.',
+  'underflow-study.mjs':
+    'VC-16: finds why the app falls short at 4× and 8× on H.264 proxies by changing one thing at a time against a bare player; manual, needs copies and a free GPU.',
   'reverse-cache-study.mjs':
     'Measures reverse playback from a WebCodecs frame cache on a copied recording; manual study.',
   'resolve-subtitle-fixture.mjs':
