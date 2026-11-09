@@ -321,6 +321,8 @@ export function annotations(source: AgentReadSource, batchId?: string, recording
         accepted: !!c.accepted,
         held: !!c.held,
         note: c.note || undefined,
+        // The Resolve clip color (VC-207), so a change proposal can start from it (VC-204).
+        clipColor: c.color,
       })),
     notes: source.model.notes
       .filter((n) => n.sourceId && ids.has(n.sourceId))

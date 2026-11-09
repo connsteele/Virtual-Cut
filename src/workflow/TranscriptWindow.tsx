@@ -18,6 +18,7 @@ import { Button, Field } from './ui';
 import s from './TranscriptWindow.module.css';
 import { TranscriptCue } from './TranscriptCue';
 import { TranscriptProposal } from './TranscriptProposal';
+import { ChangeProposal } from './ChangeProposal';
 import type { PreviewAt } from './ProposalCard';
 import type { CardAdjust } from './useCardDraft';
 import { formatTimecode, time } from './transcriptTime';
@@ -573,9 +574,11 @@ export function TranscriptWindow() {
   }
   function proposalCard(proposal: AgentProposal) {
     if (!session) return null;
+    const Card = proposal.kind === 'edit' ? ChangeProposal : TranscriptProposal;
     return (
       <div key={proposal.id} className={s.proposals}>
-        <TranscriptProposal
+        {/* A change to a marker or clip already in the project (VC-204). */}
+        <Card
           proposal={proposal}
           session={session}
           busy={busy}

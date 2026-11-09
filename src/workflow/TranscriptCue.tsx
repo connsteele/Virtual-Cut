@@ -16,6 +16,7 @@ import type { SplitSnap } from '../../electron/split-snap';
 import { background } from './background';
 import { formatTimecode } from './transcriptTime';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
+import { KindIcon } from './ProposalParts';
 import { Button, Field } from './ui';
 import { TimeField } from './TimeField';
 import { useCardAdjust, useCardDraft, type CardAdjust } from './useCardDraft';
@@ -115,6 +116,11 @@ export function TranscriptCue({
       id={`cue:${transcript.id}:${segment.id}`}
       who="spoken"
       kind={kind}
+      icon={
+        <KindIcon
+          kind={range ? 'clip' : split ? 'split' : cue.kind === 'note' ? 'note' : 'marker'}
+        />
+      }
       name={
         split ? (
           <>

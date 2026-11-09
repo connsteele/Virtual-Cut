@@ -832,9 +832,14 @@ try {
   await colorCard.scrollIntoViewIfNeeded();
   await view.screenshot({ path: path.join(dir, 'proposal-color.png') });
   await colorCard.getByRole('button', { name: 'Edit', exact: true }).click();
-  const colorField = colorCard.getByLabel(`Proposal color ${colorId}`);
-  await colorField.selectOption('Green');
-  await expect(colorCard.locator('[data-proposal-color]')).toHaveCount(0);
+  // VC-204: the color list shows each color's swatch before its name.
+  const colorField = colorCard.getByRole('button', {
+    name: new RegExp(`^Proposal color ${colorId}:`),
+  });
+  await expect(colorField).toHaveAccessibleName(`Proposal color ${colorId}: Red`);
+  await colorField.click();
+  await colorCard.getByRole('option', { name: 'Green' }).click();
+  await expect(colorField).toHaveAccessibleName(`Proposal color ${colorId}: Green`);
   await view.screenshot({ path: path.join(dir, 'proposal-color-edit.png') });
   await resize(true);
   await expect.poll(() => view.evaluate(() => window.innerWidth)).toBeLessThan(520);

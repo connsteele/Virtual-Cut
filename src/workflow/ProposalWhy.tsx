@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
   rejectReasons,
   type ProposalWhy as Why,
@@ -19,6 +19,7 @@ export function ProposalWhy({
   status,
   why,
   kept,
+  keptLine,
   asking,
   focus,
   busy,
@@ -30,6 +31,8 @@ export function ProposalWhy({
   why?: Why;
   /** What accepting changed, from the decision: intent, moved, retitled, kind. */
   kept: string[];
+  /** In place of the plain Kept line: the kept changes as chips (VC-204). */
+  keptLine?: ReactNode;
   /** Just decided on this card: ask, until answered or skipped. */
   asking: boolean;
   /** The decision was made from the keyboard on this card: take focus so keys carry on. */
@@ -118,9 +121,12 @@ export function ProposalWhy({
       tabIndex={-1}
       onKeyDown={keys}
     >
-      {status === 'accepted' && (
-        <span className={s.pcWhyKept}>Kept: {kept.length ? kept.join(' · ') : 'as proposed'}</span>
-      )}
+      {status === 'accepted' &&
+        (keptLine ?? (
+          <span className={s.pcWhyKept}>
+            Kept: {kept.length ? kept.join(' · ') : 'as proposed'}
+          </span>
+        ))}
       {open ? (
         <>
           {status === 'rejected' &&
