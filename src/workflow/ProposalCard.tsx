@@ -65,6 +65,9 @@ export function ProposalCard({
   at,
   was,
   swatch,
+  icon,
+  badges,
+  sections = false,
   children,
 }: {
   id: string;
@@ -121,6 +124,15 @@ export function ProposalCard({
   was?: PreviewAt;
   /** A marker's color (VC-200): after the times on line 2 and on the folded line. */
   swatch?: ReactNode;
+  /** The kind's icon (VC-204), between the who tags and the kind. */
+  icon?: ReactNode;
+  /** More tags on line 1 after the intents, such as Amended or Changed since proposed. */
+  badges?: ReactNode;
+  /**
+   * The open card shows centered section headers (Changes, Versions) instead of line 3 (VC-204):
+   * line 3 hides while open, and the body's own separator gives way to the headers.
+   */
+  sections?: boolean;
   children?: ReactNode;
 }) {
   // Picked: clicked on the card itself, or reached with Tab, N or P. Its buttons and open
@@ -170,6 +182,7 @@ export function ProposalCard({
       <div className={`${s.pc} ${tone} ${s.pcDone}`} data-proposal-card={id} data-status={status}>
         <div className={s.pcLine1}>
           {tags}
+          {icon}
           <span className={s.pcKind}>{kind}</span>
           <span className={s.pcDoneName}>{name}</span>
           <span className={s.pcTime}>{timecode}</span>
@@ -280,6 +293,7 @@ export function ProposalCard({
     >
       <div className={s.pcLine1}>
         {tags}
+        {icon}
         <span className={s.pcKind}>{kind}</span>
         {/* An intent the kind already says ("Marker", "Notion note") isn't repeated as a chip. */}
         {intents
@@ -289,6 +303,7 @@ export function ProposalCard({
               {i === 'marker' && range ? 'Range' : i[0].toUpperCase() + i.slice(1)}
             </span>
           ))}
+        {badges}
         <span className={s.pcActions}>
           <button
             className={s.pcAccept}
@@ -378,7 +393,7 @@ export function ProposalCard({
           {swatch}
         </div>
       )}
-      {(meta.length > 0 || (editing && wasLine)) && (
+      {(meta.length > 0 || (editing && wasLine)) && !(sections && open) && (
         <div className={s.pcLine3}>
           {editing && wasLine}
           {meta.map((m, i) => (
@@ -387,7 +402,7 @@ export function ProposalCard({
         </div>
       )}
       {open && (
-        <div className={s.pcBody}>
+        <div className={`${s.pcBody}${sections ? ` ${s.pcBodySections}` : ''}`}>
           {children}
           {editing && (
             <p className={s.muted}>

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import type { TranscriptCommand, TranscriptSession } from '../../electron/transcript-contracts';
 import type { AgentProposal } from '../../electron/proposal-contracts';
 import { proposalDecision, proposalIntents } from '../../electron/proposal-edits';
-import { markerColors, type MarkerColor } from '../../electron/workflow-types';
+import type { ClipColor, MarkerColor } from '../../electron/workflow-types';
 import { ProposalCard, type PreviewAt } from './ProposalCard';
 import { ProposalWhy } from './ProposalWhy';
 import { TimeField } from './TimeField';
 import { useCardAdjust, useCardDraft, type CardAdjust } from './useCardDraft';
 import { formatTimecode } from './transcriptTime';
+import { Chips, ColorPicker, ColorSwatch, KindIcon, type CardIconKind } from './ProposalParts';
+import { ago, amendChips, ProposalVersions } from './ProposalVersions';
 import s from './TranscriptWindow.module.css';
 
 /** The card's name for a proposal's kind (VC-155). */
@@ -20,6 +22,13 @@ export function proposalKindLabel(p: AgentProposal) {
   return notion ? 'Marker + Notion note' : 'Marker';
 }
 const signed = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n).toFixed(1)} s`;
+/** The kind's icon (VC-204), shared with spoken cue cards. */
+export function proposalIconKind(p: AgentProposal): CardIconKind {
+  if (p.kind === 'clip') return 'clip';
+  if (p.kind === 'cut') return 'split';
+  if (p.kind === 'note') return proposalIntents(p).includes('notion') ? 'notion' : 'note';
+  return p.end != null ? 'range' : 'marker';
+}
 
 /** An agent proposal in the transcript window: decided exactly like a spoken cue. */
 export function TranscriptProposal({
@@ -77,6 +86,8 @@ export function TranscriptProposal({
     first?: string;
     second?: string;
     color?: MarkerColor;
+    /** A clip range's Resolve clip color; null for none (VC-204). */
+    clipColor?: ClipColor | null;
   }>();
   const decision = proposalDecision(session.decisions, proposal.id);
   useCardAdjust(proposal.id, adjust, (at) =>
@@ -105,12 +116,12 @@ export function TranscriptProposal({
   // if it is kept as a range marker.
   const colored = proposal.kind === 'mark' || proposal.kind === 'clip';
   const color: MarkerColor = draft.color ?? proposal.color ?? 'Blue';
-  const swatchOf = (name: MarkerColor, title: string) => (
-    <span className={s.pcColor} data-proposal-color={name} title={title}>
-      <span className={s.pcColorDot} style={{ background: markerColors[name] }} />
-      {name}
-    </span>
+  const clipColor: ClipColor | null =
+    draft.clipColor !== undefined ? draft.clipColor : (proposal.clipColor ?? null);
+  const swatchOf = (name: MarkerColor, title: string, suffix?: string) => (
+    <ColorSwatch kind="marker" color={name} title={title} suffix={suffix} />
   );
+  const amended = !!proposal.versions?.length;
   const cue = proposal.refines;
   // What the agent changed on the spoken cue it reworked, old → new.
   const moved = cue && Math.abs(proposal.time - cue.time) >= 0.05;
@@ -129,6 +140,14 @@ export function TranscriptProposal({
       changes.push(['Note', 'what you said', 'written from the evidence']);
   }
   const meta = [];
+  if (amended && !decision)
+    meta.push(
+      <Chips
+        tone="amended"
+        label={`Amended ${ago(proposal.amended?.at ?? proposal.submitted)}`}
+        chips={amendChips(proposal)}
+      />,
+    );
   if (cue) {
     const bits = [
       moved && `moved ${signed(proposal.time - cue.time)}`,
@@ -161,6 +180,8 @@ export function TranscriptProposal({
     }
     if (decision.color && decision.color !== (proposal.color ?? 'Blue'))
       kept.push(`color ${proposal.color ?? 'Blue'} → ${decision.color}`);
+    if (proposal.kind === 'clip' && (decision.clipColor ?? null) !== (proposal.clipColor ?? null))
+      kept.push(`clip color ${proposal.clipColor ?? 'none'} → ${decision.clipColor ?? 'none'}`);
     if (split) {
       if (decision.title != null) kept.push('clips named');
     } else {
@@ -177,6 +198,28 @@ export function TranscriptProposal({
       id={proposal.id}
       who={cue ? 'both' : 'agent'}
       kind={kind}
+      icon={
+        <KindIcon
+          kind={
+            decision?.kindChange?.to === 'range-marker'
+              ? 'range'
+              : decision?.kindChange?.to === 'clip-range'
+                ? 'clip'
+                : proposalIconKind(proposal)
+          }
+        />
+      }
+      badges={
+        amended && (
+          <span
+            className={s.pcChip}
+            title={`Amended ${proposal.versions!.length}× by the agent; open it for every version`}
+          >
+            Amended{proposal.versions!.length > 1 ? ` ${proposal.versions!.length}×` : ''}
+          </span>
+        )
+      }
+      sections={amended}
       intents={proposalIntents(proposal)}
       range={ranged}
       name={
@@ -238,40 +281,57 @@ export function TranscriptProposal({
               />
             </>
           )}
+          {proposal.kind === 'clip' && (
+            <ColorPicker
+              kind="clip"
+              value={clipColor}
+              label={`Proposal clip color ${proposal.id}`}
+              title="Clip color in Resolve, if you accept it as a clip"
+              onChange={(c) => setDraft({ ...draft, clipColor: c as ClipColor | null })}
+            />
+          )}
           {colored && (
-            <select
-              className={s.pcColorSelect}
-              aria-label={`Proposal color ${proposal.id}`}
+            <ColorPicker
+              kind="marker"
+              value={color}
+              label={`Proposal color ${proposal.id}`}
               title={
                 proposal.kind === 'clip'
                   ? 'Marker color, if you keep it as a range marker'
                   : 'Marker color'
               }
-              value={color}
-              style={{ color: markerColors[color] }}
-              onChange={(e) => setDraft({ ...draft, color: e.target.value as MarkerColor })}
-            >
-              {Object.entries(markerColors).map(([name, hex]) => (
-                <option key={name} value={name} style={{ color: hex }}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onChange={(c) => setDraft({ ...draft, color: c as MarkerColor })}
+            />
           )}
         </>
       }
       swatch={
-        decision
-          ? decision.color && swatchOf(decision.color, 'Marker color')
-          : (proposal.kind === 'mark' || (proposal.kind === 'clip' && proposal.color)) &&
-            swatchOf(
-              color,
-              proposal.kind === 'clip'
-                ? 'Marker color, if you keep it as a range marker'
-                : proposal.color || draft.color
-                  ? 'Marker color'
-                  : 'Marker color: the default, as the agent gave none',
+        decision ? (
+          decision.color ? (
+            swatchOf(decision.color, 'Marker color')
+          ) : (
+            decision.clipColor && (
+              <ColorSwatch kind="clip" color={decision.clipColor} title="Clip color in Resolve" />
             )
+          )
+        ) : proposal.kind === 'clip' ? (
+          <>
+            <ColorSwatch
+              kind="clip"
+              color={clipColor}
+              title="Clip color in Resolve, if you accept it as a clip"
+            />
+            {swatchOf(color, 'Marker color, if you keep it as a range marker', ' as range marker')}
+          </>
+        ) : (
+          proposal.kind === 'mark' &&
+          swatchOf(
+            color,
+            proposal.color || draft.color
+              ? 'Marker color'
+              : 'Marker color: the default, as the agent gave none',
+          )
+        )
       }
       time={decision?.appliedTime ?? start}
       end={decision?.appliedEnd ?? end}
@@ -329,6 +389,7 @@ export function TranscriptProposal({
           firstName: split ? first : undefined,
           secondName: split ? second : undefined,
           color: proposal.kind === 'mark' ? color : undefined,
+          clipColor: proposal.kind === 'clip' ? clipColor : undefined,
         })
       }
       acceptOther={
@@ -381,6 +442,7 @@ export function TranscriptProposal({
       was={{ start: proposal.time, end: proposal.end }}
     >
       <div className={s.pcDetails} data-proposal={proposal.id}>
+        {amended && <ProposalVersions proposal={proposal} />}
         {!split && editing && (
           <textarea
             className={s.inlineNote}

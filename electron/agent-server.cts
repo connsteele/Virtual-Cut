@@ -39,6 +39,16 @@ import {
   type SubmitInput,
   type WithdrawInput,
 } from './agent-proposals.js';
+import {
+  amendAnswer,
+  amendInput,
+  changesAnswer,
+  changesInput,
+  prepareAmend,
+  prepareChanges,
+  type AmendInput,
+  type ChangesInput,
+} from './agent-changes.js';
 import { proposalLimit } from './proposal-store.cjs';
 import { intentGuideAnswer } from './intent-guide.js';
 import { look, lookRecording, type LookInput } from './look.cjs';
@@ -53,7 +63,10 @@ const instructions =
   'seconds in the recording. You can also propose markers, notes, splits ' +
   'and clip ranges with submit_proposals: they wait on cue cards in the transcript window, ' +
   'nothing changes until the user accepts one, and get_proposal_decisions reads the outcome. ' +
-  'withdraw_proposals takes back your own proposals the user has not decided yet. ' +
+  'withdraw_proposals takes back your own proposals the user has not decided yet, and ' +
+  'amend_proposal revises one in place. propose_changes proposes edits to markers and clips ' +
+  'already in the project (name, position, trim, color, clip color, note) as cards showing ' +
+  'before and after. ' +
   "get_batch_record keeps a batch's first pass beside what the user exported, for learning " +
   'from the misses. ' +
   'Before proposing, read get_intent_guide: it says what their free mic speech means, what to ' +
@@ -132,7 +145,7 @@ export function registerAgentAccess(options: {
       run: (s: AgentReadSource, args: A) => unknown,
       summary: (args: A, name: (id: string) => string) => string,
       /** What a call that changes the review queue records in Activity. */
-      writes?: 'proposed' | 'withdrew',
+      writes?: 'proposed' | 'withdrew' | 'amended',
     ) =>
       server.registerTool(
         name,
@@ -430,6 +443,71 @@ export function registerAgentAccess(options: {
         return `Withdrew ${ids.length}${where}`;
       },
       'withdrew',
+    );
+    // VC-204: changes to markers and clips already in the project, as cards with before and after.
+    read<ChangesInput>(
+      'propose_changes',
+      'Propose changes to markers or clips already in the project (ids from get_annotations): ' +
+        'name, position or range, marker color, Resolve clip color (clips), note, or a trim of a ' +
+        "clip's start or end. Each lands as a card showing before and after, and nothing changes " +
+        'until the user accepts it; accepting edits the marker or clip like the user would, so ' +
+        'Undo works. Only fields that differ are proposed. One pending change per marker or clip: ' +
+        'to tweak it, use amend_proposal. The whole call is refused, naming the field, if any ' +
+        'change is invalid.',
+      changesInput,
+      (s, a) => {
+        const store = options.projects()!.store!;
+        const proposals = prepareChanges(
+          s,
+          a,
+          { clientId: client.id, name: client.name },
+          { submission: randomUUID(), proposal: randomUUID },
+          undefined,
+          store.proposals.count(a.recording_id),
+          proposalLimit,
+        );
+        store.proposals.add(proposals);
+        const read = currentTranscripts(s, a.recording_id);
+        options.projects()!.batchRecords.submitted(store, proposals, {
+          runIntent: a.run_intent,
+          transcripts: (['mic', 'game'] as const).flatMap((role) =>
+            read[role]
+              ? [
+                  {
+                    role,
+                    transcriptId: read[role].id,
+                    corrections: (s.model.transcriptEdits || []).filter(
+                      (e) => e.transcriptId === read[role]!.id,
+                    ).length,
+                  },
+                ]
+              : [],
+          ),
+        });
+        return changesAnswer(s, proposals);
+      },
+      (a, n) => `Proposed ${a.changes?.length ?? 0} changes for ${n(a.recording_id)}`,
+      'proposed',
+    );
+    read<AmendInput>(
+      'amend_proposal',
+      'Revise one of your own proposals still waiting for the user, in place: its title, note, ' +
+        'position, end, marker color, clip color or split clip names (for a change card, the ' +
+        'values it proposes). The card shows it was amended and keeps every earlier version, so ' +
+        'use this instead of withdrawing and proposing again. Give a short reason. Proposals the ' +
+        "user already decided, withdrawn ones and other apps' proposals cannot be amended.",
+      amendInput,
+      (s, a) => {
+        const store = options.projects()!.store!;
+        const amended = prepareAmend(s, a, client.id);
+        store.proposals.amend(amended);
+        return amendAnswer(s, amended);
+      },
+      (a, n) => {
+        const recording = options.projects()?.store?.proposals.sourceOf(String(a.proposal_id));
+        return `Amended a proposal${recording ? ` for ${n(recording)}` : ''}`;
+      },
+      'amended',
     );
     read<DecisionsInput>(
       'get_proposal_decisions',

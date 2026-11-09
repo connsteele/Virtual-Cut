@@ -6,7 +6,12 @@ import {
   type AgentReadSource,
 } from './agent-tools.js';
 import { correctedText, cueCandidate } from './transcript-edits.js';
-import { proposalDecision, proposalIntents, proposalStatus } from './proposal-edits.js';
+import {
+  answerFields,
+  proposalDecision,
+  proposalIntents,
+  proposalStatus,
+} from './proposal-edits.js';
 import type {
   AgentProposal,
   ProposalEvidence,
@@ -15,7 +20,7 @@ import type {
 } from './proposal-contracts.js';
 import type { TranscriptSegment } from './transcript-contracts.js';
 import { changesSinceAccepting } from './batch-record.js';
-import { markerColors, type MarkerColor } from './workflow-types.js';
+import { clipColors, markerColors, type ClipColor, type MarkerColor } from './workflow-types.js';
 
 /**
  * Agent proposals over MCP (VC-161/VC-162). `submit_proposals` validates a whole submission
@@ -24,10 +29,11 @@ import { markerColors, type MarkerColor } from './workflow-types.js';
  * `withdraw_proposals` lets the agent take back its own proposals still waiting (VC-201).
  */
 const kinds = { marker: 'mark', note: 'note', split: 'cut', clip: 'clip' } as const;
-const kindName = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [v, k])) as Record<
-  ProposalKind,
-  keyof typeof kinds
->;
+const kindName = {
+  ...Object.fromEntries(Object.entries(kinds).map(([k, v]) => [v, k])),
+  // A change to a marker or clip already in the project (VC-204).
+  edit: 'change',
+} as Record<ProposalKind, keyof typeof kinds | 'change'>;
 export const proposalInput = z.object({
   kind: z
     .enum(['marker', 'note', 'split', 'clip'])
@@ -57,6 +63,12 @@ export const proposalInput = z.object({
     .optional()
     .describe(
       "Markers and clip ranges only: the marker color, one of Resolve's 16 names, for example from the project's color key in the brief. A clip range's color applies if the user keeps it as a range marker. Without one, the marker is Blue.",
+    ),
+  clip_color: z
+    .enum(Object.keys(clipColors) as [ClipColor, ...ClipColor[]])
+    .optional()
+    .describe(
+      "Clip ranges only: the Resolve clip color for the clip accepting makes, one of Resolve's 16 clip color names (Orange, Apricot, Yellow, Lime, Olive, Green, Teal, Navy, Blue, Purple, Violet, Pink, Tan, Beige, Brown, Chocolate; not the marker color list). Without one, the clip has no clip color.",
     ),
   reason: z
     .string()
@@ -186,6 +198,30 @@ function lineSegment(source: AgentReadSource, transcriptId: string, lineId: numb
   return undefined;
 }
 
+/** The cited transcript lines, checked against the current transcripts and quoted as they read. */
+export function proposalEvidence(
+  source: AgentReadSource,
+  current: ReturnType<typeof currentTranscripts>,
+  cited: { role: 'mic' | 'game'; transcript_id: string; line_ids: number[] }[],
+  at: string,
+): ProposalEvidence[] {
+  return cited.map((e, j) => {
+    const field = `${at}.evidence[${j}]`;
+    const transcript = current[e.role];
+    if (!transcript || transcript.id !== e.transcript_id)
+      throw new AgentReadError(
+        `${field}.transcript_id: stale or unknown. The current ${e.role} transcript is ` +
+          `${transcript ? `"${transcript.id}"` : 'missing'}; call get_transcript again.`,
+      );
+    return {
+      role: e.role,
+      transcriptId: e.transcript_id,
+      lineIds: [...new Set(e.line_ids)].sort((a, b) => a - b),
+      ...lineQuote(source, e.transcript_id, e.line_ids, `${field}.line_ids`),
+    };
+  });
+}
+
 /** Checks a whole submission and returns the proposals to store, or throws naming the field. */
 export function prepareSubmission(
   source: AgentReadSource,
@@ -286,23 +322,11 @@ export function prepareSubmission(
       throw new AgentReadError(`${at}.clip_names: only a split names two clips.`);
     if (p.color && kind !== 'mark' && kind !== 'clip')
       throw new AgentReadError(`${at}.color: only a marker or a clip range has a color.`);
+    if (p.clip_color && kind !== 'clip')
+      throw new AgentReadError(`${at}.clip_color: only a clip range has a clip color.`);
     if (kind !== 'clip' && p.title.length > 100)
       throw new AgentReadError(`${at}.title: at most 100 characters except for clips.`);
-    const evidence = p.evidence.map((e, j) => {
-      const field = `${at}.evidence[${j}]`;
-      const transcript = current[e.role];
-      if (!transcript || transcript.id !== e.transcript_id)
-        throw new AgentReadError(
-          `${field}.transcript_id: stale or unknown. The current ${e.role} transcript is ` +
-            `${transcript ? `"${transcript.id}"` : 'missing'}; call get_transcript again.`,
-        );
-      return {
-        role: e.role,
-        transcriptId: e.transcript_id,
-        lineIds: [...new Set(e.line_ids)].sort((a, b) => a - b),
-        ...lineQuote(source, e.transcript_id, e.line_ids, `${field}.line_ids`),
-      };
-    });
+    const evidence = proposalEvidence(source, current, p.evidence, at);
     const repeat = [...pending, ...result].find(
       (q) =>
         q.kind === kind &&
@@ -325,6 +349,7 @@ export function prepareSubmission(
         ? { names: { first: p.clip_names.first.trim(), second: p.clip_names.second.trim() } }
         : {}),
       ...(p.color ? { color: p.color } : {}),
+      ...(p.clip_color ? { clipColor: p.clip_color } : {}),
       reason: p.reason.trim(),
       ...(intents.length ? { intent: intents[0], intents } : {}),
       ...(p.notion
@@ -358,6 +383,7 @@ export function submissionAnswer(source: AgentReadSource, proposals: AgentPropos
       end: p.end === undefined ? undefined : round(p.end),
       title: p.title,
       color: p.color,
+      clipColor: p.clipColor,
     })),
     next:
       'They wait on the cue cards in the transcript window until the user accepts or rejects ' +
@@ -395,6 +421,47 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
     const d = proposalDecision(decisions, p.id);
     // A decision outranks a withdrawal; withdrawn is the agent's own, never the user's (VC-201).
     const status = d?.status || (p.withdrawn ? 'withdrawn' : 'pending');
+    // A change to a marker or clip (VC-204): what it was, what the agent proposed, and, once
+    // accepted, what the user kept and which fields they changed on the card.
+    if (p.edit) {
+      const e = p.edit;
+      const applied = d?.status === 'accepted' ? d.edit?.applied : undefined;
+      const userChanged = applied
+        ? Object.keys({ ...e.set, ...applied }).filter(
+            (k) =>
+              JSON.stringify(applied[k as keyof typeof applied] ?? null) !==
+              JSON.stringify(e.set[k as keyof typeof e.set] ?? null),
+          )
+        : [];
+      return {
+        id: p.id,
+        recordingId: p.sourceId,
+        kind: 'change' as const,
+        [e.target === 'marker' ? 'markerId' : 'clipId']: e.targetId,
+        before: answerFields(e.target, e.seen),
+        proposed: answerFields(e.target, e.set),
+        ...versionInfo(p, d),
+        agent: p.agent.name,
+        submitted: p.submitted,
+        status,
+        decided: d?.decided,
+        ...(!d && p.withdrawn
+          ? {
+              withdrawn: {
+                at: p.withdrawn.at,
+                ...(p.withdrawn.reason ? { reason: p.withdrawn.reason } : {}),
+              },
+            }
+          : {}),
+        ...(d?.why ? { why: d.why } : {}),
+        ...(applied
+          ? {
+              chosen: answerFields(e.target, applied),
+              ...(userChanged.length ? { userChanged } : {}),
+            }
+          : {}),
+      };
+    }
     // A split's decision keeps the two clip names in title and text.
     const chosen =
       d?.status === 'accepted'
@@ -406,6 +473,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
               : { title: d.title, note: d.text }),
             // The color of the marker accepting made, as the user kept it (VC-200).
             ...(d.color ? { color: d.color } : {}),
+            // The clip color of the clip accepting made (VC-204).
+            ...(d.clipColor ? { clipColor: d.clipColor } : {}),
           }
         : undefined;
     return {
@@ -439,6 +508,8 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
         start: e.start,
         end: e.end,
       })),
+      ...(p.clipColor ? { proposedClipColor: p.clipColor } : {}),
+      ...versionInfo(p, d),
       agent: p.agent.name,
       submitted: p.submitted,
       status,
@@ -498,6 +569,36 @@ export function proposalDecisions(source: AgentReadSource, input: DecisionsInput
     // The newest 200; older ones remain readable through proposal_ids.
     proposals: rows.slice(-200),
     projectRevision: source.revision,
+  };
+}
+
+/** An amended proposal's version history (VC-204), oldest first, and the version decided. */
+function versionInfo(p: AgentProposal, d: ReturnType<typeof proposalDecision>) {
+  if (!p.versions?.length) return {};
+  return {
+    version: p.versions.length + 1,
+    ...(d?.version ? { decidedVersion: d.version } : {}),
+    versions: [
+      ...p.versions.map((v, i) => ({
+        version: i + 1,
+        at: v.at,
+        ...(v.reason ? { reason: v.reason } : {}),
+        time: round(v.values.time),
+        end: v.values.end === undefined ? undefined : round(v.values.end),
+        title: v.values.title,
+        ...(v.values.color ? { color: v.values.color } : {}),
+        ...(v.values.clipColor ? { clipColor: v.values.clipColor } : {}),
+        ...(v.values.edit
+          ? { proposed: answerFields(v.values.edit.target, v.values.edit.set) }
+          : {}),
+      })),
+      {
+        version: p.versions.length + 1,
+        at: p.amended?.at ?? p.submitted,
+        ...(p.amended?.reason ? { reason: p.amended.reason } : {}),
+        current: true,
+      },
+    ],
   };
 }
 

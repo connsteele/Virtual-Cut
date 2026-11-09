@@ -1,5 +1,5 @@
 import type { Clip, Marker, Model, Note } from './workflow-types.js';
-import type { AgentProposal } from './proposal-contracts.js';
+import type { AgentProposal, EditFields } from './proposal-contracts.js';
 import type { CueDecision, ProposalKindChange, ProposalWhy } from './transcript-contracts.js';
 import type { ExportRecord } from './export-contracts.js';
 import { proposalDecision, proposalIntents } from './proposal-edits.js';
@@ -61,7 +61,8 @@ export interface RecordRun {
 export interface RecordProposal {
   id: string;
   recordingId: string;
-  kind: 'marker' | 'note' | 'split' | 'clip';
+  /** change: an edit of a marker or clip already in the project (VC-204). */
+  kind: 'marker' | 'note' | 'split' | 'clip' | 'change';
   time: number;
   end?: number;
   title: string;
@@ -69,6 +70,10 @@ export interface RecordProposal {
   clipNames?: { first: string; second: string };
   /** The marker color the agent suggested (VC-200). */
   color?: string;
+  /** The Resolve clip color the agent suggested for a clip range (VC-204). */
+  clipColor?: string;
+  /** A change (VC-204): its target, and the touched fields as they were and as proposed. */
+  change?: { target: 'marker' | 'clip'; targetId: string; before: EditFields; after: EditFields };
   intents: string[];
   submissionId: string;
 }
@@ -189,7 +194,13 @@ export interface BatchRecord {
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
-const kindName = { mark: 'marker', note: 'note', cut: 'split', clip: 'clip' } as const;
+const kindName = {
+  mark: 'marker',
+  note: 'note',
+  cut: 'split',
+  clip: 'clip',
+  edit: 'change',
+} as const;
 
 /** The batch a recording answers for: the active batch if it holds it, else its own first. */
 export function batchOf(model: Model, activeBatchId: string, recordingId: string) {
@@ -244,6 +255,17 @@ export function recordProposal(p: AgentProposal): RecordProposal {
     ...(p.text ? { note: p.text } : {}),
     ...(p.names ? { clipNames: p.names } : {}),
     ...(p.color ? { color: p.color } : {}),
+    ...(p.clipColor ? { clipColor: p.clipColor } : {}),
+    ...(p.edit
+      ? {
+          change: {
+            target: p.edit.target,
+            targetId: p.edit.targetId,
+            before: p.edit.seen,
+            after: p.edit.set,
+          },
+        }
+      : {}),
     intents: proposalIntents(p),
     submissionId: p.submissionId,
   };
@@ -360,6 +382,17 @@ export function addWithdrawal(
 function chosenOf(d: CueDecision | undefined, p: AgentProposal): FinalProposal['chosen'] {
   if (d?.status !== 'accepted') return undefined;
   const time = round(d.appliedTime ?? p.time);
+  // A change keeps what accepting wrote (VC-204).
+  if (d.edit) {
+    const a = d.edit.applied;
+    return {
+      time,
+      ...(a.end != null ? { end: round(a.end) } : {}),
+      ...(a.name != null ? { title: a.name } : {}),
+      ...(a.note != null ? { note: a.note } : {}),
+      ...(a.color != null ? { color: a.color } : {}),
+    };
+  }
   // A split's decision keeps the two clip names in title and text.
   if (p.kind === 'cut')
     return {
@@ -376,6 +409,26 @@ function chosenOf(d: CueDecision | undefined, p: AgentProposal): FinalProposal['
 }
 /** What accepting changed from the proposal itself; a split's names are in `chosen`. */
 function proposalChanges(p: AgentProposal, chosen: NonNullable<FinalProposal['chosen']>) {
+  // A change compares what the user wrote with what the agent proposed (VC-204).
+  if (p.edit) {
+    const set = p.edit.set;
+    return changes(
+      {
+        start: round(set.time ?? chosen.time),
+        end: set.end == null ? chosen.end : round(set.end),
+        name: set.name ?? chosen.title,
+        note: set.note ?? chosen.note,
+        color: (set.color ?? chosen.color) || undefined,
+      },
+      {
+        start: chosen.time,
+        end: chosen.end,
+        name: chosen.title,
+        note: chosen.note,
+        color: chosen.color,
+      },
+    );
+  }
   const cut = p.kind === 'cut';
   return changes(
     {

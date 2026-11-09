@@ -22,7 +22,7 @@ export interface AgentActivity {
   clientName: string;
   tool: string;
   summary: string;
-  outcome: 'read' | 'proposed' | 'withdrew' | 'refused';
+  outcome: 'read' | 'proposed' | 'withdrew' | 'amended' | 'refused';
   /** Picture calls only: how many images were sent, and their estimated tokens. */
   images?: number;
   imageTokens?: number;

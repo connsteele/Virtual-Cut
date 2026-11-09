@@ -42,6 +42,7 @@ import type { MediaJob, RecentProject, ImportAudio } from './project-contracts.j
   'resolution-mode': 'import',
 };
 import type { Model } from './workflow-types.js' with { 'resolution-mode': 'import' };
+import { markerColorName } from './workflow-types.js';
 import { mergeEdits, validateEdits } from './project-edits.js';
 import {
   destinationPlan,
@@ -161,7 +162,22 @@ export class ProjectService {
     return {
       clips: s.data.model.clips
         .filter((c) => c.rid === source?.id)
-        .map((c) => ({ id: c.id, name: c.name, start: c.start, end: c.end })),
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          start: c.start,
+          end: c.end,
+          ...(c.color ? { color: c.color } : {}),
+          ...(c.note ? { note: c.note } : {}),
+        })),
+      markers: (source ? s.data.model.markers[source.id] || [] : []).map((m) => ({
+        id: m.id,
+        name: m.name,
+        time: m.time,
+        ...(m.end != null ? { end: m.end } : {}),
+        color: markerColorName(m),
+        note: m.note || '',
+      })),
       outputs: s
         .exports()
         .filter((e) => e.state === 'verified' && e.plan.sourceId === source?.id && e.verification)
