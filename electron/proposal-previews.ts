@@ -53,10 +53,11 @@ export function proposalPreviews(
   const previews: ProposalPreview[] = [];
   for (const p of proposals) {
     if (proposalStatus(decisions, p.id) !== 'pending') continue;
+    // A change previews the marker or clip as accepting would leave it (VC-204).
     const kind =
       p.kind === 'cut'
         ? 'split'
-        : p.kind === 'clip'
+        : p.kind === 'clip' || p.edit?.target === 'clip'
           ? 'clip'
           : p.kind === 'note'
             ? 'note'

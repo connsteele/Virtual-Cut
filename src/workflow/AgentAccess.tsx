@@ -230,7 +230,9 @@ export function AgentAccess({ project }: { project?: { id: string; name: string 
                     ? ' (refused)'
                     : a.outcome === 'proposed'
                       ? ' · waiting in the transcript window'
-                      : ''}
+                      : a.outcome === 'amended'
+                        ? ' · the card changed in the transcript window'
+                        : ''}
               </span>
               {!!a.images && a.outcome !== 'refused' && (
                 <span className={s.picmeta}>

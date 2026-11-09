@@ -1,4 +1,4 @@
-import { markerColors, type Model } from './workflow-types.js';
+import { clipColors, markerColors, type Model } from './workflow-types.js';
 import {
   rejectReasons,
   type CueDecision,
@@ -7,7 +7,7 @@ import {
   type RejectReason,
   type TranscriptCommand,
 } from './transcript-contracts.js';
-import type { AgentProposal } from './proposal-contracts.js';
+import type { AgentProposal, EditFields } from './proposal-contracts.js';
 import { reopenDecision } from './decision-reopen.js';
 
 /**
@@ -16,8 +16,12 @@ import { reopenDecision } from './decision-reopen.js';
  * returns the proposal to review.
  */
 export const proposalDecisionId = (proposalId: string) => `agent:${proposalId}`;
-export const proposalCueKind = (proposal: Pick<AgentProposal, 'kind'>): CueKind =>
-  proposal.kind === 'clip' ? 'clip-start' : proposal.kind;
+export const proposalCueKind = (proposal: Pick<AgentProposal, 'kind' | 'edit'>): CueKind =>
+  proposal.kind === 'clip' || (proposal.kind === 'edit' && proposal.edit?.target === 'clip')
+    ? 'clip-start'
+    : proposal.kind === 'edit'
+      ? 'mark'
+      : proposal.kind;
 export function proposalDecision(decisions: CueDecision[], proposalId: string) {
   return decisions.find((d) => d.proposalId === proposalId);
 }
@@ -62,17 +66,31 @@ export function inferReworks(
   });
 }
 
+const roundMs = (n: number) => Math.round(n * 1000) / 1000;
+/** Edit fields in the tools' own names. */
+export function answerFields(target: 'marker' | 'clip', f: EditFields) {
+  return {
+    ...(f.name !== undefined ? { title: f.name } : {}),
+    ...(f.time !== undefined ? { timeSeconds: roundMs(f.time) } : {}),
+    ...(f.end !== undefined ? { endSeconds: f.end === null ? null : roundMs(f.end) } : {}),
+    ...(f.color !== undefined ? { [target === 'marker' ? 'color' : 'clipColor']: f.color } : {}),
+    ...(f.note !== undefined ? { note: f.note } : {}),
+  };
+}
+
 /** A proposal's intent tags, whichever field stored them. */
 export const proposalIntents = (p: Pick<AgentProposal, 'intent' | 'intents'>) =>
   p.intents ?? (p.intent ? [p.intent] : []);
 export const proposalLabel = (kind: AgentProposal['kind']) =>
-  kind === 'clip'
-    ? 'Clip range'
-    : kind === 'cut'
-      ? 'Split'
-      : kind === 'note'
-        ? 'Timed note'
-        : 'Point marker';
+  kind === 'edit'
+    ? 'Change'
+    : kind === 'clip'
+      ? 'Clip range'
+      : kind === 'cut'
+        ? 'Split'
+        : kind === 'note'
+          ? 'Timed note'
+          : 'Point marker';
 
 /** The longest reason line: a short sentence, not a note. */
 export const whyNoteLimit = 300;
@@ -152,6 +170,8 @@ export function applyProposalCommand(
     time: proposal.time,
     status: command.action === 'accept-proposal' ? 'accepted' : 'rejected',
     decided: now,
+    // An amended card is decided at its newest version (VC-204).
+    ...(proposal.versions?.length ? { version: proposal.versions.length + 1 } : {}),
   };
   // A clip range may be kept as a range marker and a range marker as a clip (VC-186); a point
   // marker and the other kinds keep their kind.
@@ -169,6 +189,7 @@ export function applyProposalCommand(
     return { ...structuredClone(model), cueDecisions: [...(model.cueDecisions || []), decision] };
   }
   if (command.action !== 'accept-proposal') throw new Error('Unknown proposal action.');
+  if (proposal.kind === 'edit') return acceptChange(model, proposal, command, decision);
   const next = structuredClone(model);
   const start = command.time ?? proposal.time;
   if (!Number.isFinite(start) || start < 0 || start > record.duration)
@@ -238,6 +259,12 @@ export function applyProposalCommand(
       throw new Error('Clip end must follow its start within this recording.');
     decision.appliedEnd = end;
     decision.clipId = newId();
+    // The clip's Resolve color (VC-204): the card's choice, else the agent's, else none.
+    if (command.clipColor != null && !Object.hasOwn(clipColors, command.clipColor))
+      throw new Error('Choose one of the clip colors.');
+    const clipColor =
+      command.clipColor === undefined ? proposal.clipColor : (command.clipColor ?? undefined);
+    if (clipColor) decision.clipColor = clipColor;
     next.clips.push({
       id: decision.clipId,
       rid: record.id,
@@ -248,6 +275,7 @@ export function applyProposalCommand(
       include: true,
       accepted: false,
       ...(text ? { note: text } : {}),
+      ...(clipColor ? { color: clipColor } : {}),
     });
   } else if (proposal.kind === 'note') {
     decision.noteId = newId();
@@ -311,4 +339,110 @@ export function applyProposalCommand(
       settledBy: proposal.id,
     });
   return next;
+}
+
+/**
+ * Accepting a change proposal (VC-204): the values the card shows (the agent's, or the user's
+ * edits of them) are written to the marker or clip as an edit of the model, so Undo takes it back.
+ * The decision keeps the fields as they were, for reopening, and as written.
+ */
+function acceptChange(
+  model: Model,
+  proposal: AgentProposal,
+  command: TranscriptCommand,
+  decision: CueDecision,
+): Model {
+  const e = proposal.edit;
+  if (!e) throw new Error('This change proposal has nothing to change.');
+  const record = model.recordings.find((r) => r.id === proposal.sourceId)!;
+  const next = structuredClone(model);
+  const wanted: EditFields = command.edit ?? e.set;
+  const keys = (['name', 'time', 'end', 'color', 'note'] as const).filter((k) => k in wanted);
+  if (!keys.length) throw new Error('This change has nothing left to change.');
+  const prior: EditFields = {},
+    applied: EditFields = {};
+  if (e.target === 'marker') {
+    const marker = (next.markers[record.id] || []).find((m) => m.id === e.targetId);
+    if (!marker) throw new Error('This marker is gone, so the change can only be rejected.');
+    const time = wanted.time ?? marker.time;
+    const end = wanted.end === undefined ? marker.end : (wanted.end ?? undefined);
+    checkSpan(time, end, record.duration, 'Marker');
+    for (const k of keys) {
+      const v = wanted[k];
+      if (k === 'name') {
+        if (typeof v !== 'string' || !v.trim() || v.length > 100)
+          throw new Error('Enter a marker name of up to 100 characters.');
+        prior.name = marker.name;
+        marker.name = applied.name = v.trim();
+      } else if (k === 'note') {
+        if (typeof v !== 'string' || v.length > 10000)
+          throw new Error('Enter a note of up to 10,000 characters.');
+        prior.note = marker.note ?? '';
+        marker.note = applied.note = v.trim();
+      } else if (k === 'color') {
+        if (typeof v !== 'string' || !Object.hasOwn(markerColors, v))
+          throw new Error('Choose one of the marker colors.');
+        prior.color = marker.color ?? null;
+        marker.color = v as keyof typeof markerColors;
+        applied.color = v;
+      } else if (k === 'time') {
+        prior.time = marker.time;
+        marker.time = applied.time = time;
+      } else {
+        prior.end = marker.end ?? null;
+        if (end === undefined) delete marker.end;
+        else marker.end = end;
+        applied.end = end ?? null;
+      }
+    }
+  } else {
+    const clip = next.clips.find((c) => c.id === e.targetId && c.rid === record.id);
+    if (!clip) throw new Error('This clip is gone, so the change can only be rejected.');
+    if (wanted.end === null) throw new Error('A clip always has an end.');
+    const start = wanted.time ?? clip.start;
+    const end = wanted.end ?? clip.end;
+    checkSpan(start, end, record.duration, 'Clip');
+    for (const k of keys) {
+      const v = wanted[k];
+      if (k === 'name') {
+        if (typeof v !== 'string' || !v.trim() || v.length > 200)
+          throw new Error('Enter a clip name of up to 200 characters.');
+        prior.name = clip.name;
+        clip.name = applied.name = v.trim();
+      } else if (k === 'note') {
+        if (typeof v !== 'string' || v.length > 10000)
+          throw new Error('Enter a note of up to 10,000 characters.');
+        prior.note = clip.note ?? '';
+        const note = v.trim();
+        if (note) clip.note = note;
+        else delete clip.note;
+        applied.note = note;
+      } else if (k === 'color') {
+        if (v != null && (typeof v !== 'string' || !Object.hasOwn(clipColors, v)))
+          throw new Error('Choose one of the clip colors.');
+        prior.color = clip.color ?? null;
+        if (v) clip.color = v as keyof typeof clipColors;
+        else delete clip.color;
+        applied.color = v ?? null;
+      } else if (k === 'time') {
+        prior.time = clip.start;
+        clip.start = applied.time = start;
+      } else {
+        prior.end = clip.end;
+        clip.end = applied.end = end;
+      }
+    }
+    // A clip whose span changed needs accepting again in Cut, as when it is trimmed there.
+    if ('time' in applied || 'end' in applied) clip.accepted = false;
+  }
+  decision.appliedTime = applied.time ?? proposal.time;
+  decision.edit = { target: e.target, targetId: e.targetId, prior, applied };
+  next.cueDecisions = [...(next.cueDecisions || []), decision];
+  return next;
+}
+function checkSpan(start: number, end: number | undefined, duration: number, what: string) {
+  if (!Number.isFinite(start) || start < 0 || start > duration)
+    throw new Error('Choose a position inside this recording.');
+  if (end !== undefined && (!Number.isFinite(end) || end > duration || end - start < 0.001))
+    throw new Error(`${what} end must follow its start within this recording.`);
 }

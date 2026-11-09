@@ -133,6 +133,20 @@ export interface CueDecision {
   why?: ProposalWhy;
   /** The color of the marker accepting made (VC-200). */
   color?: import('./workflow-types.js').MarkerColor;
+  /** The Resolve clip color of the clip accepting made (VC-204). */
+  clipColor?: import('./workflow-types.js').ClipColor;
+  /**
+   * A change proposal accepted (VC-204): the fields as they were before (so reopening puts them
+   * back) and as accepting wrote them.
+   */
+  edit?: {
+    target: 'marker' | 'clip';
+    targetId: string;
+    prior: import('./proposal-contracts.js').EditFields;
+    applied: import('./proposal-contracts.js').EditFields;
+  };
+  /** The version of an amended proposal the user decided (VC-204). */
+  version?: number;
 }
 /** The one-tap reasons for rejecting an agent proposal (VC-173). */
 export const rejectReasons = ['wrong-moment', 'not-needed', 'wrong-intent', 'other'] as const;
@@ -172,7 +186,24 @@ export interface AsrRuntime {
 export interface TranscriptSession {
   /** Opaque reading-state lifetime, reset when a project is opened or the app restarts. */
   viewSessionId?: string;
-  clips: { id: string; name: string; start: number; end: number }[];
+  clips: {
+    id: string;
+    name: string;
+    start: number;
+    end: number;
+    /** What a change card compares (VC-204). */
+    color?: import('./workflow-types.js').ClipColor;
+    note?: string;
+  }[];
+  /** This recording's markers, for change cards (VC-204). */
+  markers: {
+    id: string;
+    name: string;
+    time: number;
+    end?: number;
+    color: import('./workflow-types.js').MarkerColor;
+    note: string;
+  }[];
   outputs: { id: string; name: string; start: number; end: number }[];
   projectId: string;
   revision: number;
@@ -229,6 +260,10 @@ export interface TranscriptCommand {
   acceptAs?: 'range-marker' | 'clip';
   /** Accepting an agent proposal that makes a marker: its color (VC-200). */
   color?: import('./workflow-types.js').MarkerColor;
+  /** Accepting an agent clip range as a clip: its Resolve clip color, `null` for none (VC-204). */
+  clipColor?: import('./workflow-types.js').ClipColor | null;
+  /** Accepting a change proposal: the values to write, the agent's or the user's (VC-204). */
+  edit?: import('./proposal-contracts.js').EditFields;
   /** `why-proposal`: the reason for a decided proposal, or none to clear it (VC-173). */
   why?: ProposalWhy;
   segmentId: number;

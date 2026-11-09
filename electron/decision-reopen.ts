@@ -20,6 +20,26 @@ export function reopenDecision(model: Model, decision: CueDecision): Model {
   next.cueDecisions = (model.cueDecisions || []).filter((d) => !related(d));
   if (decision.status !== 'accepted') return next;
   const source = decision.sourceId || '';
+  // A change proposal (VC-204): the fields go back to what they were, if the target is still
+  // there. A field changed again by hand since keeps the user's later value.
+  if (decision.edit) {
+    const { target, targetId, prior, applied } = decision.edit;
+    const item =
+      target === 'marker'
+        ? (next.markers[source] || []).find((m) => m.id === targetId)
+        : next.clips.find((c) => c.id === targetId);
+    if (!item) return next;
+    const rec = item as unknown as Record<string, unknown>;
+    for (const [k, was] of Object.entries(prior)) {
+      const field = target === 'clip' && k === 'time' ? 'start' : k;
+      const now = rec[field] ?? (k === 'note' ? '' : null);
+      const wrote = applied[k as keyof typeof applied] ?? (k === 'note' ? '' : null);
+      if (JSON.stringify(now) !== JSON.stringify(wrote)) continue;
+      if (was == null || (k === 'note' && was === '' && target === 'clip')) delete rec[field];
+      else rec[field] = was;
+    }
+    return next;
+  }
   if (decision.markerId)
     next.markers[source] = (next.markers[source] || []).filter((m) => m.id !== decision.markerId);
   if (decision.noteId) next.notes = next.notes.filter((n) => n.id !== decision.noteId);

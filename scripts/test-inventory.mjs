@@ -14,6 +14,7 @@ export const fast = [
   'game-library.test.mjs',
   'agent-tools.test.mjs',
   'agent-proposals.test.mjs',
+  'agent-changes.test.mjs',
   'batch-record.test.mjs',
   'intent-score.test.mjs',
   'split-snap.test.mjs',

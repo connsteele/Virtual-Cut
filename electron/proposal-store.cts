@@ -13,7 +13,8 @@ export const proposalLimit = 2000;
 
 /**
  * Proposals are append-only: decisions live in the model, so Undo never loses a proposal. The
- * one change a stored proposal takes is its agent withdrawing it (VC-201).
+ * changes a stored proposal takes are its agent withdrawing it (VC-201) or amending it while it
+ * waits, which keeps the earlier versions inside it (VC-204).
  */
 export class ProposalStore {
   /** Fills in what stored proposals imply (the spoken cue an agent reworked, VC-155). */
@@ -91,6 +92,20 @@ export class ProposalStore {
       this.db.exec('ROLLBACK');
       throw e;
     }
+  }
+  /**
+   * Replaces a pending proposal with its amended version (VC-204). The earlier versions travel
+   * inside the proposal, so nothing the agent proposed is lost.
+   */
+  amend(proposal: AgentProposal) {
+    const row = this.db
+      .prepare('SELECT source_id FROM agent_proposals WHERE id=?')
+      .get(proposal.id);
+    if (!row || String(row.source_id) !== proposal.sourceId)
+      throw new Error(`No stored proposal "${proposal.id}".`);
+    this.db
+      .prepare('UPDATE agent_proposals SET body=? WHERE id=?')
+      .run(JSON.stringify(proposal), proposal.id);
   }
   /** Restoring a save copy keeps today's proposals and brings back any the copy holds. */
   merge(proposals: AgentProposal[]) {
