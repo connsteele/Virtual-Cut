@@ -90,6 +90,7 @@ try {
   await initialize(client);
   const listed = (await client.call('tools/list', {})).result.tools;
   assert.deepEqual(listed.map((t) => t.name).sort(), [
+    'amend_proposal',
     'get_annotations',
     'get_batch_record',
     'get_context',
@@ -101,15 +102,18 @@ try {
     'get_transcript',
     'get_visual_events',
     'look',
+    'propose_changes',
     'submit_proposals',
     'withdraw_proposals',
   ]);
-  // Only proposing and withdrawing are not read-only, and neither is destructive (VC-162,
-  // VC-201).
+  // Only proposing, withdrawing and amending are not read-only, and none is destructive (VC-162,
+  // VC-201, VC-204).
   for (const t of listed)
     assert.deepEqual(
       t.annotations,
-      ['submit_proposals', 'withdraw_proposals'].includes(t.name)
+      ['submit_proposals', 'withdraw_proposals', 'propose_changes', 'amend_proposal'].includes(
+        t.name,
+      )
         ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
         : { readOnlyHint: true },
     );
