@@ -29,6 +29,7 @@ export const fast = [
   'heard-as.test.mjs',
   'release-notes.test.mjs',
   'proxy-record.test.mjs',
+  'clip-gaps.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',

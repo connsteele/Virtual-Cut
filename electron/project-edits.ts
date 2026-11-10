@@ -283,8 +283,32 @@ export function validateEdits(model: Model): Model {
     )
       throw new Error('A clip must belong to a recording and have valid in/out points.');
     if (c.color != null && !isClipColor(c.color)) throw new Error('Invalid clip color.');
+    // VC-212: gaps sit strictly inside the clip, sorted and apart.
+    if (c.gaps != null) {
+      if (!Array.isArray(c.gaps) || c.gaps.length > 2000) throw new Error('Invalid clip gaps.');
+      let previous = c.start;
+      for (const g of c.gaps)
+        if (
+          !g ||
+          !text(g.id, 200) ||
+          !g.id ||
+          !Number.isFinite(g.start) ||
+          !Number.isFinite(g.end) ||
+          g.start <= previous ||
+          g.end <= g.start ||
+          g.end >= c.end
+        )
+          throw new Error('A gap must sit inside its clip, apart from the other gaps.');
+        else previous = g.end;
+    }
+    const gaps = c.gaps?.length
+      ? { gaps: c.gaps.map((g) => ({ id: g.id, start: micro(g.start), end: micro(g.end) })) }
+      : {};
+    const rest = { ...c };
+    delete rest.gaps;
     return {
-      ...c,
+      ...rest,
+      ...gaps,
       start: micro(c.start),
       end: micro(c.end),
       include: true,

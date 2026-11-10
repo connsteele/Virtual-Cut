@@ -98,6 +98,17 @@ export interface Clip {
   originalFolder?: string;
   /** Optional Resolve clip color (VC-207); absent means Resolve's default. */
   color?: ClipColor;
+  /**
+   * Spans cut out of the middle of the clip, in source time, sorted and apart (VC-212). The clip
+   * still exports as one file; absent when it has none.
+   */
+  gaps?: ClipGap[];
+}
+/** A span cut out of a clip (VC-212). Never touches the clip's start or end. */
+export interface ClipGap {
+  id: string;
+  start: number;
+  end: number;
 }
 export interface Recording {
   /** Read-only completed output; playback uses its embedded game audio. */
