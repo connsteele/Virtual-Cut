@@ -60,6 +60,7 @@ export const native = [
 ];
 export const desktop = [
   'clip-color-ui.mjs',
+  'proxy-ui.mjs',
   'speech-setup-ui.mjs',
   'screen-text-setup-ui.mjs',
   'crash-diagnostics-checks.mjs',
@@ -110,6 +111,7 @@ export const dependencies = {
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'clip-color-ui.mjs': ['marker-spill-native.mjs'],
+  'proxy-ui.mjs': ['proxy-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],
   'save-policy-ui.mjs': ['feedback-native-checks.mjs'],
   'project-recovery-ui.mjs': ['project-recovery-checks.mjs'],

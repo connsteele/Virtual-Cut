@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
@@ -263,6 +263,13 @@ try {
   await assert.rejects(
     service.importFiles(project, batch, [first], { game: 1, mic: null, proxy: 'yes' }),
     /proxies during this import/,
+  );
+  // proxy-ui.mjs opens this project on the default settings: the second recording with a ready
+  // 1080p proxy, the first with a 720p one, the long one without.
+  await service.setProxySettings(project, { onImport: 'ask', height: 1080 });
+  await writeFile(
+    path.join(testPath('proxy-native'), 'latest-native.json'),
+    JSON.stringify({ file, dir, ready: b, small: a, long: c }, null, 2),
   );
   console.log(JSON.stringify({ status: 'passed', ...results }, null, 2));
 } finally {
