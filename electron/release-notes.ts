@@ -208,6 +208,11 @@ export function releaseNotesProblem(version: string, notes = releaseNotes) {
   return '';
 }
 
+/** In every answer: a running agent session keeps the tool list it connected with. */
+export const reconnectNote =
+  'An agent session keeps the tool list it connected with. If a tool or field named here is ' +
+  'missing, reconnect: start a new session, or restart the virtual-cut MCP server.';
+
 const draftNote = (version: string) =>
   `Draft notes: they may change before ${version} is delivered. Every delivered version's notes are final.`;
 
@@ -238,6 +243,7 @@ export function agentNotes(
     running: current,
     since: from ?? null,
     basis,
+    toolList: reconnectNote,
     versions,
     ...(versions.length
       ? {}

@@ -170,6 +170,7 @@ try {
   const answer = JSON.parse(first.text);
   assert.equal(answer.basis, 'last read');
   assert.equal(answer.since, '0.4.28');
+  assert.match(answer.toolList, /reconnect/);
   assert.deepEqual(
     answer.versions.map((v) => v.version),
     newer,

@@ -57,6 +57,8 @@ test('an agent that last read 0.4.28 gets the whole 0.4.29 and 0.4.30 notes', ()
   const answer = agentNotes('0.4.30-71', '0.4.28', 'last read', notes);
   assert.equal(answer.since, '0.4.28');
   assert.equal(answer.basis, 'last read');
+  // Every answer says that a running session keeps its old tool list until it reconnects.
+  assert.match(answer.toolList, /keeps the tool list it connected with.+reconnect/);
   assert.deepEqual(answer.versions[0], {
     version: '0.4.30',
     date: '2026-11-06',

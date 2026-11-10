@@ -555,7 +555,9 @@ export function registerAgentAccess(options: {
           '(Virtual Cut remembers that per paired app), or since `since`, newest first. For ' +
           'agents: new and changed tools and fields, what to do differently now, known gaps and ' +
           'the intent guide version; also what changed for the user, and whether the notes are ' +
-          'final or a draft. Call it when the server instructions say Virtual Cut was updated.',
+          'final or a draft. Call it when the server instructions say Virtual Cut was updated. ' +
+          'A session keeps the tool list it connected with: if a tool named in the notes is ' +
+          'missing, reconnect.',
         inputSchema: z.object({
           since: z
             .string()
