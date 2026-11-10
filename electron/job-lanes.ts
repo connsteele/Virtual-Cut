@@ -18,9 +18,13 @@ const writesRecording = new Set<MediaJob['kind']>(['inspect', 'audio', 'transcri
 // Work a transcription of the same recording waits for.
 const preparesRecording = new Set<MediaJob['kind']>(['inspect', 'audio']);
 
-/** The background passes over a whole recording: picture events (VC-180), screen text (VC-141). */
+/**
+ * The passes over a whole recording: picture events (VC-180), screen text (VC-141) and playback
+ * proxies (VC-237). They keep what they have read or made when they give way, and follow the
+ * same pause rules, so a proxy leaves the decoder to playback like the picture pass.
+ */
 export function isPass(job: Pick<MediaJob, 'kind'>) {
-  return job.kind === 'visual' || job.kind === 'text';
+  return job.kind === 'visual' || job.kind === 'text' || job.kind === 'proxy';
 }
 
 /** Work the user started (Import, Export, Transcribe, Retry) goes ahead of background work. */

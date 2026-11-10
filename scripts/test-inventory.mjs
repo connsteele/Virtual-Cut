@@ -29,6 +29,7 @@ export const fast = [
   'heard-as.test.mjs',
   'release-notes.test.mjs',
   'proxy-record.test.mjs',
+  'proxy-make.test.mjs',
 ];
 export const native = [
   'speech-setup-checks.mjs',
@@ -53,6 +54,7 @@ export const native = [
   'review-planning-native.mjs',
   'project-capacity-checks.mjs',
   'job-lanes-native.mjs',
+  'proxy-native.mjs',
   'visual-pass-native.mjs',
   'screen-text-native.mjs',
 ];
