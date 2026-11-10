@@ -1,4 +1,4 @@
-import { reopenDecision } from './decision-reopen.js';
+import { reopenDecision, splitWithoutClip } from './decision-reopen.js';
 import type { Model } from './workflow-types.js';
 import type {
   TranscriptCommand,
@@ -252,26 +252,10 @@ export function applyTranscriptCommand(
       );
       if (names.some((n) => n.length > 200))
         throw new Error('Enter clip names of up to 200 characters.');
-      if (!next.clips.some((c) => c.rid === record.id)) {
-        // No clip yet (VC-243): the Split makes both, start to cue and cue to end, named after
-        // the recording like Whole recording names its clip. Reopening removes both.
-        if (target <= 0.001 || target >= record.duration - 0.001)
-          throw new Error('Choose a split position inside this recording, away from its ends.');
-        const base = names[0] || record.title.trim().slice(0, 200) || 'Clip',
-          made = { rid: record.id, folder: '_Review', include: true, accepted: false };
-        decision.firstClipId = newId();
-        decision.clipId = newId();
-        next.clips.push(
-          { ...made, id: decision.firstClipId, name: base, start: 0, end: target },
-          {
-            ...made,
-            id: decision.clipId,
-            name: names[1] || `${base} · 2`.slice(0, 200),
-            start: target,
-            end: record.duration,
-          },
-        );
-      } else {
+      if (!next.clips.some((c) => c.rid === record.id))
+        // No clip yet (VC-243): the Split makes both clips.
+        splitWithoutClip(next, record, target, [names[0], names[1]], decision, newId);
+      else {
         if (intersecting.length !== 1)
           throw new Error(
             'Split needs exactly one clip containing this position. Select a target for overlapping clips.',

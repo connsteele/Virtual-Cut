@@ -582,17 +582,56 @@ assert.ok(!JSON.stringify([accepted, read]).includes('media://'), 'no media URLs
       applyProposalCommand(model, range, command(range, 'accept-proposal', { endTime: 10 }), newId),
     /Marker end must follow/,
   );
-  // VC-206: import makes no clip, so a split on a recording with no clips says what to do.
-  assert.throws(
-    () =>
-      applyProposalCommand(
-        { ...model, clips: model.clips.filter((c) => c.rid !== 'r1') },
-        rework,
-        command(rework, 'accept-proposal', {}),
-        newId,
-      ),
-    /no clips to split yet/,
+  // VC-243: on a recording with no clip, the split makes both clips with the agent's names (or
+  // the card's), settles the spoken cue it reworked, and reopening takes both clips back.
+  const clipless = { ...model, clips: model.clips.filter((c) => c.rid !== 'r1') };
+  const both = applyProposalCommand(
+    clipless,
+    rework,
+    command(rework, 'accept-proposal', {}),
+    newId,
   );
+  const bothDecision = proposalDecision(both.cueDecisions, rework.id);
+  assert.deepEqual(
+    both.clips
+      .filter((c) => c.rid === 'r1')
+      .map((c) => [c.id, c.name, c.start, c.end, c.folder, c.include]),
+    [
+      [bothDecision.firstClipId, 'Fort', 0, 147, '_Review', true],
+      [bothDecision.clipId, 'Camp', 147, 200, '_Review', true],
+    ],
+  );
+  assert.deepEqual([bothDecision.title, bothDecision.text], ['Fort', 'Camp']);
+  assert.equal(both.cueDecisions.at(-1).settledBy, rework.id, 'the spoken Split is settled');
+  validateEdits(structuredClone(both));
+  const renamed = applyProposalCommand(
+    clipless,
+    rework,
+    command(rework, 'accept-proposal', { firstName: 'Fort walk', secondName: '' }),
+    newId,
+  );
+  assert.deepEqual(
+    renamed.clips.filter((c) => c.rid === 'r1').map((c) => c.name),
+    ['Fort walk', 'Camp'],
+  );
+  const unnamed = applyProposalCommand(
+    clipless,
+    { ...rework, names: undefined },
+    command(rework, 'accept-proposal', {}),
+    newId,
+  );
+  assert.deepEqual(
+    unnamed.clips.filter((c) => c.rid === 'r1').map((c) => c.name),
+    ['Cai session 1', 'Cai session 1 · 2'],
+  );
+  const taken = applyProposalCommand(
+    both,
+    rework,
+    { ...command(rework, 'reopen-proposal'), expected: 'accepted' },
+    newId,
+  );
+  assert.equal(taken.clips.filter((c) => c.rid === 'r1').length, 0);
+  assert.equal(proposalDecision(taken.cueDecisions, rework.id), undefined);
   const settled = applyProposalCommand(
     camp,
     rework,

@@ -8,7 +8,7 @@ import {
   type TranscriptCommand,
 } from './transcript-contracts.js';
 import type { AgentProposal, EditFields } from './proposal-contracts.js';
-import { reopenDecision } from './decision-reopen.js';
+import { reopenDecision, splitWithoutClip } from './decision-reopen.js';
 
 /**
  * Deciding an agent proposal on its cue card (VC-162). Accepting does what accepting a spoken
@@ -219,39 +219,50 @@ export function applyProposalCommand(
         start < c.end - 0.001 &&
         (!command.clipId || c.id === command.clipId),
     );
-    if (!next.clips.some((c) => c.rid === record.id))
-      throw new Error(
-        'This recording has no clips to split yet. Make a clip in Cut (Whole recording), then split it.',
-      );
-    if (intersecting.length !== 1)
-      throw new Error(
-        'Split needs exactly one clip containing this position. Select a target for overlapping clips.',
-      );
-    const clip = intersecting[0],
-      end = clip.end;
     const names = [command.firstName, command.secondName].map((n) =>
       typeof n === 'string' ? n.trim() : '',
     );
     if (names.some((n) => n.length > 200))
       throw new Error('Enter clip names of up to 200 characters.');
-    const second = names[1] || `${names[0] || clip.name} · 2`;
-    decision.priorName = clip.name;
-    if (names[0]) clip.name = names[0];
-    clip.end = start;
-    clip.accepted = false;
-    decision.clipId = newId();
-    next.clips.push({
-      ...clip,
-      id: decision.clipId,
-      name: second,
-      start,
-      end,
-      accepted: false,
-    });
-    // The names chosen for both halves, read back as the split's clip names.
-    if (names[0] || names[1]) {
-      decision.title = clip.name;
-      decision.text = second;
+    if (!next.clips.some((c) => c.rid === record.id)) {
+      // No clip yet (VC-243): the split makes both clips, with the names on the card, else the
+      // agent's, else the recording's.
+      const made = splitWithoutClip(
+        next,
+        record,
+        start,
+        [names[0] || proposal.names?.first || '', names[1] || proposal.names?.second || ''],
+        decision,
+        newId,
+      );
+      decision.title = made.first.name;
+      decision.text = made.second.name;
+    } else {
+      if (intersecting.length !== 1)
+        throw new Error(
+          'Split needs exactly one clip containing this position. Select a target for overlapping clips.',
+        );
+      const clip = intersecting[0],
+        end = clip.end;
+      const second = names[1] || `${names[0] || clip.name} · 2`;
+      decision.priorName = clip.name;
+      if (names[0]) clip.name = names[0];
+      clip.end = start;
+      clip.accepted = false;
+      decision.clipId = newId();
+      next.clips.push({
+        ...clip,
+        id: decision.clipId,
+        name: second,
+        start,
+        end,
+        accepted: false,
+      });
+      // The names chosen for both halves, read back as the split's clip names.
+      if (names[0] || names[1]) {
+        decision.title = clip.name;
+        decision.text = second;
+      }
     }
   } else if ((proposal.kind === 'clip' && !asRange) || asClip) {
     const end = command.endTime ?? proposal.end ?? Number.NaN;

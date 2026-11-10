@@ -1,5 +1,38 @@
-import type { Model } from './workflow-types.js';
+import type { Model, Recording } from './workflow-types.js';
 import type { CueDecision } from './transcript-contracts.js';
+
+/**
+ * A Split accepted on a recording with no clip yet (VC-243), spoken or proposed by an agent:
+ * it makes both clips, start to `at` and `at` to the end. Without names they are named after
+ * the recording, like Whole recording names its clip. The decision keeps both ids, so
+ * reopening it removes them.
+ */
+export function splitWithoutClip(
+  next: Model,
+  record: Recording,
+  at: number,
+  names: [string, string],
+  decision: CueDecision,
+  newId: () => string,
+) {
+  if (at <= 0.001 || at >= record.duration - 0.001)
+    throw new Error('Choose a split position inside this recording, away from its ends.');
+  const first = names[0] || record.title.trim().slice(0, 200) || 'Clip',
+    made = { rid: record.id, folder: '_Review', include: true, accepted: false };
+  decision.firstClipId = newId();
+  decision.clipId = newId();
+  next.clips.push(
+    { ...made, id: decision.firstClipId, name: first, start: 0, end: at },
+    {
+      ...made,
+      id: decision.clipId,
+      name: names[1] || `${first} · 2`.slice(0, 200),
+      start: at,
+      end: record.duration,
+    },
+  );
+  return { first: next.clips.at(-2)!, second: next.clips.at(-1)! };
+}
 
 /**
  * Reopening a decided cue or proposal (VC-155): the decision goes, and so does what accepting

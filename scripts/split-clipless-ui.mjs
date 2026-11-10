@@ -2,6 +2,7 @@
 // two spoken Splits, at 5 s and 10 s. The first card says it makes two clips named after the
 // recording; accepting makes 0-5 and 5-15. The second Split then cuts the clip it lands in, like
 // any Split. Undo in the main window takes the second split back, then both clips of the first.
+// An agent's named split at 12 s on the clipless recording then makes both clips with its names.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -109,6 +110,23 @@ phrases.forEach(([start, text], i) =>
     averageLogProbability: 0,
   }),
 );
+store.proposals.add([
+  {
+    id: 'agent-split',
+    sourceId: recording.id,
+    kind: 'cut',
+    time: 12,
+    title: 'Scene change',
+    text: '',
+    reason: 'The scene changes here.',
+    evidence: [],
+    names: { first: 'Opening', second: 'Battle' },
+    agent: { clientId: 'split-clipless-check', name: 'Claude Code' },
+    submitted: new Date().toISOString(),
+    submissionId: 'split-clipless-check',
+    projectRevision: store.data.revision,
+  },
+]);
 await service.checkpoint(id);
 await service.close();
 
@@ -205,8 +223,29 @@ try {
   await expect.poll(clips).toEqual([]);
   await expect(card(1)).toHaveAttribute('data-status', 'pending');
   await shot('split-clipless-undone.png');
+  // An agent's split on the clipless recording makes both clips with the agent's names.
+  const agentCard = view.locator('[data-proposal-card="agent-split"]');
+  await expect(agentCard.locator('[data-split-clipless]')).toHaveText(
+    'No clip yet: accepting makes both clips, from the start to the Split and from the Split to the end.',
+  );
+  await expect(agentCard).toContainText('Opening | Battle');
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('#transcript'))
+      .setSize(760, 860),
+  );
+  await agentCard.scrollIntoViewIfNeeded();
+  await shot('split-clipless-agent.png');
+  await agentCard.getByRole('button', { name: 'Accept split', exact: true }).click();
+  await expect(agentCard).toHaveAttribute('data-status', 'accepted');
+  await expect.poll(clips).toEqual([
+    ['Opening', 0, 12],
+    ['Battle', 12, recording.duration],
+  ]);
+  await expect(agentCard).toContainText('Opening | Battle');
+  await shot('split-clipless-agent-accepted.png');
   assert.deepEqual(errors, []);
-  console.log(`Split on a clipless recording: card, both clips, second split, undo: ${dir}`);
+  console.log(`Split on a clipless recording: spoken, second split, undo, agent: ${dir}`);
 } finally {
   await app?.close();
 }

@@ -623,7 +623,17 @@ export function finalState(
     if (d?.status !== 'accepted') continue;
     const time = d.appliedTime ?? p.time;
     let splitEnd: number | undefined;
-    if (d.clipId && p.kind === 'cut') {
+    if (d.firstClipId && p.kind === 'cut') {
+      // A split on a recording with no clip made both clips (VC-243): start to split and split
+      // to the end, both the agent's.
+      made.set(d.firstClipId, {
+        proposalId: p.id,
+        kind: 'clip',
+        chosen: { start: 0, end: round(time), ...(d.title != null ? { name: d.title } : {}) },
+      });
+      const duration = input.model.recordings.find((r) => r.id === p.sourceId)?.duration;
+      if (duration !== undefined) splitEnd = round(duration);
+    } else if (d.clipId && p.kind === 'cut') {
       // The clip it split, as it was when the first pass froze: it ends at the split now, and
       // the new clip runs from the split to its old end. Later changes to either are the user's.
       const held = (next.firstPass.find((f) => f.id === p.sourceId)?.before?.clips || []).filter(
