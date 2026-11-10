@@ -1,6 +1,6 @@
 # 0026. Agents propose changes to markers and clips, and amend their own cards
 
-- Status: Proposed
+- Status: Accepted (November 10, 2026)
 - Amends: [0015](0015-agent-proposals.md) (agents propose new items only; proposals are
   append-only), [0024](0024-agent-withdrawals.md) (withdraw and propose again to tweak a card)
 - Sources: the first real batch (VC-29, Mass Effect: a color key change and small fixes to
