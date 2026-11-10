@@ -7,10 +7,12 @@ import { createRequire } from 'node:module';
 import {
   agentNotes,
   compareVersions,
+  intentGuideLine,
   notesSince,
   releaseNotes,
   releaseNotesProblem,
   releaseOf,
+  toolsNamed,
   unreadNotice,
 } from '../dist-electron/release-notes.js';
 const require = createRequire(import.meta.url);
@@ -22,7 +24,7 @@ const note = (version, extra = {}) => ({
   date: '2026-11-06',
   title: `Release ${version}`,
   user: ['A change.'],
-  agents: [`Agents in ${version}.`],
+  agents: { tools: [`Agents in ${version}.`], intentGuide: 4 },
   ...extra,
 });
 const sample = [note('0.4.30'), note('0.4.28'), note('0.4.29'), note('0.4.10')];
@@ -43,18 +45,39 @@ test('versions compare by number, and test builds read their release', () => {
   );
 });
 
-test('an agent that last read 0.4.28 gets the 0.4.29 and 0.4.30 agent notes', () => {
-  const answer = agentNotes('0.4.30-71', '0.4.28', 'last read', sample);
-  assert.deepEqual(
-    answer.versions.map((v) => [v.version, v.agents]),
-    [
-      ['0.4.30', ['Agents in 0.4.30.']],
-      ['0.4.29', ['Agents in 0.4.29.']],
-    ],
-  );
+test('an agent that last read 0.4.28 gets the whole 0.4.29 and 0.4.30 notes', () => {
+  const notes = [
+    note('0.4.30', {
+      draft: true,
+      agents: { tools: ['New `a_tool`.'], doNow: ['Do this.'], gaps: ['Not yet.'], intentGuide: 5 },
+    }),
+    note('0.4.29', { agents: { tools: [], intentGuide: 4 } }),
+    note('0.4.28'),
+  ];
+  const answer = agentNotes('0.4.30-71', '0.4.28', 'last read', notes);
   assert.equal(answer.since, '0.4.28');
   assert.equal(answer.basis, 'last read');
-  assert.equal(answer.versions[0].user, undefined, 'only the For agents lists');
+  assert.deepEqual(answer.versions[0], {
+    version: '0.4.30',
+    date: '2026-11-06',
+    title: 'Release 0.4.30',
+    status:
+      "Draft notes: they may change before 0.4.30 is delivered. Every delivered version's notes are final.",
+    forAgents: {
+      tools: ['New `a_tool`.'],
+      doDifferentlyNow: ['Do this.'],
+      knownGaps: ['Not yet.'],
+      intentGuide: 'Version 5: read `get_intent_guide` again.',
+    },
+    forTheUser: ['A change.'],
+  });
+  // Empty groups are left out; an empty tool list says so.
+  assert.deepEqual(answer.versions[1].forAgents, {
+    tools: ['No tool changes.'],
+    intentGuide: 'Version 4, unchanged.',
+  });
+  assert.equal(answer.versions[1].status, 'Final.');
+  assert.equal(intentGuideLine(notes[2], notes), 'Version 4.');
   const current = agentNotes('0.4.30', '0.4.30', 'last read', sample);
   assert.deepEqual(current.versions, []);
   assert.match(current.note, /Nothing new since 0\.4\.30/);
@@ -73,7 +96,7 @@ test('delivery refuses a version without finished notes', () => {
     releaseNotesProblem('0.4.30-71', [note('0.4.30', { draft: true })]),
     /0\.4\.30 entry .+ still a draft/,
   );
-  assert.match(releaseNotesProblem('0.4.30', [note('0.4.30', { agents: [] })]), /For agents/);
+  assert.match(releaseNotesProblem('0.4.30', [note('0.4.30', { user: [] })]), /user notes/);
   assert.match(releaseNotesProblem('0.4.30', [note('0.4.30', { date: 'Nov 9' })]), /YYYY-MM-DD/);
 });
 
@@ -86,11 +109,18 @@ test('the shipped notes are complete, newest first and free of private details',
   for (const v of ['0.4.26', '0.4.27', '0.4.28', '0.4.29'])
     assert.equal(releaseNotesProblem(v), '', v);
   for (const n of releaseNotes) {
-    const text = [n.title, ...n.user, ...n.agents].join('\n');
+    const a = n.agents;
+    const lines = [n.title, ...n.user, ...a.tools, ...(a.doNow || []), ...(a.gaps || [])];
+    const text = lines.join('\n');
     // The repository is public: no board links, ticket ids, drive paths or file locations.
     assert.doesNotMatch(text, /https?:|notion|VC-\d|\b[A-Z]:[\\/]|\\Users\\/i, n.version);
     assert.equal(text.split('`').length % 2, 1, `${n.version} has an unclosed backtick`);
+    assert(Number.isInteger(a.intentGuide), n.version);
   }
+  // Tools first offered in these versions are named in their notes; the desktop check compares
+  // the server's whole tool list.
+  for (const t of ['look', 'withdraw_proposals', 'propose_changes', 'amend_proposal'])
+    assert(toolsNamed().has(t), t);
 });
 
 test('pairings remember the version they were paired on and the notes they read', async (t) => {

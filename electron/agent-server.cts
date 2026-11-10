@@ -74,8 +74,8 @@ const instructions =
   'propose when there is none, and how to turn it into proposals, with their own examples. ' +
   'Nothing can be changed directly, imported, exported or filed through these tools, and they ' +
   'never return file paths or media files. look shows pictures of moments in a recording, ' +
-  'rendered by Virtual Cut, while the user has Allow pictures on. get_whats_new lists what ' +
-  'changed for agents in each Virtual Cut version since this app last read it.';
+  'rendered by Virtual Cut, while the user has Allow pictures on. get_whats_new gives the ' +
+  'release notes of each Virtual Cut version since this app last read them.';
 
 /** The server instructions for one connection: unread notes first (VC-242). */
 function connectionInstructions(current: string, from: string | undefined) {
@@ -551,10 +551,11 @@ export function registerAgentAccess(options: {
       'get_whats_new',
       {
         description:
-          'What changed for agents in each Virtual Cut version since this app last read it ' +
-          '(Virtual Cut remembers that per paired app), or since `since`: new and changed ' +
-          'tools, behaviour you will meet and the intent guide version, newest first. Call it ' +
-          'when the server instructions say Virtual Cut was updated.',
+          "Virtual Cut's release notes for every version since this app last read them " +
+          '(Virtual Cut remembers that per paired app), or since `since`, newest first. For ' +
+          'agents: new and changed tools and fields, what to do differently now, known gaps and ' +
+          'the intent guide version; also what changed for the user, and whether the notes are ' +
+          'final or a draft. Call it when the server instructions say Virtual Cut was updated.',
         inputSchema: z.object({
           since: z
             .string()

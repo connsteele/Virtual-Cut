@@ -2,7 +2,12 @@ import { Fragment, useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import type { AgentClient } from '../../electron/agent-contracts';
 import type { WhatsNewState } from '../../electron/contracts';
-import { compareVersions, notesSince, type ReleaseNote } from '../../electron/release-notes';
+import {
+  compareVersions,
+  intentGuideLine,
+  notesSince,
+  type ReleaseNote,
+} from '../../electron/release-notes';
 import { Button } from './ui';
 import s from './WhatsNew.module.css';
 
@@ -98,9 +103,26 @@ function PairedAgents({ release }: { release: string }) {
         <p className={s.muted}>No agent app is paired. Pair one under Agent in a project.</p>
       )}
       <p className={s.muted}>
-        Agent apps read the For agents notes with <code>get_whats_new</code>.
+        Agent apps read these notes with <code>get_whats_new</code>.
       </p>
     </section>
+  );
+}
+
+/** One group of a version's agent notes; nothing when the group is empty. */
+function AgentGroup({ label, lines }: { label: string; lines?: string[] }) {
+  if (!lines?.length) return null;
+  return (
+    <div className={s.group} data-agent-group={label}>
+      <h5>{label}</h5>
+      <ul>
+        {lines.map((line) => (
+          <li key={line}>
+            <Rich text={line} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -144,13 +166,13 @@ function Version({
             <h4>
               <Bot size={13} aria-hidden /> For agents
             </h4>
-            <ul>
-              {note.agents.map((line) => (
-                <li key={line}>
-                  <Rich text={line} />
-                </li>
-              ))}
-            </ul>
+            <AgentGroup
+              label="Tools"
+              lines={note.agents.tools.length ? note.agents.tools : ['No tool changes.']}
+            />
+            <AgentGroup label="Do differently now" lines={note.agents.doNow} />
+            <AgentGroup label="Known gaps" lines={note.agents.gaps} />
+            <AgentGroup label="Intent guide" lines={[intentGuideLine(note)]} />
           </div>
         )}
       </div>

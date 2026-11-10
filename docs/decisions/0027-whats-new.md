@@ -14,9 +14,11 @@ changed either.
 ## Decision
 
 - **One notes file, one entry per version.** `electron/release-notes.ts` holds, newest first, a
-  title, a date, a few plain bullets for the user and a **For agents** list (tools added or
-  changed, behaviour agents meet, the intent guide version; "No tool changes." when there are
-  none). Product language only, because the repository is public. A test build such as
+  title, a date, a few plain bullets for the user and For agents notes in four groups: **Tools**
+  (each new or changed tool and field by name; "No tool changes." when there are none), **Do
+  differently now**, **Known gaps** and the **Intent guide** version (said as changed or
+  unchanged). A check fails when a tool the server offers is named in no version's notes, so no
+  tool ships unmentioned. Product language only, because the repository is public. A test build such as
   0.4.30-71 reads its release's entry (0.4.30). An entry may be marked as a draft before
   delivery.
 - **Delivery refuses a version without finished notes.** `npm run deliver` checks the entry
@@ -31,7 +33,8 @@ changed either.
   what's new" once; it never takes focus. A new profile has nothing to announce; a profile used
   by an earlier version (it has diagnostics sessions) sees the current release as new.
 - **`get_whats_new` for agents.** A read-only tool, available without an open project, returns
-  the For agents lists of every version after the one this paired app last read (remembered per
+  the whole notes (the For agents groups, the user notes, and whether they are final or a draft
+  that may change before delivery) of every version after the one this paired app last read (remembered per
   pairing), else after the version it was paired on, else all of them; `since` reads after a
   given version instead. Each call records the running release as read. When a paired app has
   unread notes, the server instructions for its connection start by naming the versions and

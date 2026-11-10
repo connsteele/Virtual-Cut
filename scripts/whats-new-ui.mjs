@@ -8,7 +8,7 @@ import { expect } from './desktop-expect.mjs';
 import { require, root, electronEnvironment } from './shared.mjs';
 import { collectBeforeWindowClose } from './coverage-desktop.mjs';
 import { agent, tool } from './mcp-test-client.mjs';
-import { notesSince, releaseOf } from '../dist-electron/release-notes.js';
+import { notesSince, releaseOf, toolsNamed } from '../dist-electron/release-notes.js';
 
 // What's new (VC-242): after an update the version number shows a dot and a one-time pop-up
 // offers the notes; the window lists them newest first with a Paired agents box; a paired app
@@ -162,6 +162,9 @@ try {
   const whatsNewTool = listed.find((t) => t.name === 'get_whats_new');
   assert.deepEqual(whatsNewTool.annotations, { readOnlyHint: true });
   assert.deepEqual(Object.keys(whatsNewTool.inputSchema.properties), ['since']);
+  // Every tool the server offers is named in some version's notes, so none ships unmentioned.
+  const named = toolsNamed();
+  for (const t of listed) assert(named.has(t.name), `no release notes name ${t.name}`);
   const first = await tool(batch, 'get_whats_new');
   assert(!first.error, first.text);
   const answer = JSON.parse(first.text);
@@ -172,8 +175,11 @@ try {
     newer,
   );
   for (const v of answer.versions) {
-    assert(v.agents.length, v.version);
-    assert.equal(v.user, undefined, 'agents get the For agents lists only');
+    // The whole notes: the agent groups, what changed for the user, and final or draft.
+    assert(v.forAgents.tools.length, v.version);
+    assert.match(v.forAgents.intentGuide, /^Version \d/);
+    assert(v.forTheUser.length, v.version);
+    assert.match(v.status, /^(Final\.|Draft notes)/);
   }
   // No paths or media in the answer (decision 0014).
   assert.doesNotMatch(first.text, /[A-Z]:\\|\.vcut|\.mp4|\.mkv|base64/i);
