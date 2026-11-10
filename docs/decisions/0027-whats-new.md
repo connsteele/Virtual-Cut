@@ -1,6 +1,6 @@
 # 0027. What's new: release notes built into each version, for the user and for agents
 
-- Status: Proposed
+- Status: Accepted (November 10, 2026)
 - Sources: VC-242 and the What's new prototype Connor accepted on 2026-11-09 (version number
   opens the window, no "Virtual Cut" in the label, not in Settings)
 
