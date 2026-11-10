@@ -183,8 +183,8 @@ try {
     });
   // Frame timing of the recording, for "exact frame" checks.
   const fps = await page.evaluate(() => {
-    const m = /Source ([\d.]+) fps/.exec(
-      document.querySelector('[data-video-stage]')?.parentElement?.textContent || '',
+    const m = /([\d.]+) fps/.exec(
+      document.querySelector('[data-viewer-source]')?.textContent || '',
     );
     return m ? Number(m[1]) : 60;
   });

@@ -9,6 +9,7 @@ import { autosaveKey, autosaveSettings, autosaveDue, type AutosaveSettings } fro
 
 const changed = (a: Model, b: Model) =>
   a.selectedRecordingId !== b.selectedRecordingId ||
+  a.viewerSource !== b.viewerSource ||
   editorial(a) !== editorial(b) ||
   a.recordings.some((r) => r.position !== b.recordings.find((x) => x.id === r.id)?.position);
 const edited = (a: Model, b: Model) => editorial(a) !== editorial(b);
@@ -142,6 +143,7 @@ export function useProjectWorkspace() {
   const editKey = editorial(model);
   const navigationKey = JSON.stringify([
     model.selectedRecordingId,
+    model.viewerSource,
     model.recordings.map((r) => [r.id, r.position]),
   ]);
   const projectId = snapshot?.project.id;

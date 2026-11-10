@@ -23,6 +23,8 @@ export type PlaybackDiagnostic = {
   seeking?: boolean;
   duration?: number;
   offset?: number;
+  /** The viewer showed the recording's proxy (VC-238). */
+  proxy?: boolean;
   recent?: PlaybackTrace[];
   /** Separate-audio sync since play began, sent with a pause (VC-29 note 28). */
   audioHolds?: number;

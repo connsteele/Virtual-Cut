@@ -207,6 +207,10 @@ export interface Model {
   cueDecisions?: import('./transcript-contracts.js').CueDecision[];
   contexts?: import('./project-context.js').CreativeContext[];
   selectedRecordingId?: string;
+  /** The viewer's Original/Proxy switch for the whole project (VC-238). Absent means Proxy: a
+   * recording without a usable proxy shows its original either way. Navigation, like the
+   * selected recording: saved with the project, never an undo step. */
+  viewerSource?: 'original' | 'proxy';
   recordings: Recording[];
   clips: Clip[];
   markers: Record<string, Marker[]>;
