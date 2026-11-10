@@ -46,7 +46,8 @@ export interface MediaJob {
   elapsedMs?: number;
   id: string;
   sourceId: string;
-  kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual' | 'text';
+  /** 'proxy' makes a recording's playback proxy (VC-237). */
+  kind: 'inspect' | 'audio' | 'export' | 'transcribe' | 'visual' | 'text' | 'proxy';
   /** The picture pass (VC-180): what it decodes with right now. The screen text pass (VC-141):
    * whether the engine reads on the GPU (DirectML) or the CPU. */
   use?: import('./visual-events.js').VisualUse;

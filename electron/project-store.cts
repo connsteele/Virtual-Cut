@@ -35,6 +35,7 @@ import {
 import { decodeTimes, encodeTimes, extractFrameIndexes } from './frame-index.js';
 import type { FrameIndex } from './frame-index.js' with { 'resolution-mode': 'import' };
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
+import type { NativeProxy } from './proxy-record.js' with { 'resolution-mode': 'import' };
 import { VISUAL_VERSION, summarize } from './visual-events.js';
 import { SCREEN_TEXT_VERSION, summarizeText } from './screen-text.js';
 import type { ScreenText, ScreenTextSummary } from './screen-text.js' with {
@@ -57,6 +58,8 @@ export interface NativeSource {
    * was verified sample-identical to the original.
    */
   audioCopies?: Record<number, { kind: 'copy' | 'flac'; bytes: number; modified: number }>;
+  /** The recording's verified playback proxy in the project cache (Sprint 15, VC-237). */
+  proxy?: NativeProxy;
 }
 interface Data {
   project: ProjectInfo;

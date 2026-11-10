@@ -93,6 +93,7 @@ import {
   unchangedSpans,
 } from './screen-text.js';
 import { readKeyframes } from './screen-text-pass.cjs';
+import { isNativeProxy, proxyState } from './proxy-record.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -763,6 +764,27 @@ export class ProjectService {
     }
     if (dirty) store.write();
   }
+  /** A recording's proxy as the windows see it (Sprint 15): from the native record, the file in
+   * the cache and any queued or running proxy job. Ready proxies get a playback address. */
+  private async proxyFor(store: ProjectStore, source: NativeSource | undefined, jobs: MediaJob[]) {
+    if (!source) return { state: 'none' as const };
+    const job = jobs.find(
+      (j) =>
+        j.sourceId === source.id && j.kind === 'proxy' && ['queued', 'running'].includes(j.state),
+    );
+    const file = isNativeProxy(source.proxy)
+      ? path.join(store.data.project.cache, source.proxy.file)
+      : undefined;
+    const info = file ? await stat(file).catch(() => null) : null;
+    const proxy = proxyState(source.proxy, source.fingerprint, info, job);
+    if (proxy.state === 'ready' && file)
+      try {
+        proxy.url = await this.grant(file);
+      } catch {
+        return { ...proxy, state: 'missing' as const, url: undefined };
+      }
+    return proxy;
+  }
   async snapshot() {
     await this.refreshAvailability();
     const store = this.require();
@@ -826,6 +848,7 @@ export class ProjectService {
         const audio = source && this.audioFile(source, track.index);
         if (audio && existsSync(audio)) track.previewUrl = await this.grant(audio);
       }
+      r.proxy = await this.proxyFor(store, source, snapshot.jobs);
       // A stable media-pool poster is separate from the in-memory timeline.
       const prefix = path.join(store.data.project.cache, `${r.id}-${source?.fingerprint}`);
       const legacyPoster = `${prefix}-frame-4.jpg`;
@@ -1322,6 +1345,7 @@ export class ProjectService {
               importedAt: existing.importedAt,
               audioPreviews: existing.audioPreviews,
               audioCopies: existing.audioCopies,
+              proxy: existing.proxy,
             });
             r.availability = r.duration ? 'ready' : 'pending';
             this.grants.delete(existing.file);
@@ -2090,6 +2114,7 @@ export class ProjectService {
         importedAt: old.importedAt,
         audioPreviews: old.audioPreviews,
         audioCopies: old.audioCopies,
+        proxy: old.proxy,
       });
       const r = s.data.model.recordings.find((r) => r.id === sourceId)!;
       r.sourcePath = next.file;

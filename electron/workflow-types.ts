@@ -144,6 +144,9 @@ export interface Recording {
   monitor?: 'game' | 'mic' | 'both';
   importAudio?: import('./project-contracts.js').ImportAudio;
   audioWarning?: string;
+  /** The recording's playback proxy as of this snapshot (Sprint 15). Worked out from the
+   * native record each time, never saved in the model. */
+  proxy?: import('./proxy-record.js').RecordingProxy;
 }
 export interface AudioTrack {
   index: number;

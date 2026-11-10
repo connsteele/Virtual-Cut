@@ -1,6 +1,7 @@
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { NativeSource } from './project-store.cjs';
+import { proxyFilePattern } from './proxy-record.js';
 import type { ExportRecord } from './export-contracts.js' with { 'resolution-mode': 'import' };
 import type { ProjectInfo, ProjectStorageUsage } from './project-contracts.js' with {
   'resolution-mode': 'import',
@@ -20,6 +21,7 @@ export async function projectStorageUsage(
     saveOther: 'Other save-folder files',
     images: 'Thumbnails and filmstrips',
     audio: 'Audio previews',
+    proxies: 'Playback proxies',
     cacheOther: 'Other cache files',
     exports: 'Completed videos',
     companions: 'Companion metadata',
@@ -97,7 +99,9 @@ export async function projectStorageUsage(
       ? 'images'
       : /-audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(m4a|f32)$/i.test(name)
         ? 'audio'
-        : 'cacheOther',
+        : proxyFilePattern.test(name)
+          ? 'proxies'
+          : 'cacheOther',
   );
   // Sequential categories ensure aliases/hard links have a deterministic owner; small batches keep IO bounded.
   for (let start = 0; start < candidates.length; start += 8) {
