@@ -2,6 +2,20 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.30 — Work from the first batch: clips, clip colors, agent edits and faster scrubbing (November 10, 2026)
+
+Sprint 14, the first of M5, acts on Connor's first real batch. Importing a recording no longer makes
+a whole-recording clip; every clip is cut on purpose, and Cut offers a one-click Whole recording
+clip. Clips can carry a Resolve clip color that the Resolve helper applies. Exports keep only a
+clip's own markers instead of its neighbours' padding, and every chosen SRT is written, naming its
+transcript, with an empty one when a clip has no speech. Agents can propose changes to markers and
+clips that already exist and amend their own pending cards (decision 0026). Scrubbing keeps up on
+4K recordings, and Settings has a Fastest scrubbing option. A What's new window opens from the
+version number, and agents read the same notes with `get_whats_new` (decision 0027). The intent
+guide reaches version 6: the first batch's lessons, and one guide for every game. Two spikes ended
+in recommendations: proxies (five Triage tickets) and scrubbing. See [the 0.4.30
+review](docs/review-0.4.30.md).
+
 ## 0.4.29 — Fast playback without echo beside the Transcript window (November 6, 2026)
 
 A hotfix during the first real batch. At 2x and faster, Cut playback stuttered and the sound

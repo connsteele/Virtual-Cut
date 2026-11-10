@@ -55,15 +55,16 @@ export const toolsBeforeNotes = [
 export const releaseNotes: ReleaseNote[] = [
   {
     version: '0.4.30',
-    date: '2026-11-09',
-    title: 'Draft: work from the first batch, faster scrubbing and this window',
-    draft: true,
+    date: '2026-11-10',
+    title: 'Work from the first batch: clips, clip colors, agent edits and faster scrubbing',
     user: [
       'Scrubbing keeps up on 4K recordings: exact frames on slow drags, keyframes on fast ones. Settings has `Fastest scrubbing`.',
       'Give a clip a color in Cut; the Resolve helper sets it on the clip in Resolve.',
       'Markers stay inside their own clip in Resolve; stubs from the neighbouring clip are gone.',
       'Every chosen SRT is written, and a clip with no speech gets an empty one.',
       'Importing no longer makes a whole-recording clip; you or the agent cut every clip.',
+      'Agents can propose changes to markers and clips you already have, and tweak their own cards in place. Each change shows before and after, and nothing changes until you accept.',
+      'The agent guide now covers clip ranges and trims, note lines, titles and file names, and stays the same for every game.',
       'What’s new: click the version number in the bottom bar.',
     ],
     agents: {
@@ -75,13 +76,14 @@ export const releaseNotes: ReleaseNote[] = [
         '`get_annotations` reports each clip’s `clipColor`, and `get_proposal_decisions` the clip color kept.',
       ],
       doNow: [
-        'Recordings start with no clips. Propose a clip range for what to keep before any split: a split can’t be accepted on a recording with no clips.',
+        'Recordings start with no clips. Propose a named clip range for what to keep on every recording, and propose the clip ranges on both sides instead of a split: a split can’t be accepted on a recording with no clips.',
+        'Read `get_intent_guide` again: version 6 adds rules for clips, titles, notes and file names, and is the same for every game. A game’s own rules come from its brief (`get_context`) or the user’s own pages for the game.',
         'Fix items the user already accepted with `propose_changes`, rather than asking the user to edit them.',
         'Tweak a pending card with `amend_proposal` instead of withdrawing it and proposing again.',
         'Clip companions carry only the markers inside that clip, and each SRT names its transcript (mic, game or both); an empty one means no dialogue.',
       ],
       gaps: ['No tool removes a marker or clip. Propose a change, or ask the user.'],
-      intentGuide: 5,
+      intentGuide: 6,
     },
   },
   {
