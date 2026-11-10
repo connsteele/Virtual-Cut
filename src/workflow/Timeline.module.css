@@ -688,3 +688,222 @@
   color: #c9bff0;
   font-size: 10px;
 }
+/* VC-212 gaps: the kept pieces keep normal clip ends with outline chevrons pointing across the
+   gap; the gap is a light fill between thin dashed lines (decision 0028). */
+.clip[data-gapped='true'],
+.clip[data-gapped='true']:hover,
+.clip[data-gapped='true'][data-selected='true'] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.clip[data-gapped='true']::before,
+.clip[data-gapped='true']::after {
+  display: none;
+}
+.clip[data-gapped='true'] .clipLabel {
+  position: relative;
+  z-index: 1;
+}
+.piece {
+  position: absolute;
+  inset-block: 0;
+  background: color-mix(in srgb, var(--clip-color) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--clip-color) 70%, transparent);
+  border-radius: 3px;
+}
+.piece::before,
+.piece::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  background: var(--clip-color);
+  pointer-events: none;
+}
+.piece::before {
+  left: 0;
+}
+.piece::after {
+  right: 0;
+}
+.clip:hover .piece {
+  background: color-mix(in srgb, var(--clip-color) 36%, transparent);
+}
+.clip[data-selected='true'] .piece {
+  background: color-mix(in srgb, var(--clip-color) 46%, #13211eb3);
+  border-color: #f4f1e5;
+  box-shadow: inset 0 0 0 1px #f4f1e5;
+}
+.clip[data-selected='true'] .piece::before,
+.clip[data-selected='true'] .piece::after {
+  width: 3px;
+  background: #f4f1e5;
+}
+.chevronIn,
+.chevronOut {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: var(--clip-color);
+  pointer-events: none;
+}
+.chevronOut {
+  right: 9px;
+  clip-path: polygon(0 0, 40% 0, 100% 50%, 40% 100%, 0 100%, 60% 50%);
+}
+.chevronIn {
+  left: 9px;
+  clip-path: polygon(100% 0, 60% 0, 0 50%, 60% 100%, 100% 100%, 40% 50%);
+}
+.clip[data-selected='true'] .chevronIn,
+.clip[data-selected='true'] .chevronOut {
+  background: #f4f1e5;
+}
+.gap {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+  border-block: 1px dashed #ede6d870;
+  border-radius: 0;
+  background: #ede6d80d;
+  color: var(--muted);
+  font-size: 10px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.gap:hover {
+  background: #ede6d812;
+}
+.gap[data-selected='true'] {
+  border-block-color: #f4f1e5d0;
+  background: #ede6d814;
+}
+.gap[data-short='true'] {
+  border-block-color: #e0b04a;
+}
+.gap[data-manipulate='true'] {
+  cursor: grab;
+  touch-action: none;
+}
+.gapLabel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.gap[data-short='true'] .gapLabel {
+  color: #e0b04a;
+}
+.gapKept {
+  position: absolute;
+  inset-block: 0;
+  background: color-mix(in srgb, var(--clip-color) 16%, transparent);
+  pointer-events: none;
+}
+.gapEdge {
+  position: absolute;
+  inset-block: 0;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.gapEdge::after {
+  content: '';
+  position: absolute;
+  inset-block: 2px;
+  left: 3px;
+  width: 4px;
+  border-radius: 2px;
+  background: #f4f1e5;
+  box-shadow: 0 0 0 1px #0009;
+}
+.gapEdge[data-gap-edge='start'] {
+  left: 0;
+}
+.gapEdge[data-gap-edge='end'] {
+  right: 0;
+}
+.gapPending {
+  position: absolute;
+  inset-block: 0;
+  z-index: 3;
+  border: 1px dashed #ede6d8b0;
+  border-left: 2px solid #f4f1e5;
+  background: color-mix(in srgb, #182321 64%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  pointer-events: none;
+}
+.gapPending[data-reverse='true'] {
+  border-left: 1px dashed #ede6d8b0;
+  border-right: 2px solid #f4f1e5;
+}
+.gapSweep {
+  position: absolute;
+  inset-block: 0;
+  z-index: 3;
+  border: 1px solid #f4f1e5;
+  background: #f4f1e51a;
+  pointer-events: none;
+}
+.marker[data-in-gap='true'],
+.markerRange[data-in-gap='true'] {
+  opacity: 0.35;
+}
+.gapNote {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text);
+}
+.gapMenu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  min-width: 210px;
+  padding: 4px;
+  background: #1f2a28;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #0009;
+}
+.gapMenu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text);
+}
+.gapMenu button:hover:not(:disabled),
+.gapMenu button:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.gapMenu button:disabled {
+  opacity: 0.45;
+}
+.gapMenu kbd {
+  font-size: 10px;
+  opacity: 0.6;
+}
+.gapMenu hr {
+  height: 1px;
+  margin: 3px 0;
+  border: 0;
+  background: var(--border);
+}

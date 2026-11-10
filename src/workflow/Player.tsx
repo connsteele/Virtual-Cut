@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useImperativeHandle,
   useRef,
   useState,
@@ -24,7 +25,8 @@ import {
 } from 'lucide-react';
 import { time, type Recording, type Marker, type Clip } from './model';
 import { Button, Modal } from './ui';
-import { Timeline } from './Timeline';
+import { Timeline, type GapControls } from './Timeline';
+import { gapJoins } from '../../electron/clip-gaps';
 import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
 import { fastScrubbing } from './SettingsPanel';
@@ -74,6 +76,9 @@ export function Player({
   proposalFocus,
   proposalReveal,
   onProposalAdjust,
+  gaps,
+  skipGaps = false,
+  onGapSkipped,
   ref,
 }: {
   recording: Recording;
@@ -109,6 +114,11 @@ export function Player({
   proposalFocus?: string | null;
   proposalReveal?: boolean;
   onProposalAdjust?: (card: string, at: { start: number; end?: number }) => void;
+  /** VC-212: gap selection, edits and the in-progress gap, handed to the timeline. */
+  gaps?: GapControls;
+  /** Forward playback jumps over each gap to where the export resumes (Shift+G). */
+  skipGaps?: boolean;
+  onGapSkipped?: (number: number, removed: number) => void;
   ref?: Ref<Transport>;
 }) {
   const video = useRef<HTMLVideoElement>(null),
@@ -583,6 +593,50 @@ export function Player({
     reportActivity();
   }
   useEffect(() => () => clearTimeout(scrubbing.current.rest), []);
+  // VC-212: with Skip gaps on, forward playback jumps from where a gap's export cut begins to
+  // where it resumes (keyframes at both ends), so the clip plays as exported. Scans, scrubbing and
+  // a paused playhead parked inside a gap are left alone.
+  const skipSpans = useMemo(
+    () =>
+      skipGaps && showClips
+        ? clips.flatMap((c) =>
+            gapJoins(c, r.keys || [])
+              .filter((j) => !j.short)
+              .map((j) => ({ out: j.out, back: j.back, number: j.number, removed: j.removed })),
+          )
+        : [],
+    [skipGaps, showClips, clips, r.keys],
+  );
+  const skipped = useRef(onGapSkipped);
+  useEffect(() => {
+    skipped.current = onGapSkipped;
+  }, [onGapSkipped]);
+  useEffect(() => {
+    if (!skipSpans.length) return;
+    let last = -Infinity;
+    const timer = setInterval(() => {
+      const v = video.current;
+      if (!v || v.paused || v.seeking || scan.current || gestures.current.scrub) {
+        last = -Infinity;
+        return;
+      }
+      const position = v.currentTime - clockOffset,
+        before = last;
+      last = position;
+      // Only a crossing skips: pressing play inside a gap plays what is there.
+      if (before === -Infinity) return;
+      const span = skipSpans.find(
+        (x) => before < x.out && position >= x.out - 0.02 && position < x.back,
+      );
+      if (!span) return;
+      last = span.back;
+      seek(span.back);
+      skipped.current?.(span.number, span.removed);
+    }, 16);
+    return () => clearInterval(timer);
+    // seek is stable for the life of the preview; spans change with the clip's gaps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skipSpans, clockOffset]);
   useEffect(() => {
     if (!looping) return;
     const timer = setInterval(() => {
@@ -1094,6 +1148,7 @@ export function Player({
         proposalFocus={proposalFocus}
         proposalReveal={proposalReveal}
         onProposalAdjust={onProposalAdjust}
+        {...gaps}
       />
       <div className={s.playbackBar} role="group" aria-label="Playback controls">
         <div className={s.clock}>

@@ -76,6 +76,16 @@ import {
   type Recording,
 } from './model';
 import { Player, type Transport } from './Player';
+import type { GapSweep } from './Timeline';
+import {
+  clipPieces,
+  gapAt,
+  gapJoins,
+  piecesLength,
+  splitWithGaps,
+  withGap,
+  withoutGap,
+} from '../../electron/clip-gaps';
 import { SourceFolders } from './SourceFolders';
 import { MediaLayout } from './MediaLayout';
 import { useMediaDrop } from './useMediaDrop';
@@ -674,6 +684,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     [settingsOpen, setSettingsOpen] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [handleMode, setHandleMode] = useState(false);
+  // VC-212 gaps: the selected gap, a gap started with G, a Shift-drag waiting for G, and whether
+  // playback skips gaps (off whenever a project opens).
+  const [gid, setGid] = useState(''),
+    [gapStart, setGapStart] = useState<{ clipId: string; at: number } | null>(null),
+    [gapSweep, setGapSweep] = useState<GapSweep | null>(null),
+    [skipGaps, setSkipGaps] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(
     () => localStorage.getItem('virtual-cut.snap-playhead') !== 'false',
   );
@@ -733,10 +749,12 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   function selectClip(id: string) {
     setCid(id);
     setMid('');
+    setGid('');
     markerSeek.current = transport.current?.current() ?? null;
   }
   function selectMarker(id: string, recordId = r.id) {
     setMid(id);
+    setGid('');
     markerRecord.current = recordId;
     markerSeek.current = transport.current?.current() ?? null;
   }
@@ -825,6 +843,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
   // Agent apps may ask what is on screen (VC-160); main keeps only the latest view.
   const viewProjectId = project?.project.id,
     viewPlayhead = Math.round(r.position * 2) / 2;
+  // VC-212: skipping gaps is off whenever a project opens; a half-made gap ends with its recording.
+  useEffect(() => {
+    setSkipGaps(false);
+  }, [viewProjectId]);
+  useEffect(() => {
+    setGapStart(null);
+    setGapSweep(null);
+  }, [viewProjectId, r.id]);
   useEffect(() => {
     if (!viewProjectId) return;
     window.virtualCut?.agent?.view({
@@ -1203,19 +1229,101 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       setNotice('Place the playhead inside the selected clip to split it.');
       return;
     }
-    const id = uid();
+    // VC-212: inside a gap, the two clips meet the gap's edges; each clip keeps its own gaps.
+    const parts = splitWithGaps(clip, t);
+    if (!parts) {
+      setNotice('Move the playhead further from the clip edge to split it.');
+      return;
+    }
+    const inside = gapAt(clip, t),
+      id = uid();
     setModel((m) => ({
       ...m,
       clips: m.clips.flatMap((c) =>
         c.id === clip.id
-          ? [
-              { ...invalidate(c), end: t },
-              { ...invalidate(c), id, name: c.name + ' · Part 2', start: t },
-            ]
+          ? [invalidate(parts[0]), { ...invalidate(parts[1]), id, name: c.name + ' · Part 2' }]
           : [c],
       ),
     }));
     selectClip(id);
+    if (inside)
+      setNotice('Split at the gap’s edges: the gap is now the space between the two clips.');
+  }
+  const gapKeys = () => indexed(r).keys || [];
+  function makeGap(clipId: string, a: number, b: number) {
+    const clip = model.clips.find((x) => x.id === clipId);
+    if (!clip) return;
+    const made = withGap(clip, a, b, uid());
+    if (made.outcome === 'too-short') {
+      setNotice('Mark a longer stretch: a gap needs at least 0.1 s.');
+      return;
+    }
+    if (made.outcome === 'whole') {
+      setNotice('That covers the whole clip. Delete the clip instead.');
+      return;
+    }
+    if (made.outcome === 'outside') {
+      setNotice('Place the gap inside the clip.');
+      return;
+    }
+    updateClip(clipId, { start: made.clip.start, end: made.clip.end, gaps: made.clip.gaps });
+    selectClip(clipId);
+    if (made.outcome === 'trimmed-start' || made.outcome === 'trimmed-end') {
+      setNotice(
+        `The gap reached the clip’s ${made.outcome === 'trimmed-start' ? 'start' : 'end'}, so the clip was trimmed instead.`,
+      );
+      return;
+    }
+    setGid(made.gap!.id);
+    const joins = gapJoins(made.clip, gapKeys()),
+      join = joins.find((j) => j.gap.id === made.gap!.id)!;
+    setNotice(
+      join.short
+        ? `Gap ${join.number} added. It removes nothing until it has two keyframes inside; widen it with H.`
+        : `Gap ${join.number} removes ${time(join.removed)}. The clip now exports ${time(piecesLength(clipPieces(made.clip, gapKeys(), r.duration)))}.`,
+    );
+  }
+  function removeGap(clipId: string, gapId: string) {
+    const clip = model.clips.find((x) => x.id === clipId);
+    if (!clip) return;
+    updateClip(clipId, { gaps: withoutGap(clip, gapId).gaps });
+    setGid('');
+    setNotice('Gap removed; the footage is back. Ctrl+Z restores it.');
+  }
+  /** G starts or finishes a gap (or turns a Shift-drag into one); Shift+G toggles skipping. */
+  function gapKey(shift: boolean) {
+    if (shift) {
+      setSkipGaps(!skipGaps);
+      setNotice(
+        skipGaps ? 'Playback shows gaps.' : 'Playback skips gaps, as the clips will export.',
+      );
+      return;
+    }
+    if (!canEdit) return;
+    if (gapSweep) {
+      makeGap(gapSweep.clipId, gapSweep.start, gapSweep.end);
+      setGapSweep(null);
+      return;
+    }
+    const t = transport.current?.current() || 0;
+    if (gapStart) {
+      makeGap(gapStart.clipId, gapStart.at, t);
+      setGapStart(null);
+      return;
+    }
+    const under =
+      (c && t >= c.start && t < c.end ? c : undefined) ||
+      clips.find((x) => t >= x.start && t < x.end);
+    if (!under) {
+      setNotice('Move the playhead into a clip to start a gap.');
+      return;
+    }
+    if (gapAt(under, t)) {
+      setNotice('The playhead is inside a gap. Move it out to start another one.');
+      return;
+    }
+    if (under.id !== cid) selectClip(under.id);
+    setGapStart({ clipId: under.id, at: t });
   }
   function addSelect(id: string) {
     const c = model.clips.find((c) => c.id === id);
@@ -1308,6 +1416,26 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       }
       if (e.ctrlKey || e.metaKey || e.altKey || !r.id || workspace.busy) return;
       const k = e.key.toLowerCase();
+      if (page === 'cut' && e.key === 'Escape' && (gapStart || gapSweep)) {
+        e.preventDefault();
+        setGapStart(null);
+        setGapSweep(null);
+        setNotice('Gap cancelled.');
+        return;
+      }
+      if (page === 'cut' && k === 'g') {
+        e.preventDefault();
+        gapKey(e.shiftKey);
+        return;
+      }
+      if (page === 'cut' && gid && e.key === 'Backspace') {
+        const owner = model.clips.find((x) => x.gaps?.some((g) => g.id === gid));
+        if (owner) {
+          e.preventDefault();
+          removeGap(owner.id, gid);
+          return;
+        }
+      }
       if (page === 'cut' && k === 'h') {
         e.preventDefault();
         setHandleMode((value) => !value);
@@ -1564,6 +1692,27 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
           });
         }}
         onSelect={selectClip}
+        gaps={
+          page === 'cut'
+            ? {
+                selectedGapId: gid,
+                onGapSelect: (clipId, gapId) => {
+                  if (clipId !== cid || mid) selectClip(clipId);
+                  setGid(gapId);
+                },
+                onGapRemove: removeGap,
+                onGapsChange: (clipId, gaps) => {
+                  markerSeek.current = transport.current?.current() ?? record.position;
+                  updateClip(clipId, { gaps: gaps.length ? gaps : undefined });
+                },
+                pendingGap: gapStart,
+                gapSweep,
+                onGapSweep: setGapSweep,
+              }
+            : undefined
+        }
+        skipGaps={page === 'cut' && skipGaps}
+        onGapSkipped={(number, removed) => setNotice(`Skipped Gap ${number} · ${time(removed)}`)}
         onPlayable={setCanEdit}
         onFrame={(pinned) => updateRecording(record.id, { pinned })}
         autoPlay={sequence && playingSequence}
@@ -1936,6 +2085,18 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   >
                     S · Split
                   </Button>
+                  <Button
+                    onClick={() => gapKey(false)}
+                    disabled={!canEdit}
+                    aria-pressed={!!gapStart || !!gapSweep}
+                    title={
+                      !canEdit
+                        ? 'Wait for playable footage'
+                        : 'Cut a stretch out of a clip: G at its start and G at its end, or Shift-drag over the clip and press G'
+                    }
+                  >
+                    G · Gap
+                  </Button>
                   <Button onClick={addClip} disabled={!r.duration || !canEdit}>
                     <Plus size={15} /> Clip
                   </Button>
@@ -1957,6 +2118,14 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                     }}
                   >
                     <Magnet size={15} /> Snap
+                  </Button>
+                  <Button
+                    aria-pressed={skipGaps}
+                    data-skip-gaps
+                    title="Playback jumps over gaps to where the export resumes, so clips play as they will export (Shift+G)"
+                    onClick={() => gapKey(true)}
+                  >
+                    ⇧G · Skip gaps
                   </Button>
                   <label className={s.followToggle}>
                     <input
@@ -2035,7 +2204,18 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                           aria-hidden="true"
                         />
                         <span>{String(clips.indexOf(x) + 1).padStart(2, '0')}</span>
-                        <span className={s.clipDuration}>{time(x.end - x.start)}</span>
+                        {x.gaps?.length ? (
+                          <span
+                            className={s.clipDuration}
+                            data-exported-length
+                            title={`Exports ${time(piecesLength(clipPieces(x, gapKeys(), r.duration)))} with its gaps cut out; ${time(x.end - x.start)} from in to out`}
+                          >
+                            {time(piecesLength(clipPieces(x, gapKeys(), r.duration)))}
+                            <span className={s.clipWas}> was {time(x.end - x.start)}</span>
+                          </span>
+                        ) : (
+                          <span className={s.clipDuration}>{time(x.end - x.start)}</span>
+                        )}
                       </span>
                       <span className={s.spacer} />
                       {/* Resolve's clip color; the helper sets it on the exported clip (VC-207). */}
@@ -2113,6 +2293,79 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         />
                       </Field>
                     </div>
+                    {x.gaps?.length
+                      ? (() => {
+                          const joins = gapJoins(x, gapKeys()),
+                            real = joins.filter((j) => !j.short).length,
+                            removed = joins.reduce((n, j) => n + j.removed, 0),
+                            recordMarkers = model.markers[x.rid] || [];
+                          return (
+                            <div className={s.gapList} data-clip-gaps={x.id}>
+                              <div className={s.gapHead}>
+                                <span>
+                                  {joins.length} {joins.length === 1 ? 'gap' : 'gaps'}
+                                  {removed > 0 && ` · ${time(removed)} removed`}
+                                </span>
+                                <span>
+                                  {real + 1} {real ? 'pieces' : 'piece'} · {real}{' '}
+                                  {real === 1 ? 'join' : 'joins'}
+                                </span>
+                              </div>
+                              {joins.map((j) => {
+                                const left = j.short
+                                  ? []
+                                  : recordMarkers.filter((m) => m.time >= j.out && m.time < j.back);
+                                return (
+                                  <div key={j.gap.id}>
+                                    <div
+                                      className={s.gapRow}
+                                      data-gap-row={j.gap.id}
+                                      data-selected={j.gap.id === gid}
+                                      data-short={j.short || undefined}
+                                      title={
+                                        j.short
+                                          ? 'Too short to remove anything: a gap needs two keyframes inside'
+                                          : `The export leaves out ${time(j.out)} – ${time(j.back)}`
+                                      }
+                                      onClick={(e) => {
+                                        if ((e.target as HTMLElement).closest('button')) return;
+                                        if (x.id !== cid || mid) selectClip(x.id);
+                                        setGid(j.gap.id);
+                                        transport.current?.seek(j.gap.start);
+                                      }}
+                                    >
+                                      <span className={s.gapNumber}>{j.number}</span>
+                                      <span>
+                                        {time(j.gap.start)} – {time(j.gap.end)}
+                                      </span>
+                                      <span className={s.gapRemoved}>
+                                        {j.short ? 'removes nothing' : `removes ${time(j.removed)}`}
+                                      </span>
+                                      <Button
+                                        aria-label={`Remove gap ${j.number} and put the footage back`}
+                                        title="Put the footage back (Backspace)"
+                                        onClick={() => removeGap(x.id, j.gap.id)}
+                                      >
+                                        <X size={13} />
+                                      </Button>
+                                    </div>
+                                    {left.length > 0 && (
+                                      <p className={s.gapLeftOut}>
+                                        Leaves out {left.map((m) => m.name).join(', ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()
+                      : x.id === c?.id && (
+                          <p className={s.gapHint}>
+                            G at the start and end of a dull stretch, or Shift-drag over it and G,
+                            cuts it out. The clip still exports as one file.
+                          </p>
+                        )}
                   </div>
                 ))}
                 {!clips.length && (
@@ -3107,14 +3360,22 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                 ],
                 ['Space', 'Play / pause'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
-                ['S', 'Split selected clip'],
+                ['S', 'Split selected clip (inside a gap, at the gap’s edges)'],
+                [
+                  'G',
+                  'Gap: G at the start and G at the end of a stretch cuts it out of the clip; Shift-drag over a clip, then G',
+                ],
+                ['Shift+G', 'Skip gaps during playback, as clips will export'],
                 [
                   'H',
                   'Manipulate on Cut: drag clip/range edges or move markers; Alt-drag a point to extend a range; Left/Right nudges a focused marker',
                 ],
                 ['M / Shift+M', 'Create a Blue point / range marker and name it'],
                 ['R', 'Rename selected clip or marker (selects its name)'],
-                ['Backspace', 'Request deletion of selected clip or marker'],
+                [
+                  'Backspace',
+                  'Request deletion of selected clip or marker; removes a selected gap at once (or right-click the gap)',
+                ],
                 ['Enter / Escape', 'Confirm / cancel deletion'],
                 ['← / →', 'Step a frame when the timeline is focused'],
                 ['Shift+← / Shift+→', 'Seek one second when the timeline is focused'],

@@ -2221,3 +2221,56 @@
   color: var(--faint);
   cursor: default;
 }
+/* VC-212: a clip card's gaps. */
+.clipWas {
+  color: var(--faint);
+}
+.gapList {
+  display: grid;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.gapHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapRow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gapRow:hover {
+  background: var(--raised);
+}
+.gapRow[data-selected='true'] {
+  border-color: #ede6d88c;
+  background: #ede6d80f;
+}
+.gapNumber,
+.gapRemoved {
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapRow[data-short='true'] .gapRemoved {
+  color: #e0b04a;
+}
+.gapLeftOut,
+.gapHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapLeftOut {
+  padding-left: 26px;
+}
