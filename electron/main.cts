@@ -38,6 +38,7 @@ import {
 import type { ProjectApi } from './project-contracts.js' with { 'resolution-mode': 'import' };
 import { runLauncher } from './mcp-launcher.cjs';
 import { registerAgentAccess } from './agent-server.cjs';
+import { earlierSessions, registerWhatsNew } from './whats-new.cjs';
 
 const APP_URL = 'app://virtual-cut/';
 const APP_CSP =
@@ -743,6 +744,8 @@ if (!mcpLaunch)
   app
     .whenReady()
     .then(async () => {
+      // Judged before this session's diagnostics start writing (VC-242).
+      const ranBefore = earlierSessions(app.getPath('userData'));
       diagnostics = new Diagnostics(app.getPath('userData'));
       diagnostics.beginSession();
       await diagnostics.pruneCrashDumps();
@@ -831,6 +834,11 @@ if (!mcpLaunch)
         log: (event, details) => diagnostics.record(event, details),
       });
       await agentAccess.start();
+      registerWhatsNew({
+        userData: app.getPath('userData'),
+        ranBefore,
+        trusted: assertTrustedSender,
+      });
       await createWindow();
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0)

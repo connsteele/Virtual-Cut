@@ -62,7 +62,9 @@ removal or transcription.
   When a desktop check covers new UI, have it save a screenshot and look at it.
 - `npm run deliver -- --version x.y.z` runs a release end to end (fast gate, desktop suite with
   coverage, Windows package, packaged checks, transport) and stops at the first failure. Each
-  delivery adds a `CHANGELOG.md` entry, the README line and `docs/review-<version>.md`.
+  delivery adds a `CHANGELOG.md` entry, the README line, `docs/review-<version>.md` and a
+  finished What's new entry in `electron/release-notes.ts` (user bullets plus a For agents list,
+  product language only); deliver refuses a version whose entry is missing or still a draft.
 
 ## Working agreement
 

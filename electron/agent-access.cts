@@ -29,6 +29,9 @@ const visible = (c: StoredClient): AgentClient => ({
   projectName: c.projectName,
   paired: c.paired,
   lastUsed: c.lastUsed,
+  notesRead: c.notesRead,
+  notesReadAt: c.notesReadAt,
+  pairedVersion: c.pairedVersion,
 });
 
 /** Refusal for a picture call while the app's pictures are off (VC-195). */
@@ -61,6 +64,8 @@ export class AgentAccess {
   /** Diagnostics: connection events only, never names, tokens or what was read. */
   log?: (event: string, details?: Record<string, unknown>) => void;
   serve?: AgentServe;
+  /** The app's version, recorded on new pairings (VC-242). */
+  version?: string;
   readonly pipe: string;
   private file: string;
   constructor(userData: string) {
@@ -112,6 +117,7 @@ export class AgentAccess {
       projectId: project.id,
       projectName: project.name,
       paired: new Date().toISOString(),
+      ...(this.version ? { pairedVersion: this.version } : {}),
       tokenHash: hash(token).toString('hex'),
     };
     this.data.clients.push(client);
@@ -170,6 +176,23 @@ export class AgentAccess {
       this.data.activity.splice(0, this.data.activity.length - activityLimit);
     const stored = this.data.clients.find((c) => c.id === client.id);
     if (stored) stored.lastUsed = new Date().toISOString();
+    void this.persist().catch(() => {});
+    this.changed();
+  }
+  /**
+   * What's new (VC-242): the version from which this app has notes to read. The version it read
+   * last, else the version it was paired on; undefined for older pairings, which read them all.
+   */
+  notesFrom(clientId: string) {
+    const c = this.data.clients.find((x) => x.id === clientId);
+    return c?.notesRead ?? c?.pairedVersion;
+  }
+  /** Remembers that this app read the notes up to `version`. */
+  notesWereRead(clientId: string, version: string) {
+    const stored = this.data.clients.find((c) => c.id === clientId);
+    if (!stored) return;
+    stored.notesRead = version;
+    stored.notesReadAt = new Date().toISOString();
     void this.persist().catch(() => {});
     this.changed();
   }

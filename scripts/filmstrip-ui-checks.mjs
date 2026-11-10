@@ -166,7 +166,7 @@ try {
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
     assert.equal(version, pkg.version);
   }
-  await expect(page.locator('[data-app-version]')).toHaveText(`Virtual Cut ${version}`);
+  await expect(page.locator('[data-app-version]')).toHaveText(version);
   await go('Cut');
   await expect(page.locator('[data-filmstrip-loading]')).toHaveCount(0, { timeout: 15000 });
   await page.evaluate(() => {

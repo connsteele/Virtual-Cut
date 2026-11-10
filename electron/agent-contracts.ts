@@ -15,6 +15,11 @@ export interface AgentClient {
   paired: string;
   lastUsed?: string;
   connected?: boolean;
+  /** What's new (VC-242): the version whose notes this app read last through get_whats_new. */
+  notesRead?: string;
+  notesReadAt?: string;
+  /** The version this app was paired on; older pairings don't have one. */
+  pairedVersion?: string;
 }
 export interface AgentActivity {
   at: string;

@@ -34,6 +34,7 @@ Short records of confirmed architecture and product decisions: what was decided,
 | [0024](0024-agent-withdrawals.md)              | Agents withdraw their own pending proposals                                 | Proposed, amended by [0026](0026-agent-changes-and-amends.md)                                                                               |
 | [0025](0025-proposal-marker-colors.md)         | Agents suggest marker colors                                                | Proposed                                                                                                                                    |
 | [0026](0026-agent-changes-and-amends.md)       | Agents propose changes to markers and clips, and amend their own cards      | Accepted                                                                                                                                    |
+| [0027](0027-whats-new.md)                      | What's new: release notes in each version, for the user and for agents      | Proposed                                                                                                                                    |
 
 ## Adding a record
 
