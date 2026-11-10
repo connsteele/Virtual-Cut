@@ -246,35 +246,52 @@ export function applyTranscriptCommand(
           target < c.end - 0.001 &&
           (!command.clipId || c.id === command.clipId),
       );
-      if (!next.clips.some((c) => c.rid === record.id))
-        throw new Error(
-          'This recording has no clips to split yet. Make a clip in Cut (Whole recording), then split it.',
-        );
-      if (intersecting.length !== 1)
-        throw new Error(
-          'Split needs exactly one clip containing this position. Select a target for overlapping clips.',
-        );
-      const clip = intersecting[0],
-        end = clip.end;
       // Names for both halves (VC-155): what the card shows, else the clip's name and "· 2".
       const names = [command.firstName, command.secondName].map((n) =>
         typeof n === 'string' ? n.trim() : '',
       );
       if (names.some((n) => n.length > 200))
         throw new Error('Enter clip names of up to 200 characters.');
-      decision.priorName = clip.name;
-      if (names[0]) clip.name = names[0];
-      clip.end = target;
-      clip.accepted = false;
-      decision.clipId = newId();
-      next.clips.push({
-        ...clip,
-        id: decision.clipId,
-        name: names[1] || `${clip.name} · 2`,
-        start: target,
-        end,
-        accepted: false,
-      });
+      if (!next.clips.some((c) => c.rid === record.id)) {
+        // No clip yet (VC-243): the Split makes both, start to cue and cue to end, named after
+        // the recording like Whole recording names its clip. Reopening removes both.
+        if (target <= 0.001 || target >= record.duration - 0.001)
+          throw new Error('Choose a split position inside this recording, away from its ends.');
+        const base = names[0] || record.title.trim().slice(0, 200) || 'Clip',
+          made = { rid: record.id, folder: '_Review', include: true, accepted: false };
+        decision.firstClipId = newId();
+        decision.clipId = newId();
+        next.clips.push(
+          { ...made, id: decision.firstClipId, name: base, start: 0, end: target },
+          {
+            ...made,
+            id: decision.clipId,
+            name: names[1] || `${base} · 2`.slice(0, 200),
+            start: target,
+            end: record.duration,
+          },
+        );
+      } else {
+        if (intersecting.length !== 1)
+          throw new Error(
+            'Split needs exactly one clip containing this position. Select a target for overlapping clips.',
+          );
+        const clip = intersecting[0],
+          end = clip.end;
+        decision.priorName = clip.name;
+        if (names[0]) clip.name = names[0];
+        clip.end = target;
+        clip.accepted = false;
+        decision.clipId = newId();
+        next.clips.push({
+          ...clip,
+          id: decision.clipId,
+          name: names[1] || `${clip.name} · 2`,
+          start: target,
+          end,
+          accepted: false,
+        });
+      }
     } else if (cue.kind === 'clip-start' || cue.kind === 'clip-end') {
       const other = partner && cueCandidate(transcript, partner);
       if (

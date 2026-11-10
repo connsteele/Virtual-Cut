@@ -649,6 +649,119 @@ test('Split aliases, editable cue timing and explicit overlap selection preserve
     );
 });
 
+test('a Split on a recording with no clip makes two clips that meet at it (VC-243)', () => {
+  const before = { ...model(), clips: [] };
+  before.recordings[0].title = 'Ch4 Battle';
+  const split = phrase(0, 'Split');
+  let n = 0;
+  const id = () => `made-${++n}`;
+  const after = applyTranscriptCommand(
+    before,
+    transcript,
+    split,
+    command('accept-cue', { time: 30 }),
+    id,
+  );
+  assert.deepEqual(
+    after.clips.map(({ id, name, start, end, folder, include, accepted }) => ({
+      id,
+      name,
+      start,
+      end,
+      folder,
+      include,
+      accepted,
+    })),
+    [
+      {
+        id: 'made-1',
+        name: 'Ch4 Battle',
+        start: 0,
+        end: 30,
+        folder: '_Review',
+        include: true,
+        accepted: false,
+      },
+      {
+        id: 'made-2',
+        name: 'Ch4 Battle · 2',
+        start: 30,
+        end: 100,
+        folder: '_Review',
+        include: true,
+        accepted: false,
+      },
+    ],
+  );
+  const decision = after.cueDecisions[0];
+  assert.equal(decision.firstClipId, 'made-1');
+  assert.equal(decision.clipId, 'made-2');
+  assert.equal(decision.priorName, undefined);
+  assert.equal(decision.appliedTime, 30);
+  // The names on the card win.
+  const named = applyTranscriptCommand(
+    before,
+    transcript,
+    split,
+    command('accept-cue', { time: 30, firstName: 'Intro', secondName: 'Battle' }),
+    id,
+  );
+  assert.deepEqual(
+    named.clips.map((c) => c.name),
+    ['Intro', 'Battle'],
+  );
+  // Reopening takes both clips back and puts the cue in review again.
+  const reopened = applyTranscriptCommand(
+    after,
+    transcript,
+    split,
+    command('reopen-cue', { expected: JSON.stringify(decision) }),
+    id,
+  );
+  assert.deepEqual(reopened.clips, []);
+  assert.equal(reviewedCue(reopened.cueDecisions, transcript, split), undefined);
+  // Once the clips were moved apart by hand, reopening leaves them alone.
+  const moved = structuredClone(after);
+  moved.clips[1].start = 31;
+  const kept = applyTranscriptCommand(
+    moved,
+    transcript,
+    split,
+    command('reopen-cue', { expected: JSON.stringify(decision) }),
+    id,
+  );
+  assert.equal(kept.clips.length, 2);
+  // A second Split cuts the clip it lands in, as on any recording with clips.
+  const second = {
+    ...phrase(1, 'Split'),
+    start: 60,
+    end: 61,
+    words: [{ text: 'Split', start: 60, end: 61, probability: 0.9 }],
+  };
+  const twice = applyTranscriptCommand(
+    after,
+    transcript,
+    second,
+    command('accept-cue', { segmentId: 1, time: 60 }),
+    id,
+  );
+  assert.deepEqual(
+    twice.clips.map((c) => [c.name, c.start, c.end]),
+    [
+      ['Ch4 Battle', 0, 30],
+      ['Ch4 Battle · 2', 30, 60],
+      ['Ch4 Battle · 2 · 2', 60, 100],
+    ],
+  );
+  assert.equal(twice.cueDecisions[1].firstClipId, undefined);
+  // The ends of the recording make no clip of zero length.
+  for (const time of [0, 100])
+    assert.throws(
+      () => applyTranscriptCommand(before, transcript, split, command('accept-cue', { time }), id),
+      /away from its ends/,
+    );
+});
+
 test('paired Clip in/out cues create one range atomically, reject stale partners and preserve originals', () => {
   const start = phrase(0, 'Clip in opening scene');
   const end = {
