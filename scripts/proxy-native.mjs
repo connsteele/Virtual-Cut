@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { require } from './shared.mjs';
 import { testPath } from './test-paths.mjs';
@@ -238,6 +238,28 @@ try {
   await service.job(project, proxyJobs(c)[0].id, 'cancel');
   service.previewPlaying(false);
   assert.deepEqual(await leftovers(), [], 'Stopping a paused proxy removes its segments');
+
+  // A proxy file deleted outside the app shows as missing; Make proxy makes it again, and
+  // segments a crashed run left behind are removed when the next run starts.
+  const aFile = path.join(cache, service.store.sources().find((x) => x.id === a).proxy.file);
+  await rm(aFile);
+  const shownMissing = (await service.snapshot()).model.recordings.find((r) => r.id === a).proxy;
+  assert.equal(shownMissing.state, 'missing');
+  await assert.rejects(service.proxyLocation(project, a), /missing/);
+  const fp = service.store.sources().find((x) => x.id === a).fingerprint;
+  const crashed = path.join(cache, `${a}-${fp}-0badc0de-s0000-proxy-720p.partial.mp4`);
+  await writeFile(crashed, 'left by a crashed run');
+  await service.makeProxies(project, [a]);
+  await idle();
+  assert.equal(proxyJobs(a)[0].state, 'succeeded', JSON.stringify(proxyJobs(a)[0]));
+  assert.ok(existsSync(aFile), 'The missing proxy is made again');
+  assert.ok(!existsSync(crashed), 'A crashed run’s segment is removed');
+  // Forget the missing proxy: the record goes even though the file is already gone.
+  await rm(aFile);
+  await service.removeProxy(project, a);
+  assert.equal(service.store.sources().find((x) => x.id === a).proxy, undefined);
+  await service.makeProxies(project, [a]);
+  await idle();
 
   // Remove and Show in folder; a removed proxy is gone from disk and from the project.
   assert.equal(await service.proxyLocation(project, b), proxyFile);
