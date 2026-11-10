@@ -305,7 +305,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '5');
+  assert.equal(all.guide.version, '6');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -377,15 +377,9 @@ Note I like the crowd
   // v4 (VC-172): while Allow pictures is on, the general section adds the look sentences; with it
   // off agents read v4 without them. Nothing else differs.
   const seeing = intentGuideAnswer(source, { pictures: true });
-  assert.equal(seeing.guide.version, '5');
-  assert.deepEqual(seeing.guide.games.general.lessons, [
-    ...intentGuide.games.general.lessons,
-    ...lookLessons,
-  ]);
-  assert.deepEqual(
-    { ...seeing.guide, games: { ...seeing.guide.games, general: intentGuide.games.general } },
-    intentGuide,
-  );
+  assert.equal(seeing.guide.version, '6');
+  assert.deepEqual(seeing.guide.lessons, [...intentGuide.lessons, ...lookLessons]);
+  assert.deepEqual({ ...seeing.guide, lessons: intentGuide.lessons }, intentGuide);
   assert.deepEqual(seeing.examples, all.examples);
   assert.equal(intentGuideAnswer(source, { pictures: false }).guide, intentGuide);
   assert.ok(!JSON.stringify(intentGuide).includes('look at them together'));
@@ -396,6 +390,7 @@ Note I like the crowd
 // mic and for recurring moments, per-game sections, and a readable copy that stays in step.
 // Guide v3 (VC-191): the two screen text sentences, accepted as S11-GUIDE, in the general section.
 // Guide v4 (VC-172): the three look sentences, accepted as S12-GUIDE, while Allow pictures is on.
+// Guide v6: general only; a game's own rules come from its brief (get_context).
 // Guide v5 (VC-224): the first batch's lessons and the Sprint 14 tools, accepted as M440 to M452.
 {
   const strings = (v) =>
@@ -410,10 +405,9 @@ Note I like the crowd
     'Keep a Split where it was said unless a black screen ends within 5 s before it. Propose a ' +
       "cut up to 12 s back only when what's said shows the call came late, and say why.",
   );
-  assert.deepEqual(intentGuide.games.general.lessons, [
+  assert.deepEqual(intentGuide.lessons, [
     'Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips ' +
-      'and damage numbers. Use where and how long it stayed up to judge what it is, and learn ' +
-      "each game's layout in its own section.",
+      'and damage numbers. Use where and how long it stayed up to judge what it is.',
     'Spell a name only as it was seen written on screen (get_screen_text) or as it appears in ' +
       'the game vocabulary. Otherwise mark it unsure.',
   ]);
@@ -449,8 +443,12 @@ Note I like the crowd
     'When a picture decided a proposal, say so in its reason.',
   ]);
   assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
-  assert.ok(!('recurringClips' in intentGuide.games.general), 'v5 has no fixed recurring count');
-  assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
+  assert.ok(!/recurringClips/.test(JSON.stringify(intentGuide)), 'v5 has no fixed recurring count');
+  assert.ok(!('games' in intentGuide), 'v6 has no per-game sections');
+  has(
+    "Rules for one game, such as what its marker colors mean or how its menus work, come from that game's brief and context (get_context)",
+  );
+  assert.ok(!/its own section/.test(text), 'no lesson points at a game section');
   const doc = (await readFile(new URL('../docs/intent-guide.md', import.meta.url), 'utf8')).replace(
     /\s+/g,
     ' ',
@@ -463,7 +461,7 @@ Note I like the crowd
     'marker, not a clip range',
     'No mic, or a silent mic',
     'Recurring moments',
-    '| General | the two screen text sentences',
+    'Since version 6 the guide is general only',
     'Every recording gets a clip (version 5)',
     '## File names',
     // VC-173: decisions carry the creator's reason and later changes.

@@ -5,16 +5,16 @@ import { rejectReasons, type RejectReason } from './transcript-contracts.js';
 import { AgentReadError, findRecording, type AgentReadSource } from './agent-tools.js';
 
 /**
- * The intent guide (VC-155, v2 VC-187, v3 VC-191, v4 VC-172, v5 VC-224): what a creator means by free mic speech, what to propose
+ * The intent guide (VC-155, v2 VC-187, v3 VC-191, v4 VC-172, v5 VC-224, v6 general only): what a creator means by free mic speech, what to propose
  * when there is none, and how an agent turns it into proposals. It ships with Virtual Cut and is
  * versioned, so every agent reads the same instructions; the user's own labelled examples and
  * habits come with it from their data. docs/intent-guide.md is the readable copy and must match.
  */
-export const intentGuideVersion = '5';
+export const intentGuideVersion = '6';
 
 /**
- * v4 (VC-172): the general section's sentences about the look tool. Agents read them only while
- * Allow pictures is on (one switch for every paired app); with it off they read v4 without them.
+ * v4 (VC-172): the lessons' sentences about the look tool. Agents read them only while Allow
+ * pictures is on (one switch for every paired app); with it off they read the guide without them.
  */
 export const lookLessons = [
   // Accepted as S12-GUIDE with "Connor"; the guide says "the creator" everywhere else.
@@ -149,25 +149,18 @@ export const intentGuide = {
       'or rejected, why when they said (why), and what they changed after accepting (later). ' +
       'A reject for the wrong moment means the idea was right but the time was not.',
   ],
-  games: {
-    note:
-      'Lessons that hold for one game stay in its section so they do not leak into others. Use ' +
-      'the section whose game matches get_context; the general section applies to every game. ' +
-      'A lesson moves to general only when it holds in a second game or the creator says so.',
-    general: {
-      // v3 (VC-191): screen text through MCP; the second is decision D6's held sentence.
-      lessons: [
-        "Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.",
-        'Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure.',
-      ] as string[],
-    },
-    // A game gets a section when its footage comes through and it has lessons of its own.
-    sections: [] as {
-      game: string;
-      platform?: string;
-      lessons: string[];
-    }[],
-  },
+  // v6: one guide for every game. Rules for a single game live in its brief and context.
+  gameRules:
+    'This guide is the same for every game. Rules for one game, such as what its marker colors ' +
+    "mean or how its menus work, come from that game's brief and context (get_context), which " +
+    "the creator edits per game, or from the creator's Notion pages for the game when you can " +
+    'read them. Follow them there; when you learn something that holds for one game only, ' +
+    'suggest it to the creator for the brief rather than applying it everywhere.',
+  // v3 (VC-191): screen text through MCP; the second is decision D6's held sentence.
+  lessons: [
+    'Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is.',
+    'Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure.',
+  ] as string[],
   // v5 (VC-224, M452): what to use instead of each character Windows file names can't hold.
   fileNames: {
     rule:
@@ -201,16 +194,10 @@ export const intentGuide = {
   ],
 };
 
-/** The guide while Allow pictures is on: the general section adds lookLessons. */
+/** The guide while Allow pictures is on: the lessons add lookLessons. */
 const withPictures = {
   ...intentGuide,
-  games: {
-    ...intentGuide.games,
-    general: {
-      ...intentGuide.games.general,
-      lessons: [...intentGuide.games.general.lessons, ...lookLessons],
-    },
-  },
+  lessons: [...intentGuide.lessons, ...lookLessons],
 };
 
 export interface IntentExample {

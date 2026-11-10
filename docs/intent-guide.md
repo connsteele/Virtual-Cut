@@ -1,4 +1,4 @@
-# Intent guide (version 5)
+# Intent guide (version 6)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -85,27 +85,22 @@ A line can carry several intents.
   rejected, why when they said, and what they changed after accepting. A reject for the wrong
   moment means the idea was right but the time was not.
 
-## Games
+## Lessons, the same for every game
 
-Lessons that hold for one game stay under that game's header so they don't leak into others. The
-agent uses the section whose game matches `get_context`; the general section applies to every
-game. A lesson moves to general only when it holds in a second game or the creator says so. A game
-gets its own section when its footage comes through and it has lessons of its own.
+Since version 6 the guide is general only: there are no per-game sections. Rules for one game,
+such as what its marker colors mean, live in that game's brief and context, which the creator
+edits per game and agents read with `get_context`, or in the creator's Notion pages for the
+game when the agent can read them. When an agent learns something that holds
+for one game only, it suggests it for the brief rather than applying it everywhere
+(`gameRules` in the guide).
 
-| Section | Lessons                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------- |
-| General | the two screen text sentences (version 3) and, with pictures on, three look sentences (version 4) |
+Lessons (version 3, VC-191):
 
-No game has a section of its own yet: a Mass Effect section for marker colors was proposed for
-version 5 and rejected as too specific for now.
-
-General lessons, for every game (version 3, VC-191):
-
-- Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is, and learn each game's layout in its own section.
+- Screen text is raw: every piece of text the screen showed, from dialogue to menus, tooltips and damage numbers. Use where and how long it stayed up to judge what it is.
 - Spell a name only as it was seen written on screen (get_screen_text) or as it appears in the game vocabulary. Otherwise mark it unsure. (decision D6, held until screen text reached agents)
 
-While Allow pictures is on (version 4, VC-172), the general section adds these; while it is off,
-agents read version 4 without them:
+While Allow pictures is on (version 4, VC-172), the lessons add these; while it is off, agents
+read the guide without them:
 
 - Look whenever seeing the picture would make your work better: a more accurate trim or Split, a marker on the right moment, a name or detail the text can't settle, a pattern across scenes, or something the creator asked you to find. Picture events, screen text and transcripts are the quick way to find where to look.
 - When you have several moments to check, look at them together in one call. Start with a strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.

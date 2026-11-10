@@ -369,8 +369,9 @@ export function registerAgentAccess(options: {
       'get_intent_guide',
       "How to read the creator's free mic speech and turn it into proposals: the intents " +
         '(marker, general, notion, edit), spoken commands, rules (including recordings with no ' +
-        'mic and recurring moments), per-game sections and the steps of an intent pass, with ' +
-        'their own labelled examples, earlier decisions and habits. Read it before proposing. ' +
+        'mic and recurring moments), lessons for every game and the steps of an intent pass, ' +
+        'with their own labelled examples, earlier decisions and habits. It is the same for every ' +
+        "game: a game's own rules come from its brief (get_context). Read it before proposing. " +
         'Give recording_id to leave that recording out of the examples.',
       z.object({
         recording_id: z.string().max(200).optional().describe('The recording you will work on.'),

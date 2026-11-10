@@ -136,12 +136,12 @@ try {
     [activity.tool, activity.outcome, activity.summary, activity.images],
     ['look', 'refused', 'Look at Screen session: 1 frame 720p 0:02.5', undefined],
   );
-  assert.equal((await guide()).version, '5');
+  assert.equal((await guide()).version, '6');
   assert.ok(!JSON.stringify(await guide()).includes('Look whenever seeing the picture'));
 
   await setPictures(true);
   assert.ok(
-    (await guide()).games.general.lessons.some((l) => l.startsWith('Look whenever seeing')),
+    (await guide()).lessons.some((l) => l.startsWith('Look whenever seeing')),
     'pictures on: the guide adds the look sentences',
   );
   const before = await files(dir);

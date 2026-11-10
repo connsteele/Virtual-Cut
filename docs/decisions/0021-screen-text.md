@@ -18,7 +18,10 @@ between scenes).
 - **Facts only.** The app records what text the screen showed, where, when and how long, and the
   engine's confidence. It never decides what text means (speaker, item, damage number, menu).
   Agents interpret with the game's context; per-game lessons go in the intent guide's game
-  sections, which Connor approves. No game-specific rule lives in the app.
+  sections, which Connor approves. No game-specific rule lives in the app. **Amended
+  2026-11-10 (intent guide v6):** the guide has no game sections any more; a game's own rules
+  live in its brief and context (`get_context`), so the guide stays one set of rules for every
+  game.
 - **One pass per recording and source fingerprint**, queued as background work in the media lane
   after the import and after the recording's picture pass (it starts when the picture pass has
   finished or failed). "Analyse picture now" queues it too. Without the screen text engine nothing
