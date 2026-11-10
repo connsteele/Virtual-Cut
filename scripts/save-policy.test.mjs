@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { autosaveSettings, autosaveDue } from '../src/workflow/autosave.ts';
 import { changes, applyChange } from '../electron/project-changes.ts';
-import { emptyModel, mergeEdits, validateEdits } from '../dist-electron/project-edits.js';
+import {
+  editorial,
+  emptyModel,
+  mergeEdits,
+  validateEdits,
+} from '../dist-electron/project-edits.js';
 
 const editFixture = () => ({
   ...emptyModel(),
@@ -111,6 +116,20 @@ test('reordering a draft preserves concurrently imported clips and recordings', 
     ['b', 'a', 'imported'],
   );
   assert.equal(result.recordings.at(-1).id, 'new-source');
+});
+
+test('the Original/Proxy switch is saved like navigation, never as an edit (VC-238)', () => {
+  const before = editFixture(),
+    after = { ...structuredClone(before), viewerSource: 'original' },
+    current = structuredClone(before);
+  assert.equal(mergeEdits(before, after, current).viewerSource, 'original');
+  assert.equal(
+    mergeEdits(before, before, { ...current, viewerSource: 'proxy' }).viewerSource,
+    'proxy',
+  );
+  assert.equal(editorial(after), editorial(before), 'no undo step and no unsaved edit');
+  assert.doesNotThrow(() => validateEdits({ ...editFixture(), viewerSource: 'proxy' }));
+  assert.throws(() => validateEdits({ ...editFixture(), viewerSource: 'both' }), /viewer source/);
 });
 
 test('ten-minute default, interval validation, activity and navigation guards', () => {
