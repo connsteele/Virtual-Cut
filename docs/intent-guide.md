@@ -1,4 +1,4 @@
-# Intent guide (version 4)
+# Intent guide (version 5)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -16,12 +16,12 @@ creator accepts it.
 
 ## Intents
 
-| Intent  | Meaning                                                                    | Proposal                                                                                                                                        |
-| ------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| marker  | Something worth finding again at this moment: a reaction, a line, a play.  | A marker at the moment it refers to (often the game line just before), with a title and note. A range marker labels part of a continuous scene. |
-| general | Context about the clip or video: what is happening, what this part is for. | Usually none of its own. Feeds titles, notes, clip names and composite notes.                                                                   |
-| notion  | A thought for the video notes: an opinion, a theme, an observation.        | A timed note, or a marker with a note, with a Notion target: new, expands an existing note, or duplicate of one.                                |
-| edit    | An editing instruction, such as "cut before this transition".              | A split or clip range where the instruction points, not where it was said.                                                                      |
+| Intent  | Meaning                                                                    | Proposal                                                                                                                                                                                                                             |
+| ------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| marker  | Something worth finding again at this moment: a reaction, a line, a play.  | A marker at the moment it refers to (often the game line just before), with a title and note. A range marker labels part of a continuous scene.                                                                                      |
+| general | Context about the clip or video: what is happening, what this part is for. | Usually none of its own. Feeds titles, notes, clip names and composite notes.                                                                                                                                                        |
+| notion  | A thought for the video notes: an opinion, a theme, an observation.        | A timed note, or a marker with a note, with a Notion target: new, expands an existing note, or duplicate of one. Existing notes are this project's notes and the video's Notion notes page, checked only when the agent can read it. |
+| edit    | An editing instruction, such as "cut before this transition".              | Clip ranges where the instruction points, not where it was said, with the boundary where it asks for a cut.                                                                                                                          |
 
 A line can carry several intents.
 
@@ -29,9 +29,9 @@ A line can carry several intents.
 
 - **Split** (or Cut) is a command; the app offers it as a Split cue. Keep a Split where it was said
   unless a black screen ends within 5 s before it. Propose a cut up to 12 s back only when what's
-  said shows the call came late, and say why (decision D6, October 10, 2026). An agent that moves
-  it or names the clips proposes a split with `refines` pointing at the cue line, and the creator
-  sees one card with the cue as heard and the agent's changes.
+  said shows the call came late, and say why (decision D6, October 10, 2026). That time is where
+  the clip boundary goes: since version 5 the agent proposes the clip ranges on either side of it
+  and cites the cue line, rather than a split.
 - **Clip start/in** and **Clip end/out** pair into a clip range.
 - **Marker**, **Mark** and **Note** are no longer needed as cue words. Older recordings use them;
   the line is still free speech to interpret, and an agent reworks the cue rather than adding a
@@ -39,22 +39,48 @@ A line can carry several intents.
 
 ## Rules
 
+- The pass also checks which recordings have no clip yet (each gets a clip range) and fixes
+  pending cards with `amend_proposal` and existing items with `propose_changes`.
 - Read the game dialogue around each mic line: it says what just happened, fixes misheard names
   and is the best source for a note. Cite the mic and game lines used.
 - Skip coughs, false starts ("never mind"), filler and lines invented over noise.
 - Lines about one idea across a session can add up to one composite note: a single note with the
   notion intent that cites every supporting line.
-- A part of one continuous scene (a conversation, a cutscene, a battle that carries on) is a range
-  marker, not a clip range: the creator keeps the scene as one clip and labels its parts.
+- **Clips (version 5).** One clip per coherent activity or scene, with an overall name. Split
+  only where the activity or scene really changes, and trim only real fat (menus, loading, dead
+  air, repeats); trimming is expected on every recording. Inside a clip, the structure goes in
+  range markers: character creation is one clip with a range marker for each tab. A part of one
+  continuous scene is a range marker, not a clip range.
+- **Every recording gets a clip (version 5).** Import makes no clip, and a recording with no clip
+  exports nothing. The agent proposes at least one named clip range on every recording, one over
+  the whole recording when all of it is worth keeping. Where footage should become two clips it
+  proposes both clip ranges rather than a split; a spoken Split marks where the boundary goes.
+- Several clip ranges on one recording are fine; each exports as its own file. Clips overlap only
+  when the creator asks or the footage really belongs to more than one, and the reason says why.
 - **No mic, or a silent mic.** Some sessions are recorded just to relax, with no commentary. The
   agent says so first in its summary ("No commentary on this recording; proposals come from the
   game alone") and proposes from the game: game dialogue, scene changes, menus and battles. Silence
   never means "nothing worth keeping".
 - **Recurring moments** (MVP screen, level-up, rewards, victory poses): clips for the first few
   instances in a game, so the edit has variations; after that a point marker at most, or nothing.
-  "First few" is 3 unless the game's section says otherwise, and counts within one batch for now.
-  Anything said on the mic, such as "clip this one", overrides the count.
+  How many is the agent's call (version 5 dropped the fixed 3). It sees what earlier batches of
+  the game already have with one `get_annotations` call per batch (clips, markers, range markers
+  and notes), never by reading their transcripts. Anything said on the mic, such as "clip this
+  one", overrides this.
 - Use the game vocabulary and glossary for names. Keep titles plain and under 100 characters.
+  Range markers and clip ranges are titled the same way, by a searchable topic ("Bonus Talents"),
+  calling out firsts ("First Relay Jump"), since a proposal can be accepted as either.
+- **Clip names are file names (version 5):** Windows rules, 1 to 180 characters; see File names.
+- **Notes (version 5):** short `Scene:` / `Me:` (first person) / `Fact:` lines, only the ones that
+  apply. No marker for the creator just talking to themselves.
+- **Fact-check on-mic claims (version 5):** a `Fact:` line only when the creator got it wrong or
+  there is something key to add.
+- **Watch before writing (version 5):** a range starts at the on-screen event, not the mic line.
+  Before calling a span fat, check it with `get_visual_events` (and look, when pictures are
+  allowed): black can be a loading screen, a fade or the scene itself.
+- **Fixing proposals (version 5):** `amend_proposal` changes the agent's own pending card in
+  place; `propose_changes` proposes before-and-after changes to markers and clips that already
+  exist. No withdraw-and-resubmit.
 - Learn from the creator's examples and decisions: what they accepted, moved, retitled or
   rejected, why when they said, and what they changed after accepting. A reject for the wrong
   moment means the idea was right but the time was not.
@@ -66,9 +92,12 @@ agent uses the section whose game matches `get_context`; the general section app
 game. A lesson moves to general only when it holds in a second game or the creator says so. A game
 gets its own section when its footage comes through and it has lessons of its own.
 
-| Section | Recurring moments clipped | Lessons                                                                                           |
-| ------- | ------------------------- | ------------------------------------------------------------------------------------------------- |
-| General | first 3                   | the two screen text sentences (version 3) and, with pictures on, three look sentences (version 4) |
+| Section | Lessons                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------- |
+| General | the two screen text sentences (version 3) and, with pictures on, three look sentences (version 4) |
+
+No game has a section of its own yet: a Mass Effect section for marker colors was proposed for
+version 5 and rejected as too specific for now.
 
 General lessons, for every game (version 3, VC-191):
 
@@ -81,6 +110,25 @@ agents read version 4 without them:
 - Look whenever seeing the picture would make your work better: a more accurate trim or Split, a marker on the right moment, a name or detail the text can't settle, a pattern across scenes, or something the creator asked you to find. Picture events, screen text and transcripts are the quick way to find where to look.
 - When you have several moments to check, look at them together in one call. Start with a strip, and ask for a 720p frame, a 1080p frame or a crop where you need detail.
 - When a picture decided a proposal, say so in its reason.
+
+## File names
+
+Version 5 (M452) gives agents a `fileNames` section, since clip names become file names:
+
+| Avoid                               | Use instead              |
+| ----------------------------------- | ------------------------ |
+| `:`                                 | `-` (space, dash, space) |
+| `/` and `\`                         | `-`, or the word "and"   |
+| `?`                                 | leave it out             |
+| `*`                                 | leave it out             |
+| `"`                                 | `'`                      |
+| `<` and `>`                         | `(` and `)`              |
+| `\|`                                | `-`                      |
+| tabs, new lines, control characters | a space                  |
+
+Names are 1 to 180 characters, with no leading or trailing spaces, no trailing dot, and none of
+the names Windows reserves (CON, PRN, AUX, NUL, COM1 to COM9, LPT1 to LPT9). These match what
+Review checks.
 
 ## The user's layer
 

@@ -305,7 +305,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '4');
+  assert.equal(all.guide.version, '5');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -377,7 +377,7 @@ Note I like the crowd
   // v4 (VC-172): while Allow pictures is on, the general section adds the look sentences; with it
   // off agents read v4 without them. Nothing else differs.
   const seeing = intentGuideAnswer(source, { pictures: true });
-  assert.equal(seeing.guide.version, '4');
+  assert.equal(seeing.guide.version, '5');
   assert.deepEqual(seeing.guide.games.general.lessons, [
     ...intentGuide.games.general.lessons,
     ...lookLessons,
@@ -396,6 +396,7 @@ Note I like the crowd
 // mic and for recurring moments, per-game sections, and a readable copy that stays in step.
 // Guide v3 (VC-191): the two screen text sentences, accepted as S11-GUIDE, in the general section.
 // Guide v4 (VC-172): the three look sentences, accepted as S12-GUIDE, while Allow pictures is on.
+// Guide v5 (VC-224): the first batch's lessons and the Sprint 14 tools, accepted as M440 to M452.
 {
   const strings = (v) =>
     typeof v === 'string'
@@ -420,8 +421,23 @@ Note I like the crowd
   has('mic speech is optional evidence, never a requirement');
   has('"No commentary on this recording; proposals come from the game alone"');
   has('Never read silence as "nothing worth keeping".');
-  has(`"First few" is 3 unless the game's section below says otherwise`);
-  has('such as "clip this one", overrides the count');
+  has('How many is your call: enough for a real choice');
+  has(
+    'read get_annotations for each of those batches: their clips, markers, range markers and notes',
+  );
+  has('Cut one clip per coherent activity or scene');
+  has('Propose at least one named clip range on every recording');
+  has('propose both clip ranges, each with its name and its in and out, rather than a split');
+  has('Name both the same way, since a proposal can be accepted as either.');
+  has('Add a Fact: line only when they got it wrong');
+  has('use amend_proposal');
+  has('Check which recordings have no clip yet; each one gets a clip range.');
+  assert.ok(!/propose a split with refines/.test(text), 'v5 proposes clips, not splits');
+  assert.ok(!/counts within this batch/.test(text), 'v5 counts recurring moments across batches');
+  assert.deepEqual(
+    intentGuide.fileNames.avoid.map((a) => a.characters),
+    [':', '/ \\', '?', '*', '"', '< >', '|', 'tabs, new lines and other control characters'],
+  );
   has('A reject for the wrong moment means the idea was right but the time was not.');
   assert.deepEqual(lookLessons, [
     'Look whenever seeing the picture would make your work better: a more accurate trim or ' +
@@ -433,7 +449,7 @@ Note I like the crowd
     'When a picture decided a proposal, say so in its reason.',
   ]);
   assert.ok(!/few seconds before the word/.test(text), 'the v1 Split sentence is gone');
-  assert.equal(intentGuide.games.general.recurringClips, 3);
+  assert.ok(!('recurringClips' in intentGuide.games.general), 'v5 has no fixed recurring count');
   assert.deepEqual(intentGuide.games.sections, [], 'no game has lessons of its own yet');
   const doc = (await readFile(new URL('../docs/intent-guide.md', import.meta.url), 'utf8')).replace(
     /\s+/g,
@@ -447,7 +463,9 @@ Note I like the crowd
     'marker, not a clip range',
     'No mic, or a silent mic',
     'Recurring moments',
-    '| General | first 3',
+    '| General | the two screen text sentences',
+    'Every recording gets a clip (version 5)',
+    '## File names',
     // VC-173: decisions carry the creator's reason and later changes.
     'rejected, why when they said, and what they changed after accepting',
     'A reject for the wrong moment means the idea was right but the time was not.',
