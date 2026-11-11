@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { JobTime } from './JobTime';
 import { jobLabel } from './RecordingJobs';
 import { FolderOpen, ScanEye, ScanText, Trash2 } from 'lucide-react';
@@ -16,6 +16,9 @@ import s from './Workflow.module.css';
 import { ContextEditor, defaultContext, type HeardAsOffer } from './ContextEditor';
 import { TranscriptionOptions, initialTranscriptionOptions } from './TranscriptionOptions';
 import { background } from './background';
+import { ProxyChip, openJobsEvent } from './Proxies';
+import px from './Proxies.module.css';
+import { proxySettings } from '../../electron/proxy-settings';
 
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 /** VC-194: the open project's transcripts of a game can take its heard-as spellings. */
@@ -288,12 +291,16 @@ export function ImportPanel({
     [game, setGame] = useState(defaults?.game ?? 1),
     [mic, setMic] = useState(defaults?.mic ?? 2);
   const [transcribe, setTranscribe] = useState(false);
+  // VC-237: the Proxies window decides whether this starts ticked, or hides it (Never).
+  const proxies = proxySettings(p.proxies);
+  const [proxy, setProxy] = useState(proxies.onImport === 'import');
   const [transcription, setTranscription] = useState(initialTranscriptionOptions);
   const [transcriptionReady, setTranscriptionReady] = useState(false);
   const audio: ImportAudio = {
     game,
     mic: notes ? mic : null,
     ...(transcribe ? { transcription } : {}),
+    ...(proxy && proxies.onImport !== 'never' ? { proxy: true } : {}),
   };
   return (
     <Modal title="Batch audio setup" onClose={onClose}>
@@ -392,6 +399,18 @@ export function ImportPanel({
         Transcription is optional. You can start it later from Transcript. Speaker detection is not
         included in this iteration.
       </p>
+      {proxies.onImport !== 'never' && (
+        <label className={px.importOption}>
+          <input type="checkbox" checked={proxy} onChange={(e) => setProxy(e.target.checked)} />
+          <span>
+            Make proxies ({proxies.height}p) during import
+            <small className={s.muted}>
+              Each recording’s proxy is made after its picture pass. About 2.4–5 GB per footage hour
+              at 1080p. Untick to make them later from Proxies or a recording’s chip.
+            </small>
+          </span>
+        </label>
+      )}
       <Button
         primary
         disabled={
@@ -586,6 +605,12 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
     [deleteMode, setDeleteMode] = useState<'preserve' | 'remove'>('preserve'),
     [cleanupNotice, setCleanupNotice] = useState(''),
     [importing, setImporting] = useState<'files' | 'folder' | null>(null);
+  // A proxy chip's "Show in Jobs" (VC-237).
+  useEffect(() => {
+    const show = () => setJobs(true);
+    window.addEventListener(openJobsEvent, show);
+    return () => window.removeEventListener(openJobsEvent, show);
+  }, []);
   const p = w.snapshot;
   if (!p) return null;
   const api = window.virtualCut!.project;
@@ -845,6 +870,9 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                               : j.message}
                           </p>
                         )}
+                        {j.kind === 'proxy' && ['queued', 'running'].includes(j.state) && (
+                          <p data-proxy-use={j.use || 'waiting'}>Media lane · {j.message}</p>
+                        )}
                         {j.kind === 'text' && ['queued', 'running'].includes(j.state) && (
                           <p data-screen-text-use={j.use || 'waiting'}>
                             Media lane ·{' '}
@@ -867,7 +895,7 @@ export function BatchTools({ workspace: w }: { workspace: Workspace }) {
                         </p>
                         {j.state === 'running' && <progress value={j.progress} max={1} />}
                         {!(
-                          (j.kind === 'visual' || j.kind === 'text') &&
+                          (j.kind === 'visual' || j.kind === 'text' || j.kind === 'proxy') &&
                           ['queued', 'running'].includes(j.state)
                         ) && <p className={s.muted}>{j.message}</p>}
                         {j.device && (
@@ -1008,6 +1036,7 @@ export function RecordingActions({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
+      <ProxyChip recording={r} workspace={w} />
       <PictureButton recording={r} workspace={w} />
       <Button
         disabled={w.blocking}

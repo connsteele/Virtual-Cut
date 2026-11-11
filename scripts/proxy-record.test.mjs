@@ -68,6 +68,8 @@ test('the state is none, making, ready or missing', () => {
     height: 1080,
     width: 1920,
     codec: 'h264',
+    // The verified size, for the Proxies window (VC-237).
+    bytes: 1000,
   });
   // A queued or running job wins, including over an existing proxy being remade.
   assert.deepEqual(proxyState(undefined, 'fp-1', null, { progress: 0.42 }), {

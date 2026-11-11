@@ -30,6 +30,7 @@ export const fast = [
   'release-notes.test.mjs',
   'proxy-record.test.mjs',
   'clip-gaps.test.mjs',
+  'proxy-make.test.mjs',
 ];
 export const native = [
   'stitched-export-native.mjs',
@@ -55,11 +56,13 @@ export const native = [
   'review-planning-native.mjs',
   'project-capacity-checks.mjs',
   'job-lanes-native.mjs',
+  'proxy-native.mjs',
   'visual-pass-native.mjs',
   'screen-text-native.mjs',
 ];
 export const desktop = [
   'clip-color-ui.mjs',
+  'proxy-ui.mjs',
   'speech-setup-ui.mjs',
   'screen-text-setup-ui.mjs',
   'crash-diagnostics-checks.mjs',
@@ -112,6 +115,7 @@ export const dependencies = {
   'project-deletion-ui.mjs': ['project-deletion-checks.mjs'],
   'range-markers-ui.mjs': ['range-markers-native.mjs'],
   'clip-color-ui.mjs': ['marker-spill-native.mjs'],
+  'proxy-ui.mjs': ['proxy-native.mjs'],
   'filing-ui-checks.mjs': ['filing-native-checks.mjs'],
   'save-policy-ui.mjs': ['feedback-native-checks.mjs'],
   'project-recovery-ui.mjs': ['project-recovery-checks.mjs'],

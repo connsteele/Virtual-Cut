@@ -94,7 +94,27 @@ import {
   unchangedSpans,
 } from './screen-text.js';
 import { readKeyframes } from './screen-text-pass.cjs';
-import { isNativeProxy, proxyState } from './proxy-record.js';
+import {
+  isNativeProxy,
+  isProxyHeight,
+  proxyFileName,
+  proxyFormat,
+  proxyState,
+  type NativeProxy,
+  type ProxyHeight,
+} from './proxy-record.js';
+import { isProxySettings, proxySettings, type ProxySettings } from './proxy-settings.js';
+import {
+  joinSegments,
+  makeSegment,
+  nvencWorks,
+  proxyBytesEstimate,
+  proxyPlan,
+  proxyProblem,
+  readProxy,
+  removeFiles,
+  type ProxyEncode,
+} from './proxy-make.cjs';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
@@ -1259,7 +1279,7 @@ export class ProjectService {
             )
             .map((source) => `${source.id}-${source.fingerprint}`);
           const suffix =
-            /^-(?:frame-[0-7](?:\.partial)?\.jpg|filmstrip(?:\.partial)?\.bin|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav)$/i;
+            /^-(?:frame-[0-7](?:\.partial)?\.jpg|filmstrip(?:\.partial)?\.bin|audio-\d+(?:-[a-f\d-]{36})?(?:\.partial)?\.(?:m4a|f32)|asr-[a-f\d-]{36}\.partial\.wav|(?:[a-f\d]{8}-s\d{4}-)?proxy-(?:1080|720)p(?:\.partial)?\.mp4)$/i;
           for (const entry of await readdir(cache, { withFileTypes: true })) {
             if (!entry.isFile() || entry.isSymbolicLink()) continue;
             const prefix = prefixes.find(
@@ -1329,7 +1349,12 @@ export class ProjectService {
         throw new Error('Choose an audio track number from 1 to 64.');
     if (defaults.game != null && defaults.game === defaults.mic)
       throw new Error('Game audio and microphone notes need different tracks.');
-    batch.audioDefaults = defaults;
+    if (defaults.proxy !== undefined && typeof defaults.proxy !== 'boolean')
+      throw new Error('Choose whether to make proxies during this import.');
+    const proxies = proxySettings(s.data.proxies);
+    const makeProxy = defaults.proxy === true && proxies.onImport !== 'never';
+    const { proxy: _proxy, ...remembered } = defaults;
+    batch.audioDefaults = remembered;
     for (const file of files) {
       if (!videoExtensions.includes(path.extname(file).slice(1).toLowerCase())) continue;
       const sourceId = randomUUID();
@@ -1361,6 +1386,16 @@ export class ProjectService {
           s.write();
           if (defaults.transcription && r.availability === 'ready')
             this.requestTranscription(id, r.id, batchId, defaults.transcription, 'background');
+          if (
+            makeProxy &&
+            r.availability === 'ready' &&
+            !(await this.hasProxy(
+              s,
+              s.sources().find((x) => x.id === existing.id)!,
+              proxies.height,
+            ))
+          )
+            this.enqueueProxy(r.id, 'background', proxies.height);
           continue;
         }
         s.transaction(() => {
@@ -1380,7 +1415,7 @@ export class ProjectService {
             sourcePath: native.file,
             batchIds: [batchId],
             availability: 'pending',
-            importAudio: defaults,
+            importAudio: makeProxy ? { ...remembered, proxy: true } : remembered,
           });
           s.data.model.markers[sourceId] = [];
           s.data.revision++;
@@ -2065,13 +2100,15 @@ export class ProjectService {
       if (running?.job.id === jobId) {
         running.controller.abort();
         await running.finished;
-      } else if (job.state === 'queued')
+      } else if (job.state === 'queued') {
         s.putJob({
           ...job,
           state: 'cancelled',
-          message: 'Cancelled',
+          message: job.kind === 'proxy' ? 'Stopped; the partial proxy was removed' : 'Cancelled',
           updated: new Date().toISOString(),
         });
+        if (job.kind === 'proxy') await this.discardProxyProgress(job.id);
+      }
       if (job.kind === 'export' && job.state === 'queued') {
         const record = s.exports().find((e) => e.plan.id === jobId)!;
         s.putExport({
@@ -2172,9 +2209,11 @@ export class ProjectService {
       const work =
         job.kind === 'visual'
           ? this.runPicture(job, controller.signal)
-          : job.kind === 'text'
-            ? this.runScreenText(job, controller.signal)
-            : this.run(job, controller.signal);
+          : job.kind === 'proxy'
+            ? this.runProxy(job, controller.signal)
+            : job.kind === 'text'
+              ? this.runScreenText(job, controller.signal)
+              : this.run(job, controller.signal);
       const finished = work.finally(() => {
         this.active[lane] = null;
         this.pump();
@@ -2295,6 +2334,410 @@ export class ProjectService {
     }
     this.pump();
     return this.snapshot();
+  }
+  // ---- Playback proxies (VC-237) ----
+  // Segments made so far by proxy job, kept while it waits so it carries on with the next one.
+  private proxyProgress = new Map<string, { done: Map<number, string>; elapsedMs: number }>();
+  private nvenc?: Promise<boolean>;
+  /** The H.264 encoder proxies use: NVENC when it works on this PC, otherwise x264. */
+  private proxyEncoder(): Promise<ProxyEncode> {
+    const forced = process.env.VIRTUAL_CUT_PROXY_ENCODER;
+    if (forced === 'x264' || forced === 'nvenc') return Promise.resolve(forced);
+    this.nvenc ??= nvencWorks(this.tool('ffmpeg'), new AbortController().signal);
+    return this.nvenc.then((works) => (works ? 'nvenc' : 'x264'));
+  }
+  private proxyFile(store: ProjectStore, source: NativeSource) {
+    return isNativeProxy(source.proxy)
+      ? path.join(store.data.project.cache, source.proxy.file)
+      : undefined;
+  }
+  private enqueueProxy(sourceId: string, origin: 'user' | 'background', height: ProxyHeight) {
+    const s = this.require();
+    const r = s.data.model.recordings.find((r) => r.id === sourceId);
+    if (!r || r.availability !== 'ready' || r.retained || r.sample) return false;
+    const queued = s
+      .jobs()
+      .find(
+        (j) =>
+          j.sourceId === sourceId && j.kind === 'proxy' && ['queued', 'running'].includes(j.state),
+      );
+    if (queued) {
+      if (origin === 'user' && queued.origin === 'background')
+        s.putJob({ ...queued, origin, updated: new Date().toISOString() });
+      return true;
+    }
+    s.putJob({
+      id: randomUUID(),
+      sourceId,
+      kind: 'proxy',
+      origin,
+      proxyHeight: height,
+      state: 'queued',
+      progress: 0,
+      message: 'Waiting',
+      updated: new Date().toISOString(),
+    });
+    return true;
+  }
+  /** Whether a recording already has a usable proxy at this size. */
+  private async hasProxy(store: ProjectStore, source: NativeSource, height: ProxyHeight) {
+    const file = this.proxyFile(store, source);
+    const info = file ? await stat(file).catch(() => null) : null;
+    return (
+      proxyState(source.proxy, source.fingerprint, info).state === 'ready' &&
+      source.proxy?.height === height
+    );
+  }
+  /** Removes a recording's proxy file from the cache and its record from the project. */
+  private async dropProxy(store: ProjectStore, sourceId: string) {
+    const source = store.sources().find((x) => x.id === sourceId);
+    if (!source?.proxy) return;
+    const file = this.proxyFile(store, source);
+    if (file) {
+      this.grants.delete(file);
+      try {
+        await unlink(file);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
+          throw new Error('The proxy file is in use. Close what is playing it, then try again.', {
+            cause: e,
+          });
+      }
+    }
+    store.transaction(() => {
+      const native = store.sources().find((x) => x.id === sourceId)!;
+      const { proxy: _removed, ...rest } = native;
+      store.putSource(rest);
+      store.data.revision++;
+    });
+  }
+  private proxyJob(store: ProjectStore, sourceId: string) {
+    return store
+      .jobs()
+      .find(
+        (j) =>
+          j.sourceId === sourceId && j.kind === 'proxy' && ['queued', 'running'].includes(j.state),
+      );
+  }
+  /** Make proxy (a card's chip) or Make proxies for this batch (the Proxies window). */
+  async makeProxies(id: string, sourceIds: string[], again = false) {
+    const s = this.require(id);
+    if (
+      !Array.isArray(sourceIds) ||
+      !sourceIds.length ||
+      sourceIds.length > 500 ||
+      sourceIds.some((x) => typeof x !== 'string')
+    )
+      throw new Error('Choose recordings to make proxies for.');
+    for (const sourceId of new Set(sourceIds))
+      if (!s.data.model.recordings.some((r) => r.id === sourceId))
+        throw new Error('Recording not found.');
+    const settings = proxySettings(s.data.proxies);
+    if (settings.onImport === 'never')
+      throw new Error('Proxies are off for this project. Turn them on in the Proxies window.');
+    for (const sourceId of new Set(sourceIds)) {
+      const source = s.sources().find((x) => x.id === sourceId);
+      if (!source) continue;
+      if (!this.proxyJob(s, sourceId)) {
+        if (again) await this.dropProxy(s, sourceId);
+        else if (await this.hasProxy(s, source, settings.height)) continue;
+      }
+      this.enqueueProxy(sourceId, 'user', settings.height);
+    }
+    this.pump();
+    return this.snapshot();
+  }
+  /** Remove proxy (a ready one) or Forget the missing proxy, from a card's chip. */
+  async removeProxy(id: string, sourceId: string) {
+    const s = this.require(id);
+    if (!s.data.model.recordings.some((r) => r.id === sourceId))
+      throw new Error('Recording not found.');
+    if (this.proxyJob(s, sourceId)) throw new Error('Stop making this proxy first.');
+    await this.dropProxy(s, sourceId);
+    return this.snapshot();
+  }
+  async proxyLocation(id: string, sourceId: string) {
+    const s = this.require(id);
+    const source = s.sources().find((x) => x.id === sourceId);
+    const file = source && this.proxyFile(s, source);
+    if (!file || !(await stat(file).catch(() => null))?.isFile())
+      throw new Error('The proxy file is missing. Make it again from the proxy chip.');
+    return file;
+  }
+  async setProxySettings(id: string, settings: ProxySettings) {
+    const s = this.require(id);
+    if (!isProxySettings(settings)) throw new Error('Choose proxy settings from the list.');
+    s.data.proxies = { onImport: settings.onImport, height: settings.height };
+    s.write();
+    return this.snapshot();
+  }
+  /** Removes the segments a waiting proxy job has made, when it is stopped or the project closes. */
+  private async discardProxyProgress(jobId: string) {
+    const progress = this.proxyProgress.get(jobId);
+    this.proxyProgress.delete(jobId);
+    if (progress) await removeFiles(progress.done.values());
+  }
+  private async runProxy(job: MediaJob, signal: AbortSignal) {
+    const s = this.require(),
+      source = s.sources().find((x) => x.id === job.sourceId),
+      record = s.data.model.recordings.find((r) => r.id === job.sourceId);
+    const key = this.pictureKey(job.sourceId);
+    const progress = this.proxyProgress.get(job.id) ?? { done: new Map(), elapsedMs: 0 };
+    this.proxyProgress.set(job.id, progress);
+    const began = performance.now();
+    this.diagnostics?.record('job-start', {
+      jobId: job.id,
+      sourceId: job.sourceId,
+      projectId: s.data.project.id,
+      kind: job.kind,
+    });
+    const height = isProxyHeight(job.proxyHeight)
+      ? job.proxyHeight
+      : proxySettings(s.data.proxies).height;
+    const cache = s.data.project.cache;
+    const final = source
+      ? path.join(cache, proxyFileName(source.id, source.fingerprint, height))
+      : '';
+    const partial = final.replace(/\.mp4$/i, '.partial.mp4');
+    let use: VisualUse | undefined, encode: ProxyEncode | undefined;
+    let fraction = job.progress || 0,
+      last = 0,
+      checking = false;
+    const elapsed = () => progress.elapsedMs + Math.round(performance.now() - began);
+    const put = (force = false) => {
+      if (!force && Date.now() - last < 500) return;
+      last = Date.now();
+      s.putJob({
+        ...job,
+        state: 'running',
+        progress: fraction,
+        use,
+        message: checking
+          ? 'Checking the proxy against the recording'
+          : `Making ${height}p proxy · ${proxyUseText(use, encode)}`,
+        started: job.started,
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    };
+    job = { ...job, started: new Date().toISOString() };
+    put(true);
+    let failureCode: string | undefined;
+    try {
+      if (!source || !record || record.availability !== 'ready')
+        throw new Error('Source file is not registered. Import it again.');
+      const actual = await identify(source.file, source.id).catch(() => {
+        throw new Error('The recording could not be read. Relink it, then retry.');
+      });
+      if (actual.fingerprint !== source.fingerprint || actual.modified !== source.modified)
+        throw new Error(
+          'Source changed since import. Relink an unchanged copy or import it as new.',
+        );
+      const index = s.frameIndex(source.id);
+      if (!index?.frameTimes.length)
+        throw new Error('The keyframe index is unavailable. Inspect the recording again.');
+      // Checks use short segments so a few seconds of footage still has several.
+      const plan = proxyPlan(
+        index.frameTimes,
+        index.keys,
+        proxyFormat.keyframeStep,
+        Number(process.env.VIRTUAL_CUT_PROXY_SEGMENT) || undefined,
+      );
+      // Segments of earlier runs that were not kept (a crash, a closed project) are removed.
+      const own = new Set([...progress.done.values()].map((f) => path.basename(f).toLowerCase()));
+      const stale = new RegExp(
+        `^${source.id}-${source.fingerprint}-[a-f\\d]{8}-s\\d{4}-proxy-(?:1080|720)p\\.partial\\.mp4$`,
+        'i',
+      );
+      await removeFiles(
+        (await readdir(cache))
+          .filter((name) => stale.test(name) && !own.has(name.toLowerCase()))
+          .map((name) => path.join(cache, name)),
+      );
+      const remaining = plan
+        .filter((x) => !progress.done.has(x.index))
+        .reduce((n, x) => n + x.frames, 0);
+      const free = await import('node:fs/promises').then((fs) => fs.statfs(cache));
+      const needed =
+        256 * 1024 * 1024 +
+        2 * proxyBytesEstimate((record.duration * remaining) / index.frameTimes.length, height);
+      if (free.bavail * free.bsize < needed)
+        throw new Error(
+          `Free about ${Math.ceil(needed / 1e9)} GB in the project cache before making this proxy.`,
+        );
+      const decoder =
+        process.env.VIRTUAL_CUT_PICTURE_GPU === '0' ? undefined : gpuDecoder(record.codec);
+      if (decoder && !this.pictureGpu.has(key))
+        this.pictureGpu.set(
+          key,
+          await gpuReads(
+            this.tool('ffmpeg'),
+            source.file,
+            decoder,
+            record.sourceStart || 0,
+            signal,
+          ),
+        );
+      use = decoder && this.pictureGpu.get(key) ? 'gpu' : 'cpu';
+      encode = await this.proxyEncoder();
+      put(true);
+      const total = index.frameTimes.length;
+      let made = plan.filter((x) => progress.done.has(x.index)).reduce((n, x) => n + x.frames, 0);
+      for (const segment of plan) {
+        if (progress.done.has(segment.index)) continue;
+        signal.throwIfAborted();
+        const out = path.join(
+          cache,
+          `${source.id}-${source.fingerprint}-${job.id.slice(0, 8)}-s${String(segment.index).padStart(4, '0')}-proxy-${height}p.partial.mp4`,
+        );
+        try {
+          await makeSegment(
+            this.tool('ffmpeg'),
+            {
+              file: source.file,
+              offset: record.sourceStart || 0,
+              segment,
+              frameTimes: index.frameTimes,
+              height,
+              decode: use === 'gpu' ? 'gpu' : 'cpu',
+              gpuDecoder: decoder,
+              encode,
+              out,
+            },
+            signal,
+            (frames) => {
+              fraction = Math.max(fraction, 0.97 * Math.min(1, (made + frames) / total));
+              put();
+            },
+          );
+        } catch (e) {
+          if (signal.aborted || use !== 'gpu') throw e;
+          // The NVIDIA decoder could not read this recording: it is decoded on the CPU from now
+          // on, which waits for the PC to be idle like the picture pass.
+          this.pictureGpu.set(key, false);
+          this.diagnostics?.record('operation-failed', {
+            kind: 'proxy-gpu',
+            errorCode: errorCode(e),
+          });
+          throw new PictureYield('Waiting for the PC to be idle (no NVIDIA decoder)');
+        }
+        progress.done.set(segment.index, out);
+        made += segment.frames;
+      }
+      checking = true;
+      fraction = Math.max(fraction, 0.97);
+      put(true);
+      const parts = plan.map((x) => progress.done.get(x.index)!);
+      await joinSegments(this.tool('ffmpeg'), parts, partial, signal);
+      progress.done.clear();
+      await removeFiles(parts);
+      const read = await readProxy(this.tool('ffprobe'), partial, signal);
+      const problem = proxyProblem(read, index.frameTimes, plan, index.keys, height);
+      if (problem) throw new Error(`The proxy did not match the recording. ${problem}`);
+      const now = await stat(source.file);
+      if (
+        this.store !== s ||
+        now.size !== source.bytes ||
+        now.mtimeMs !== source.modified ||
+        !s.sources().some((x) => x.id === source.id && x.fingerprint === source.fingerprint)
+      )
+        throw new Error('Recording changed while its proxy was made.');
+      signal.throwIfAborted();
+      // A remade proxy, or one at the other size, replaces the recording's earlier file.
+      const before = s.sources().find((x) => x.id === source.id)!;
+      for (const file of new Set([this.proxyFile(s, before), final])) {
+        if (!file) continue;
+        this.grants.delete(file);
+        await unlink(file).catch((e: NodeJS.ErrnoException) => {
+          if (e.code !== 'ENOENT') throw e;
+        });
+      }
+      await rename(partial, final);
+      const facts = await stat(final);
+      const proxy: NativeProxy = {
+        file: path.basename(final),
+        height,
+        width: read.width,
+        codec: proxyFormat.codec,
+        keyframeStep: proxyFormat.keyframeStep,
+        fingerprint: source.fingerprint,
+        bytes: facts.size,
+        modified: facts.mtimeMs,
+        made: new Date().toISOString(),
+      };
+      s.transaction(() => {
+        const native = s.sources().find((x) => x.id === source.id)!;
+        s.putSource({ ...native, proxy });
+      });
+      this.proxyProgress.delete(job.id);
+      s.putJob({
+        ...job,
+        state: 'succeeded',
+        progress: 1,
+        use,
+        message: `Proxy ready · ${height}p · ${(facts.size / 1e9).toFixed(2)} GB · ${proxyUseText(use, encode)}`,
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    } catch (e) {
+      failureCode = errorCode(e);
+      const reason: unknown = signal.reason;
+      const yielded =
+        e instanceof PictureYield
+          ? e
+          : signal.aborted && reason instanceof PictureYield
+            ? reason
+            : undefined;
+      if (yielded || (signal.aborted && this.switching)) {
+        // Waits with the segments it has made and carries on with the next one later.
+        progress.elapsedMs = elapsed();
+        s.putJob({
+          ...job,
+          state: 'queued',
+          progress: fraction,
+          use: undefined,
+          message: yielded ? yielded.message : 'Waiting',
+          elapsedMs: elapsed(),
+          updated: new Date().toISOString(),
+        });
+        if (this.switching) await this.discardProxyProgress(job.id);
+        if (final) await removeFiles([partial]);
+        return;
+      }
+      await this.discardProxyProgress(job.id);
+      if (final) await removeFiles([partial]);
+      s.putJob({
+        ...job,
+        state: signal.aborted ? 'cancelled' : 'failed',
+        progress: 0,
+        use: undefined,
+        message: signal.aborted
+          ? 'Stopped; the partial proxy was removed'
+          : e instanceof Error
+            ? e.message
+            : String(e),
+        elapsedMs: elapsed(),
+        updated: new Date().toISOString(),
+      });
+    } finally {
+      const finalJob = s.jobs().find((j) => j.id === job.id);
+      this.diagnostics?.record(
+        finalJob?.state === 'succeeded'
+          ? 'job-end'
+          : finalJob?.state === 'queued'
+            ? 'job-paused'
+            : signal.aborted
+              ? 'job-cancelled'
+              : 'job-failed',
+        {
+          jobId: job.id,
+          sourceId: job.sourceId,
+          kind: job.kind,
+          elapsedMs: elapsed(),
+          errorCode: finalJob?.state === 'queued' ? undefined : failureCode,
+        },
+      );
+    }
   }
   // ---- Screen text pass (VC-141) ----
   // Lines read so far by pass, kept while it waits so it carries on after the last keyframe.
@@ -3196,6 +3639,14 @@ export class ProjectService {
           // Screen text (VC-141) follows the picture pass.
           this.enqueueScreenText(source.id, 'background');
         }
+        // Proxies asked for at import (VC-237) follow the picture pass in the same lane.
+        const proxies = proxySettings(s.data.proxies);
+        if (
+          s.data.model.recordings.find((r) => r.id === source.id)?.importAudio?.proxy &&
+          proxies.onImport !== 'never' &&
+          !s.sources().find((x) => x.id === source.id)?.proxy
+        )
+          this.enqueueProxy(source.id, 'background', proxies.height);
       } else {
         // Publish a fresh generation. Windows may lock a preview currently playing;
         // replacing that file breaks waveform upgrades and retry preparation.
@@ -3402,6 +3853,12 @@ export class ProjectService {
 
 /** A picture pass stopping to wait (VC-180), as opposed to being cancelled. */
 class PictureYield extends Error {}
+
+/** What a proxy job decodes and encodes with, as Jobs shows it (VC-237). */
+function proxyUseText(use?: VisualUse, encode?: ProxyEncode) {
+  const decode = use === 'gpu' ? 'GPU decoder' : use ? 'CPU decoder' : 'starting';
+  return encode ? `${decode} · ${encode === 'nvenc' ? 'NVENC' : 'x264 (CPU)'}` : decode;
+}
 
 /** What a picture pass decodes with, as Jobs shows it. */
 function useText(use?: VisualUse) {
