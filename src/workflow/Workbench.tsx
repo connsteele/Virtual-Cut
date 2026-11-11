@@ -103,6 +103,7 @@ import {
 } from '../../electron/proposal-previews';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
+import { proxySettings } from '../../electron/proxy-settings';
 import { background } from './background';
 import { ProxiesButton } from './Proxies';
 function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
@@ -1480,7 +1481,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         onSourceOpen={onSourceOpen}
         viewerSource={model.viewerSource ?? 'proxy'}
         onViewerSource={
-          project ? (source) => setModel((m) => ({ ...m, viewerSource: source })) : undefined
+          // A project set to make proxies Never has no switch (VC-237 settings).
+          project && proxySettings(project.proxies).onImport !== 'never'
+            ? (source) => setModel((m) => ({ ...m, viewerSource: source }))
+            : undefined
         }
         proposals={
           !sequence && previews.sourceId === record.id

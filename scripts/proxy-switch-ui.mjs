@@ -330,6 +330,17 @@ try {
   await expect(tag()).toHaveText(
     'Original1280 × 720 · H.264 · 30.00 fps · The proxy file is missing',
   );
+  // A project set to make proxies Never has no switch; the tag keeps only the format.
+  const setProxies = (onImport) =>
+    page.evaluate(async (onImport) => {
+      const { project } = await window.virtualCut.project.current();
+      await window.virtualCut.project.setProxySettings(project.id, { onImport, height: 1080 });
+    }, onImport);
+  await setProxies('never');
+  await expect(switcher()).toHaveCount(0);
+  await expect(tag()).toHaveText('1280 × 720 · H.264 · 30.00 fps');
+  await setProxies('ask');
+  await expect(switcher()).toBeVisible();
   // Compact window: the switch and the tag still fit.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
   await page.waitForTimeout(300);
