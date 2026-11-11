@@ -129,6 +129,7 @@ export function registerAgentAccess(options: {
       jobs: () => store.jobs(),
       screenText: (recordingId) => store.screenText(recordingId),
       screenTextEngine: () => options.projects()?.screenText.problem || '',
+      keyframes: (recordingId) => store.frameIndex(recordingId)?.keys,
       taggedNotes: (recordingId) => {
         const file = store.sources().find((s) => s.id === recordingId)?.file;
         if (!file) return undefined;

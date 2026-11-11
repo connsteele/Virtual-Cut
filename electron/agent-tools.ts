@@ -1,7 +1,8 @@
+import { clipPieces, gapJoins, piecesLength } from './clip-gaps.js';
 import { createHash } from 'node:crypto';
 import { effectiveContext, defaultContext } from './project-context.js';
 import { correctedText } from './transcript-edits.js';
-import type { Model, Recording } from './workflow-types.js';
+import type { Clip, Model, Recording } from './workflow-types.js';
 import type { Batch } from './project-contracts.js';
 import type { TranscriptSegment, TranscriptSummary } from './transcript-contracts.js';
 import type { AgentView } from './agent-contracts.js';
@@ -28,6 +29,8 @@ export interface AgentReadSource {
   view?: AgentView;
   /** The tagged mic notes (.txt) beside a recording's file, if any (VC-155). */
   taggedNotes?: (recordingId: string) => string | undefined;
+  /** A recording's keyframe times, where its gaps' joins land (VC-212). */
+  keyframes?: (recordingId: string) => readonly number[] | undefined;
   proposals?: {
     /** Withdrawn proposals only with `withdrawn` (VC-201). */
     list(
@@ -108,8 +111,27 @@ function clipSummary(source: AgentReadSource, clipId: string) {
         recordingId: c.rid,
         start: round(c.start),
         end: round(c.end),
+        ...gapSummary(source, c),
       }
     : undefined;
+}
+/**
+ * VC-212: a clip's gaps as marked, what each leaves out (joins land on keyframes), and the clip's
+ * length once exported, so notes can use the exported clip's own time.
+ */
+function gapSummary(source: AgentReadSource, c: Clip) {
+  if (!c.gaps?.length) return {};
+  const keys = [...(source.keyframes?.(c.rid) || [])].sort((a, b) => a - b),
+    recording = source.model.recordings.find((r) => r.id === c.rid);
+  return {
+    gaps: gapJoins(c, keys).map((j) => ({
+      id: j.gap.id,
+      start: round(j.gap.start),
+      end: round(j.gap.end),
+      removed: j.short ? null : { start: round(j.out), end: round(j.back) },
+    })),
+    exportedLength: round(piecesLength(clipPieces(c, keys, recording?.duration))),
+  };
 }
 
 export function currentView(source: AgentReadSource) {
