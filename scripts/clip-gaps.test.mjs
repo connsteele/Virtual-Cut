@@ -272,6 +272,7 @@ test('a stitched export puts markers on its own clock and lists what the gaps le
     input: {
       clip: { id: 'c', rid: 'r', name: 'A', start: 1, end: 20, folder: '_Review', include: true },
       markers: [
+        marker('atStart', 1),
         marker('atIn', 0.5, 3),
         marker('before', 2),
         marker('inGap', 7),
@@ -303,6 +304,7 @@ test('a stitched export puts markers on its own clock and lists what the gaps le
   assert.deepEqual(
     exportedMarkers(record, v).map((m) => [m.marker.id, m.clipTime, m.clipEnd ?? null]),
     [
+      ['atStart', 0, null],
       ['atIn', 0, 2],
       ['before', 1, null],
       ['after', 6, null],
