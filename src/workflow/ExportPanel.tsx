@@ -11,6 +11,8 @@ import type { useProjectWorkspace } from './useProjectWorkspace';
 import { Button, Field, Modal } from './ui';
 import s from './Workflow.module.css';
 import { background } from './background';
+import { StitchedPreview } from './StitchedPreview';
+import { piecesLength } from '../../electron/clip-gaps';
 type Workspace = ReturnType<typeof useProjectWorkspace>;
 const range = (r: { start: number; end: number }) =>
   `${r.start.toFixed(3)} → ${r.end.toFixed(3)} s`;
@@ -95,6 +97,15 @@ export function ExportPanel({
                 <th>Outward cut</th>
                 <td>{range(plan.planned)}</td>
               </tr>
+              {plan.pieces && (
+                <tr>
+                  <th>Gaps</th>
+                  <td data-export-gaps>
+                    {plan.pieces.length} pieces joined on keyframes ·{' '}
+                    {piecesLength(plan.pieces).toFixed(3)} s long
+                  </td>
+                </tr>
+              )}
               <tr>
                 <th>Audio</th>
                 <td>
@@ -106,6 +117,9 @@ export function ExportPanel({
             </tbody>
           </table>
         </div>
+      )}
+      {plan?.gaps && clip && (
+        <StitchedPreview plan={plan} markers={w.model.markers[clip.rid] || []} />
       )}
       <p>
         The original video and selected game audio are copied. Cuts expand to the nearest usable

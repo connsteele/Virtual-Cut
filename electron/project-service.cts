@@ -1,4 +1,5 @@
-import { clipMarkers, markerIntersects, relativeMarker } from './marker-ranges.js';
+import { clipPieces, gapJoins } from './clip-gaps.js';
+import { markerIntersects, relativeMarker } from './marker-ranges.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
@@ -97,7 +98,14 @@ import { isNativeProxy, proxyState } from './proxy-record.js';
 import type { DestinationPlan } from './review-plan.js' with { 'resolution-mode': 'import' };
 import { reconcileReview, reviewKey } from './review-state.cjs';
 import { Diagnostics, errorCode } from './diagnostics.cjs';
-import { exportClip as writeClip, verifyPublished, fileHash, annotation } from './clip-export.cjs';
+import {
+  exportClip as writeClip,
+  verifyPublished,
+  fileHash,
+  annotation,
+  exportedLength,
+  exportedMarkers,
+} from './clip-export.cjs';
 import type {
   ExportContainer,
   ExportContainerChoice,
@@ -1611,6 +1619,19 @@ export class ProjectService {
       upper = keys.find((t) => t >= end - 0.000001) ?? input.duration;
     if (lower == null || upper <= lower)
       throw new Error('Usable outward keyframes are unavailable.');
+    // VC-212: gaps split the range into pieces joined on keyframes at both ends.
+    const joins = gapJoins(input.clip, keys),
+      pieces = clipPieces(input.clip, keys, input.duration, { start: lower, end: upper });
+    const stitched = joins.length
+      ? {
+          ...(pieces.length > 1 ? { pieces } : {}),
+          gaps: joins.map((j) => ({
+            id: j.gap.id,
+            requested: { start: j.gap.start, end: j.gap.end },
+            ...(j.short ? {} : { removed: { start: j.out, end: j.back } }),
+          })),
+        }
+      : {};
     const plan: ExportPlan = {
       id: randomUUID(),
       clipId,
@@ -1621,6 +1642,7 @@ export class ProjectService {
       container,
       requested: { start, end },
       planned: { start: lower, end: upper },
+      ...stitched,
       revision: s.data.revision,
       created: new Date().toISOString(),
     };
@@ -1957,20 +1979,16 @@ export class ProjectService {
             })(),
             source: e.input.sourceFile,
             completedAt: e.filing!.completedAt!,
-            duration: e.verification!.actual.end - e.verification!.actual.start,
+            duration: exportedLength(e.verification!),
             video: e.verification!.videoCodec,
             note: e.input.clip.note || '',
             context: e.input.context,
             markers:
               e.markerScope === 'clip'
-                ? clipMarkers(
-                    e.input.markers,
-                    e.plan.requested,
-                    e.verification!.constantFrameDuration ?? 1 / 60,
-                  ).map(({ marker, start, end, atIn }) => ({
+                ? exportedMarkers(e, e.verification!).map(({ marker, clipTime, clipEnd }) => ({
                     ...marker,
-                    time: atIn ? 0 : start - e.verification!.actual.start,
-                    ...(end != null ? { end: end - e.verification!.actual.start } : {}),
+                    time: clipTime,
+                    ...(clipEnd != null ? { end: clipEnd } : {}),
                   }))
                 : e.input.markers
                     .filter((m) =>

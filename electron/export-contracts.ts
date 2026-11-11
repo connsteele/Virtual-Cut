@@ -17,8 +17,20 @@ export interface ExportPlan {
   container: ExportContainer;
   requested: { start: number; end: number };
   planned: { start: number; end: number };
+  /**
+   * VC-212: the source spans a clip with gaps exports, in order, each from keyframe to keyframe.
+   * Absent for a clip without gaps that remove anything; such clips export as before.
+   */
+  pieces?: { start: number; end: number }[];
+  /** Each gap as marked and the span the export actually leaves out (absent: too short). */
+  gaps?: ExportGap[];
   revision: number;
   created: string;
+}
+export interface ExportGap {
+  id: string;
+  requested: { start: number; end: number };
+  removed?: { start: number; end: number };
 }
 export interface ExportInput {
   clip: Clip;
@@ -46,6 +58,13 @@ export interface ExportVerification {
   /** Present only when original packet durations and presentation gaps are uniform. */
   constantFrameDuration?: number;
   audioCodec: string;
+  /**
+   * VC-212: a stitched clip's verified pieces (source spans, in order) and its length on its own
+   * clock. Its game audio is re-encoded losslessly with fades at the joins, so its samples were
+   * compared with the original's rather than its packets.
+   */
+  pieces?: { start: number; end: number }[];
+  length?: number;
   /**
    * The finished video's start timecode as FFprobe reads it, and the same point in seconds at
    * the video's nominal frame rate (VC-158). Absent when the video carries none.

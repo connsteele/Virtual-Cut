@@ -91,6 +91,8 @@ export async function writeSubtitleSidecars(
     exportId: record.plan.id,
     output,
     name: record.plan.name,
+    // A stitched clip's SRT runs across its joins; lines inside a gap are left out (VC-212).
+    ...(verified.pieces ? { pieces: verified.pieces } : {}),
   };
   const timecode = verified.startTimecode;
   for (const role of result.requested) {

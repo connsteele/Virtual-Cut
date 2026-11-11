@@ -32,6 +32,7 @@ export const fast = [
   'clip-gaps.test.mjs',
 ];
 export const native = [
+  'stitched-export-native.mjs',
   'speech-setup-checks.mjs',
   'screen-text-setup-checks.mjs',
   'transcript-storage-checks.mjs',
