@@ -774,8 +774,11 @@
   background: #ede6d80d;
   color: var(--muted);
   font-size: 10px;
-  overflow: hidden;
   cursor: pointer;
+}
+/* `.clip span` spaces the clip's label; the gap parts are positioned exactly. */
+.clip :is(.piece, .gapLabel, .gapEdge, .gapPending, .gapSweep) {
+  margin-left: 0;
 }
 .gap:hover {
   background: #ede6d812;
@@ -812,27 +815,33 @@
   pointer-events: none;
 }
 .gapEdge {
+  /* Drawn like the clip's own handles, on the end of the piece beside the gap. */
   position: absolute;
-  inset-block: 0;
+  top: -3px;
+  bottom: -3px;
+  z-index: 4;
   width: 10px;
+  background: #f4f1e530;
+  border-inline: 2px solid #f4f1e5;
   cursor: ew-resize;
   touch-action: none;
 }
-.gapEdge::after {
-  content: '';
-  position: absolute;
-  inset-block: 2px;
-  left: 3px;
-  width: 4px;
-  border-radius: 2px;
-  background: #f4f1e5;
-  box-shadow: 0 0 0 1px #0009;
+.gapEdge:hover,
+.gapEdge:active {
+  background: #f4f1e5aa;
 }
 .gapEdge[data-gap-edge='start'] {
-  left: 0;
+  right: 100%;
 }
 .gapEdge[data-gap-edge='end'] {
-  right: 0;
+  left: 100%;
+}
+/* The chevrons move in to clear the handles when Manipulate is on. */
+.clip[data-handle-mode='true'] .chevronOut {
+  right: 15px;
+}
+.clip[data-handle-mode='true'] .chevronIn {
+  left: 15px;
 }
 .gapPending {
   position: absolute;

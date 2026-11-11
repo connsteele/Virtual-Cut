@@ -93,6 +93,34 @@ try {
   await expect(gap).toHaveAttribute('data-selected', 'true');
   await expect(clip).toHaveAttribute('data-gapped', 'true');
   await expect(clip.locator('[data-clip-piece]')).toHaveCount(2);
+  // The gap meets the pieces exactly (Connor 2026-11-11: its dashes were offset by 6 px), and with
+  // H on its handles sit on the piece ends like the clip's own, clear of the chevrons.
+  const edges = () =>
+    page.evaluate((id) => {
+      const box = (el) => el.getBoundingClientRect();
+      const c = document.querySelector(`[data-clip-container="${id}"]`);
+      return {
+        pieces: [...c.querySelectorAll('[data-clip-piece]')].map(box),
+        gap: box(c.querySelector('[data-gap]')),
+        handles: [...c.querySelectorAll('[data-gap-edge]')].map(box),
+        chevrons: [...c.querySelectorAll('[data-clip-piece] i')].map(box),
+      };
+    }, fixture.clip);
+  {
+    const e = await edges();
+    assert(Math.abs(e.pieces[0].right - e.gap.left) < 1, JSON.stringify(e));
+    assert(Math.abs(e.pieces[1].left - e.gap.right) < 1, JSON.stringify(e));
+    await page.keyboard.press('h');
+    await expect(clip.locator('[data-gap-edge]')).toHaveCount(2);
+    const m = await edges();
+    assert(
+      Math.abs(m.handles[0].right - m.gap.left) < 1 &&
+        Math.abs(m.handles[1].left - m.gap.right) < 1,
+    );
+    assert(m.chevrons[0].right <= m.handles[0].left && m.chevrons[1].left >= m.handles[1].right);
+    await capture('gaps-handles');
+    await page.keyboard.press('h');
+  }
   // The card lists it: on 1 s keyframes 2.4–6.6 removes 3–6.
   const row = card.locator('[data-gap-row]');
   await expect(row).toContainText('00:02.4–00:06.6');
