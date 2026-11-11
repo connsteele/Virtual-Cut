@@ -96,6 +96,7 @@ export const desktop = [
   'visual-pass-ui.mjs',
   'screen-text-ui.mjs',
   'look-ui.mjs',
+  'proxy-switch-ui.mjs',
   'follow-dblclick-ui.mjs',
 ];
 export const dependencies = {

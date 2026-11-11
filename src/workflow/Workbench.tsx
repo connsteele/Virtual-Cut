@@ -103,6 +103,7 @@ import {
 } from '../../electron/proposal-previews';
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
+import { proxySettings } from '../../electron/proxy-settings';
 import { background } from './background';
 import { ProxiesButton } from './Proxies';
 function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
@@ -1358,6 +1359,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         e.preventDefault();
         transport.current?.command(k);
       }
+      // P flips the viewer between the original and its proxy (VC-238).
+      if (k === 'p' && !(page === 'library' && project)) {
+        e.preventDefault();
+        transport.current?.command('p');
+      }
       if (page === 'cut' && ['q', 'w', 'm', 's'].includes(k)) {
         e.preventDefault();
         if (k === 'm') addMarker(r.id, e.shiftKey);
@@ -1473,6 +1479,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
         onActivityChange={workspace.setPlaybackActive}
         recording={indexed(record)}
         onSourceOpen={onSourceOpen}
+        viewerSource={model.viewerSource ?? 'proxy'}
+        onViewerSource={
+          // A project set to make proxies Never has no switch (VC-237 settings).
+          project && proxySettings(project.proxies).onImport !== 'never'
+            ? (source) => setModel((m) => ({ ...m, viewerSource: source }))
+            : undefined
+        }
         proposals={
           !sequence && previews.sourceId === record.id
             ? previewFocus.sourceId === record.id
@@ -3108,6 +3121,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   'J: reverse scan · K: play/pause · L: forward/faster (1×, 2×, 4×, 6×, 8×, 16×)',
                 ],
                 ['Space', 'Play / pause'],
+                ['P', 'Viewer: original / proxy (when the recording has a proxy)'],
                 ['Q / W', 'Selected clip in / out at the playhead'],
                 ['S', 'Split selected clip'],
                 [

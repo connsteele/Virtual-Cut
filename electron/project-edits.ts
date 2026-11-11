@@ -160,6 +160,7 @@ export function mergeEdits(before: Model, after: Model, current: Model): Model {
       current.recordings.some((r) => r.id === after.selectedRecordingId))
   )
     result.selectedRecordingId = after.selectedRecordingId;
+  if (before.viewerSource !== after.viewerSource) result.viewerSource = after.viewerSource;
   return result;
 }
 export function editorial(model: Model): string {
@@ -172,6 +173,7 @@ export function editorial(model: Model): string {
     cueDecisions: model.cueDecisions?.length ? model.cueDecisions : undefined,
     clips: model.clips.map((c) => ({ ...c, filed: false })),
     selectedRecordingId: undefined,
+    viewerSource: undefined,
     recordings: model.recordings.map((r) => ({
       id: r.id,
       ...Object.fromEntries(fields.map((f) => [f, r[f]])),
@@ -182,6 +184,8 @@ export function validateEdits(model: Model): Model {
   validateContexts(model.contexts);
   if (JSON.stringify(model).length > 32 * 1024 * 1024)
     throw new Error('Project edit is too large. Use a smaller pinned preview.');
+  if (model.viewerSource !== undefined && !['original', 'proxy'].includes(model.viewerSource))
+    throw new Error('Invalid viewer source.');
   const sources = new Map(model.recordings.map((r) => [r.id, r]));
   const text = (s: unknown, max = 100000): s is string => typeof s === 'string' && s.length <= max;
   if ((model.transcriptEdits?.length || 0) > 100000 || (model.cueDecisions?.length || 0) > 100000)
