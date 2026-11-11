@@ -20,6 +20,9 @@ export interface ImportAudio {
   transcription?: import('./transcript-contracts.js').TranscriptionOptions;
   game: number | null;
   mic: number | null;
+  /** Make proxies during this import (VC-237): each recording's proxy is queued after its
+   * picture pass. Not remembered with the batch. */
+  proxy?: boolean;
 }
 export interface DroppedImport {
   token: string;
@@ -57,6 +60,8 @@ export interface MediaJob {
   role?: 'game' | 'mic';
   runtimeSignature?: string;
   track?: number;
+  /** The size a proxy job makes (VC-237). */
+  proxyHeight?: import('./proxy-record.js').ProxyHeight;
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   progress: number;
   message: string;
@@ -90,6 +95,8 @@ export interface ProjectSnapshot {
   screenText?: Record<string, import('./screen-text.js').ScreenTextSummary>;
   /** Why screen text cannot be read right now ("Screen text engine not installed."), or ''. */
   screenTextEngine?: string;
+  /** The project's proxy settings (VC-237); read with proxySettings() for the defaults. */
+  proxies?: import('./proxy-settings.js').ProxySettings;
   cleanup?: {
     cacheFilesRemoved: number;
     cacheFilesRetained: number;
@@ -218,6 +225,18 @@ export interface ProjectApi {
   job(id: string, jobId: string, action: 'cancel' | 'retry'): Promise<ProjectSnapshot>;
   /** Analyse picture now (VC-180): queue the picture pass ahead of other background work. */
   analysePicture(id: string, sourceIds: string[]): Promise<ProjectSnapshot>;
+  /**
+   * Proxies (VC-237): queue proxy jobs for recordings at the project's size. `again` makes a
+   * ready proxy again (its file is removed first); otherwise ready proxies at that size are kept.
+   */
+  makeProxies(id: string, sourceIds: string[], again?: boolean): Promise<ProjectSnapshot>;
+  /** Removes a recording's working proxy from the project cache, or forgets a missing one. */
+  removeProxy(id: string, sourceId: string): Promise<ProjectSnapshot>;
+  revealProxy(id: string, sourceId: string): Promise<void>;
+  setProxySettings(
+    id: string,
+    settings: import('./proxy-settings.js').ProxySettings,
+  ): Promise<ProjectSnapshot>;
   /** The app's preview started or stopped playing; the picture pass leaves it the decoder. */
   previewPlaying(playing: boolean): Promise<void>;
   exportPlan(id: string, clipId: string, container: ExportContainerChoice): Promise<ExportPlan>;

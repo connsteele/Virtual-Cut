@@ -52,6 +52,8 @@ export interface RecordingProxy {
   progress?: number;
   /** Playback address of a ready proxy. */
   url?: string;
+  /** Size of a ready or missing proxy's verified file (VC-237, for the Proxies window). */
+  bytes?: number;
 }
 
 /** The cache file name for a recording's proxy, unique per recording revision and height. */
@@ -110,7 +112,12 @@ export function proxyState(
     };
   if (record == null) return { state: 'none' };
   if (!isNativeProxy(record)) return { state: 'missing' };
-  const format = { height: record.height, width: record.width, codec: record.codec };
+  const format = {
+    height: record.height,
+    width: record.width,
+    codec: record.codec,
+    bytes: record.bytes,
+  };
   const unchanged =
     !!file &&
     !!fingerprint &&
