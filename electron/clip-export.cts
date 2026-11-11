@@ -602,6 +602,10 @@ async function copyStitched(
       'concat',
       '-safe',
       '0',
+      // The concat demuxer otherwise rewrites H.264 from MP4 into Annex B (SPS/PPS in band), and
+      // the joined packets no longer match the original's.
+      '-auto_convert',
+      '0',
       '-i',
       list,
       '-map',

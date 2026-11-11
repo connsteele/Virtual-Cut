@@ -5,12 +5,13 @@
 // short to remove anything, export exactly as before.
 //
 // Synthetic AV1 (keyframes every second) with two 24-bit ALAC tracks, like the Mass Effect footage.
+// An FFmpeg without the SVT-AV1 encoder (the CI runner's) makes H.264 with the same keyframes.
 // VIRTUAL_CUT_STITCH_SOURCE may name a copy of real footage for one extra stitched export.
 import { testPath } from './test-paths.mjs';
 import { skippedStep, withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 const require = createRequire(import.meta.url);
@@ -30,6 +31,29 @@ const command = (tool, args) =>
     p.on('exit', (code) => (code === 0 ? resolve(output) : reject(Error(error))));
   });
 const source = path.join(dir, 'stitch-source.mp4');
+// spawnSync: the helper above settles on 'exit', which can come before stdout has drained.
+const encoders = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], {
+  encoding: 'utf8',
+  windowsHide: true,
+}).stdout;
+const av1 = /\blibsvtav1\b/.test(encoders || '');
+const video = av1
+  ? ['-c:v', 'libsvtav1', '-preset', '12', '-g', '60']
+  : [
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-bf',
+      '0',
+      '-g',
+      '60',
+      '-keyint_min',
+      '60',
+      '-sc_threshold',
+      '0',
+    ];
+if (!av1) skippedStep('AV1 source', 'this FFmpeg has no libsvtav1; the source is H.264');
 // A tone burst every second on the game track, a steady sine on the mic track.
 await command('ffmpeg', [
   '-v',
@@ -52,12 +76,7 @@ await command('ffmpeg', [
   '1:a',
   '-map',
   '2:a',
-  '-c:v',
-  'libsvtav1',
-  '-preset',
-  '12',
-  '-g',
-  '60',
+  ...video,
   // 24-bit ALAC, as OBS records it: exports use the verified FLAC copy made at import.
   '-c:a',
   'alac',
