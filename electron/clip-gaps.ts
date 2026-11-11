@@ -224,3 +224,45 @@ export function fitGaps(clip: Clip): Clip {
   if (!kept.length) delete next.gaps;
   return next;
 }
+
+export interface SkipClip {
+  id: string;
+  start: number;
+  end: number;
+  spans: { out: number; back: number; number: number; removed: number }[];
+}
+/**
+ * Where Skip gaps jumps from `position`, if anywhere (Connor, 2026-11-11 03:37). A selected clip
+ * under the playhead plays as it exports: only its gaps count. With none, overlapping gaps skip to
+ * the soonest end, and `landed` (the gaps a no-selection skip landed inside) then play.
+ */
+export function skipTarget(
+  clips: readonly SkipClip[],
+  position: number,
+  selectedId: string | undefined,
+  landed: readonly { out: number; back: number }[] = [],
+) {
+  const within = (x: { out: number; back: number }) =>
+      position >= x.out - 0.02 && position < x.back,
+    inside = (c: SkipClip) => position >= c.start && position < c.end;
+  const selected = clips.find((c) => c.id === selectedId && inside(c));
+  const candidates = (selected ? [selected] : clips.filter(inside)).flatMap((c) =>
+    c.spans
+      .filter(
+        (x) => within(x) && (selected || !landed.some((l) => l.out === x.out && l.back === x.back)),
+      )
+      .map((span) => ({ clip: c, span })),
+  );
+  if (!candidates.length) return null;
+  const next = candidates.reduce((a, b) => (b.span.back < a.span.back ? b : a));
+  return {
+    clipId: next.clip.id,
+    ...next.span,
+    // After a no-selection skip, the gaps containing the landing point play.
+    landed: selected
+      ? []
+      : clips.flatMap((c) =>
+          c.spans.filter((x) => next.span.back >= x.out - 0.02 && next.span.back < x.back),
+        ),
+  };
+}

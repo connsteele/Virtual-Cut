@@ -8,6 +8,7 @@ import {
   fitGaps,
   gapJoins,
   piecesLength,
+  skipTarget,
   splitWithGaps,
   toPieceTime,
   withGap,
@@ -197,4 +198,37 @@ test('gap edges are snap targets like clip edges', () => {
     { clip: 'x' },
   );
   assert.deepEqual(targets, [0, 120, 540, 205.4, 262.7]);
+});
+
+test('Skip gaps: a selected clip plays as it exports; otherwise the soonest gap end', () => {
+  // Connor's 03:31 case: 02 and 03 overlap, and 03's gap starts first and ends first.
+  const two = {
+      id: '02',
+      start: 300,
+      end: 1300,
+      spans: [{ out: 490, back: 820, number: 1, removed: 330 }],
+    },
+    three = {
+      id: '03',
+      start: 440,
+      end: 920,
+      spans: [{ out: 485, back: 730, number: 1, removed: 245 }],
+    },
+    clips = [two, three];
+  assert.equal(skipTarget(clips, 480, undefined), null);
+  // Nothing selected: the soonest end, then the gap it lands inside plays.
+  const first = skipTarget(clips, 486, undefined);
+  assert.equal(first.clipId, '03');
+  assert.equal(first.back, 730);
+  assert.deepEqual(first.landed, [two.spans[0]]);
+  assert.equal(skipTarget(clips, 731, undefined, first.landed), null);
+  assert.equal(skipTarget(clips, 731, undefined).back, 820, 'without the landing, 02 would skip');
+  // 02 selected: only 02's gap counts, wherever playback is.
+  assert.equal(skipTarget(clips, 486, '02'), null);
+  assert.equal(skipTarget(clips, 600, '02').back, 820);
+  // 03 selected: past 03's gap even when starting inside it, and never into 02's.
+  assert.equal(skipTarget(clips, 600, '03').back, 730);
+  assert.equal(skipTarget(clips, 750, '03'), null);
+  // A selected clip the playhead isn't in counts as no selection.
+  assert.equal(skipTarget(clips, 1000, '03'), null);
 });

@@ -172,7 +172,7 @@ try {
   await expect(skip).toHaveAttribute('aria-pressed', 'true');
   // Playing forward never shows what the export leaves out (3–6 s): not when crossing into the
   // gap, and not when playback starts inside it (Connor 2026-11-11 03:31).
-  const played = (from) =>
+  const played = () =>
     page.evaluate(async () => {
       const v = document.querySelector('video'),
         seen = [];
@@ -185,7 +185,7 @@ try {
   for (const from of [2.2, 4.0]) {
     await seek(from);
     await page.keyboard.press('k');
-    const seen = await played(from);
+    const seen = await played();
     await page.keyboard.press('k');
     const leaked = seen.filter((t) => t > 3.1 && t < 5.9);
     assert(leaked.length <= 2, `played inside the gap from ${from}: ${leaked.slice(0, 5)}`);

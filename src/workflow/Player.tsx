@@ -27,7 +27,7 @@ import {
 import { time, type Recording, type Marker, type Clip } from './model';
 import { Button, Modal } from './ui';
 import { Timeline, type GapControls } from './Timeline';
-import { gapJoins } from '../../electron/clip-gaps';
+import { gapJoins, skipTarget } from '../../electron/clip-gaps';
 import { PlaybackMetrics } from './PlaybackMetrics';
 import { startScan } from './scanPlayback';
 import { fastScrubbing } from './SettingsPanel';
@@ -686,11 +686,11 @@ export function Player({
     reportActivity();
   }
   useEffect(() => () => clearTimeout(scrubbing.current.rest), []);
-  // VC-212: with Skip gaps on, forward playback follows one clip and plays it as exported: the
-  // selected clip while the playhead is inside it, otherwise the first clip (by start) under the
-  // playhead. Whenever the playhead is inside a span that clip's export leaves out, it jumps to
-  // where the export resumes, however playback got there. Other clips' gaps are ignored, since
-  // each clip exports on its own. Scans, scrubbing and a paused playhead are left alone.
+  // VC-212: with Skip gaps on, forward playback jumps over gaps to where the export resumes,
+  // however playback got into one (Connor, 2026-11-11 03:37). A selected clip under the playhead
+  // plays as it exports: only its gaps count. With no clip selected, overlapping gaps skip to the
+  // soonest end, and a gap the playhead lands inside then plays. Scans, scrubbing and a paused
+  // playhead are left alone.
   const skipClips = useMemo(
     () =>
       skipGaps && showClips
@@ -715,17 +715,19 @@ export function Player({
   }, [onGapSkipped, selectedId]);
   useEffect(() => {
     if (!skipClips.some((c) => c.spans.length)) return;
+    // Gaps the playhead landed inside after a skip with no clip selected: those play until the
+    // playhead leaves them, so one skip goes to the soonest end and no further.
+    let landed: { out: number; back: number }[] = [];
     const timer = setInterval(() => {
       const v = video.current;
       if (!v || v.paused || v.seeking || scan.current || gestures.current.scrub) return;
-      const position = v.currentTime - clockOffset,
-        inside = (c: (typeof skipClips)[number]) => position >= c.start && position < c.end,
-        selected = skipClips.find((c) => c.id === skipSelected.current && inside(c)),
-        clip = selected ?? skipClips.find(inside);
-      const span = clip?.spans.find((x) => position >= x.out - 0.02 && position < x.back);
-      if (!clip || !span) return;
-      seek(span.back);
-      skipped.current?.(clip.id, span.number, span.removed);
+      const position = v.currentTime - clockOffset;
+      landed = landed.filter((x) => position >= x.out - 0.02 && position < x.back);
+      const next = skipTarget(skipClips, position, skipSelected.current, landed);
+      if (!next) return;
+      landed = next.landed;
+      seek(next.back);
+      skipped.current?.(next.clipId, next.number, next.removed);
     }, 16);
     return () => clearInterval(timer);
     // seek is stable for the life of the preview; the clips change with their gaps.
