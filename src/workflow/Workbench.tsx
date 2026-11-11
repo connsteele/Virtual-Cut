@@ -2067,7 +2067,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
               </aside>
               <div className={s.cutCenter}>
                 {player(r)}
-                <div className={s.tools}>
+                <div className={`${s.tools} ${s.cutTools}`}>
                   <Button
                     onClick={() => trim('start')}
                     disabled={!c || !canEdit}
@@ -2149,7 +2149,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   >
                     ⇧G · Skip gaps
                   </Button>
-                  <label className={s.followToggle}>
+                  <label className={s.followToggle} title="Selection follows playhead">
                     <input
                       type="checkbox"
                       checked={follow}
@@ -2162,10 +2162,10 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                         }
                       }}
                     />
-                    Selection follows playhead
+                    <span>Selection follows playhead</span>
                   </label>
                   <span className={s.spacer} />
-                  <span className={s.muted}>
+                  <span className={`${s.muted} ${s.cutToolsStatus}`}>
                     {(r.keyCount ?? r.keys?.length)
                       ? 'Keyframes indexed'
                       : 'Keyframe indexing pending'}

@@ -1692,6 +1692,25 @@
   font-size: 11px;
   color: var(--muted);
 }
+/* The Cut toolbar under the viewer stays on one line: in a narrow window the follow label and
+   the keyframe status shorten instead of wrapping, so the picture keeps its height. */
+.cutTools {
+  flex-wrap: nowrap;
+}
+.cutTools > * {
+  flex-shrink: 0;
+}
+.cutTools > .followToggle,
+.cutTools > .cutToolsStatus {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.cutTools > .followToggle span,
+.cutTools > .cutToolsStatus {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .media {
   grid-template-columns: 175px minmax(0, 1fr);
 }
