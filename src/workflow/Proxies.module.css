@@ -1,0 +1,145 @@
+/* VC-237: the proxy chip on recording cards and the Proxies window (Proxy Controls Prototype). */
+.chipWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  min-width: 0;
+}
+.chip {
+  padding: 2px 6px;
+  border: 1px solid #39534d;
+  border-radius: 4px;
+  color: #a6c3ba;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+button.chip:hover:not(:disabled) {
+  background: #273330;
+}
+.ready {
+  border-color: var(--accent-border);
+  color: var(--teal-light);
+}
+.making,
+.waiting,
+.paused {
+  border-color: #6b5a2a;
+  color: #e0b04a;
+}
+.missing,
+.failed {
+  border-color: #6e3433;
+  color: #e06a66;
+}
+.none {
+  border-style: dashed;
+  color: var(--muted);
+}
+.static {
+  cursor: default;
+}
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  box-shadow: 0 8px 24px #0009;
+}
+.menu button {
+  padding: 6px 9px;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.menu button:hover,
+.menu button:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+}
+.panel h4 {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.list {
+  display: grid;
+  gap: 2px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  font-size: 12px;
+}
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.list li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.options {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.options legend {
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.options small {
+  display: block;
+  color: var(--muted);
+}
+.facts {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+.facts b {
+  color: var(--text);
+  font-weight: 500;
+}
+/* The import step's "Make proxies during import" checkbox. */
+.importOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.importOption small {
+  display: block;
+}

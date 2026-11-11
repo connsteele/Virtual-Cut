@@ -104,6 +104,7 @@ import {
 import { Button, Field, Modal, Thumbnail } from './ui';
 import s from './Workflow.module.css';
 import { background } from './background';
+import { ProxiesButton } from './Proxies';
 function currentAudioStatus(jobs: MediaJob[], recording: Recording) {
   const latest = new Map<number, MediaJob>();
   const mode = recording.monitor || 'game';
@@ -1795,6 +1796,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                   >
                     Transcript
                   </Button>
+                  <ProxiesButton workspace={workspace} />
                 </>
               ) : (
                 <>
