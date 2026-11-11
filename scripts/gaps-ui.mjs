@@ -193,7 +193,8 @@ try {
       seen.some((t) => t > 6),
       `reached the piece after the gap from ${from}: ${seen.at(-1)}`,
     );
-    await expect(page.getByText('Skipped Gap 1 of 01')).toBeVisible();
+    // Skips are silent: no note in the bottom bar (Connor 2026-11-11 03:49).
+    await expect(page.getByText(/Skipped Gap/)).toHaveCount(0);
   }
   // Nothing selected (and selection not following the playhead): overlapping gaps skip to the
   // soonest end, 4 s (the overlapping clip's), and the first clip's gap it lands in then plays
