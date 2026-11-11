@@ -56,9 +56,10 @@ export const releaseNotes: ReleaseNote[] = [
   {
     version: '0.4.31',
     date: '2026-11-11',
-    title: 'Playback proxies and Splits on recordings with no clips',
+    title: 'Playback proxies with an Original/Proxy switch, and Splits on recordings with no clips',
     user: [
       'Make playback proxies: each recording card has a proxy chip (make, stop, remove, show in folder), and Proxies beside Transcript makes them for the whole batch and sets when they’re made (only when you ask, ticked at import, or never) and their size (1080p or 720p). Proxies are H.264 with a keyframe on every source keyframe and every half second, checked frame by frame before use, about 7 minutes per footage hour on the GPU. They pause for playback and transcription and carry on where they stopped.',
+      'Original / Proxy at the viewer’s top right, or P, switches the whole project between the originals and their proxies, and the project remembers it. Flipping keeps the frame and keeps playing; a recording without a proxy shows its original. Dragging on a proxy lands on exact frames. The size, codec and frame rate now sit in a tag on the picture, and Info beside the switch shows it Always, When paused or Never. Exports always copy the original.',
       'Accepting a Split on a recording with no clips, spoken or from an agent, makes both clips: from the start to the Split and from the Split to the end, named by the card, the agent, or after the recording. Reopen removes both.',
     ],
     agents: {
@@ -69,6 +70,7 @@ export const releaseNotes: ReleaseNote[] = [
         'Rework a spoken Split cue with one split that `refines` its line and names both clips with `clip_names`, rather than proposing two clip ranges beside it. Propose two clip ranges only where there is no Split cue.',
         'Read `get_intent_guide` again: version 7 changes how a spoken Split cue is reworked.',
         'Recordings can have a playback proxy made in the app; agents see no change. Proxy jobs appear in the media lane like the picture pass.',
+        'Agents see no change from the Original/Proxy switch; times and frames are the same on a proxy.',
       ],
       intentGuide: 7,
     },
