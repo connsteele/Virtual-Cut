@@ -1,4 +1,4 @@
-# Intent guide (version 6)
+# Intent guide (version 7)
 
 Agents read this guide through the MCP tool `get_intent_guide`, together with the user's own
 labelled examples, earlier decisions and habits. The text agents receive is in
@@ -29,9 +29,11 @@ A line can carry several intents.
 
 - **Split** (or Cut) is a command; the app offers it as a Split cue. Keep a Split where it was said
   unless a black screen ends within 5 s before it. Propose a cut up to 12 s back only when what's
-  said shows the call came late, and say why (decision D6, October 10, 2026). That time is where
-  the clip boundary goes: since version 5 the agent proposes the clip ranges on either side of it
-  and cites the cue line, rather than a split.
+  said shows the call came late, and say why (decision D6, October 10, 2026). Since version 7 the
+  agent reworks the cue with one split that refines its line and names both clips with
+  `clip_names`: one card, and accepting it settles the cue. On a recording with no clip yet,
+  accepting it makes the clips on both sides. (Versions 5 and 6 proposed two clip ranges beside
+  the cue, which left the Split card and the clip ranges side by side.)
 - **Clip start/in** and **Clip end/out** pair into a clip range.
 - **Marker**, **Mark** and **Note** are no longer needed as cue words. Older recordings use them;
   the line is still free speech to interpret, and an agent reworks the cue rather than adding a
@@ -53,8 +55,9 @@ A line can carry several intents.
   continuous scene is a range marker, not a clip range.
 - **Every recording gets a clip (version 5).** Import makes no clip, and a recording with no clip
   exports nothing. The agent proposes at least one named clip range on every recording, one over
-  the whole recording when all of it is worth keeping. Where footage should become two clips it
-  proposes both clip ranges rather than a split; a spoken Split marks where the boundary goes.
+  the whole recording when all of it is worth keeping. Where footage with no Split cue should
+  become two clips it proposes both clip ranges rather than a split; a spoken Split cue is
+  reworked as a split (version 7).
 - Several clip ranges on one recording are fine; each exports as its own file. Clips overlap only
   when the creator asks or the footage really belongs to more than one, and the reason says why.
 - **No mic, or a silent mic.** Some sessions are recorded just to relax, with no commentary. The

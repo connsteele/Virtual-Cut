@@ -682,3 +682,51 @@ console.log('batch record checks passed');
     { item: 'marker', id: 'm1', changed: { color: { from: 'Green', to: 'Purple' } } },
   ]);
 }
+
+// VC-243: a split on a recording with no clip makes both clips; the record links both to the
+// split, and a later trim of either is the user's change.
+{
+  const split = proposal('k1', 'cut', { time: 60, names: { first: 'Intro', second: 'Siege' } });
+  let m = { ...emptyModel(), recordings: [recording] };
+  const rec = addSubmission(undefined, {
+    project,
+    batch,
+    model: m,
+    proposals: [split],
+    stored: [split],
+    ...read,
+    now: '2026-10-15T01:00:01Z',
+  });
+  m = applyProposalCommand(
+    m,
+    split,
+    {
+      action: 'accept-proposal',
+      proposalId: split.id,
+      sourceId: 'r1',
+      projectId: 'p1',
+      transcriptId: '',
+      segmentId: 0,
+      expected: 'null',
+    },
+    () => `k${++n}`,
+    '2026-10-15T01:05:00Z',
+  );
+  m.clips = m.clips.map((c) => (c.name === 'Siege' ? { ...c, end: 190 } : c));
+  const [only] = finalState(rec, {
+    project,
+    batch,
+    model: m,
+    proposals: [split],
+    exports: [],
+    projectRevision: 4,
+    now: '2026-10-15T02:00:00Z',
+  }).final.recordings;
+  assert.deepEqual(
+    only.clips.map((c) => [c.name, c.start, c.end, c.origin, c.changed]),
+    [
+      ['Intro', 0, 60, { proposalId: 'k1' }, undefined],
+      ['Siege', 60, 190, { proposalId: 'k1' }, { end: { from: 200, to: 190 } }],
+    ],
+  );
+}

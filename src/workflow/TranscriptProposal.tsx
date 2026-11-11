@@ -107,9 +107,19 @@ export function TranscriptProposal({
   const targetClips = session.clips.filter((c) => start > c.start && start < c.end);
   const target = draft.clipId || (targetClips.length === 1 ? targetClips[0].id : '');
   // A split names both halves: the agent's suggestions, else the clip's name and "· 2".
-  const targetName = targetClips.find((c) => c.id === target)?.name ?? '';
-  const first = draft.first ?? proposal.names?.first ?? targetName;
-  const second = draft.second ?? proposal.names?.second ?? (first ? `${first} · 2` : '');
+  // On a recording with no clip yet, the split makes both clips (VC-243); without the agent's
+  // names they are named after the recording.
+  const clipless = split && !session.clips.length;
+  const targetName = clipless
+    ? session.title
+    : (targetClips.find((c) => c.id === target)?.name ?? '');
+  // An accepted split shows the names its clips were given.
+  const named = split && decision?.status === 'accepted' && decision.title != null;
+  const first = (named ? decision.title : draft.first) ?? proposal.names?.first ?? targetName;
+  const second =
+    (named ? decision.text : draft.second) ??
+    proposal.names?.second ??
+    (first ? `${first} · 2` : '');
   const title = draft.title ?? proposal.title;
   const text = draft.text ?? proposal.text;
   // A marker's color (VC-200): the agent's suggestion, else the default; a clip range's applies
@@ -193,6 +203,13 @@ export function TranscriptProposal({
     .filter((e) => e.role === 'mic')
     .reduce((n, e) => n + e.lineIds.length, 0);
   if (proposal.kind === 'note' && micLines > 1) meta.push(`From ${micLines} mic lines`);
+  if (clipless && !decision)
+    meta.push(
+      <span key="clipless" data-split-clipless>
+        No clip yet: accepting makes both clips, from the start to the Split and from the Split to
+        the end.
+      </span>,
+    );
   return (
     <ProposalCard
       id={proposal.id}
@@ -370,7 +387,7 @@ export function TranscriptProposal({
             ? 'Accept as range marker'
             : `Accept ${kind.toLowerCase()}`
       }
-      acceptDisabled={split && !target}
+      acceptDisabled={split && !target && !clipless}
       onToggle={() => {
         setOpen(!open);
         if (open) setEditing(false);
@@ -385,7 +402,7 @@ export function TranscriptProposal({
           text: split ? undefined : text,
           time: start,
           endTime: end,
-          clipId: split ? target : undefined,
+          clipId: split && target && !clipless ? target : undefined,
           firstName: split ? first : undefined,
           secondName: split ? second : undefined,
           color: proposal.kind === 'mark' ? color : undefined,
@@ -453,7 +470,7 @@ export function TranscriptProposal({
           />
         )}
         {!split && !editing && text && <p className={s.reason}>{text}</p>}
-        {split && (
+        {split && !clipless && (
           <p className={s.muted}>
             Splits{' '}
             {editing ? (
