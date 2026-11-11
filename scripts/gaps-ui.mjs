@@ -170,6 +170,31 @@ try {
   await expect(skip).toHaveAttribute('aria-pressed', 'false');
   await page.keyboard.press('Shift+G');
   await expect(skip).toHaveAttribute('aria-pressed', 'true');
+  // Playing forward never shows what the export leaves out (3–6 s): not when crossing into the
+  // gap, and not when playback starts inside it (Connor 2026-11-11 03:31).
+  const played = (from) =>
+    page.evaluate(async () => {
+      const v = document.querySelector('video'),
+        seen = [];
+      for (const end = performance.now() + 2600; performance.now() < end;) {
+        if (!v.seeking) seen.push(v.currentTime);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      return seen;
+    });
+  for (const from of [2.2, 4.0]) {
+    await seek(from);
+    await page.keyboard.press('k');
+    const seen = await played(from);
+    await page.keyboard.press('k');
+    const leaked = seen.filter((t) => t > 3.1 && t < 5.9);
+    assert(leaked.length <= 2, `played inside the gap from ${from}: ${leaked.slice(0, 5)}`);
+    assert(
+      seen.some((t) => t > 6),
+      `reached the piece after the gap from ${from}: ${seen.at(-1)}`,
+    );
+    await expect(page.getByText('Skipped Gap 1 of 01')).toBeVisible();
+  }
   await page.keyboard.press('Shift+G');
   await expect(skip).toHaveAttribute('aria-pressed', 'false');
   // A second gap by Shift-drag over the clip, then G.

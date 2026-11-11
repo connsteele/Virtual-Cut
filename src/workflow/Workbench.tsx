@@ -1734,7 +1734,15 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
             : undefined
         }
         skipGaps={page === 'cut' && skipGaps}
-        onGapSkipped={(number, removed) => setNotice(`Skipped Gap ${number} · ${time(removed)}`)}
+        onGapSkipped={(clipId, number, removed) => {
+          const all = model.clips
+              .filter((x) => x.rid === record.id)
+              .sort((a, b) => a.start - b.start),
+            index = all.findIndex((x) => x.id === clipId);
+          setNotice(
+            `Skipped Gap ${number} of ${String(index + 1).padStart(2, '0')} ${all[index]?.name ?? ''} · ${time(removed)}`,
+          );
+        }}
         onPlayable={setCanEdit}
         onFrame={(pinned) => updateRecording(record.id, { pinned })}
         autoPlay={sequence && playingSequence}

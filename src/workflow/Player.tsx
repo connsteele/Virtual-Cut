@@ -146,9 +146,9 @@ export function Player({
   onProposalAdjust?: (card: string, at: { start: number; end?: number }) => void;
   /** VC-212: gap selection, edits and the in-progress gap, handed to the timeline. */
   gaps?: GapControls;
-  /** Forward playback jumps over each gap to where the export resumes (Shift+G). */
+  /** Forward playback plays one clip as exported, jumping over its gaps (Shift+G). */
   skipGaps?: boolean;
-  onGapSkipped?: (number: number, removed: number) => void;
+  onGapSkipped?: (clipId: string, number: number, removed: number) => void;
   /** The project's Original/Proxy switch (VC-238). Without `onViewerSource` the viewer has no
    * switch and always plays `recording.url` (completed exports). */
   viewerSource?: 'original' | 'proxy';
@@ -686,50 +686,51 @@ export function Player({
     reportActivity();
   }
   useEffect(() => () => clearTimeout(scrubbing.current.rest), []);
-  // VC-212: with Skip gaps on, forward playback jumps from where a gap's export cut begins to
-  // where it resumes (keyframes at both ends), so the clip plays as exported. Scans, scrubbing and
-  // a paused playhead parked inside a gap are left alone.
-  const skipSpans = useMemo(
+  // VC-212: with Skip gaps on, forward playback follows one clip and plays it as exported: the
+  // selected clip while the playhead is inside it, otherwise the first clip (by start) under the
+  // playhead. Whenever the playhead is inside a span that clip's export leaves out, it jumps to
+  // where the export resumes, however playback got there. Other clips' gaps are ignored, since
+  // each clip exports on its own. Scans, scrubbing and a paused playhead are left alone.
+  const skipClips = useMemo(
     () =>
       skipGaps && showClips
-        ? clips.flatMap((c) =>
-            gapJoins(c, r.keys || [])
-              .filter((j) => !j.short)
-              .map((j) => ({ out: j.out, back: j.back, number: j.number, removed: j.removed })),
-          )
+        ? [...clips]
+            .sort((a, b) => a.start - b.start)
+            .map((c) => ({
+              id: c.id,
+              start: c.start,
+              end: c.end,
+              spans: gapJoins(c, r.keys || [])
+                .filter((j) => !j.short)
+                .map((j) => ({ out: j.out, back: j.back, number: j.number, removed: j.removed })),
+            }))
         : [],
     [skipGaps, showClips, clips, r.keys],
   );
-  const skipped = useRef(onGapSkipped);
+  const skipped = useRef(onGapSkipped),
+    skipSelected = useRef(selectedId);
   useEffect(() => {
     skipped.current = onGapSkipped;
-  }, [onGapSkipped]);
+    skipSelected.current = selectedId;
+  }, [onGapSkipped, selectedId]);
   useEffect(() => {
-    if (!skipSpans.length) return;
-    let last = -Infinity;
+    if (!skipClips.some((c) => c.spans.length)) return;
     const timer = setInterval(() => {
       const v = video.current;
-      if (!v || v.paused || v.seeking || scan.current || gestures.current.scrub) {
-        last = -Infinity;
-        return;
-      }
+      if (!v || v.paused || v.seeking || scan.current || gestures.current.scrub) return;
       const position = v.currentTime - clockOffset,
-        before = last;
-      last = position;
-      // Only a crossing skips: pressing play inside a gap plays what is there.
-      if (before === -Infinity) return;
-      const span = skipSpans.find(
-        (x) => before < x.out && position >= x.out - 0.02 && position < x.back,
-      );
-      if (!span) return;
-      last = span.back;
+        inside = (c: (typeof skipClips)[number]) => position >= c.start && position < c.end,
+        selected = skipClips.find((c) => c.id === skipSelected.current && inside(c)),
+        clip = selected ?? skipClips.find(inside);
+      const span = clip?.spans.find((x) => position >= x.out - 0.02 && position < x.back);
+      if (!clip || !span) return;
       seek(span.back);
-      skipped.current?.(span.number, span.removed);
+      skipped.current?.(clip.id, span.number, span.removed);
     }, 16);
     return () => clearInterval(timer);
-    // seek is stable for the life of the preview; spans change with the clip's gaps.
+    // seek is stable for the life of the preview; the clips change with their gaps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skipSpans, clockOffset]);
+  }, [skipClips, clockOffset]);
   useEffect(() => {
     if (!looping) return;
     const timer = setInterval(() => {
