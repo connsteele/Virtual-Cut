@@ -67,6 +67,8 @@ interface Data {
   activeBatchId: string;
   model: Model;
   revision: number;
+  /** Proxy settings (VC-237), written natively from the Proxies window. */
+  proxies?: import('./proxy-settings.js').ProxySettings;
 }
 const APP_ID = PROJECT_APP_ID;
 export class ProjectStore {

@@ -173,6 +173,12 @@ const api: VirtualCutApi = {
     job: (id, jobId, action) => ipcRenderer.invoke('workspace:job', id, jobId, action),
     analysePicture: (id, sourceIds) =>
       ipcRenderer.invoke('workspace:analysePicture', id, sourceIds),
+    makeProxies: (id, sourceIds, again) =>
+      ipcRenderer.invoke('workspace:makeProxies', id, sourceIds, again),
+    removeProxy: (id, sourceId) => ipcRenderer.invoke('workspace:removeProxy', id, sourceId),
+    revealProxy: (id, sourceId) => ipcRenderer.invoke('workspace:revealProxy', id, sourceId),
+    setProxySettings: (id, settings) =>
+      ipcRenderer.invoke('workspace:setProxySettings', id, settings),
     previewPlaying: (playing) => ipcRenderer.invoke('workspace:previewPlaying', playing),
     exportPlan: (id, clipId, container) =>
       ipcRenderer.invoke('workspace:exportPlan', id, clipId, container),

@@ -330,6 +330,7 @@ function registerDesktopApi(): void {
           'recent',
           'revealSave',
           'revealSource',
+          'revealProxy',
           'revealExport',
           'save',
         ].includes(name);
@@ -410,6 +411,14 @@ function registerDesktopApi(): void {
   workspace('audio', (id, sourceId) => projects.prepareAudio(id, sourceId));
   workspace('job', (id, jobId, action) => projects.job(id, jobId, action));
   workspace('analysePicture', (id, sourceIds) => projects.analysePicture(id, sourceIds));
+  workspace('makeProxies', (id, sourceIds, again) =>
+    projects.makeProxies(id, sourceIds, again === true),
+  );
+  workspace('removeProxy', (id, sourceId) => projects.removeProxy(id, sourceId));
+  workspace('revealProxy', async (id, sourceId) =>
+    shell.showItemInFolder(await projects.proxyLocation(id, sourceId)),
+  );
+  workspace('setProxySettings', (id, settings) => projects.setProxySettings(id, settings));
   // Not queued behind other project calls: the picture pass must hear about playback at once.
   ipcMain.handle('workspace:previewPlaying', (event, playing) => {
     assertTrustedSender(event);
