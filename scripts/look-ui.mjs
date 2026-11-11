@@ -136,7 +136,7 @@ try {
     [activity.tool, activity.outcome, activity.summary, activity.images],
     ['look', 'refused', 'Look at Screen session: 1 frame 720p 0:02.5', undefined],
   );
-  assert.equal((await guide()).version, '6');
+  assert.equal((await guide()).version, '7');
   assert.ok(!JSON.stringify(await guide()).includes('Look whenever seeing the picture'));
 
   await setPictures(true);
