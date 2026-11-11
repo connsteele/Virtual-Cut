@@ -1,12 +1,46 @@
-import type { Model } from './workflow-types.js';
+import type { Model, Recording } from './workflow-types.js';
 import type { CueDecision } from './transcript-contracts.js';
+
+/**
+ * A Split accepted on a recording with no clip yet (VC-243), spoken or proposed by an agent:
+ * it makes both clips, start to `at` and `at` to the end. Without names they are named after
+ * the recording, like Whole recording names its clip. The decision keeps both ids, so
+ * reopening it removes them.
+ */
+export function splitWithoutClip(
+  next: Model,
+  record: Recording,
+  at: number,
+  names: [string, string],
+  decision: CueDecision,
+  newId: () => string,
+) {
+  if (at <= 0.001 || at >= record.duration - 0.001)
+    throw new Error('Choose a split position inside this recording, away from its ends.');
+  const first = names[0] || record.title.trim().slice(0, 200) || 'Clip',
+    made = { rid: record.id, folder: '_Review', include: true, accepted: false };
+  decision.firstClipId = newId();
+  decision.clipId = newId();
+  next.clips.push(
+    { ...made, id: decision.firstClipId, name: first, start: 0, end: at },
+    {
+      ...made,
+      id: decision.clipId,
+      name: names[1] || `${first} · 2`.slice(0, 200),
+      start: at,
+      end: record.duration,
+    },
+  );
+  return { first: next.clips.at(-2)!, second: next.clips.at(-1)! };
+}
 
 /**
  * Reopening a decided cue or proposal (VC-155): the decision goes, and so does what accepting
  * made: the marker, the note, the clip, or the split (its two clips become one again, with the
- * name it had). Decisions that went with it (a clip's other boundary, a spoken cue settled by
- * the proposal) go too. When what it made is already gone (the user joined the split's clips
- * again by hand, deleted the marker), reopening only puts it back in review.
+ * name it had; a split that made both clips removes them, VC-243). Decisions that went with it
+ * (a clip's other boundary, a spoken cue settled by the proposal) go too. When what it made is
+ * already gone (the user joined the split's clips again by hand, deleted the marker), reopening
+ * only puts it back in review.
  */
 export function reopenDecision(model: Model, decision: CueDecision): Model {
   const next = structuredClone(model);
@@ -43,7 +77,13 @@ export function reopenDecision(model: Model, decision: CueDecision): Model {
   if (decision.markerId)
     next.markers[source] = (next.markers[source] || []).filter((m) => m.id !== decision.markerId);
   if (decision.noteId) next.notes = next.notes.filter((n) => n.id !== decision.noteId);
-  if (decision.kind === 'cut') {
+  if (decision.kind === 'cut' && decision.firstClipId) {
+    // A split that made both clips (VC-243) takes both back while they still meet at the split.
+    const first = next.clips.find((c) => c.id === decision.firstClipId),
+      second = next.clips.find((c) => c.id === decision.clipId);
+    if (first && second && Math.abs(first.end - second.start) < 0.001)
+      next.clips = next.clips.filter((c) => c !== first && c !== second);
+  } else if (decision.kind === 'cut') {
     const second = next.clips.find((c) => c.id === decision.clipId);
     const first =
       second &&

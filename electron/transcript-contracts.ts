@@ -127,6 +127,11 @@ export interface CueDecision {
   settledBy?: string;
   /** A split: the clip's name before it, so reopening can put the clip back as it was. */
   priorName?: string;
+  /**
+   * A split on a recording with no clip (VC-243): the first of the two clips it made (`clipId`
+   * is the second), so reopening removes both.
+   */
+  firstClipId?: string;
   /** A range accepted as the other range kind (VC-186): the kind the user chose over the agent's. */
   kindChange?: ProposalKindChange;
   /** Why the user decided an agent proposal as they did (VC-173); never required. */

@@ -38,7 +38,7 @@ export const proposalInput = z.object({
   kind: z
     .enum(['marker', 'note', 'split', 'clip'])
     .describe(
-      'marker: a marker with a note, at a point or (with end_seconds) over a range that labels part of a continuous scene. note: a timed note. split: split the clip at this time. clip: a clip range from time_seconds to end_seconds.',
+      'marker: a marker with a note, at a point or (with end_seconds) over a range that labels part of a continuous scene. note: a timed note. split: split the clip at this time; on a recording with no clip yet, accepting makes the clips on both sides (name them with clip_names). clip: a clip range from time_seconds to end_seconds.',
     ),
   time_seconds: z.number().min(0).describe('Position in the recording, in seconds.'),
   end_seconds: z
