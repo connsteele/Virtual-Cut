@@ -9,7 +9,7 @@
 import { testPath } from './test-paths.mjs';
 import { skippedStep, withWholeClips } from './shared.mjs';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -260,4 +260,9 @@ else {
   );
 }
 await service.close();
+// gaps-ui.mjs opens this project: one 12 s recording, its clip 1–11 s without gaps.
+await writeFile(
+  path.join(root, 'latest-native.json'),
+  JSON.stringify({ file, recording: rid, clip: plain.plan.clipId }),
+);
 console.log(`Stitched export checks passed in ${dir}`);

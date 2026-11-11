@@ -2816,7 +2816,26 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                             onFolder={() => setFolderIds([clip.id])}
                           />
                           <div className={s.tools}>
-                            <span className={s.muted}>{time(clip.end - clip.start)}</span>
+                            {clip.gaps?.length ? (
+                              (() => {
+                                // VC-212: the length it will export, joins on keyframes where known.
+                                const rec = model.recordings.find((x) => x.id === clip.rid),
+                                  keys = rec ? indexed(rec).keys || [] : [],
+                                  pieces = clipPieces(clip, keys, rec?.duration);
+                                return (
+                                  <span
+                                    className={s.muted}
+                                    data-review-exported-length
+                                    title={`${time(clip.end - clip.start)} from in to out, before its gaps are cut out`}
+                                  >
+                                    {time(piecesLength(pieces))} · {pieces.length - 1}{' '}
+                                    {pieces.length === 2 ? 'join' : 'joins'}
+                                  </span>
+                                );
+                              })()
+                            ) : (
+                              <span className={s.muted}>{time(clip.end - clip.start)}</span>
+                            )}
                             <Button
                               aria-expanded={expanded === clip.id}
                               onClick={() => {

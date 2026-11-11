@@ -95,8 +95,10 @@ export const desktop = [
   'screen-text-ui.mjs',
   'look-ui.mjs',
   'follow-dblclick-ui.mjs',
+  'gaps-ui.mjs',
 ];
 export const dependencies = {
+  'gaps-ui.mjs': ['stitched-export-native.mjs'],
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'screen-text-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],
