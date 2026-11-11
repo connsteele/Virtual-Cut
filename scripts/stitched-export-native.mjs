@@ -259,6 +259,26 @@ else {
     `Real footage: ${plan.pieces.length} pieces, ${record.verification.length.toFixed(3)} s, ${record.elapsedMs} ms`,
   );
 }
+// gaps-ui.mjs also needs a second clip overlapping the first, whose gap (2.6–4.4, leaving out
+// 3–4) overlaps the gap that check makes on the first clip (2.4–6.6, leaving out 3–6).
+{
+  const before = structuredClone(service.store.data.model),
+    after = structuredClone(before);
+  after.clips.push({
+    id: 'overlap',
+    rid,
+    name: 'Overlapping clip',
+    originalName: 'Overlapping clip',
+    folder: '_Review',
+    originalFolder: '_Review',
+    start: 2,
+    end: 9,
+    include: true,
+    gaps: [{ id: 'o1', start: 2.6, end: 4.4 }],
+  });
+  await service.save(project, before, after);
+  await wait();
+}
 await service.close();
 // gaps-ui.mjs opens this project: one 12 s recording, its clip 1–11 s without gaps.
 await writeFile(

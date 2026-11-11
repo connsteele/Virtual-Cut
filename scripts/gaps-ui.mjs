@@ -195,6 +195,30 @@ try {
     );
     await expect(page.getByText('Skipped Gap 1 of 01')).toBeVisible();
   }
+  // Nothing selected (and selection not following the playhead): overlapping gaps skip to the
+  // soonest end, 4 s (the overlapping clip's), and the first clip's gap it lands in then plays
+  // to 6 s rather than skipping on at once (Connor 2026-11-11 03:37 and 03:43).
+  await page.getByLabel('Selection follows playhead').uncheck();
+  const lane = await page.locator('[aria-label="Clip selection"]').boundingBox(),
+    span = await page.getByTestId('scrub-surface').evaluate((e) => ({
+      start: Number(e.dataset.viewStart),
+      end: Number(e.dataset.viewEnd),
+    }));
+  await page.mouse.click(
+    lane.x + ((11.6 - span.start) / (span.end - span.start)) * lane.width,
+    lane.y + 4,
+  );
+  await expect(page.locator('[data-clip-container][data-selected="true"]')).toHaveCount(0);
+  await seek(2.2);
+  await page.keyboard.press('k');
+  const loose = await played();
+  await page.keyboard.press('k');
+  assert(!loose.some((t) => t > 3.1 && t < 3.9), `played the soonest gap: ${loose.slice(0, 8)}`);
+  assert(
+    loose.some((t) => t > 4.2 && t < 5.8),
+    `the gap it landed in should play, not skip: ${loose.filter((t) => t > 3).slice(0, 8)}`,
+  );
+  await page.getByLabel('Selection follows playhead').check();
   await page.keyboard.press('Shift+G');
   await expect(skip).toHaveAttribute('aria-pressed', 'false');
   // A second gap by Shift-drag over the clip, then G.

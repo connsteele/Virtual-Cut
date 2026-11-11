@@ -691,6 +691,7 @@ export function Player({
   // plays as it exports: only its gaps count. With no clip selected, overlapping gaps skip to the
   // soonest end, and a gap the playhead lands inside then plays. Scans, scrubbing and a paused
   // playhead are left alone.
+  const skipKey = JSON.stringify(clips.map((c) => [c.id, c.start, c.end, c.gaps]));
   const skipClips = useMemo(
     () =>
       skipGaps && showClips
@@ -705,10 +706,15 @@ export function Player({
                 .map((j) => ({ out: j.out, back: j.back, number: j.number, removed: j.removed })),
             }))
         : [],
-    [skipGaps, showClips, clips, r.keys],
+    // The clip list is rebuilt on every render; only what skipping reads should restart it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skipGaps, showClips, skipKey, r.keys],
   );
   const skipped = useRef(onGapSkipped),
-    skipSelected = useRef(selectedId);
+    skipSelected = useRef(selectedId),
+    // Gaps a no-selection skip landed inside: they play rather than skip again. Kept outside the
+    // timer so a re-render after the jump cannot forget them (Connor, 2026-11-11 03:43).
+    skipLanded = useRef<{ out: number; back: number }[]>([]);
   useEffect(() => {
     skipped.current = onGapSkipped;
     skipSelected.current = selectedId;
@@ -717,15 +723,17 @@ export function Player({
     if (!skipClips.some((c) => c.spans.length)) return;
     // Gaps the playhead landed inside after a skip with no clip selected: those play until the
     // playhead leaves them, so one skip goes to the soonest end and no further.
-    let landed: { out: number; back: number }[] = [];
     const timer = setInterval(() => {
       const v = video.current;
       if (!v || v.paused || v.seeking || scan.current || gestures.current.scrub) return;
       const position = v.currentTime - clockOffset;
-      landed = landed.filter((x) => position >= x.out - 0.02 && position < x.back);
-      const next = skipTarget(skipClips, position, skipSelected.current, landed);
+      // A landed gap plays until the playhead passes its end (or is moved well before it).
+      skipLanded.current = skipLanded.current.filter(
+        (x) => position < x.back && position >= x.out - 2,
+      );
+      const next = skipTarget(skipClips, position, skipSelected.current, skipLanded.current);
       if (!next) return;
-      landed = next.landed;
+      skipLanded.current = next.landed;
       seek(next.back);
       skipped.current?.(next.clipId, next.number, next.removed);
     }, 16);
