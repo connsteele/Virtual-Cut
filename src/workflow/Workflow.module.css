@@ -2241,7 +2241,7 @@
 }
 .gapRow {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
   padding: 1px 4px;
@@ -2257,8 +2257,14 @@
   border-color: #ede6d88c;
   background: #ede6d80f;
 }
+.gapSpan {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .gapNumber,
 .gapRemoved {
+  white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
 }

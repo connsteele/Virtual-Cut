@@ -1250,6 +1250,8 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
       setNotice('Split at the gap’s edges: the gap is now the space between the two clips.');
   }
   const gapKeys = () => indexed(r).keys || [];
+  /** A short time for the gap rows of a narrow clip card: 00:02.4. */
+  const brief = (t: number) => time(t).replace(/(\.\d)\d\d$/, '$1');
   function makeGap(clipId: string, a: number, b: number) {
     const clip = model.clips.find((x) => x.id === clipId);
     if (!clip) return;
@@ -2304,7 +2306,7 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                               <div className={s.gapHead}>
                                 <span>
                                   {joins.length} {joins.length === 1 ? 'gap' : 'gaps'}
-                                  {removed > 0 && ` · ${time(removed)} removed`}
+                                  {removed > 0 && ` · ${brief(removed)} removed`}
                                 </span>
                                 <span>
                                   {real + 1} {real ? 'pieces' : 'piece'} · {real}{' '}
@@ -2335,11 +2337,11 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
                                       }}
                                     >
                                       <span className={s.gapNumber}>{j.number}</span>
-                                      <span>
-                                        {time(j.gap.start)} – {time(j.gap.end)}
+                                      <span className={s.gapSpan}>
+                                        {brief(j.gap.start)}–{brief(j.gap.end)}
                                       </span>
                                       <span className={s.gapRemoved}>
-                                        {j.short ? 'removes nothing' : `removes ${time(j.removed)}`}
+                                        {j.short ? 'removes nothing' : `−${brief(j.removed)}`}
                                       </span>
                                       <Button
                                         aria-label={`Remove gap ${j.number} and put the footage back`}

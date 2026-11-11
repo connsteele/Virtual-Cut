@@ -95,7 +95,8 @@ try {
   await expect(clip.locator('[data-clip-piece]')).toHaveCount(2);
   // The card lists it: on 1 s keyframes 2.4–6.6 removes 3–6.
   const row = card.locator('[data-gap-row]');
-  await expect(row).toContainText('removes 00:03.000');
+  await expect(row).toContainText('00:02.4–00:06.6');
+  await expect(row).toContainText('−00:03.0');
   await expect(card.locator('[data-exported-length]')).toContainText('00:07.000');
   await gapsSaved(1);
   await capture('gaps-one');
