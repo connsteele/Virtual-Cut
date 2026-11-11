@@ -56,22 +56,29 @@ export const releaseNotes: ReleaseNote[] = [
   {
     version: '0.4.31',
     date: '2026-11-11',
-    title: 'Playback proxies with an Original/Proxy switch, and Splits on recordings with no clips',
+    title:
+      'Gaps inside clips, playback proxies with an Original/Proxy switch, and Splits on recordings with no clips',
     user: [
       'Make playback proxies: each recording card has a proxy chip (make, stop, remove, show in folder), and Proxies beside Transcript makes them for the whole batch and sets when they’re made (only when you ask, ticked at import, or never) and their size (1080p or 720p). Proxies are H.264 with a keyframe on every source keyframe and every half second, checked frame by frame before use, about 7 minutes per footage hour on the GPU. They pause for playback and transcription and carry on where they stopped.',
       'Original / Proxy at the viewer’s top right, or P, switches the whole project between the originals and their proxies, and the project remembers it. Flipping keeps the frame and keeps playing; a recording without a proxy shows its original. Dragging on a proxy lands on exact frames. The size, codec and frame rate now sit in a tag on the picture, and Info beside the switch shows it Always, When paused or Never. Exports always copy the original.',
       'Accepting a Split on a recording with no clips, spoken or from an agent, makes both clips: from the start to the Split and from the Split to the end, named by the card, the agent, or after the recording. Reopen removes both.',
+      'Cut dull stretches out of the middle of a clip and still export one clip: press G where a stretch starts and G again where it ends, or Shift-drag over the clip and press G. The gap shows inside the clip; remove it with Backspace or its right-click menu, drag it with H. A gap at the clip’s start or end trims the clip instead.',
+      'Shift+G (Skip gaps) plays clips as they will export, jumping over gaps: a selected clip skips its own gaps, and with none selected, overlapping gaps skip to the soonest end. It is off whenever a project opens.',
+      'A clip with gaps exports as one file: video copied unchanged and joined on keyframes, so each end of a gap keeps up to a keyframe interval, and game audio rebuilt losslessly with a short fade at each join. Markers and subtitles move to the clip’s own time, and the export dialog shows the clip as it will export.',
     ],
     agents: {
       tools: [
         '`submit_proposals`: a split on a recording with no clip now makes the clips on both sides, named with `clip_names` {first, second}.',
+        '`get_annotations` and `get_project_summary`: a clip with gaps carries `gaps` (each with `start`, `end` and `removed`, the span its export leaves out, or null when too short to remove anything) and `exportedLength`.',
       ],
       doNow: [
         'Rework a spoken Split cue with one split that `refines` its line and names both clips with `clip_names`, rather than proposing two clip ranges beside it. Propose two clip ranges only where there is no Split cue.',
         'Read `get_intent_guide` again: version 7 changes how a spoken Split cue is reworked.',
         'Recordings can have a playback proxy made in the app; agents see no change. Proxy jobs appear in the media lane like the picture pass.',
         'Agents see no change from the Original/Proxy switch; times and frames are the same on a proxy.',
+        'When a clip has gaps, key notes to its exported time (source time minus everything removed before it) and leave out anything inside a removed span.',
       ],
+      gaps: ['You can’t propose gaps yet.'],
       intentGuide: 7,
     },
     draft: true,
