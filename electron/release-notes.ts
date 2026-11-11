@@ -81,7 +81,6 @@ export const releaseNotes: ReleaseNote[] = [
       gaps: ['You can’t propose gaps yet.'],
       intentGuide: 7,
     },
-    draft: true,
   },
   {
     version: '0.4.30',

@@ -2,6 +2,17 @@
 
 Version history for Virtual Cut, newest first. Entries were moved verbatim from the README on October 3, 2026; each version's detailed review notes, evidence and manual-acceptance status remain in `docs/review-<version>.md` and the milestone documents linked below. Builds are unsigned portable Windows folders.
 
+## 0.4.31 — Gaps inside clips, playback proxies with an Original/Proxy switch, and Splits on recordings with no clips (November 11, 2026)
+
+Sprint 15 gets ready for the next real batch. A clip can lose dull stretches from its middle and
+still export as one file: gaps are marked with G, play skips them with Shift+G, and the export
+joins the kept pieces on keyframes with game audio rebuilt losslessly (decision 0028). Recordings
+can have H.264 playback proxies, made on request, at import or never, from the recording's chip
+or the Proxies window. An Original/Proxy switch (P) plays and drags on them with exact frames,
+and exports always copy the original. Accepting a Split on a recording with no clips makes the
+clips on both sides. The intent guide reaches version 7: a spoken Split cue is reworked as one
+split that names both clips. See [the 0.4.31 review](docs/review-0.4.31.md).
+
 ## 0.4.30 — Work from the first batch: clips, clip colors, agent edits and faster scrubbing (November 10, 2026)
 
 Sprint 14, the first of M5, acts on Connor's first real batch. Importing a recording no longer makes
