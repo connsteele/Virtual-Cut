@@ -536,6 +536,8 @@
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
+  /* The metrics text, Info and the switch share one centre line. */
+  align-items: center;
 }
 .playbackMetrics {
   font-variant-numeric: tabular-nums;
@@ -561,6 +563,188 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
+}
+/* Original/Proxy (VC-238): the switch at the viewer's top right, and what is on screen in one
+   tag on the picture. */
+.sourceSwitch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+  font-size: 11px;
+}
+.sourceSwitch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sourceSwitch button + button {
+  border-left: 1px solid var(--line);
+}
+.sourceSwitch button:hover:not(:disabled) {
+  background: #273330;
+}
+.sourceSwitch button[aria-pressed='true'] {
+  color: var(--accent);
+  background: #173c39;
+}
+.sourceSwitch .sourceProxy[aria-pressed='true'] {
+  color: #fff;
+  background: var(--teal);
+}
+.sourceSwitch button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sourceSwitch kbd {
+  font:
+    10px ui-monospace,
+    Consolas,
+    monospace;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 3px;
+  opacity: 0.75;
+}
+.viewerTag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgb(16 22 22 / 85%);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  pointer-events: none;
+}
+.viewerTag b {
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ede6d8;
+}
+.viewerTag {
+  transition: opacity 0.25s;
+}
+.viewerTagHidden {
+  opacity: 0;
+}
+.infoMenu {
+  position: relative;
+  display: inline-flex;
+}
+.infoButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.infoButton:hover,
+.infoButton[aria-expanded='true'] {
+  color: var(--accent);
+  background: #173c39;
+  border-color: #38635d;
+}
+.infoPopup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 6;
+  display: grid;
+  min-width: 250px;
+  padding: 4px;
+  background: #1f2a28;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+  font-size: 12px;
+  color: #dfe8e5;
+  white-space: nowrap;
+}
+.infoPopup button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.infoPopup button:hover,
+.infoPopup button:focus-visible {
+  background: #173c39;
+}
+.infoPopup small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+.infoHead {
+  padding: 5px 9px 3px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.infoCheck {
+  width: 12px;
+  color: var(--accent);
+}
+.infoSep {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--line);
+}
+.viewerTagProxy {
+  border-color: #38635d;
+}
+.viewerTagProxy b {
+  color: var(--accent);
+}
+.proxyMaking {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: #e0b04a;
+  background: rgb(16 22 22 / 85%);
+  border: 1px solid #6b5a2a;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.proxyProgress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #263431;
+}
+.proxyProgress i {
+  display: block;
+  height: 100%;
+  background: #e0b04a;
 }
 .playbackFailure {
   position: absolute;

@@ -92,11 +92,13 @@ export const desktop = [
   'agent-changes-ui.mjs',
   'whats-new-ui.mjs',
   'split-snap-ui.mjs',
+  'split-clipless-ui.mjs',
   'proposal-preview-ui.mjs',
   'combined-transcript-ui.mjs',
   'visual-pass-ui.mjs',
   'screen-text-ui.mjs',
   'look-ui.mjs',
+  'proxy-switch-ui.mjs',
   'follow-dblclick-ui.mjs',
   'gaps-ui.mjs',
 ];

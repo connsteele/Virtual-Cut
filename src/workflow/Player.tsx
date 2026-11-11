@@ -10,6 +10,7 @@ import {
 } from 'react';
 import {
   Camera,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   FastForward,
@@ -37,6 +38,33 @@ import s from './Workflow.module.css';
 const speeds = [1, 2, 4, 6, 8, 16],
   audioLimit = 6;
 const faster = (rate: number) => speeds.find((step) => step > rate) ?? speeds.at(-1)!;
+/** When the info tag on the picture shows (VC-238): always, only while the picture stands still,
+ * or never. Remembered for the app, like the waveform choice. */
+type InfoMode = 'always' | 'paused' | 'never';
+const infoModes: [InfoMode, string][] = [
+  ['always', 'Always'],
+  ['paused', 'When paused'],
+  ['never', 'Never'],
+];
+const infoKey = 'virtual-cut.viewer-info',
+  infoFlashKey = 'virtual-cut.viewer-info-flash';
+function readSetting(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeSetting(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* The choice still holds for this window. */
+  }
+}
+/** The codec as people write it: H.264 and H.265 with the dot, others in capitals. */
+const codecName = (codec?: string) =>
+  codec === 'h264' ? 'H.264' : codec === 'hevc' ? 'H.265' : codec?.toUpperCase() || '';
 export interface Transport {
   seek: (time: number) => void;
   command: (key: string) => void;
@@ -79,6 +107,8 @@ export function Player({
   gaps,
   skipGaps = false,
   onGapSkipped,
+  viewerSource = 'proxy',
+  onViewerSource,
   ref,
 }: {
   recording: Recording;
@@ -119,8 +149,50 @@ export function Player({
   /** Forward playback jumps over each gap to where the export resumes (Shift+G). */
   skipGaps?: boolean;
   onGapSkipped?: (number: number, removed: number) => void;
+  /** The project's Original/Proxy switch (VC-238). Without `onViewerSource` the viewer has no
+   * switch and always plays `recording.url` (completed exports). */
+  viewerSource?: 'original' | 'proxy';
+  onViewerSource?: (source: 'original' | 'proxy') => void;
   ref?: Ref<Transport>;
 }) {
+  // Proxy means proxy everywhere, paused frames included; a recording without a usable proxy
+  // shows its original, and the switch says so (VC-238).
+  const proxy = r.proxy?.state === 'ready' && r.proxy.url ? r.proxy : undefined;
+  const onProxy = !!onViewerSource && viewerSource === 'proxy' && !!proxy;
+  const src = onProxy ? proxy!.url! : r.url;
+  // A proxy starts at the recording's first frame, so its clock has no offset.
+  const clockOffset = onProxy ? 0 : r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
+  /** What the video element has loaded, so a source switch keeps the playhead (VC-238). */
+  const loaded = useRef<{ id: string; offset: number } | null>(null),
+    resume = useRef<{ rate: number; status: string } | null>(null);
+  const [sourceNote, setSourceNote] = useState('');
+  const [infoMode, setInfoMode] = useState<InfoMode>(() => {
+      const saved = readSetting(infoKey);
+      return saved === 'paused' || saved === 'never' ? saved : 'always';
+    }),
+    [infoFlash, setInfoFlash] = useState(() => readSetting(infoFlashKey) !== 'false'),
+    [infoOpen, setInfoOpen] = useState(false),
+    [flashing, setFlashing] = useState(false),
+    [dragging, setDragging] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined),
+    infoMenu = useRef<HTMLSpanElement>(null);
+  /** Shows the tag for 2 s when the source changes, even under When paused and Never. */
+  const flashInfo = () => {
+    if (!infoFlash) return;
+    clearTimeout(flashTimer.current);
+    setFlashing(true);
+    flashTimer.current = setTimeout(() => setFlashing(false), 2000);
+  };
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  useEffect(() => {
+    if (!infoOpen) return;
+    infoMenu.current?.querySelector<HTMLElement>('[role=menu] button')?.focus();
+    const close = (e: PointerEvent) => {
+      if (!infoMenu.current?.contains(e.target as Node)) setInfoOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [infoOpen]);
   const video = useRef<HTMLVideoElement>(null),
     audio = useRef(new Map<number, HTMLAudioElement>()),
     scan = useRef<ReturnType<typeof startScan> | null>(null),
@@ -209,10 +281,23 @@ export function Player({
       }
     }
     if (frameCallback.current != null) v.cancelVideoFrameCallback(frameCallback.current);
+    // Original/Proxy on the same recording: carry the shown frame's position, and keep forward
+    // playback going once the other file is ready.
+    const switching = loaded.current?.id === r.id && v.readyState >= 1 && !v.error;
+    const position = switching ? Math.max(0, v.currentTime - loaded.current!.offset) : r.position;
+    resume.current =
+      switching && !v.paused && !scan.current
+        ? {
+            rate: speed.current,
+            status: status === 'Sequence playback' ? status : `${speed.current}× forward`,
+          }
+        : null;
+    loaded.current = { id: r.id, offset: clockOffset };
+    if (switching) flashInfo();
     scan.current?.cancel();
     scan.current = null;
     playRequest.current++;
-    retryPosition.current = null;
+    retryPosition.current = switching ? position : null;
     awaitingRecovery.current = false;
     previewId.current = crypto.randomUUID();
     recent.current = [];
@@ -223,14 +308,14 @@ export function Player({
     setError('');
     setErrorDetails('');
     setStatus('Paused');
-    setLoopEnabled(false);
-    setCurrent(r.position);
+    if (!switching) setLoopEnabled(false);
+    setCurrent(position);
     setDuration(r.duration);
-    v.src = r.url;
+    v.src = src;
     v.load();
     // URL grants remain stable for edits and undo, so they never reload media.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [r.url]);
+  }, [src]);
   function revealFrame() {
     const v = video.current!;
     if (v.seeking || v.readyState < 2) return;
@@ -266,9 +351,12 @@ export function Player({
     loopBounds.current = { looping, start: loopStart, end: loopEnd };
   }, [looping, loopStart, loopEnd]);
   const playing = status !== 'Paused';
+  // The info tag: Always, When paused (hidden while playing, scanning or dragging) or Never,
+  // with a 2 s flash when the source changes.
+  const tagShown =
+    flashing || infoMode === 'always' || (infoMode === 'paused' && !playing && !dragging);
   const reversePlaying = status.includes('reverse');
   const fastPlaying = status.includes('forward') && speed.current > 1;
-  const clockOffset = r.sourcePath ? Math.max(0, r.sourceStart || 0) : 0;
   const trace = useCallback(
     (action: PlaybackTrace['action'], details: Partial<PlaybackTrace> = {}) => {
       const entry = {
@@ -300,6 +388,7 @@ export function Player({
       seeking: v.seeking,
       duration,
       offset: clockOffset,
+      ...(onProxy ? { proxy: true } : {}),
       clipCount: clips.length,
       recent: [...recent.current],
     };
@@ -311,8 +400,9 @@ export function Player({
       sourceId: r.id,
       projectId,
       previewId: previewId.current,
+      ...(onProxy ? { proxy: true } : {}),
     });
-  }, [r.id, r.url, projectId, trace]);
+  }, [r.id, src, onProxy, projectId, trace]);
   useEffect(() => {
     trace('clips-changed', { clipCount: clips.length });
   }, [clips.length, trace, r.id]);
@@ -536,8 +626,10 @@ export function Player({
     const interval =
       keys.length > 1 ? Math.max(0.25, (keys.at(-1)! - keys[0]) / (keys.length - 1)) : Infinity;
     let target = position;
-    // Fastest scrubbing (Settings) seeks a keyframe on every move, as 0.4.30-53 did.
-    if (!exact && (scrubbing.current.fast || Math.abs(position - shown) > interval))
+    // Fastest scrubbing (Settings) seeks a keyframe on every move, as 0.4.30-53 did. A proxy
+    // always seeks exact frames: with a keyframe every 0.5 s they decode faster than snapping
+    // to the original's keyframes would show (62 against 39 pictures a second, VC-238).
+    if (!onProxy && !exact && (scrubbing.current.fast || Math.abs(position - shown) > interval))
       target = nearestKey(position);
     if (Math.abs(shown - target) < 0.0005) target = position;
     if (Math.abs(shown - target) < 0.0005) return false;
@@ -573,6 +665,7 @@ export function Player({
   }
   function scrubActive(active: boolean) {
     const state = scrubbing.current;
+    setDragging(active);
     if (active) {
       stop();
       gestures.current.scrub = true;
@@ -735,9 +828,36 @@ export function Player({
       }
     }, 100);
     return () => clearInterval(timer);
-  }, [r.url]);
+  }, [src]);
+  useEffect(() => {
+    if (!sourceNote) return;
+    const timer = setTimeout(() => setSourceNote(''), 2500);
+    return () => clearTimeout(timer);
+  }, [sourceNote]);
+  /** The Original/Proxy switch and P (VC-238). Proxy is refused, with a note on the picture,
+   * when this recording has no usable proxy; the project's choice is left as it was. */
+  function chooseSource(next: 'original' | 'proxy') {
+    if (!onViewerSource) return;
+    if (next === 'proxy' && !proxy) {
+      setSourceNote(
+        r.proxy?.state === 'making'
+          ? 'The proxy is not ready yet'
+          : r.proxy?.state === 'missing'
+            ? 'The proxy file is missing'
+            : 'No proxy for this recording',
+      );
+      flashInfo();
+      return;
+    }
+    setSourceNote('');
+    onViewerSource(next);
+  }
   function command(key: string) {
     const v = video.current;
+    if (key === 'p') {
+      chooseSource(onProxy ? 'original' : 'proxy');
+      return;
+    }
     if (!v || !ready) return;
     trace('command', { rate: speed.current });
     if (key === 'pause') {
@@ -900,17 +1020,131 @@ export function Player({
           <strong title={r.title}>{r.title}</strong>
         )}
         <div className={s.viewerFacts}>
-          <PlaybackMetrics key={r.url} video={video} scanning={reversePlaying || fastPlaying} />
-          <span>
-            {r.fullResolution
-              ? `${r.width} × ${r.height} · ${r.codec?.toUpperCase()} · Source ${r.fps?.toFixed(2)} fps`
-              : r.sample
-                ? 'Sample footage'
-                : 'Local video · session only'}
+          <PlaybackMetrics key={src} video={video} scanning={reversePlaying || fastPlaying} />
+          <span className={s.infoMenu} ref={infoMenu}>
+            <button
+              type="button"
+              className={s.infoButton}
+              aria-haspopup="menu"
+              aria-expanded={infoOpen}
+              title="When the info tag on the picture shows"
+              onClick={() => setInfoOpen(!infoOpen)}
+            >
+              Info: {infoModes.find(([m]) => m === infoMode)![1]} <ChevronDown size={12} />
+            </button>
+            {infoOpen && (
+              <div
+                className={s.infoPopup}
+                role="menu"
+                aria-label="Info tag on the picture"
+                onKeyDown={(e) => {
+                  const items = [...e.currentTarget.querySelectorAll<HTMLElement>('button')];
+                  const at = items.indexOf(document.activeElement as HTMLElement);
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setInfoOpen(false);
+                    infoMenu.current?.querySelector<HTMLElement>('button')?.focus();
+                  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const step = e.key === 'ArrowDown' ? 1 : -1;
+                    items[(at + step + items.length) % items.length]?.focus();
+                  }
+                }}
+              >
+                <span className={s.infoHead}>Info tag on the picture</span>
+                {infoModes.map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={infoMode === mode}
+                    onClick={() => {
+                      setInfoMode(mode);
+                      writeSetting(infoKey, mode);
+                      setInfoOpen(false);
+                    }}
+                  >
+                    <span className={s.infoCheck}>{infoMode === mode ? '✓' : ''}</span>
+                    {label}
+                    {mode === 'paused' && <small>hides while playing</small>}
+                  </button>
+                ))}
+                <span className={s.infoSep} />
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={infoFlash}
+                  onClick={() => {
+                    setInfoFlash(!infoFlash);
+                    writeSetting(infoFlashKey, String(!infoFlash));
+                  }}
+                >
+                  <span className={s.infoCheck}>{infoFlash ? '✓' : ''}</span>
+                  Show briefly when the source changes
+                </button>
+              </div>
+            )}
           </span>
+          {onViewerSource && (
+            <div className={s.sourceSwitch} role="group" aria-label="Viewer source">
+              <button
+                type="button"
+                aria-pressed={!onProxy}
+                title="Show the original recording (P)"
+                onClick={() => chooseSource('original')}
+              >
+                Original
+              </button>
+              <button
+                type="button"
+                className={s.sourceProxy}
+                aria-pressed={onProxy}
+                disabled={!proxy}
+                title={proxy ? 'Show the proxy (P)' : 'This recording has no usable proxy'}
+                onClick={() => chooseSource('proxy')}
+              >
+                Proxy <kbd>P</kbd>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div className={s.stage} data-video-stage>
+        <span
+          className={`${s.viewerTag} ${onProxy ? s.viewerTagProxy : ''} ${tagShown ? '' : s.viewerTagHidden}`}
+          data-viewer-source={onProxy ? 'proxy' : 'original'}
+          data-shown={tagShown}
+          role="status"
+          aria-label="Shown in the viewer"
+        >
+          {onViewerSource && <b>{onProxy ? 'Proxy' : 'Original'}</b>}
+          {onProxy
+            ? `${proxy!.width} × ${proxy!.height} · ${codecName(proxy!.codec)} · ${r.fps?.toFixed(2)} fps`
+            : r.fullResolution
+              ? `${r.width} × ${r.height} · ${codecName(r.codec)} · ${r.fps?.toFixed(2)} fps`
+              : r.sample
+                ? 'Sample footage'
+                : 'Local video · session only'}
+          {!onProxy &&
+            onViewerSource &&
+            viewerSource === 'proxy' &&
+            !sourceNote &&
+            (r.proxy?.state === 'making'
+              ? ' · proxy not ready yet'
+              : r.proxy?.state === 'missing'
+                ? ' · proxy file missing'
+                : '')}
+          {sourceNote && ` · ${sourceNote}`}
+        </span>
+        {onViewerSource && r.proxy?.state === 'making' && (
+          <div className={s.proxyMaking} role="status">
+            <span>Making proxy · {Math.round((r.proxy.progress || 0) * 100)}%</span>
+            <span className={s.proxyProgress}>
+              <i style={{ width: `${Math.round((r.proxy.progress || 0) * 100)}%` }} />
+            </span>
+            <span>The original plays meanwhile</span>
+          </div>
+        )}
         <video
           crossOrigin="anonymous"
           ref={video}
@@ -944,6 +1178,19 @@ export function Player({
             const retry = retryPosition.current !== null;
             retryPosition.current = null;
             callbacks.current.onDuration?.(d);
+            const carry = resume.current;
+            resume.current = null;
+            if (carry) {
+              speed.current = carry.rate;
+              v.playbackRate = carry.rate;
+              const request = ++playRequest.current;
+              void v
+                .play()
+                .then(() => {
+                  if (request === playRequest.current && !v.paused) setStatus(carry.status);
+                })
+                .catch(() => {});
+            }
             if (autoPlay && !retry)
               void v
                 .play()

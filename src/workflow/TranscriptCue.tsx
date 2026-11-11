@@ -102,8 +102,22 @@ export function TranscriptCue({
   const targetClips = session.clips.filter((c) => start > c.start && start < c.end);
   const target = draft.clipId || (targetClips.length === 1 ? targetClips[0].id : '');
   const targetName = targetClips.find((c) => c.id === target)?.name ?? '';
-  const first = draft.first ?? targetName;
-  const second = draft.second ?? (first ? `${first} · 2` : '');
+  // A Split on a recording with no clip yet makes both clips, named after the recording (VC-243).
+  const clipless = split && !session.clips.length;
+  // An accepted Split shows the clips it made, which meet at the split (VC-243).
+  const made =
+    split && decision?.status === 'accepted'
+      ? [
+          session.clips.find((c) =>
+            decision.firstClipId
+              ? c.id === decision.firstClipId
+              : Math.abs(c.end - (decision.appliedTime ?? cue.time)) < 0.001,
+          )?.name,
+          session.clips.find((c) => c.id === decision.clipId)?.name,
+        ]
+      : [];
+  const first = made[0] ?? draft.first ?? (clipless ? session.title : targetName);
+  const second = made[1] ?? draft.second ?? (first ? `${first} · 2` : '');
   const kind = range
     ? 'Clip range'
     : split
@@ -187,38 +201,50 @@ export function TranscriptCue({
       meta={
         range && !segment.cuePartner
           ? ['No matching boundary: correct the cue wording, or create this clip in Cut.']
-          : split && snap
-            ? [
-                <span key="snap" data-split-snap={spokenChosen ? 'spoken' : 'snapped'}>
-                  {spokenChosen
-                    ? 'Spoken time. Black screen ends at '
-                    : 'Snapped to where a black screen ends. Spoken at '}
-                  <button
-                    className={s.pcTime}
-                    title={
-                      spokenChosen ? 'Go to the end of the black screen' : 'Go to the spoken Split'
-                    }
-                    onClick={() => onSeek(spokenChosen ? snap.time : snap.spoken)}
-                  >
-                    {formatTimecode(spokenChosen ? snap.time : snap.spoken)}
-                  </button>{' '}
-                  <button
-                    className={s.pcQuiet}
-                    disabled={busy || draft.time != null}
-                    title={
-                      draft.time != null
-                        ? 'The position was edited; Esc puts it back'
-                        : spokenChosen
-                          ? 'Suggest the end of the black screen again'
-                          : 'Dismiss the snap and keep the spoken time'
-                    }
-                    onClick={() => setSpokenChosen(!spokenChosen)}
-                  >
-                    {spokenChosen ? 'Use snap' : 'Use spoken time'}
-                  </button>
-                </span>,
-              ]
-            : []
+          : [
+              ...(clipless
+                ? [
+                    <span key="clipless" data-split-clipless>
+                      No clip yet: accepting makes both clips, from the start to the Split and from
+                      the Split to the end.
+                    </span>,
+                  ]
+                : []),
+              ...(split && snap
+                ? [
+                    <span key="snap" data-split-snap={spokenChosen ? 'spoken' : 'snapped'}>
+                      {spokenChosen
+                        ? 'Spoken time. Black screen ends at '
+                        : 'Snapped to where a black screen ends. Spoken at '}
+                      <button
+                        className={s.pcTime}
+                        title={
+                          spokenChosen
+                            ? 'Go to the end of the black screen'
+                            : 'Go to the spoken Split'
+                        }
+                        onClick={() => onSeek(spokenChosen ? snap.time : snap.spoken)}
+                      >
+                        {formatTimecode(spokenChosen ? snap.time : snap.spoken)}
+                      </button>{' '}
+                      <button
+                        className={s.pcQuiet}
+                        disabled={busy || draft.time != null}
+                        title={
+                          draft.time != null
+                            ? 'The position was edited; Esc puts it back'
+                            : spokenChosen
+                              ? 'Suggest the end of the black screen again'
+                              : 'Dismiss the snap and keep the spoken time'
+                        }
+                        onClick={() => setSpokenChosen(!spokenChosen)}
+                      >
+                        {spokenChosen ? 'Use snap' : 'Use spoken time'}
+                      </button>
+                    </span>,
+                  ]
+                : []),
+            ]
       }
       changedSince={
         decision?.status === 'accepted' &&
@@ -230,7 +256,7 @@ export function TranscriptCue({
       editing={editing}
       busy={busy || transcript.state !== 'complete'}
       acceptLabel={`Accept ${kind.toLowerCase()}`}
-      acceptDisabled={(range && !segment.cuePartner) || (split && !target)}
+      acceptDisabled={(range && !segment.cuePartner) || (split && !target && !clipless)}
       onToggle={() => {
         setOpen(!open);
         if (open) setEditing(false);
@@ -248,7 +274,7 @@ export function TranscriptCue({
           time: start,
           endTime: range ? end : undefined,
           partnerSegmentId: range ? segment.cuePartner?.id : undefined,
-          clipId: split ? target : undefined,
+          clipId: split && target ? target : undefined,
           firstName: split ? first : undefined,
           secondName: split ? second : undefined,
         })
@@ -314,7 +340,7 @@ export function TranscriptCue({
           </>
         )}
         {!split && !editing && text && <p className={s.reason}>{text}</p>}
-        {split && (
+        {split && !clipless && (
           <p className={s.muted}>
             Splits{' '}
             {editing ? (

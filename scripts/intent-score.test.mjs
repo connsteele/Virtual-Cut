@@ -305,7 +305,7 @@ Note I like the crowd
   };
   const all = intentGuideAnswer(source);
   assert.equal(all.guide, intentGuide);
-  assert.equal(all.guide.version, '6');
+  assert.equal(all.guide.version, '7');
   assert.deepEqual(
     all.guide.intents.map((i) => i.tag),
     ['marker', 'general', 'notion', 'edit'],
@@ -377,7 +377,7 @@ Note I like the crowd
   // v4 (VC-172): while Allow pictures is on, the general section adds the look sentences; with it
   // off agents read v4 without them. Nothing else differs.
   const seeing = intentGuideAnswer(source, { pictures: true });
-  assert.equal(seeing.guide.version, '6');
+  assert.equal(seeing.guide.version, '7');
   assert.deepEqual(seeing.guide.lessons, [...intentGuide.lessons, ...lookLessons]);
   assert.deepEqual({ ...seeing.guide, lessons: intentGuide.lessons }, intentGuide);
   assert.deepEqual(seeing.examples, all.examples);
@@ -422,11 +422,15 @@ Note I like the crowd
   has('Cut one clip per coherent activity or scene');
   has('Propose at least one named clip range on every recording');
   has('propose both clip ranges, each with its name and its in and out, rather than a split');
+  has('Where footage with no Split cue should become two clips');
+  has('names both clips with clip_names {first, second}: that is one card');
+  has('not with two clip ranges beside it');
   has('Name both the same way, since a proposal can be accepted as either.');
   has('Add a Fact: line only when they got it wrong');
   has('use amend_proposal');
   has('Check which recordings have no clip yet; each one gets a clip range.');
-  assert.ok(!/propose a split with refines/.test(text), 'v5 proposes clips, not splits');
+  // v7: a spoken Split cue is reworked as one split; other boundaries are still clip ranges.
+  assert.ok(!/propose the clip ranges on either side of it/.test(text), 'v7 reworks Split cues');
   assert.ok(!/counts within this batch/.test(text), 'v5 counts recurring moments across batches');
   assert.deepEqual(
     intentGuide.fileNames.avoid.map((a) => a.characters),

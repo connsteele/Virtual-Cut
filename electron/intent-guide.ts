@@ -10,7 +10,7 @@ import { AgentReadError, findRecording, type AgentReadSource } from './agent-too
  * versioned, so every agent reads the same instructions; the user's own labelled examples and
  * habits come with it from their data. docs/intent-guide.md is the readable copy and must match.
  */
-export const intentGuideVersion = '6';
+export const intentGuideVersion = '7';
 
 /**
  * v4 (VC-172): the lessons' sentences about the look tool. Agents read them only while Allow
@@ -73,9 +73,10 @@ export const intentGuide = {
   commands: [
     'Split (or Cut) is a spoken command: the app already offers it as a Split cue. Keep a Split ' +
       'where it was said unless a black screen ends within 5 s before it. Propose a cut up to ' +
-      "12 s back only when what's said shows the call came late, and say why. That time is " +
-      'where the clip boundary goes: propose the clip ranges on either side of it and cite the ' +
-      'cue line.',
+      "12 s back only when what's said shows the call came late, and say why. Rework the cue " +
+      'with one split (kind "split") that refines its line ({transcript_id, line_id}) and names ' +
+      'both clips with clip_names {first, second}: that is one card, and accepting it settles ' +
+      'the cue. On a recording with no clip yet, accepting it makes the clips on both sides.',
     'Clip start/in and Clip end/out are commands too and pair into a clip range.',
     'Marker, Mark and Note are no longer needed as cue words, but older recordings use them. A ' +
       'line that starts with one is still free speech to interpret; rework the cue with refines ' +
@@ -94,10 +95,10 @@ export const intentGuide = {
     'Import makes no clip, and a recording with no clip exports nothing. Propose at least one ' +
       "named clip range on every recording, trimmed to what's worth keeping, even when the rest " +
       'of the pass is markers. If all of it is worth keeping, propose one clip over the whole ' +
-      'recording. Where footage should become two clips, propose both clip ranges, each with ' +
-      'its name and its in and out, rather than a split. A spoken Split cue marks a place where ' +
-      'the creator wants a clip boundary: propose the clip ranges on either side of it and cite ' +
-      'the cue line.',
+      'recording. Where footage with no Split cue should become two clips, propose both clip ' +
+      'ranges, each with its name and its in and out, rather than a split. A spoken Split cue ' +
+      'marks a place where the creator wants a clip boundary: rework it with a split that ' +
+      'refines the cue and names both clips (see commands), not with two clip ranges beside it.',
     'Several clip ranges on one recording are fine: each becomes its own exported file, named ' +
       "after its clip. Leave the trimmed fat between them as gaps. Don't overlap clips unless " +
       'the creator asks for it, or the footage really belongs to more than one clip; then say ' +
