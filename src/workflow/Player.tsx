@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   Camera,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   FastForward,
@@ -35,6 +36,30 @@ import s from './Workflow.module.css';
 const speeds = [1, 2, 4, 6, 8, 16],
   audioLimit = 6;
 const faster = (rate: number) => speeds.find((step) => step > rate) ?? speeds.at(-1)!;
+/** When the info tag on the picture shows (VC-238): always, only while the picture stands still,
+ * or never. Remembered for the app, like the waveform choice. */
+type InfoMode = 'always' | 'paused' | 'never';
+const infoModes: [InfoMode, string][] = [
+  ['always', 'Always'],
+  ['paused', 'When paused'],
+  ['never', 'Never'],
+];
+const infoKey = 'virtual-cut.viewer-info',
+  infoFlashKey = 'virtual-cut.viewer-info-flash';
+function readSetting(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeSetting(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* The choice still holds for this window. */
+  }
+}
 /** The codec as people write it: H.264 and H.265 with the dot, others in capitals. */
 const codecName = (codec?: string) =>
   codec === 'h264' ? 'H.264' : codec === 'hevc' ? 'H.265' : codec?.toUpperCase() || '';
@@ -131,6 +156,33 @@ export function Player({
   const loaded = useRef<{ id: string; offset: number } | null>(null),
     resume = useRef<{ rate: number; status: string } | null>(null);
   const [sourceNote, setSourceNote] = useState('');
+  const [infoMode, setInfoMode] = useState<InfoMode>(() => {
+      const saved = readSetting(infoKey);
+      return saved === 'paused' || saved === 'never' ? saved : 'always';
+    }),
+    [infoFlash, setInfoFlash] = useState(() => readSetting(infoFlashKey) !== 'false'),
+    [infoOpen, setInfoOpen] = useState(false),
+    [flashing, setFlashing] = useState(false),
+    [dragging, setDragging] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined),
+    infoMenu = useRef<HTMLSpanElement>(null);
+  /** Shows the tag for 2 s when the source changes, even under When paused and Never. */
+  const flashInfo = () => {
+    if (!infoFlash) return;
+    clearTimeout(flashTimer.current);
+    setFlashing(true);
+    flashTimer.current = setTimeout(() => setFlashing(false), 2000);
+  };
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  useEffect(() => {
+    if (!infoOpen) return;
+    infoMenu.current?.querySelector<HTMLElement>('[role=menu] button')?.focus();
+    const close = (e: PointerEvent) => {
+      if (!infoMenu.current?.contains(e.target as Node)) setInfoOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [infoOpen]);
   const video = useRef<HTMLVideoElement>(null),
     audio = useRef(new Map<number, HTMLAudioElement>()),
     scan = useRef<ReturnType<typeof startScan> | null>(null),
@@ -231,6 +283,7 @@ export function Player({
           }
         : null;
     loaded.current = { id: r.id, offset: clockOffset };
+    if (switching) flashInfo();
     scan.current?.cancel();
     scan.current = null;
     playRequest.current++;
@@ -288,6 +341,10 @@ export function Player({
     loopBounds.current = { looping, start: loopStart, end: loopEnd };
   }, [looping, loopStart, loopEnd]);
   const playing = status !== 'Paused';
+  // The info tag: Always, When paused (hidden while playing, scanning or dragging) or Never,
+  // with a 2 s flash when the source changes.
+  const tagShown =
+    flashing || infoMode === 'always' || (infoMode === 'paused' && !playing && !dragging);
   const reversePlaying = status.includes('reverse');
   const fastPlaying = status.includes('forward') && speed.current > 1;
   const trace = useCallback(
@@ -598,6 +655,7 @@ export function Player({
   }
   function scrubActive(active: boolean) {
     const state = scrubbing.current;
+    setDragging(active);
     if (active) {
       stop();
       gestures.current.scrub = true;
@@ -734,6 +792,7 @@ export function Player({
             ? 'The proxy file is missing'
             : 'No proxy for this recording',
       );
+      flashInfo();
       return;
     }
     setSourceNote('');
@@ -908,6 +967,70 @@ export function Player({
         )}
         <div className={s.viewerFacts}>
           <PlaybackMetrics key={src} video={video} scanning={reversePlaying || fastPlaying} />
+          <span className={s.infoMenu} ref={infoMenu}>
+            <button
+              type="button"
+              className={s.infoButton}
+              aria-haspopup="menu"
+              aria-expanded={infoOpen}
+              title="When the info tag on the picture shows"
+              onClick={() => setInfoOpen(!infoOpen)}
+            >
+              Info: {infoModes.find(([m]) => m === infoMode)![1]} <ChevronDown size={12} />
+            </button>
+            {infoOpen && (
+              <div
+                className={s.infoPopup}
+                role="menu"
+                aria-label="Info tag on the picture"
+                onKeyDown={(e) => {
+                  const items = [...e.currentTarget.querySelectorAll<HTMLElement>('button')];
+                  const at = items.indexOf(document.activeElement as HTMLElement);
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setInfoOpen(false);
+                    infoMenu.current?.querySelector<HTMLElement>('button')?.focus();
+                  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const step = e.key === 'ArrowDown' ? 1 : -1;
+                    items[(at + step + items.length) % items.length]?.focus();
+                  }
+                }}
+              >
+                <span className={s.infoHead}>Info tag on the picture</span>
+                {infoModes.map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={infoMode === mode}
+                    onClick={() => {
+                      setInfoMode(mode);
+                      writeSetting(infoKey, mode);
+                      setInfoOpen(false);
+                    }}
+                  >
+                    <span className={s.infoCheck}>{infoMode === mode ? '✓' : ''}</span>
+                    {label}
+                    {mode === 'paused' && <small>hides while playing</small>}
+                  </button>
+                ))}
+                <span className={s.infoSep} />
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={infoFlash}
+                  onClick={() => {
+                    setInfoFlash(!infoFlash);
+                    writeSetting(infoFlashKey, String(!infoFlash));
+                  }}
+                >
+                  <span className={s.infoCheck}>{infoFlash ? '✓' : ''}</span>
+                  Show briefly when the source changes
+                </button>
+              </div>
+            )}
+          </span>
           {onViewerSource && (
             <div className={s.sourceSwitch} role="group" aria-label="Viewer source">
               <button
@@ -934,8 +1057,9 @@ export function Player({
       </div>
       <div className={s.stage} data-video-stage>
         <span
-          className={`${s.viewerTag} ${onProxy ? s.viewerTagProxy : ''}`}
+          className={`${s.viewerTag} ${onProxy ? s.viewerTagProxy : ''} ${tagShown ? '' : s.viewerTagHidden}`}
           data-viewer-source={onProxy ? 'proxy' : 'original'}
+          data-shown={tagShown}
           role="status"
           aria-label="Shown in the viewer"
         >

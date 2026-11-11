@@ -223,6 +223,58 @@ try {
   assert(onKeys <= 2, `${onKeys} of ${seeks.length} drag seeks landed on keyframes: ${seeks}`);
   await expect.poll(shown).toBe(1920);
 
+  // Info beside the switch: Always, When paused or Never, with a 2 s flash when the source
+  // changes; remembered for the app.
+  const info = page.getByRole('button', { name: /^Info: / });
+  const infoItem = (name) =>
+    page.getByRole('menu', { name: 'Info tag on the picture' }).getByRole('menuitemradio', {
+      name: new RegExp('^\\W*' + name),
+    });
+  await expect(info).toHaveText('Info: Always');
+  await info.click();
+  await expect(infoItem('Always')).toBeFocused();
+  await capture('info-menu');
+  await infoItem('When paused').click();
+  await expect(info).toHaveText('Info: When paused');
+  await expect(tag()).toHaveAttribute('data-shown', 'true');
+  // Hidden while playing (once the 2 s flash of the last flip is over); from 1 s, so the
+  // 12 s clip does not end first.
+  await page.mouse.click(ruler.x + ruler.width * 0.08, rulerY);
+  await key('k');
+  await expect(page.getByLabel('Playback status', { exact: true })).toHaveText('1× forward');
+  await expect(tag()).toHaveAttribute('data-shown', 'false', { timeout: 4000 });
+  await key('k');
+  await expect(tag()).toHaveAttribute('data-shown', 'true');
+  await info.click();
+  await infoItem('Never').click();
+  await expect(tag()).toHaveAttribute('data-shown', 'false');
+  // A flip shows it for 2 s, then it hides again.
+  await key('p');
+  await expect.poll(shown).toBe(1280);
+  await expect(tag()).toHaveAttribute('data-shown', 'true');
+  await expect(tag()).toHaveAttribute('data-shown', 'false', { timeout: 4000 });
+  await key('p');
+  await expect.poll(shown).toBe(1920);
+  assert.equal(await page.evaluate(() => localStorage.getItem('virtual-cut.viewer-info')), 'never');
+  await info.click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu', { name: 'Info tag on the picture' })).toHaveCount(0);
+  await info.click();
+  await infoItem('Always').click();
+  await expect(tag()).toHaveAttribute('data-shown', 'true');
+  // The metrics text, Info and the switch share one centre line.
+  const centres = await page.evaluate(() =>
+    [
+      '[aria-label="Playback metrics"]',
+      '[aria-haspopup="menu"][title^="When the info tag"]',
+      '[aria-label="Viewer source"]',
+    ].map((q) => {
+      const b = document.querySelector(q).getBoundingClientRect();
+      return b.top + b.height / 2;
+    }),
+  );
+  assert(Math.max(...centres) - Math.min(...centres) < 1.5, `heading centres ${centres}`);
+
   // A recording without a proxy shows its original; Proxy greys out and P only says so.
   await select(other);
   await expect.poll(shown).toBe(1280);
