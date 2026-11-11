@@ -1,6 +1,7 @@
 // Gaps inside a clip (VC-212, decision 0028): where joins land on keyframes, the pieces a clip
 // exports, times on the exported clip's clock, and the edits the Cut page makes.
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import {
   adjustGap,
@@ -231,4 +232,105 @@ test('Skip gaps: a selected clip plays as it exports; otherwise the soonest gap 
   assert.equal(skipTarget(clips, 750, '03'), null);
   // A selected clip the playhead isn't in counts as no selection.
   assert.equal(skipTarget(clips, 1000, '03'), null);
+});
+
+test('a stitched export puts markers on its own clock and lists what the gaps left out', () => {
+  // require, not import: under --coverage the instrumented CommonJS module can't load its
+  // ES module neighbours through Node's import-to-CommonJS bridge.
+  const { annotation, exportedLength, exportedMarkers } = createRequire(import.meta.url)(
+    '../dist-electron/clip-export.cjs',
+  );
+  const marker = (id, time, end) => ({
+    id,
+    time,
+    ...(end != null ? { end } : {}),
+    name: id,
+    category: 'Context',
+    topic: '',
+  });
+  // Pieces 1-5 and 10-20 on the recording are 0-4 and 4-14 on the exported clip.
+  const pieces = [
+    { start: 1, end: 5 },
+    { start: 10, end: 20 },
+  ];
+  const record = {
+    annotationVersion: 4,
+    markerScope: 'clip',
+    plan: {
+      id: 'p',
+      created: '2026-11-11T00:00:00.000Z',
+      container: 'mov',
+      requested: { start: 1, end: 20 },
+      planned: { start: 1, end: 20 },
+      name: 'A',
+      pieces,
+      gaps: [
+        { id: 'g1', requested: { start: 5.2, end: 9.8 }, removed: { start: 5, end: 10 } },
+        { id: 'g2', requested: { start: 15, end: 15.4 } },
+      ],
+    },
+    input: {
+      clip: { id: 'c', rid: 'r', name: 'A', start: 1, end: 20, folder: '_Review', include: true },
+      markers: [
+        marker('atIn', 0.5, 3),
+        marker('before', 2),
+        marker('inGap', 7),
+        marker('after', 12),
+        marker('across', 3, 12),
+        marker('startsInGap', 7, 14),
+        marker('endsInGap', 3, 8),
+        marker('insideGap', 6, 9),
+        marker('toJoin', 2, 5),
+      ],
+      context: '',
+      gameTrack: 1,
+      micTrack: null,
+      sourceFile: 'source.mkv',
+      sourceFingerprint: 'f',
+      sourceBytes: 1,
+      sourceModified: 0,
+      sourceStart: 0,
+      duration: 30,
+    },
+  };
+  const v = {
+    actual: { start: 1, end: 20 },
+    timestampShift: 0,
+    pieces,
+    length: 14,
+    constantFrameDuration: 1 / 60,
+  };
+  assert.deepEqual(
+    exportedMarkers(record, v).map((m) => [m.marker.id, m.clipTime, m.clipEnd ?? null]),
+    [
+      ['atIn', 0, 2],
+      ['before', 1, null],
+      ['after', 6, null],
+      ['across', 2, 6],
+      // A range starting in a gap starts at the join; one ending in a gap ends at the join.
+      ['startsInGap', 4, 8],
+      ['endsInGap', 2, 4],
+      ['toJoin', 1, 4],
+    ],
+    'points inside a gap and ranges wholly inside one are left out',
+  );
+  assert.equal(exportedLength(v), 14);
+  assert.equal(exportedLength({ actual: { start: 1, end: 20 } }), 19);
+  const stitched = JSON.parse(annotation(record, v)).stitched;
+  assert.equal(stitched.schema, 'virtual-cut-stitched');
+  assert.equal(stitched.length, 14);
+  assert.deepEqual(
+    stitched.pieces.map((p) => [p.sourceStart, p.sourceEnd, p.clipStart, p.clipEnd]),
+    [
+      [1, 5, 0, 4],
+      [10, 20, 4, 14],
+    ],
+  );
+  assert.equal(stitched.gaps[0].joinAt, 4);
+  assert.equal(stitched.gaps[1].removed, null, 'a gap too short to remove anything says so');
+  assert.match(stitched.gaps[1].why, /Too short/);
+  assert.deepEqual(stitched.leftOut, [
+    { id: 'inGap', name: 'inGap', sourceTime: 7 },
+    { id: 'insideGap', name: 'insideGap', sourceTime: 6, sourceEnd: 9 },
+  ]);
 });
