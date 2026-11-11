@@ -444,7 +444,13 @@ export function Timeline({
           value,
           [
             ...markers.flatMap((m) => (m.end == null ? [m.time] : [m.time, m.end])),
-            ...(showClips ? clips.flatMap((c) => [c.start, c.end]) : []),
+            ...(showClips
+              ? clips.flatMap((c) => [
+                  c.start,
+                  c.end,
+                  ...(c.gaps || []).flatMap((g) => [g.start, g.end]),
+                ])
+              : []),
           ],
           start,
           end,
@@ -608,8 +614,36 @@ export function Timeline({
       rect = track.current!.getBoundingClientRect(),
       fps = recording.fps || 30,
       delta = ((x - d.x) / rect.width) * span,
-      origin = d.edge === 'end' ? gap.end : gap.start;
-    setGapPreview(adjustGap(d.clip, d.gapId, d.edge, Math.round((origin + delta) * fps) / fps));
+      origin = d.edge === 'end' ? gap.end : gap.start,
+      raw = Math.round((origin + delta) * fps) / fps;
+    // Snaps like a clip edge: to the playhead, markers, clip edges and other gaps' edges.
+    const others = clips.map((c) =>
+        c.id === d.clipId ? { ...c, gaps: c.gaps?.filter((g) => g.id !== d.gapId) } : c,
+      ),
+      targets = snapEnabled
+        ? editTargets(
+            current >= recording.duration ? recording.duration : markerTime(recording, current),
+            markers,
+            others,
+            {},
+          )
+        : [],
+      at = (value: number) => adjustGap(d.clip, d.gapId, d.edge, value),
+      edgeOf = (c: Clip, offset: number) => {
+        const g = c.gaps!.find((x) => x.id === d.gapId)!;
+        return d.edge === 'end' ? g.end : offset > 0 ? g.end : g.start;
+      },
+      snap = editSnap(
+        raw,
+        d.edge === 'move' ? [0, gap.end - gap.start] : [0],
+        targets,
+        start,
+        end,
+        rect.width,
+        (value, offset, target) => Math.abs(edgeOf(at(value), offset) - target) < 0.000001,
+      );
+    setSnapGuide(snap?.target ?? null);
+    setGapPreview(at(snap?.value ?? raw));
   }
   function finishGap(commit: boolean) {
     const d = gapDrag.current;
@@ -617,6 +651,7 @@ export function Timeline({
     gapDrag.current = null;
     const next = gapPreview;
     setGapPreview(null);
+    setSnapGuide(null);
     if (commit && d.moved && next && next.id === d.clipId)
       onGapsChange?.(d.clipId, next.gaps || []);
     callbacks.current.onTrimActive?.(false);

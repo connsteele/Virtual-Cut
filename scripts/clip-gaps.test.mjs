@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   adjustGap,
   clipPieces,
+  fitGaps,
   gapJoins,
   piecesLength,
   splitWithGaps,
@@ -14,6 +15,7 @@ import {
 } from '../dist-electron/clip-gaps.js';
 import { emptyModel, validateEdits } from '../dist-electron/project-edits.js';
 import { reviewContent } from '../dist-electron/review-plan.js';
+import { editTargets } from '../src/workflow/playheadSnap.ts';
 
 // Keyframes every second, as on the Mass Effect footage (checked on 2026-11-10).
 const keys = Array.from({ length: 986 }, (_, i) => i);
@@ -161,4 +163,38 @@ test('gaps change the review key; clips without gaps keep theirs', () => {
   assert.ok(!before.includes('gaps'), 'existing acceptances stay valid');
   const gapped = model([{ id: 'g', start: 200, end: 300 }]);
   assert.notEqual(reviewContent(gapped, gapped.clips[0]), before);
+});
+
+test('a moved clip edge keeps its gaps valid', () => {
+  const c = clip([
+    { id: 'a', start: 205.4, end: 262.7 },
+    { id: 'b', start: 371.2, end: 433.9 },
+  ]);
+  assert.equal(fitGaps(c), c, 'nothing to do');
+  const inside = fitGaps({ ...c, start: 230 });
+  assert.equal(inside.start, 262.7, 'Q inside a gap moves the start past it');
+  assert.deepEqual(
+    inside.gaps.map((g) => g.id),
+    ['b'],
+  );
+  const past = fitGaps({ ...c, end: 300 });
+  assert.equal(past.end, 300);
+  assert.deepEqual(
+    past.gaps.map((g) => g.id),
+    ['a'],
+  );
+  const beside = fitGaps({ ...c, end: 371.22 });
+  assert.equal(beside.end, 371.2, 'an edge just inside a gap moves to its start');
+  assert.equal(fitGaps({ ...c, start: 100, end: 120 }).gaps, undefined);
+  assert.doesNotThrow(() => validateEdits({ ...model(), clips: [fitGaps({ ...c, start: 230 })] }));
+});
+
+test('gap edges are snap targets like clip edges', () => {
+  const targets = editTargets(
+    0,
+    [],
+    [clip([{ id: 'a', start: 205.4, end: 262.7 }]), { id: 'x', start: 1, end: 2 }],
+    { clip: 'x' },
+  );
+  assert.deepEqual(targets, [0, 120, 540, 205.4, 262.7]);
 });

@@ -203,3 +203,24 @@ export function splitWithGaps(clip: Clip, t: number, min = 0.02): [Clip, Clip] |
 export function gapAt(clip: Pick<Clip, 'gaps'>, t: number) {
   return (clip.gaps || []).find((g) => t >= g.start && t < g.end);
 }
+
+/**
+ * Keeps a clip's gaps valid after its start or end moves (Q/W, a handle drag or the In/Out
+ * fields): gaps left outside are dropped, and an edge landing in or beside a gap moves past it,
+ * as making a gap at the edge would.
+ */
+export function fitGaps(clip: Clip): Clip {
+  if (!clip.gaps?.length) return clip;
+  let { start, end } = clip;
+  const gaps = sortedGaps(clip);
+  for (const g of gaps)
+    if (g.start < start + EDGE_SNAP && g.end > start - EPS) start = Math.max(start, g.end);
+  for (const g of [...gaps].reverse())
+    if (g.end > end - EDGE_SNAP && g.start < end + EPS) end = Math.min(end, g.start);
+  if (!(end > start)) return { ...clip, gaps: undefined };
+  const kept = gaps.filter((g) => g.start >= start + EDGE_SNAP && g.end <= end - EDGE_SNAP);
+  if (start === clip.start && end === clip.end && kept.length === gaps.length) return clip;
+  const next: Clip = { ...clip, start, end, gaps: kept };
+  if (!kept.length) delete next.gaps;
+  return next;
+}

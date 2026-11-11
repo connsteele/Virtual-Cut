@@ -121,6 +121,22 @@ try {
     await capture('gaps-handles');
     await page.keyboard.press('h');
   }
+  // With Snap on, scrubbing near a gap's edge lands on it (Connor 2026-11-11 03:23).
+  {
+    const ruler = page.locator('[data-seek-surface="ruler"]'),
+      r = await ruler.boundingBox(),
+      v = await page.getByTestId('scrub-surface').evaluate((e) => ({
+        start: Number(e.dataset.viewStart),
+        end: Number(e.dataset.viewEnd),
+      })),
+      px = (t) => r.x + ((t - v.start) / (v.end - v.start)) * r.width;
+    for (const edge of [2.4, 6.6]) {
+      await page.mouse.click(px(edge) + 4, r.y + r.height / 2);
+      await expect(page.getByLabel('Timeline position', { exact: true })).toHaveValue(
+        `00:00:0${edge.toFixed(3)}`,
+      );
+    }
+  }
   // The card lists it: on 1 s keyframes 2.4–6.6 removes 3–6.
   const row = card.locator('[data-gap-row]');
   await expect(row).toContainText('00:02.4–00:06.6');

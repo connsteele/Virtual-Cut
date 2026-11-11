@@ -79,6 +79,7 @@ import { Player, type Transport } from './Player';
 import type { GapSweep } from './Timeline';
 import {
   clipPieces,
+  fitGaps,
   gapAt,
   gapJoins,
   piecesLength,
@@ -961,8 +962,13 @@ export function Workbench({ onFoundation }: { onFoundation: () => void }) {
     setModel((m) => {
       const next = {
         ...m,
+        // A moved start or end keeps the clip's gaps inside it (VC-212).
         clips: m.clips.map((c) =>
-          c.id === id ? { ...(invalidateReview ? invalidate(c) : c), ...patch } : c,
+          c.id === id
+            ? 'start' in patch || 'end' in patch
+              ? fitGaps({ ...(invalidateReview ? invalidate(c) : c), ...patch })
+              : { ...(invalidateReview ? invalidate(c) : c), ...patch }
+            : c,
         ),
       };
       const beforeIssues = localDestinationIssues(m);
