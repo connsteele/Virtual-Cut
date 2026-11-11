@@ -15,7 +15,8 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { identify, launchTool } from './media-inspection.cjs';
-import { colors, markerColor, markerColorName } from './workflow-types.js';
+import { piecesLength, toPieceTime } from './clip-gaps.js';
+import { colors, markerColor, markerColorName, type Marker } from './workflow-types.js';
 import { transcriptHandoff } from './transcript-export.js';
 import { subtitleFile, subtitleSourceLabel, timecodeSubtitleFile } from './subtitle-sidecar.cjs';
 import type { ExportRecord, ExportVerification } from './export-contracts.js' with {
@@ -27,6 +28,10 @@ interface Stream {
   codec_type: string;
   codec_name: string;
   time_base: string;
+  sample_fmt?: string;
+  sample_rate?: string;
+  channels?: number;
+  bits_per_raw_sample?: string;
   r_frame_rate?: string;
   disposition?: { attached_pic?: number };
   tags?: { timecode?: string };
@@ -299,16 +304,74 @@ function escapeMetadata(s: string) {
  * The markers of an export made since VC-208, in clip time (0 is the verified first frame):
  * chosen by the clip's own range rather than its outward keyframe padding.
  */
-function ownMarkers(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
-  return clipMarkers(
+function ownMarkers(
+  record: ExportRecord,
+  v: Omit<ExportVerification, 'bytes' | 'sha256'>,
+): { marker: Marker; clipTime: number; clipEnd?: number }[] {
+  const own = clipMarkers(
     record.input.markers,
     record.plan.requested,
     v.constantFrameDuration ?? 1 / 60,
-  ).map(({ marker, start, end, atIn }) => ({
-    marker,
-    clipTime: atIn ? 0 : start - v.actual.start,
-    ...(end != null ? { clipEnd: end - v.actual.start } : {}),
-  }));
+  );
+  const pieces = v.pieces;
+  if (!pieces)
+    return own.map(({ marker, start, end, atIn }) => ({
+      marker,
+      clipTime: atIn ? 0 : start - v.actual.start,
+      ...(end != null ? { clipEnd: end - v.actual.start } : {}),
+    }));
+  // VC-212: a stitched clip's clock runs across its joins. A point inside a removed span is
+  // left out; a range is cut back to the pieces it still covers.
+  return own.flatMap(({ marker, start, end, atIn }) => {
+    const clipTime = atIn ? 0 : stitchedTime(pieces, start, 'start');
+    if (clipTime == null) return [];
+    if (end == null)
+      return marker.end == null && !atIn && toPieceTime(pieces, start) == null
+        ? []
+        : [{ marker, clipTime }];
+    const clipEnd = stitchedTime(pieces, end, 'end');
+    return clipEnd == null || clipEnd <= clipTime ? [] : [{ marker, clipTime, clipEnd }];
+  });
+}
+/**
+ * A source time on a stitched clip's clock. Inside a removed span a range's start moves on to
+ * the next piece and its end back to the previous one; anything else there is left out (null).
+ */
+function stitchedTime(pieces: { start: number; end: number }[], t: number, side: 'start' | 'end') {
+  const at = toPieceTime(pieces, t);
+  if (at != null) return at;
+  let clock = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (Math.abs(t - p.end) < 0.000001 && side === 'end') return clock + p.end - p.start;
+    if (t < p.start) return side === 'start' ? clock : i ? clock : null;
+    clock += p.end - p.start;
+  }
+  return side === 'end' ? clock : null;
+}
+/** Markers of a finished export on its own clock, as the companion and Library show them. */
+export function exportedMarkers(
+  record: ExportRecord,
+  v: Omit<ExportVerification, 'bytes' | 'sha256'>,
+) {
+  return ownMarkers(record, v);
+}
+/** The finished clip's length: a stitched clip's runs across its joins. */
+export function exportedLength(v: Pick<ExportVerification, 'actual' | 'length'>) {
+  return v.length ?? v.actual.end - v.actual.start;
+}
+/** Markers a stitched export left out, being inside a removed span. */
+function leftOutMarkers(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
+  if (!v.pieces) return [];
+  const kept = new Set(ownMarkers(record, v).map((m) => m.marker.id));
+  return clipMarkers(record.input.markers, record.plan.requested, v.constantFrameDuration ?? 1 / 60)
+    .filter(({ marker }) => !kept.has(marker.id))
+    .map(({ marker }) => ({
+      id: marker.id,
+      name: marker.name,
+      sourceTime: marker.time,
+      ...(marker.end != null ? { sourceEnd: marker.end } : {}),
+    }));
 }
 function chapters(record: ExportRecord, v: Omit<ExportVerification, 'bytes' | 'sha256'>) {
   if (record.markerScope === 'clip') {
@@ -428,6 +491,417 @@ async function publish(stage: string, file: string) {
   }
   await unlink(stage);
 }
+/** The fade on each side of a join in a stitched clip's game audio (decision 0028). */
+const JOIN_FADE = 0.01;
+type Checked = Omit<ExportVerification, 'bytes' | 'sha256'>;
+/**
+ * VC-212: copies each piece's video packets from keyframe to keyframe, joins them without
+ * re-encoding, rebuilds the game audio from the same spans with a 10 ms fade at each join as
+ * FLAC, and verifies every video packet and every audio sample outside the fades against the
+ * original. Returns the checked facts for the verified file at `final`.
+ */
+async function copyStitched(
+  record: ExportRecord,
+  tools: Tools,
+  signal: AbortSignal,
+  source: Media,
+  video: Stream,
+  gameAudio: string | undefined,
+  stage: (name: string) => Promise<string>,
+  final: string,
+  metadata: string,
+  report: (message: string, progress: number) => void,
+): Promise<{ checked: Checked; timecode?: { value: string; seconds: number } }> {
+  const plan = record.plan,
+    pieces = plan.pieces!,
+    audio = source.streams.find(
+      (s) => s.index === record.input.gameTrack && s.codec_type === 'audio',
+    );
+  if (!audio) throw new Error('The game-audio stream is unavailable.');
+  if (!['flac', 'alac'].includes(audio.codec_name) && !audio.codec_name.startsWith('pcm_'))
+    throw new Error(
+      'A clip with gaps needs lossless game audio (FLAC, ALAC or PCM) to stay lossless.',
+    );
+  const videoPackets = source.packets.filter((p) => p.stream === video.index),
+    audioPackets = source.packets.filter((p) => p.stream === record.input.gameTrack),
+    keys = videoPackets.filter((p) => p.key),
+    at = (t: number) => keys.find((p) => Math.abs(p.pts - record.input.sourceStart - t) < 0.002);
+  const spans = pieces.map((piece) => {
+    const first = at(piece.start),
+      toEnd = piece.end >= record.input.duration - 0.00001,
+      next = toEnd ? undefined : at(piece.end);
+    if (!first || !Number.isFinite(first.dts) || (!toEnd && (!next || !Number.isFinite(next.dts))))
+      throw new Error('These keyframe decode boundaries cannot be copied reliably yet.');
+    const from = videoPackets.indexOf(first),
+      to = toEnd ? videoPackets.length : videoPackets.indexOf(next!),
+      packets = videoPackets.slice(from, to);
+    if (to <= from || packets.some((p) => !Number.isFinite(p.duration) || p.duration <= 0))
+      throw new Error('This video range has no verifiable packet durations.');
+    const end = packets.reduce((n, p) => Math.max(n, p.pts + p.duration), -Infinity);
+    return { first, next, packets, start: first.pts, end, toEnd };
+  });
+  // 1. Each piece's video, copied exactly as single exports copy it.
+  const files: string[] = [];
+  for (const [i, span] of spans.entries()) {
+    report(`Copying video piece ${i + 1} of ${spans.length}`, 0.2 + (0.25 * i) / spans.length);
+    const file = await stage(`p${i}.mp4`),
+      hasSeek = span.first.pts - record.input.sourceStart > 0.000001,
+      seek = seekBoundary(audioPackets, span.first, hasSeek, tick(video));
+    const args = ['-v', 'error', '-nostdin', '-copyts', '-i', record.input.sourceFile];
+    if (hasSeek) args.push('-ss', String(seek));
+    args.push('-to', String(span.end));
+    const discard: string[] = [];
+    if (hasSeek) discard.push(`lt(dts*tb,${span.first.dts - seek - tick(video) / 4})`);
+    if (span.next)
+      discard.push(`gte(dts*tb,${span.next.dts - (hasSeek ? seek : 0) - tick(video) / 4})`);
+    if (discard.length) args.push('-bsf:v', `noise=amount=0:drop='${discard.join('+')}'`);
+    args.push(
+      '-map',
+      `0:${video.index}`,
+      '-an',
+      '-map_metadata',
+      '0',
+      '-map_chapters',
+      '-1',
+      '-c',
+      'copy',
+      '-copytb',
+      '1',
+      '-avoid_negative_ts',
+      'make_zero',
+      '-n',
+      file,
+    );
+    await launchTool(tools.ffmpeg, args, signal);
+    const copied = (await probe(file, tools.ffprobe, signal)).packets;
+    if (
+      copied.length !== span.packets.length ||
+      span.packets.some((p, k) => p.hash !== copied[k].hash)
+    )
+      throw new Error(
+        'A copied video piece did not match the original packets. No finished output was published.',
+      );
+    files.push(file);
+  }
+  // 2. The pieces joined end to end without re-encoding.
+  report('Joining the video pieces', 0.5);
+  const list = await stage('pieces.txt'),
+    joined = await stage('video.mp4');
+  await writeFile(
+    list,
+    'ffconcat version 1.0\n' + files.map((f) => `file '${path.basename(f)}'\n`).join(''),
+    { flag: 'wx' },
+  );
+  await launchTool(
+    tools.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      list,
+      '-map',
+      '0:v:0',
+      '-c',
+      'copy',
+      '-copytb',
+      '1',
+      '-n',
+      joined,
+    ],
+    signal,
+  );
+  // 3. Game audio for exactly the same spans, faded 10 ms either side of each join, as FLAC.
+  report('Rebuilding game audio with fades at the joins', 0.6);
+  const offset = gameAudio ? (audioPackets[0]?.pts ?? 0) : 0,
+    input = gameAudio ?? record.input.sourceFile,
+    stream = gameAudio ? '0:a:0' : `0:${record.input.gameTrack}`,
+    lengths = spans.map((s) => s.end - s.start);
+  const graph = (fades: boolean) =>
+    spans
+      .map((span, i) => {
+        const trim = `[${stream}]atrim=start=${span.start - offset}:end=${span.end - offset},asetpts=PTS-STARTPTS`;
+        const fade = fades
+          ? (i > 0 ? `,afade=t=in:st=0:d=${JOIN_FADE}` : '') +
+            (i < spans.length - 1
+              ? `,afade=t=out:st=${Math.max(0, lengths[i] - JOIN_FADE)}:d=${JOIN_FADE}`
+              : '')
+          : '';
+        return `${trim}${fade}[a${i}]`;
+      })
+      .join(';') +
+    `;${spans.map((_, i) => `[a${i}]`).join('')}concat=n=${spans.length}:v=0:a=1[out]`;
+  // The same bit depth as the game audio: FLAC stores 16 and 24 bits as is; 32 bits needs
+  // FFmpeg's experimental mode.
+  const bits = Number(audio.bits_per_raw_sample) || (/32/.test(audio.sample_fmt || '') ? 32 : 16),
+    sampleArgs =
+      bits > 16
+        ? [
+            '-sample_fmt',
+            's32',
+            '-bits_per_raw_sample',
+            String(bits),
+            ...(bits > 24 ? ['-strict', '-2'] : []),
+          ]
+        : ['-sample_fmt', 's16'];
+  const flac = await stage('audio.flac');
+  await launchTool(
+    tools.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-copyts',
+      '-i',
+      input,
+      '-filter_complex',
+      graph(true),
+      '-map',
+      '[out]',
+      '-c:a',
+      'flac',
+      ...sampleArgs,
+      '-n',
+      flac,
+    ],
+    signal,
+  );
+  // 4. Chapters on the stitched clock, then one file with the joined video and the new audio.
+  report('Adding chapters', 0.68);
+  const length = lengths.reduce((n, l) => n + l, 0),
+    tolerance = Math.max(tick(video), tick(audio)) * 2 + 0.000002,
+    shift = -spans[0].start,
+    draft: Checked = {
+      actual: {
+        start: spans[0].start - record.input.sourceStart,
+        end: spans.at(-1)!.end - record.input.sourceStart,
+      },
+      videoStart: 0,
+      timestampShift: shift,
+      tolerance,
+      maxTimingError: 0,
+      videoPackets: spans.reduce((n, s) => n + s.packets.length, 0),
+      audioPackets: 0,
+      videoCodec: video.codec_name,
+      audioCodec: 'flac',
+      pieces: spans.map((s) => ({
+        start: s.start - record.input.sourceStart,
+        end: s.end - record.input.sourceStart,
+      })),
+      length,
+    };
+  await writeFile(metadata, metadataText(record, draft), { flag: 'wx' });
+  await launchTool(
+    tools.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-i',
+      joined,
+      '-i',
+      flac,
+      '-f',
+      'ffmetadata',
+      '-i',
+      metadata,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-map_metadata',
+      '0',
+      '-metadata',
+      `title=${plan.name}`,
+      '-map_chapters',
+      '2',
+      '-c',
+      'copy',
+      '-copytb',
+      '1',
+      '-avoid_negative_ts',
+      'make_zero',
+      '-strict',
+      '-2',
+      '-n',
+      ...(quickTime(plan.container) ? ['-movie_timescale', '1000000'] : []),
+      final,
+    ],
+    signal,
+  );
+  // 5. Verify: every video packet, in order and on time; audio samples outside the fades.
+  report('Checking final video and audio', 0.75);
+  const media = await probe(final, tools.ffprobe, signal),
+    ov = media.streams.filter((s) => s.codec_type === 'video'),
+    oa = media.streams.filter((s) => s.codec_type === 'audio');
+  if (
+    ov.length !== 1 ||
+    oa.length !== 1 ||
+    ov[0].codec_name !== video.codec_name ||
+    oa[0].codec_name !== 'flac' ||
+    media.streams.some((s) => !['video', 'audio', 'data'].includes(s.codec_type))
+  )
+    throw new Error('Export must contain the original video and exactly one game-audio stream.');
+  const out = media.packets.filter((p) => p.stream === ov[0].index);
+  const expected = spans.flatMap((span, i) => {
+    const base = lengths.slice(0, i).reduce((n, l) => n + l, 0);
+    return span.packets.map((p) => ({ p, clock: base + p.pts - span.start }));
+  });
+  if (out.length !== expected.length || expected.some((e, i) => e.p.hash !== out[i].hash))
+    throw new Error(
+      'The joined video did not match the original packets. No finished output was published.',
+    );
+  const zero = Math.min(...out.map((p) => p.pts));
+  let maxTimingError = 0;
+  expected.forEach((e, i) => {
+    const error = Math.abs(out[i].pts - zero - e.clock);
+    maxTimingError = Math.max(maxTimingError, error);
+    if (error > tolerance)
+      throw new Error(
+        `Joining changed video packet timing beyond the container time base (packet ${i + 1}, ${error.toFixed(6)} s).`,
+      );
+  });
+  const audioOut = media.packets.filter((p) => p.stream === oa[0].index);
+  await compareAudio(
+    tools,
+    signal,
+    stage,
+    final,
+    input,
+    stream,
+    graph(false),
+    oa[0],
+    spans,
+    lengths,
+  );
+  const expectedChapters = chapters(record, draft);
+  if (
+    expectedChapters.length !== media.chapters.length ||
+    expectedChapters.some(
+      (c, i) =>
+        c.name !== media.chapters[i].tags?.title ||
+        Math.abs(c.start / 1000000 - Number(media.chapters[i].start_time)) > 0.002,
+    )
+  )
+    throw new Error('Embedded chapter names or timing did not survive this container.');
+  const checked: Checked = { ...draft, maxTimingError, audioPackets: audioOut.length };
+  await readable(final, checked, tools.ffmpeg, signal);
+  const timecode = startTimecode(media.timecode, ov[0].r_frame_rate);
+  return { checked, ...(timecode ? { timecode } : {}) };
+}
+/**
+ * Decodes the stitched clip's audio and the original's same spans without fades, and requires
+ * every sample to match except within 10 ms of a join, where the fades are.
+ */
+async function compareAudio(
+  tools: Tools,
+  signal: AbortSignal,
+  stage: (name: string) => Promise<string>,
+  final: string,
+  input: string,
+  stream: string,
+  graph: string,
+  out: Stream,
+  spans: { start: number; end: number }[],
+  lengths: number[],
+) {
+  const rate = Number(out.sample_rate),
+    channels = Number(out.channels);
+  if (!(rate > 0) || !(channels > 0))
+    throw new Error('The game audio has no readable sample rate.');
+  const mine = await stage('out.pcm'),
+    theirs = await stage('ref.pcm');
+  await launchTool(
+    tools.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-i',
+      final,
+      '-map',
+      '0:a:0',
+      '-f',
+      's32le',
+      '-c:a',
+      'pcm_s32le',
+      '-n',
+      mine,
+    ],
+    signal,
+  );
+  await launchTool(
+    tools.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-copyts',
+      '-i',
+      input,
+      '-filter_complex',
+      graph,
+      '-map',
+      '[out]',
+      '-f',
+      's32le',
+      '-c:a',
+      'pcm_s32le',
+      '-n',
+      theirs,
+    ],
+    signal,
+  );
+  const frame = 4 * channels,
+    a = await stat(mine),
+    b = await stat(theirs);
+  if (a.size !== b.size || a.size % frame)
+    throw new Error('Game audio length changed while joining.');
+  const joins: number[] = [];
+  let clock = 0;
+  for (const l of lengths.slice(0, -1)) {
+    clock += l;
+    joins.push(clock);
+  }
+  const margin = JOIN_FADE + 2 / rate,
+    skip = joins.map((j) => [
+      Math.floor((j - margin) * rate) * frame,
+      Math.ceil((j + margin) * rate) * frame,
+    ]);
+  const one = createReadStream(mine, { highWaterMark: 1 << 20 })[Symbol.asyncIterator](),
+    two = createReadStream(theirs, { highWaterMark: 1 << 20 })[Symbol.asyncIterator]();
+  let x: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    y: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+    position = 0;
+  for (;;) {
+    signal.throwIfAborted();
+    if (!x.length) {
+      const n = await one.next();
+      if (!n.done) x = n.value as Buffer;
+    }
+    if (!y.length) {
+      const n = await two.next();
+      if (!n.done) y = n.value as Buffer;
+    }
+    const size = Math.min(x.length, y.length);
+    if (!size) break;
+    for (let i = 0; i < size; i++) {
+      const at = position + i;
+      if (x[i] !== y[i] && !skip.some(([lo, hi]) => at >= lo && at < hi))
+        throw new Error(
+          `Game audio changed outside the fades at the joins (at ${(at / frame / rate).toFixed(4)} s).`,
+        );
+    }
+    position += size;
+    x = x.subarray(size);
+    y = y.subarray(size);
+  }
+  if (position !== a.size) throw new Error('Game audio could not be compared in full.');
+}
 export async function exportClip(
   record: ExportRecord,
   tools: Tools,
@@ -465,6 +939,7 @@ export async function exportClip(
     json = path.join(directory, suffix + '.json'),
     lock = output + '.vcut-lock';
   let ownedLock = false;
+  const staged: string[] = [];
   const report = (message: string, progress: number) => {
     record = {
       ...record,
@@ -556,137 +1031,163 @@ export async function exportClip(
         : original,
       video = source.streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
     if (!video) throw new Error('Original video stream is unavailable.');
-    const keys = source.packets.filter((p) => p.stream === video.index && p.key);
-    const start = keys.find(
-        (p) => Math.abs(p.pts - record.input.sourceStart - record.plan.planned.start) < 0.002,
-      ),
-      end = keys.find(
-        (p) => Math.abs(p.pts - record.input.sourceStart - record.plan.planned.end) < 0.002,
-      );
-    if (
-      !start ||
-      (record.plan.planned.start > 0.000001 && !Number.isFinite(start.dts)) ||
-      (record.plan.planned.end < record.input.duration - 0.00001 &&
-        (!end || !Number.isFinite(end.dts)))
-    )
-      throw new Error('These keyframe decode boundaries cannot be copied reliably yet.');
-    report('Copying original video and game audio', 0.25);
-    const videoPackets = source.packets.filter((p) => p.stream === video.index),
-      audioPackets = source.packets.filter((p) => p.stream === record.input.gameTrack);
-    const startIndex = videoPackets.indexOf(start),
-      endIndex =
-        record.plan.planned.end >= record.input.duration - 0.00001
-          ? videoPackets.length
-          : videoPackets.indexOf(end!);
-    const selectedPackets = videoPackets.slice(startIndex, endIndex);
-    if (
-      startIndex < 0 ||
-      endIndex <= startIndex ||
-      selectedPackets.some((p) => !Number.isFinite(p.duration) || p.duration <= 0)
-    )
-      throw new Error('This video range has no verifiable packet durations.');
-    const videoEnd = selectedPackets.reduce((n, p) => Math.max(n, p.pts + p.duration), -Infinity);
-    const hasSeek = record.plan.planned.start > 0.000001,
-      seek = seekBoundary(audioPackets, start, hasSeek, tick(video));
-    const args = ['-v', 'error', '-nostdin', '-copyts', '-i', record.input.sourceFile];
-    if (gameAudio) args.push('-itsoffset', String(audioPackets[0]?.pts ?? 0), '-i', gameAudio);
-    if (hasSeek) args.push('-ss', String(seek));
-    args.push('-to', String(videoEnd));
-    // Output seeking rebases timestamps before bitstream filtering. Filter
-    // video at decode boundaries while audio continues to the last presented
-    // frame. amount=0 leaves every retained encoded packet unchanged.
-    const discard: string[] = [];
-    if (hasSeek) discard.push(`lt(dts*tb,${start.dts - seek - tick(video) / 4})`);
-    if (endIndex < videoPackets.length)
-      discard.push(`gte(dts*tb,${end!.dts - (hasSeek ? seek : 0) - tick(video) / 4})`);
-    if (discard.length) args.push('-bsf:v', `noise=amount=0:drop='${discard.join('+')}'`);
-    args.push(
-      '-map',
-      `0:${video.index}`,
-      '-map',
-      gameAudio ? '1:a:0' : `0:${record.input.gameTrack}`,
-      '-map_metadata',
-      '0',
-      '-map_chapters',
-      '-1',
-      '-c',
-      'copy',
-      '-copytb',
-      '1',
-      '-avoid_negative_ts',
-      'make_zero',
-      '-strict',
-      '-2',
-      '-n',
-      raw,
-    );
-    if (quickTime(record.plan.container))
-      args.splice(args.length - 1, 0, '-movie_timescale', '1000000');
-    await launchTool(tools.ffmpeg, args, signal);
-    report('Verifying copied packet timing', 0.5);
-    const first = verify(source, await probe(raw, tools.ffprobe, signal), record);
-    // Use one shared shift to start the video at zero. Audio packets crossing
-    // the first frame remain preroll rather than introducing a blank lead-in.
-    const intendedShift = first.timestampShift - first.videoStart;
-    await writeFile(
-      metadata,
-      metadataText(record, { ...first, timestampShift: intendedShift, videoStart: 0 }),
-      { flag: 'wx' },
-    );
-    const chapterArgs = [
-      '-v',
-      'error',
-      '-nostdin',
-      '-copyts',
-      '-i',
-      raw,
-      '-f',
-      'ffmetadata',
-      '-i',
-      metadata,
-      '-map',
-      '0:v:0',
-      '-map',
-      '0:a:0',
-      '-map_metadata',
-      '0',
-      '-metadata',
-      `title=${record.plan.name}`,
-      '-map_chapters',
-      '1',
-      '-c',
-      'copy',
-      '-copytb',
-      '1',
-      '-avoid_negative_ts',
-      'disabled',
-      '-output_ts_offset',
-      String(-first.videoStart),
-      '-strict',
-      '-2',
-      '-n',
-      ...(quickTime(record.plan.container) ? ['-movie_timescale', '1000000'] : []),
-      final,
-    ];
-    await launchTool(tools.ffmpeg, chapterArgs, signal);
-    report('Checking final video and audio', 0.7);
-    const finalMedia = await probe(final, tools.ffprobe, signal),
-      checked = verify(source, finalMedia, record);
-    const finalVideo = finalMedia.streams.find((s) => s.codec_type === 'video');
-    const timecode = startTimecode(finalMedia.timecode, finalVideo?.r_frame_rate);
-    if (Math.abs(checked.timestampShift - intendedShift) > checked.tolerance)
-      throw new Error('Adding chapters changed stream timing.');
-    const expectedChapters = chapters(record, checked);
-    if (
-      expectedChapters.length !== finalMedia.chapters.length ||
-      expectedChapters.some(
-        (c, i) =>
-          c.name !== finalMedia.chapters[i].tags?.title ||
-          Math.abs(c.start / 1000000 - Number(finalMedia.chapters[i].start_time)) > 0.002,
+    const stitched = (record.plan.pieces?.length ?? 0) > 1;
+    // A dead process may have left stages too; the lock excludes another writer.
+    const stage = async (name: string) => {
+      const file = path.join(directory, `${suffix}-${name}`);
+      staged.push(file);
+      await unlink(file).catch((e: NodeJS.ErrnoException) => {
+        if (e.code !== 'ENOENT') throw e;
+      });
+      return file;
+    };
+    let checked: Checked, timecode: { value: string; seconds: number } | undefined;
+    if (stitched) {
+      ({ checked, timecode } = await copyStitched(
+        record,
+        tools,
+        signal,
+        source,
+        video,
+        gameAudio,
+        stage,
+        final,
+        metadata,
+        report,
+      ));
+    } else {
+      const keys = source.packets.filter((p) => p.stream === video.index && p.key);
+      const start = keys.find(
+          (p) => Math.abs(p.pts - record.input.sourceStart - record.plan.planned.start) < 0.002,
+        ),
+        end = keys.find(
+          (p) => Math.abs(p.pts - record.input.sourceStart - record.plan.planned.end) < 0.002,
+        );
+      if (
+        !start ||
+        (record.plan.planned.start > 0.000001 && !Number.isFinite(start.dts)) ||
+        (record.plan.planned.end < record.input.duration - 0.00001 &&
+          (!end || !Number.isFinite(end.dts)))
       )
-    )
-      throw new Error('Embedded chapter names or timing did not survive this container.');
-    await readable(final, checked, tools.ffmpeg, signal);
+        throw new Error('These keyframe decode boundaries cannot be copied reliably yet.');
+      report('Copying original video and game audio', 0.25);
+      const videoPackets = source.packets.filter((p) => p.stream === video.index),
+        audioPackets = source.packets.filter((p) => p.stream === record.input.gameTrack);
+      const startIndex = videoPackets.indexOf(start),
+        endIndex =
+          record.plan.planned.end >= record.input.duration - 0.00001
+            ? videoPackets.length
+            : videoPackets.indexOf(end!);
+      const selectedPackets = videoPackets.slice(startIndex, endIndex);
+      if (
+        startIndex < 0 ||
+        endIndex <= startIndex ||
+        selectedPackets.some((p) => !Number.isFinite(p.duration) || p.duration <= 0)
+      )
+        throw new Error('This video range has no verifiable packet durations.');
+      const videoEnd = selectedPackets.reduce((n, p) => Math.max(n, p.pts + p.duration), -Infinity);
+      const hasSeek = record.plan.planned.start > 0.000001,
+        seek = seekBoundary(audioPackets, start, hasSeek, tick(video));
+      const args = ['-v', 'error', '-nostdin', '-copyts', '-i', record.input.sourceFile];
+      if (gameAudio) args.push('-itsoffset', String(audioPackets[0]?.pts ?? 0), '-i', gameAudio);
+      if (hasSeek) args.push('-ss', String(seek));
+      args.push('-to', String(videoEnd));
+      // Output seeking rebases timestamps before bitstream filtering. Filter
+      // video at decode boundaries while audio continues to the last presented
+      // frame. amount=0 leaves every retained encoded packet unchanged.
+      const discard: string[] = [];
+      if (hasSeek) discard.push(`lt(dts*tb,${start.dts - seek - tick(video) / 4})`);
+      if (endIndex < videoPackets.length)
+        discard.push(`gte(dts*tb,${end!.dts - (hasSeek ? seek : 0) - tick(video) / 4})`);
+      if (discard.length) args.push('-bsf:v', `noise=amount=0:drop='${discard.join('+')}'`);
+      args.push(
+        '-map',
+        `0:${video.index}`,
+        '-map',
+        gameAudio ? '1:a:0' : `0:${record.input.gameTrack}`,
+        '-map_metadata',
+        '0',
+        '-map_chapters',
+        '-1',
+        '-c',
+        'copy',
+        '-copytb',
+        '1',
+        '-avoid_negative_ts',
+        'make_zero',
+        '-strict',
+        '-2',
+        '-n',
+        raw,
+      );
+      if (quickTime(record.plan.container))
+        args.splice(args.length - 1, 0, '-movie_timescale', '1000000');
+      await launchTool(tools.ffmpeg, args, signal);
+      report('Verifying copied packet timing', 0.5);
+      const first = verify(source, await probe(raw, tools.ffprobe, signal), record);
+      // Use one shared shift to start the video at zero. Audio packets crossing
+      // the first frame remain preroll rather than introducing a blank lead-in.
+      const intendedShift = first.timestampShift - first.videoStart;
+      await writeFile(
+        metadata,
+        metadataText(record, { ...first, timestampShift: intendedShift, videoStart: 0 }),
+        { flag: 'wx' },
+      );
+      const chapterArgs = [
+        '-v',
+        'error',
+        '-nostdin',
+        '-copyts',
+        '-i',
+        raw,
+        '-f',
+        'ffmetadata',
+        '-i',
+        metadata,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0',
+        '-map_metadata',
+        '0',
+        '-metadata',
+        `title=${record.plan.name}`,
+        '-map_chapters',
+        '1',
+        '-c',
+        'copy',
+        '-copytb',
+        '1',
+        '-avoid_negative_ts',
+        'disabled',
+        '-output_ts_offset',
+        String(-first.videoStart),
+        '-strict',
+        '-2',
+        '-n',
+        ...(quickTime(record.plan.container) ? ['-movie_timescale', '1000000'] : []),
+        final,
+      ];
+      await launchTool(tools.ffmpeg, chapterArgs, signal);
+      report('Checking final video and audio', 0.7);
+      const finalMedia = await probe(final, tools.ffprobe, signal);
+      checked = verify(source, finalMedia, record);
+      const finalVideo = finalMedia.streams.find((s) => s.codec_type === 'video');
+      timecode = startTimecode(finalMedia.timecode, finalVideo?.r_frame_rate);
+      if (Math.abs(checked.timestampShift - intendedShift) > checked.tolerance)
+        throw new Error('Adding chapters changed stream timing.');
+      const expectedChapters = chapters(record, checked);
+      if (
+        expectedChapters.length !== finalMedia.chapters.length ||
+        expectedChapters.some(
+          (c, i) =>
+            c.name !== finalMedia.chapters[i].tags?.title ||
+            Math.abs(c.start / 1000000 - Number(finalMedia.chapters[i].start_time)) > 0.002,
+        )
+      )
+        throw new Error('Embedded chapter names or timing did not survive this container.');
+      await readable(final, checked, tools.ffmpeg, signal);
+    }
     const again = await identify(record.input.sourceFile, record.plan.sourceId);
     if (
       again.fingerprint !== sourceIdentity.fingerprint ||
@@ -720,7 +1221,7 @@ export async function exportClip(
       updated: new Date().toISOString(),
     };
   } finally {
-    for (const file of [raw, final, metadata, json]) await unlink(file).catch(() => {});
+    for (const file of [raw, final, metadata, json, ...staged]) await unlink(file).catch(() => {});
     if (ownedLock) await unlink(lock).catch(() => {});
   }
 }
@@ -736,6 +1237,35 @@ function withoutColor(clip: ExportRecord['input']['clip']) {
   const rest = { ...clip };
   delete rest.color;
   return rest;
+}
+function stitchedSection(record: ExportRecord, v: ExportVerification) {
+  const pieces = v.pieces!;
+  let clock = 0;
+  return {
+    schema: 'virtual-cut-stitched',
+    version: 1,
+    length: v.length ?? piecesLength(pieces),
+    pieces: pieces.map((p) => {
+      const clipStart = clock;
+      clock += p.end - p.start;
+      return { sourceStart: p.start, sourceEnd: p.end, clipStart, clipEnd: clock };
+    }),
+    gaps: (record.plan.gaps || []).map((g, i) => ({
+      number: i + 1,
+      requested: g.requested,
+      ...(g.removed
+        ? { removed: g.removed, joinAt: stitchedTime(pieces, g.removed.end, 'start') }
+        : { removed: null, why: 'Too short to remove anything: fewer than two keyframes inside.' }),
+    })),
+    leftOut: leftOutMarkers(record, v),
+    audio: {
+      codec: 'flac',
+      fadeAtJoins: JOIN_FADE,
+      purpose: 'Game audio rebuilt from the same spans with a fade out and in at each join.',
+    },
+    timing:
+      'sourceStart/sourceEnd: recording time; clipStart/clipEnd and joinAt: this video from 0. Each piece starts and ends on a keyframe; video packets are copied unchanged.',
+  };
 }
 export function annotation(record: ExportRecord, v: ExportVerification) {
   const { input, plan } = record;
@@ -849,6 +1379,7 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
                       timestampShift: v.timestampShift,
                       exportId: plan.id,
                       name: plan.name,
+                      ...(v.pieces ? { pieces: v.pieces } : {}),
                     },
                   ),
                 ),
@@ -898,6 +1429,8 @@ export function annotation(record: ExportRecord, v: ExportVerification) {
               },
             }
           : {}),
+        // Optional and separately versioned: a clip with gaps, joined from pieces (VC-212).
+        ...(v.pieces ? { stitched: stitchedSection(record, v) } : {}),
         compatibility: {
           embedded: 'Chapter names and container timestamps',
           portable: 'All annotation fields in this file',

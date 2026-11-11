@@ -8,7 +8,8 @@ import {
   type Marker,
   type Recording,
 } from './model';
-import type { AudioTrack } from '../../electron/workflow-types';
+import type { AudioTrack, ClipGap } from '../../electron/workflow-types';
+import { adjustGap, gapJoins, sortedGaps } from '../../electron/clip-gaps';
 import { clipColor, layoutClips } from './clipLayout';
 import { Button } from './ui';
 import { fitViewport, zoomViewport, type TimelineViewport } from './timelineViewport';
@@ -26,6 +27,22 @@ import {
   type ProposalPreview,
 } from '../../electron/proposal-previews';
 
+export interface GapSweep {
+  clipId: string;
+  start: number;
+  end: number;
+}
+/** VC-212: what the Cut page hands the timeline about gaps. */
+export type GapControls = Pick<
+  Parameters<typeof Timeline>[0],
+  | 'selectedGapId'
+  | 'onGapSelect'
+  | 'onGapRemove'
+  | 'onGapsChange'
+  | 'pendingGap'
+  | 'gapSweep'
+  | 'onGapSweep'
+>;
 export function Timeline({
   recording,
   projectId,
@@ -57,6 +74,13 @@ export function Timeline({
   proposalFocus = null,
   proposalReveal = false,
   onProposalAdjust,
+  selectedGapId = '',
+  onGapSelect,
+  onGapRemove,
+  onGapsChange,
+  pendingGap = null,
+  gapSweep = null,
+  onGapSweep,
 }: {
   recording: Recording;
   projectId?: string;
@@ -95,6 +119,16 @@ export function Timeline({
    * edited. Hover never grabs: only a picked card's preview has handles.
    */
   onProposalAdjust?: (card: string, at: PreviewTimes) => void;
+  /** VC-212: the selected gap; gaps are picked, moved, removed and swept here. */
+  selectedGapId?: string;
+  onGapSelect?: (clipId: string, gapId: string) => void;
+  onGapRemove?: (clipId: string, gapId: string) => void;
+  onGapsChange?: (clipId: string, gaps: ClipGap[]) => void;
+  /** A gap started with G: its clip and first time. It runs to the playhead until G again. */
+  pendingGap?: { clipId: string; at: number } | null;
+  /** A Shift-drag over a clip, waiting for G. */
+  gapSweep?: GapSweep | null;
+  onGapSweep?: (sweep: GapSweep | null) => void;
 }) {
   const [positionDraft, setPositionDraft] = useState<string | null>(null);
   const [positionError, setPositionError] = useState('');
@@ -130,7 +164,7 @@ export function Timeline({
     recording: string;
     targets: number[];
   } | null>(null);
-  const callbacks = useRef({ onTrimActive, onScrubActive, onSeek });
+  const callbacks = useRef({ onTrimActive, onScrubActive, onSeek, onGapSweep });
   const [preview, setPreview] = useState<{
     id: string;
     edge: 'start' | 'end';
@@ -152,6 +186,24 @@ export function Timeline({
   const [proposalDraft, setProposalDraft] = useState<({ card: string } & PreviewTimes) | null>(
     null,
   );
+  const gapDrag = useRef<{
+    clipId: string;
+    gapId: string;
+    edge: 'start' | 'end' | 'move';
+    x: number;
+    clip: Clip;
+    pointer: number;
+    moved: boolean;
+  } | null>(null);
+  const [gapPreview, setGapPreview] = useState<Clip | null>(null);
+  const sweepDrag = useRef<{ clipId: string; from: number; pointer: number } | null>(null);
+  const [gapMenu, setGapMenu] = useState<{
+    clipId: string;
+    gapId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const gapMenuRef = useRef<HTMLDivElement>(null);
   const [pointerFocus, setPointerFocus] = useState(false);
   const [snapGuide, setSnapGuide] = useState<number | null>(null);
   const snapTargets = (exclude: { marker?: string; clip?: string }) =>
@@ -164,13 +216,51 @@ export function Timeline({
         )
       : [];
   useEffect(() => {
-    callbacks.current = { onTrimActive, onScrubActive, onSeek };
-  }, [onTrimActive, onScrubActive, onSeek]);
+    callbacks.current = { onTrimActive, onScrubActive, onSeek, onGapSweep };
+  }, [onTrimActive, onScrubActive, onSeek, onGapSweep]);
+  // The gap menu closes on a click elsewhere or Escape, and takes keyboard focus while open.
+  useEffect(() => {
+    if (!gapMenu) return;
+    gapMenuRef.current?.querySelector('button')?.focus();
+    const away = (e: PointerEvent) => {
+      if (!gapMenuRef.current?.contains(e.target as Node)) setGapMenu(null);
+    };
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setGapMenu(null);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        const items = [...(gapMenuRef.current?.querySelectorAll('button') || [])],
+          at = items.indexOf(document.activeElement as HTMLButtonElement);
+        items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', keys, true);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      document.removeEventListener('keydown', keys, true);
+    };
+  }, [gapMenu]);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || (!drag.current && !markerDrag.current && !proposalDrag.current))
+      if (
+        e.key !== 'Escape' ||
+        (!drag.current &&
+          !markerDrag.current &&
+          !proposalDrag.current &&
+          !gapDrag.current &&
+          !sweepDrag.current)
+      )
         return;
       e.preventDefault();
+      gapDrag.current = null;
+      setGapPreview(null);
+      sweepDrag.current = null;
+      callbacks.current.onGapSweep?.(null);
       stationaryMarkerClick.current = null;
       drag.current = null;
       setPreview(null);
@@ -303,8 +393,20 @@ export function Timeline({
     el.addEventListener('wheel', wheel, { passive: false });
     return () => el.removeEventListener('wheel', wheel);
   }, []);
-  const displayClip = (c: Clip) =>
-    preview?.id === c.id ? { ...c, [preview.edge]: preview.value } : c;
+  const displayClip = (c: Clip) => {
+    const shown = gapPreview?.id === c.id ? gapPreview : c;
+    return preview?.id === c.id ? { ...shown, [preview.edge]: preview.value } : shown;
+  };
+  // VC-212: what each clip's gaps remove, on keyframes; markers inside are left out of exports.
+  const keyTimes = recording.keys || [];
+  const removedSpans = showClips
+    ? clips.flatMap((c) =>
+        gapJoins(c, keyTimes)
+          .filter((j) => !j.short)
+          .map((j) => [j.out, j.back] as const),
+      )
+    : [];
+  const inGap = (t: number) => removedSpans.some(([a, b]) => t >= a && t < b);
   const layout = layoutClips(showClips ? clips.map(displayClip) : [], start, end);
   const markerLayout = layoutMarkers(
     markers.map((m) => (markerPreview?.id === m.id ? { ...m, ...markerPreview } : m)),
@@ -342,7 +444,13 @@ export function Timeline({
           value,
           [
             ...markers.flatMap((m) => (m.end == null ? [m.time] : [m.time, m.end])),
-            ...(showClips ? clips.flatMap((c) => [c.start, c.end]) : []),
+            ...(showClips
+              ? clips.flatMap((c) => [
+                  c.start,
+                  c.end,
+                  ...(c.gaps || []).flatMap((g) => [g.start, g.end]),
+                ])
+              : []),
           ],
           start,
           end,
@@ -475,6 +583,108 @@ export function Timeline({
     setSnapGuide(snap?.target ?? null);
     setPreview({ id: d.id, edge: d.edge, value: d.value });
   }
+  function startGapDrag(
+    e: React.PointerEvent,
+    c: Clip,
+    gap: ClipGap,
+    edge: 'start' | 'end' | 'move',
+  ) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onGapSelect?.(c.id, gap.id);
+    if (!handleMode || !trimEnabled || !onGapsChange) return;
+    onTrimActive?.(true);
+    gapDrag.current = {
+      clipId: c.id,
+      gapId: gap.id,
+      edge,
+      x: e.clientX,
+      clip: c,
+      pointer: e.pointerId,
+      moved: false,
+    };
+    track.current!.setPointerCapture(e.pointerId);
+  }
+  function moveGap(x: number) {
+    const d = gapDrag.current;
+    if (!d || (!d.moved && Math.abs(x - d.x) < 3)) return;
+    d.moved = true;
+    const gap = d.clip.gaps!.find((g) => g.id === d.gapId)!,
+      rect = track.current!.getBoundingClientRect(),
+      fps = recording.fps || 30,
+      delta = ((x - d.x) / rect.width) * span,
+      origin = d.edge === 'end' ? gap.end : gap.start,
+      raw = Math.round((origin + delta) * fps) / fps;
+    // Snaps like a clip edge: to the playhead, markers, clip edges and other gaps' edges.
+    const others = clips.map((c) =>
+        c.id === d.clipId ? { ...c, gaps: c.gaps?.filter((g) => g.id !== d.gapId) } : c,
+      ),
+      targets = snapEnabled
+        ? editTargets(
+            current >= recording.duration ? recording.duration : markerTime(recording, current),
+            markers,
+            others,
+            {},
+          )
+        : [],
+      at = (value: number) => adjustGap(d.clip, d.gapId, d.edge, value),
+      edgeOf = (c: Clip, offset: number) => {
+        const g = c.gaps!.find((x) => x.id === d.gapId)!;
+        return d.edge === 'end' ? g.end : offset > 0 ? g.end : g.start;
+      },
+      snap = editSnap(
+        raw,
+        d.edge === 'move' ? [0, gap.end - gap.start] : [0],
+        targets,
+        start,
+        end,
+        rect.width,
+        (value, offset, target) => Math.abs(edgeOf(at(value), offset) - target) < 0.000001,
+      );
+    setSnapGuide(snap?.target ?? null);
+    setGapPreview(at(snap?.value ?? raw));
+  }
+  function finishGap(commit: boolean) {
+    const d = gapDrag.current;
+    if (!d) return;
+    gapDrag.current = null;
+    const next = gapPreview;
+    setGapPreview(null);
+    setSnapGuide(null);
+    if (commit && d.moved && next && next.id === d.clipId)
+      onGapsChange?.(d.clipId, next.gaps || []);
+    callbacks.current.onTrimActive?.(false);
+  }
+  function startSweep(e: React.PointerEvent, c: Clip) {
+    if (e.button !== 0 || !e.shiftKey || !onGapSweep) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect?.(c.id);
+    const rect = track.current!.getBoundingClientRect(),
+      at = Math.max(
+        c.start,
+        Math.min(c.end, start + ((e.clientX - rect.left) / rect.width) * span),
+      );
+    sweepDrag.current = { clipId: c.id, from: at, pointer: e.pointerId };
+    onGapSweep({ clipId: c.id, start: at, end: at });
+    track.current!.setPointerCapture(e.pointerId);
+    return true;
+  }
+  function moveSweep(x: number) {
+    const d = sweepDrag.current,
+      c = clips.find((x) => x.id === d?.clipId);
+    if (!d || !c) return;
+    const rect = track.current!.getBoundingClientRect(),
+      at = Math.max(c.start, Math.min(c.end, start + ((x - rect.left) / rect.width) * span));
+    onGapSweep?.({ clipId: c.id, start: Math.min(d.from, at), end: Math.max(d.from, at) });
+  }
+  function finishSweep() {
+    const d = sweepDrag.current;
+    if (!d) return;
+    sweepDrag.current = null;
+    if (!gapSweep || gapSweep.end - gapSweep.start < 0.1) onGapSweep?.(null);
+  }
   function finishHandle(commit: boolean) {
     const d = drag.current;
     if (!d) return;
@@ -560,6 +770,13 @@ export function Timeline({
         {positionError && (
           <span className={s.positionError} role="alert">
             {positionError}
+          </span>
+        )}
+        {(pendingGap || gapSweep) && (
+          <span className={s.gapNote} role="status" data-gap-note>
+            {pendingGap
+              ? `Making a gap from ${time(pendingGap.at)}. Press G at its end; Escape cancels.`
+              : `Press G to cut out ${time(Math.max(0, gapSweep!.end - gapSweep!.start))}; Escape cancels.`}
           </span>
         )}
         {proposals.length > 0 && (
@@ -661,6 +878,14 @@ export function Timeline({
           scrub(e.clientX);
         }}
         onPointerMove={(e) => {
+          if (gapDrag.current?.pointer === e.pointerId) {
+            moveGap(e.clientX);
+            return;
+          }
+          if (sweepDrag.current?.pointer === e.pointerId) {
+            moveSweep(e.clientX);
+            return;
+          }
           if (proposalDrag.current?.pointer === e.pointerId) {
             moveProposal(e.clientX);
             return;
@@ -676,6 +901,21 @@ export function Timeline({
           if (pointer.current === e.pointerId) scrub(e.clientX);
         }}
         onPointerUp={(e) => {
+          if (
+            gapDrag.current?.pointer === e.pointerId ||
+            sweepDrag.current?.pointer === e.pointerId
+          ) {
+            if (gapDrag.current) {
+              moveGap(e.clientX);
+              finishGap(true);
+            } else {
+              moveSweep(e.clientX);
+              finishSweep();
+            }
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            return;
+          }
           if (proposalDrag.current?.pointer === e.pointerId) {
             moveProposal(e.clientX);
             finishProposal(true);
@@ -707,6 +947,8 @@ export function Timeline({
         }}
         onPointerCancel={() => {
           setSnapGuide(null);
+          finishGap(false);
+          finishSweep();
           finishProposal(false);
           finishMarker(false);
           finishHandle(false);
@@ -715,6 +957,8 @@ export function Timeline({
         }}
         onLostPointerCapture={() => {
           setSnapGuide(null);
+          finishGap(false);
+          finishSweep();
           finishProposal(false);
           finishMarker(false);
           finishHandle(false);
@@ -814,6 +1058,7 @@ export function Timeline({
               <div
                 key={m.id}
                 data-marker-range={m.id}
+                data-in-gap={inGap(m.time) || undefined}
                 data-selected={m.id === selectedMarkerId}
                 data-manipulate={handleMode}
                 className={s.markerRange}
@@ -852,9 +1097,10 @@ export function Timeline({
                 {...controls('move')}
                 data-marker={m.id}
                 data-manipulate={handleMode}
+                data-in-gap={inGap(m.time) || undefined}
                 className={s.marker}
                 style={{ left: percent(m.time), top: lane * 26, color: markerColor(m) }}
-                title={`${m.category}: ${m.name} · ${time(m.time)}${handleMode ? ' · Drag to move' : ''} · Alt-drag to make a range`}
+                title={`${m.category}: ${m.name} · ${time(m.time)}${inGap(m.time) ? ' · Inside a gap, left out of the export' : ''}${handleMode ? ' · Drag to move' : ''} · Alt-drag to make a range`}
                 aria-label={`Select marker: ${m.name}`}
                 aria-pressed={m.id === selectedMarkerId}
                 aria-disabled={handleMode && !trimEnabled}
@@ -984,12 +1230,33 @@ export function Timeline({
             ))}
             {layout.items.map(({ clip, index, lane }) => {
               const c = displayClip(clip);
+              const gaps = sortedGaps(c),
+                joins = gapJoins(c, keyTimes),
+                shownStart = Math.max(start, c.start),
+                shown = Math.max(0.000001, Math.min(end, c.end) - shownStart),
+                at = (t: number) => `${(100 * (t - shownStart)) / shown}%`,
+                across = (a: number, b: number) => `${(100 * Math.max(0, b - a)) / shown}%`,
+                pending =
+                  pendingGap?.clipId === c.id
+                    ? {
+                        a: Math.max(c.start, Math.min(pendingGap.at, current)),
+                        b: Math.min(c.end, Math.max(pendingGap.at, current)),
+                      }
+                    : null,
+                sweep = gapSweep?.clipId === c.id ? gapSweep : null,
+                gapped = gaps.length > 0,
+                pieces = gapped
+                  ? gaps
+                      .map((g, i) => ({ start: i ? gaps[i - 1].end : c.start, end: g.start }))
+                      .concat({ start: gaps.at(-1)!.end, end: c.end })
+                  : [];
               return (
                 <div
                   key={c.id}
                   data-clip-container={c.id}
                   data-clip-lane={lane}
                   className={s.clip}
+                  data-gapped={gapped || undefined}
                   data-selected={c.id === selectedId}
                   data-handle-mode={handleMode}
                   data-clipped-start={c.start < start}
@@ -1004,16 +1271,102 @@ export function Timeline({
                     } as CSSProperties
                   }
                 >
+                  {pieces.map((p, i) => (
+                    <span
+                      key={i}
+                      className={s.piece}
+                      data-clip-piece={i}
+                      style={{ left: at(p.start), width: across(p.start, p.end) }}
+                      onPointerDown={(e) => startSweep(e, c)}
+                      onClick={() => onSelect?.(c.id)}
+                      onDoubleClick={() => onSeek(c.start)}
+                    >
+                      {i > 0 && <i className={s.chevronIn} />}
+                      {i < pieces.length - 1 && <i className={s.chevronOut} />}
+                    </span>
+                  ))}
                   <button
                     className={s.clipLabel}
                     data-clip={c.id}
                     aria-label={`Select clip: ${c.name}`}
                     aria-pressed={c.id === selectedId}
+                    style={gapped ? { width: across(shownStart, gaps[0].start) } : undefined}
+                    onPointerDown={(e) => startSweep(e, c)}
                     onClick={() => onSelect?.(c.id)}
                     onDoubleClick={() => onSeek(c.start)}
                   >
                     <b>{String(index + 1).padStart(2, '0')}</b> <span>{c.name}</span>
                   </button>
+                  {joins.map((j) => {
+                    const g = j.gap,
+                      length = Math.max(0.000001, g.end - g.start),
+                      title = j.short
+                        ? `Gap ${j.number}: ${time(g.start)} – ${time(g.end)} · too short to remove anything; it needs two keyframes inside`
+                        : `Gap ${j.number}: ${time(g.start)} – ${time(g.end)} · removes ${time(j.removed)} · right-click for options`;
+                    return (
+                      <button
+                        key={g.id}
+                        className={s.gap}
+                        data-gap={g.id}
+                        data-gap-number={j.number}
+                        data-short={j.short || undefined}
+                        data-selected={g.id === selectedGapId}
+                        data-manipulate={handleMode || undefined}
+                        aria-label={`Select gap ${j.number} of ${c.name}`}
+                        aria-pressed={g.id === selectedGapId}
+                        title={title}
+                        style={{ left: at(g.start), width: across(g.start, g.end) }}
+                        onPointerDown={(e) => startGapDrag(e, c, g, 'move')}
+                        onDoubleClick={() => onSeek(g.start)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          onGapSelect?.(c.id, g.id);
+                          setGapMenu({ clipId: c.id, gapId: g.id, x: e.clientX, y: e.clientY });
+                        }}
+                      >
+                        {!j.short && j.out > g.start + 0.000001 && (
+                          <i
+                            className={s.gapKept}
+                            style={{ left: 0, width: `${(100 * (j.out - g.start)) / length}%` }}
+                          />
+                        )}
+                        {!j.short && g.end > j.back + 0.000001 && (
+                          <i
+                            className={s.gapKept}
+                            style={{ right: 0, width: `${(100 * (g.end - j.back)) / length}%` }}
+                          />
+                        )}
+                        <span className={s.gapLabel}>Gap {j.number}</span>
+                        {handleMode &&
+                          (['start', 'end'] as const).map((edge) => (
+                            <span
+                              key={edge}
+                              className={s.gapEdge}
+                              data-gap-edge={edge}
+                              title={`Drag the gap's ${edge}`}
+                              onPointerDown={(e) => startGapDrag(e, c, g, edge)}
+                            />
+                          ))}
+                      </button>
+                    );
+                  })}
+                  {pending && (
+                    <span
+                      className={s.gapPending}
+                      data-gap-pending
+                      data-reverse={pendingGap!.at > current || undefined}
+                      style={{ left: at(pending.a), width: across(pending.a, pending.b) }}
+                    >
+                      <span className={s.gapLabel}>{time(pending.b - pending.a)}</span>
+                    </span>
+                  )}
+                  {sweep && sweep.end > sweep.start && (
+                    <span
+                      className={s.gapSweep}
+                      data-gap-sweep
+                      style={{ left: at(sweep.start), width: across(sweep.start, sweep.end) }}
+                    />
+                  )}
                   {handleMode &&
                     (['start', 'end'] as const)
                       .filter((edge) => c[edge] >= start && c[edge] <= end)
@@ -1229,6 +1582,60 @@ export function Timeline({
           </Button>
         </div>
       )}
+      {gapMenu &&
+        (() => {
+          const c = clips.find((x) => x.id === gapMenu.clipId),
+            j = c && gapJoins(c, keyTimes).find((x) => x.gap.id === gapMenu.gapId);
+          if (!c || !j) return null;
+          const close = () => setGapMenu(null);
+          return (
+            <div
+              ref={gapMenuRef}
+              className={s.gapMenu}
+              role="menu"
+              aria-label={`Gap ${j.number}`}
+              data-gap-menu={j.gap.id}
+              style={{
+                left: Math.min(gapMenu.x, window.innerWidth - 230),
+                top: Math.min(gapMenu.y, window.innerHeight - 120),
+              }}
+            >
+              <button
+                role="menuitem"
+                data-gap-action="remove"
+                disabled={!onGapRemove || !trimEnabled}
+                onClick={() => {
+                  close();
+                  onGapRemove?.(c.id, j.gap.id);
+                }}
+              >
+                Remove gap {j.number}
+                <kbd>Backspace</kbd>
+              </button>
+              <hr />
+              <button
+                role="menuitem"
+                data-gap-action="start"
+                onClick={() => {
+                  close();
+                  onSeek(j.gap.start);
+                }}
+              >
+                Go to gap start
+              </button>
+              <button
+                role="menuitem"
+                data-gap-action="end"
+                onClick={() => {
+                  close();
+                  onSeek(j.gap.end);
+                }}
+              >
+                Go to gap end
+              </button>
+            </div>
+          );
+        })()}
     </div>
   );
 }

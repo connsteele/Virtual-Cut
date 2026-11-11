@@ -2405,3 +2405,110 @@
   color: var(--faint);
   cursor: default;
 }
+/* VC-212: a clip card's gaps. */
+.clipWas {
+  color: var(--faint);
+}
+.gapList {
+  display: grid;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.gapHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapRow {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gapRow:hover {
+  background: var(--raised);
+}
+.gapRow[data-selected='true'] {
+  border-color: #ede6d88c;
+  background: #ede6d80f;
+}
+.gapSpan {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gapNumber,
+.gapRemoved {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapRow[data-short='true'] .gapRemoved {
+  color: #e0b04a;
+}
+.gapLeftOut,
+.gapHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.gapLeftOut {
+  padding-left: 26px;
+}
+/* VC-212: the export panel's view of a clip with gaps, as it will export. */
+.stitched {
+  display: grid;
+  gap: 8px;
+}
+.stitchedHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.stitchedHead strong {
+  color: var(--text);
+}
+.stitchedBar {
+  position: relative;
+  height: 30px;
+  border: 1px solid #73cdc2b3;
+  border-radius: 4px;
+  background: #73cdc23d;
+  overflow: hidden;
+}
+.stitchedJoin {
+  position: absolute;
+  inset-block: 0;
+  width: 14px;
+  transform: translateX(-7px);
+}
+.stitchedJoin svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.stitchedMarker {
+  position: absolute;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translateX(-4px);
+  box-shadow: 0 0 0 1px #000a;
+}

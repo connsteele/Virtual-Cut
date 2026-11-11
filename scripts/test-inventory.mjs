@@ -29,9 +29,11 @@ export const fast = [
   'heard-as.test.mjs',
   'release-notes.test.mjs',
   'proxy-record.test.mjs',
+  'clip-gaps.test.mjs',
   'proxy-make.test.mjs',
 ];
 export const native = [
+  'stitched-export-native.mjs',
   'speech-setup-checks.mjs',
   'screen-text-setup-checks.mjs',
   'transcript-storage-checks.mjs',
@@ -98,8 +100,10 @@ export const desktop = [
   'look-ui.mjs',
   'proxy-switch-ui.mjs',
   'follow-dblclick-ui.mjs',
+  'gaps-ui.mjs',
 ];
 export const dependencies = {
+  'gaps-ui.mjs': ['stitched-export-native.mjs'],
   'speech-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'screen-text-setup-ui.mjs': ['transcript-storage-checks.mjs'],
   'transcription-review-ui.mjs': ['transcript-storage-checks.mjs'],

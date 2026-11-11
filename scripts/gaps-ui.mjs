@@ -1,0 +1,268 @@
+// VC-212 (decision 0028): gaps on the Cut page. G at the playhead starts a gap and G again ends
+// it; the clip card lists it and the timeline draws it inside the clip; a right-click menu
+// removes it; Undo brings it back; Backspace removes a selected gap; Shift+G toggles Skip gaps;
+// Shift-drag then G makes one; the export panel shows the clip as it will export. Opens the
+// project stitched-export-native.mjs leaves behind.
+import { testPath } from './test-paths.mjs';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { _electron as electron } from 'playwright/test';
+import { expect } from './desktop-expect.mjs';
+import { root, require, electronEnvironment } from './shared.mjs';
+const checksRoot = testPath('stitched');
+const fixture = JSON.parse(await readFile(path.join(checksRoot, 'latest-native.json'), 'utf8'));
+const dir = await mkdtemp(path.join(checksRoot, 'ui-'));
+const executable = process.env.VIRTUAL_CUT_TEST_EXECUTABLE;
+const app = await electron.launch({
+  executablePath: executable || require('electron'),
+  args: [
+    ...(executable ? [] : [root]),
+    `--user-data-dir=${path.join(dir, 'profile')}`,
+    '--background-test',
+  ],
+  cwd: root,
+  env: electronEnvironment({}),
+});
+const page = await app.firstWindow(),
+  errors = [];
+page.setDefaultTimeout(20000);
+page.on('pageerror', (e) => errors.push(e.message));
+const state = () => page.evaluate(() => window.virtualCut.project.current());
+async function capture(name) {
+  const data = await app.evaluate(async ({ BrowserWindow }) => {
+    const wc = BrowserWindow.getAllWindows()[0].webContents;
+    await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
+    await new Promise((r) => setTimeout(r, 150));
+    return (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true }))
+      .toPNG()
+      .toString('base64');
+  });
+  await writeFile(path.join(dir, name + '.png'), Buffer.from(data, 'base64'));
+}
+// The renderer saves after 2 s of settled activity; read the model once it has.
+const gapsSaved = (count) =>
+  expect
+    .poll(
+      async () => (await state()).model.clips.find((c) => c.id === fixture.clip).gaps?.length ?? 0,
+      {
+        timeout: 15000,
+      },
+    )
+    .toBe(count);
+async function seek(seconds) {
+  const position = page.getByLabel('Timeline position', { exact: true });
+  await position.click();
+  await position.fill(String(seconds));
+  await position.press('Enter');
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector('video').currentTime))
+    .toBeGreaterThan(seconds - 0.2);
+}
+try {
+  await app.evaluate(({ dialog, BrowserWindow }, file) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.setSize(1600, 1000);
+    w.webContents.setAudioMuted(true);
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, fixture.file);
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByRole('button', { name: 'Open project file…', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Workspace pages' })
+    .getByRole('button', { name: 'Cut', exact: true })
+    .click();
+  await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2);
+  const clip = page.locator(`[data-clip-container="${fixture.clip}"]`),
+    card = page.locator(`[data-cut-clip="${fixture.clip}"]`);
+  await card.click({ position: { x: 4, y: 4 } });
+  // No gaps yet: the card offers the hint.
+  await expect(card.getByText('cuts it out', { exact: false })).toBeVisible();
+  // G at 2.4 s starts a gap; the note beside Position says how to finish it.
+  await seek(2.4);
+  await page.keyboard.press('g');
+  await expect(page.locator('[data-gap-note]')).toContainText('Making a gap from');
+  await seek(6.6);
+  await expect(clip.locator('[data-gap-pending]')).toBeVisible();
+  await capture('gaps-marking');
+  await page.keyboard.press('g');
+  await expect(page.locator('[data-gap-note]')).toHaveCount(0);
+  const gap = clip.locator('[data-gap]');
+  await expect(gap).toHaveCount(1);
+  await expect(gap).toHaveText('Gap 1');
+  await expect(gap).toHaveAttribute('data-selected', 'true');
+  await expect(clip).toHaveAttribute('data-gapped', 'true');
+  await expect(clip.locator('[data-clip-piece]')).toHaveCount(2);
+  // The gap meets the pieces exactly (Connor 2026-11-11: its dashes were offset by 6 px), and with
+  // H on its handles sit on the piece ends like the clip's own, clear of the chevrons.
+  const edges = () =>
+    page.evaluate((id) => {
+      const box = (el) => el.getBoundingClientRect();
+      const c = document.querySelector(`[data-clip-container="${id}"]`);
+      return {
+        pieces: [...c.querySelectorAll('[data-clip-piece]')].map(box),
+        gap: box(c.querySelector('[data-gap]')),
+        handles: [...c.querySelectorAll('[data-gap-edge]')].map(box),
+        chevrons: [...c.querySelectorAll('[data-clip-piece] i')].map(box),
+      };
+    }, fixture.clip);
+  {
+    const e = await edges();
+    assert(Math.abs(e.pieces[0].right - e.gap.left) < 1, JSON.stringify(e));
+    assert(Math.abs(e.pieces[1].left - e.gap.right) < 1, JSON.stringify(e));
+    await page.keyboard.press('h');
+    await expect(clip.locator('[data-gap-edge]')).toHaveCount(2);
+    const m = await edges();
+    assert(
+      Math.abs(m.handles[0].right - m.gap.left) < 1 &&
+        Math.abs(m.handles[1].left - m.gap.right) < 1,
+    );
+    assert(m.chevrons[0].right <= m.handles[0].left && m.chevrons[1].left >= m.handles[1].right);
+    await capture('gaps-handles');
+    await page.keyboard.press('h');
+  }
+  // With Snap on, scrubbing near a gap's edge lands on it (Connor 2026-11-11 03:23).
+  {
+    const ruler = page.locator('[data-seek-surface="ruler"]'),
+      r = await ruler.boundingBox(),
+      v = await page.getByTestId('scrub-surface').evaluate((e) => ({
+        start: Number(e.dataset.viewStart),
+        end: Number(e.dataset.viewEnd),
+      })),
+      px = (t) => r.x + ((t - v.start) / (v.end - v.start)) * r.width;
+    for (const edge of [2.4, 6.6]) {
+      await page.mouse.click(px(edge) + 4, r.y + r.height / 2);
+      await expect(page.getByLabel('Timeline position', { exact: true })).toHaveValue(
+        `00:00:0${edge.toFixed(3)}`,
+      );
+    }
+  }
+  // The card lists it: on 1 s keyframes 2.4–6.6 removes 3–6.
+  const row = card.locator('[data-gap-row]');
+  await expect(row).toContainText('00:02.4–00:06.6');
+  await expect(row).toContainText('−00:03.0');
+  await expect(card.locator('[data-exported-length]')).toContainText('00:07.000');
+  await gapsSaved(1);
+  await capture('gaps-one');
+  // Right-click opens the gap's menu; Remove gap puts the footage back.
+  await gap.click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Gap 1' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    /Remove gap 1/,
+    'Go to gap start',
+    'Go to gap end',
+  ]);
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  await capture('gaps-menu');
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitem', { name: 'Go to gap start' })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(gap).toHaveCount(0);
+  await gapsSaved(0);
+  // Undo brings it back.
+  await page.keyboard.press('Control+z');
+  await gapsSaved(1);
+  await expect(clip.locator('[data-gap]')).toHaveCount(1);
+  // Skip gaps is off; Shift+G turns it on and back off.
+  const skip = page.locator('[data-skip-gaps]');
+  await expect(skip).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('Shift+G');
+  await expect(skip).toHaveAttribute('aria-pressed', 'true');
+  // Playing forward never shows what the export leaves out (3–6 s): not when crossing into the
+  // gap, and not when playback starts inside it (Connor 2026-11-11 03:31).
+  const played = () =>
+    page.evaluate(async () => {
+      const v = document.querySelector('video'),
+        seen = [];
+      for (const end = performance.now() + 2600; performance.now() < end;) {
+        if (!v.seeking) seen.push(v.currentTime);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      return seen;
+    });
+  for (const from of [2.2, 4.0]) {
+    await seek(from);
+    await page.keyboard.press('k');
+    const seen = await played();
+    await page.keyboard.press('k');
+    const leaked = seen.filter((t) => t > 3.1 && t < 5.9);
+    assert(leaked.length <= 2, `played inside the gap from ${from}: ${leaked.slice(0, 5)}`);
+    assert(
+      seen.some((t) => t > 6),
+      `reached the piece after the gap from ${from}: ${seen.at(-1)}`,
+    );
+    // Skips are silent: no note in the bottom bar (Connor 2026-11-11 03:49).
+    await expect(page.getByText(/Skipped Gap/)).toHaveCount(0);
+  }
+  // Nothing selected (and selection not following the playhead): overlapping gaps skip to the
+  // soonest end, 4 s (the overlapping clip's), and the first clip's gap it lands in then plays
+  // to 6 s rather than skipping on at once (Connor 2026-11-11 03:37 and 03:43).
+  await page.getByLabel('Selection follows playhead').uncheck();
+  const lane = await page.locator('[aria-label="Clip selection"]').boundingBox(),
+    span = await page.getByTestId('scrub-surface').evaluate((e) => ({
+      start: Number(e.dataset.viewStart),
+      end: Number(e.dataset.viewEnd),
+    }));
+  await page.mouse.click(
+    lane.x + ((11.6 - span.start) / (span.end - span.start)) * lane.width,
+    lane.y + 4,
+  );
+  await expect(page.locator('[data-clip-container][data-selected="true"]')).toHaveCount(0);
+  await seek(2.2);
+  await page.keyboard.press('k');
+  const loose = await played();
+  await page.keyboard.press('k');
+  assert(!loose.some((t) => t > 3.1 && t < 3.9), `played the soonest gap: ${loose.slice(0, 8)}`);
+  assert(
+    loose.some((t) => t > 4.2 && t < 5.8),
+    `the gap it landed in should play, not skip: ${loose.filter((t) => t > 3).slice(0, 8)}`,
+  );
+  await page.getByLabel('Selection follows playhead').check();
+  await page.keyboard.press('Shift+G');
+  await expect(skip).toHaveAttribute('aria-pressed', 'false');
+  // A second gap by Shift-drag over the clip, then G.
+  const box = await clip.boundingBox(),
+    track = await page.getByTestId('scrub-surface').boundingBox(),
+    view = await page.getByTestId('scrub-surface').evaluate((e) => ({
+      start: Number(e.dataset.viewStart),
+      end: Number(e.dataset.viewEnd),
+    })),
+    x = (t) => track.x + ((t - view.start) / (view.end - view.start)) * track.width;
+  await page.mouse.move(x(8.3), box.y + box.height / 2);
+  await page.keyboard.down('Shift');
+  await page.mouse.down();
+  await page.mouse.move(x(9.2), box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(x(10.1), box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await expect(clip.locator('[data-gap-sweep]')).toBeVisible();
+  await page.keyboard.press('g');
+  await expect(clip.locator('[data-gap]')).toHaveCount(2);
+  await gapsSaved(2);
+  const model = (await state()).model.clips.find((c) => c.id === fixture.clip);
+  assert(Math.abs(model.gaps[1].start - 8.3) < 0.15 && Math.abs(model.gaps[1].end - 10.1) < 0.15);
+  // Backspace removes the selected gap at once.
+  await expect(clip.locator('[data-gap][data-selected="true"]')).toHaveText('Gap 2');
+  await page.keyboard.press('Backspace');
+  await expect(clip.locator('[data-gap]')).toHaveCount(1);
+  await gapsSaved(1);
+  // The export panel shows the clip as it will export, gaps for review only.
+  await page.getByRole('button', { name: 'Export selected clip', exact: true }).click();
+  const preview = page.locator('[data-stitched-preview]');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('2 pieces · 1 join');
+  await expect(preview.locator('[data-stitched-row="gap"]')).toContainText('No, review only');
+  await capture('gaps-export');
+  await page.keyboard.press('Escape');
+  // Compact window: the clip card's gap row stays reachable.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+  await row.scrollIntoViewIfNeeded();
+  await expect(row).toBeInViewport();
+  await capture('gaps-compact');
+  assert.equal(errors.length, 0, errors.join('\n'));
+} finally {
+  await app.close();
+}
+console.log(`Gaps UI checks passed in ${dir}`);

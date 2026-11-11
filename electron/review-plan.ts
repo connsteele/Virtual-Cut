@@ -87,6 +87,8 @@ export function reviewContent(
     model.markers[clip.rid] || [],
     // Changing a peer's target can invalidate this clip's acceptance too.
     ...(issues[clip.id] || []),
+    // VC-212: gaps change what exports. Clips without gaps keep their existing keys.
+    ...(clip.gaps?.length ? [['gaps', clip.gaps.map((g) => [g.start, g.end])]] : []),
   ]);
 }
 export interface DestinationRow {

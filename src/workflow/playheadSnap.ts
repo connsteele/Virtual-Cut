@@ -32,7 +32,7 @@ export function scrubSnap(
 export function editTargets(
   playhead: number,
   markers: { id: string; time: number; end?: number }[],
-  clips: { id: string; start: number; end: number }[],
+  clips: { id: string; start: number; end: number; gaps?: { start: number; end: number }[] }[],
   exclude: { marker?: string; clip?: string },
 ) {
   return [
@@ -41,7 +41,10 @@ export function editTargets(
       ...markers
         .filter((m) => m.id !== exclude.marker)
         .flatMap((m) => (m.end == null ? [m.time] : [m.time, m.end])),
-      ...clips.filter((c) => c.id !== exclude.clip).flatMap((c) => [c.start, c.end]),
+      // A gap's start and end snap like clip edges (VC-212).
+      ...clips
+        .filter((c) => c.id !== exclude.clip)
+        .flatMap((c) => [c.start, c.end, ...(c.gaps || []).flatMap((g) => [g.start, g.end])]),
     ]),
   ];
 }
